@@ -896,6 +896,50 @@ export function ResultsViewHost({
       res = filterByNotionBase(res as any, selectedScope) as any;
     }
 
+    // Filtrado estricto por usuario activo si no es "__all__" y no está en Scope de carpetas/dropbox
+    if (currentUser && currentUser !== "__all__" && selectedScope !== "Dropbox" && selectedScope !== "Carpetas") {
+      const uLow = currentUser.toLowerCase().trim();
+      res = res.filter((it) => {
+        const p = (it.assignedPerson || "").toLowerCase();
+        const keys = Array.isArray((it as any).assignmentKeys)
+          ? (it as any).assignmentKeys.map((k: string) => k.toLowerCase())
+          : [];
+        const text = ((it.name || "") + " " + (it.searchText || "")).toLowerCase();
+
+        if (uLow === "nneft" || uLow === "neftali" || uLow === "nnetf") {
+          return p === "neftali" || keys.some((k: string) => k.includes("neft") || k.includes("nnetf")) || /\b(?:nneft|nnetf|neft|neftali)\b/i.test(text);
+        }
+        if (uLow === "jjohn" || uLow === "john") {
+          return p === "john" || keys.some((k: string) => k.includes("john")) || /\b(?:jjohn|john)\b/i.test(text);
+        }
+        if (uLow === "kkarl" || uLow === "karla") {
+          return p === "karla" || keys.some((k: string) => k.includes("karl")) || /\b(?:kkarl|karla|karl)\b/i.test(text);
+        }
+        if (uLow === "bbria" || uLow === "brian") {
+          return p === "brian" || keys.some((k: string) => k.includes("bria")) || /\b(?:bbria|brian)\b/i.test(text);
+        }
+        if (uLow === "ggena" || uLow === "genaro") {
+          return p === "genaro" || keys.some((k: string) => k.includes("gena")) || /\b(?:ggena|genaro)\b/i.test(text);
+        }
+        if (uLow === "iisai" || uLow === "isaias" || uLow === "isai") {
+          return p === "isaias" || keys.some((k: string) => k.includes("isai")) || /\b(?:iisai|isai|isaias)\b/i.test(text);
+        }
+        if (uLow === "ssote" || uLow === "sotelo") {
+          return p === "sotelo" || keys.some((k: string) => k.includes("sote")) || /\b(?:ssote|sotelo)\b/i.test(text);
+        }
+        if (uLow === "aacal" || uLow === "acalli") {
+          return p === "acalli" || keys.some((k: string) => k.includes("acal")) || /\b(?:aacal|acalli)\b/i.test(text);
+        }
+        if (uLow === "aandr" || uLow === "andrade") {
+          return p === "andrade" || keys.some((k: string) => k.includes("andr")) || /\b(?:aandr|andrade)\b/i.test(text);
+        }
+        if (uLow === "eemma" || uLow === "emmanuel" || uLow === "eedua") {
+          return p === "emmanuel" || keys.some((k: string) => k.includes("eemma") || k.includes("eedua")) || /\b(?:eemma|eedua|emmanuel)\b/i.test(text);
+        }
+        return p.includes(uLow) || keys.some((k: string) => k.includes(uLow)) || text.includes(uLow);
+      });
+    }
+
     if (selectedMonth && selectedMonth !== "Todos") {
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
@@ -910,7 +954,7 @@ export function ResultsViewHost({
       return [...res].sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
     }
     return res;
-  }, [items, query, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy]);
+  }, [items, query, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, currentUser]);
 
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
