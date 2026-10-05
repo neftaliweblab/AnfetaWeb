@@ -116,13 +116,13 @@ function getItemGroupKey(item: any, groupBy: string): string {
   }
 
   if (groupBy === "domain" || groupBy === "domain_nobilling") {
-    const dom = parsed.domain || item.sourceName || "General";
+    const dom = parsed.domain || item.domainChip || item.domain || item.sourceName || "General";
     const status = parsed.workflow || item.updateStatus || "Activo";
     return `🌐 ${dom} · ${status}`;
   }
 
   if (groupBy === "project_suffix") {
-    const dom = parsed.domain || "General";
+    const dom = parsed.domain || item.domainChip || item.domain || "General";
     const suffixMatch = name.match(/\.(webs|ads|seo|app|prog)\b/i);
     const suffix = suffixMatch ? suffixMatch[0] : ".general";
     return `📁 ${dom} · ${suffix}`;
@@ -436,7 +436,7 @@ export function ResultsVirtualTable({
           >
             {highlightMatch(parsed.title)}
           </span>
-          {parsed.domain && (
+          {(parsed.domain || item.domainChip || item.domain) && (
             <span
               style={{
                 fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
@@ -444,7 +444,7 @@ export function ResultsVirtualTable({
               }}
               className="shrink-0 max-w-[140px] truncate ml-auto rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
             >
-              {parsed.domain}
+              {parsed.domain || item.domainChip || item.domain}
             </span>
           )}
         </div>
@@ -701,8 +701,8 @@ export function ResultsVirtualTable({
           style={{ fontSize: `${(9 * scale).toFixed(1)}px` }}
           className="flex items-center justify-between text-[#94A3B8] pt-1 border-t border-[#1E2836] gap-1"
         >
-          {parsed.domain ? (
-            <span className="truncate max-w-[90px] text-[#93C5FD] font-mono">{parsed.domain}</span>
+          {(parsed.domain || item.domainChip || item.domain) ? (
+            <span className="truncate max-w-[90px] text-[#93C5FD] font-mono">{parsed.domain || item.domainChip || item.domain}</span>
           ) : (
             <span className="truncate max-w-[90px] text-[#64748B] font-mono">{item.sourceName || "—"}</span>
           )}

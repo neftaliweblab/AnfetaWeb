@@ -65,33 +65,45 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     display = display.replace(monthMatch[0], '');
   }
 
-  // 4. Extraer Área codificada (aads, wwebs, sseo, ddise, rrede, mmaps, etc.)
-  let area = '';
-  const areaMatch = display.match(/(?<![\w_])(sseo|seo|wwebs|webs|web|aads|ads|ad|aapli|apli|apps?|aplicaci[oó]n|pprog|prog|software|ddise|dise[nñ]o|rrede|redes|mmaps|maps|bbibl|biblia|ccoti|coti|cchat|chat|rrapi|api)(?![\w_])/i);
-  if (areaMatch) {
-    const rawA = areaMatch[1].toLowerCase();
-    if (rawA.includes('seo')) area = 'SEO';
-    else if (rawA.includes('web')) area = 'WEB';
-    else if (rawA.includes('ad')) area = 'ADS';
-    else if (rawA.includes('apli') || rawA.includes('app')) area = 'APP';
-    else if (rawA.includes('prog') || rawA.includes('soft')) area = 'PROG';
-    else if (rawA.includes('dise')) area = 'DISEÑO';
-    else if (rawA.includes('rede')) area = 'REDES';
-    else if (rawA.includes('map')) area = 'MAPS';
-    else if (rawA.includes('bibl')) area = 'BIBLIA';
-    else if (rawA.includes('coti')) area = 'COTIZACIÓN';
-    else area = rawA.toUpperCase();
-    display = display.replace(areaMatch[0], '');
-  }
-
-  // 5. Extraer Dominio (ej. [novakid.com], fortelite.com)
+  // 4. Extraer Dominio (ej. webs.apantallante.com, seo.lcacalderas.com, novakid.com)
   let domain = '';
-  const domainMatch = display.match(/(?:\[|\()?\s*(?<![\w.-])(?:https?:\/\/)?(?:www\.)?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:com\.mx|org\.mx|gob\.mx|com|mx|org|net|io|co|app|dev))\s*(?:\]|\))?/i);
+  let area = '';
+  const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co)))\b\s*(?:\]|\))?/i;
+  const domainMatch = display.match(domainRegex);
   if (domainMatch) {
-    const candidate = domainMatch[1].toLowerCase();
+    const rawMatch = domainMatch[0];
+    const fullMatched = domainMatch[1];
+    const candidate = domainMatch[2].toLowerCase();
     if (!['dominio.com', 'ejemplo.com', 'example.com'].includes(candidate)) {
       domain = candidate;
-      display = display.replace(domainMatch[0], '');
+      const prefix = fullMatched.split('.')[0].toLowerCase();
+      if (['web', 'webs', 'wwebs'].includes(prefix) && !area) area = 'WEB';
+      else if (['seo', 'sseo'].includes(prefix) && !area) area = 'SEO';
+      else if (['ads', 'aads'].includes(prefix) && !area) area = 'ADS';
+      else if (['prog', 'pprog'].includes(prefix) && !area) area = 'PROG';
+      else if (['app', 'aapp'].includes(prefix) && !area) area = 'APP';
+      else if (['dise', 'ddise'].includes(prefix) && !area) area = 'DISEÑO';
+      display = display.replace(rawMatch, ' ');
+    }
+  }
+
+  // 5. Extraer Área codificada adicional si aún no se tiene (ej. [WEB], aads, mmaps)
+  if (!area) {
+    const areaMatch = display.match(/(?<![\w_])(sseo|seo|wwebs|webs|web|aads|ads|ad|aapli|apli|apps?|aplicaci[oó]n|pprog|prog|software|ddise|dise[nñ]o|rrede|redes|mmaps|maps|bbibl|biblia|ccoti|coti|cchat|chat|rrapi|api)(?![.\w_])/i);
+    if (areaMatch) {
+      const rawA = areaMatch[1].toLowerCase();
+      if (rawA.includes('seo')) area = 'SEO';
+      else if (rawA.includes('web')) area = 'WEB';
+      else if (rawA.includes('ad')) area = 'ADS';
+      else if (rawA.includes('apli') || rawA.includes('app')) area = 'APP';
+      else if (rawA.includes('prog') || rawA.includes('soft')) area = 'PROG';
+      else if (rawA.includes('dise')) area = 'DISEÑO';
+      else if (rawA.includes('rede')) area = 'REDES';
+      else if (rawA.includes('map')) area = 'MAPS';
+      else if (rawA.includes('bibl')) area = 'BIBLIA';
+      else if (rawA.includes('coti')) area = 'COTIZACIÓN';
+      else area = rawA.toUpperCase();
+      display = display.replace(areaMatch[0], ' ');
     }
   }
 
