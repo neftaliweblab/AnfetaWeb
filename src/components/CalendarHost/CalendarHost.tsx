@@ -141,6 +141,71 @@ export function CalendarHost({
     return map;
   }, [filteredActivities, visiblePeople]);
 
+  const [createSlotSeed, setCreateSlotSeed] = useState<{
+    person: string;
+    start: string;
+    end: string;
+  } | null>(null);
+
+  // Current time tracking
+  const [currentDateMinutes, setCurrentDateMinutes] = useState<number | null>(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    if (currentDate === todayStr) {
+      return (now.getHours() - startHour) * 60 + now.getMinutes();
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      if (currentDate === todayStr) {
+        setCurrentDateMinutes((now.getHours() - startHour) * 60 + now.getMinutes());
+      } else {
+        setCurrentDateMinutes(null);
+      }
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 30000);
+    return () => clearInterval(interval);
+  }, [currentDate, startHour]);
+
+  // Click on empty slot in column
+  const handleColumnCanvasClick = (e: React.MouseEvent<HTMLDivElement>, colPerson: string) => {
+    // Only trigger if clicking on the background canvas, not a child card
+    if ((e.target as HTMLElement).closest('[data-activity-card="true"]')) {
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = Math.max(0, e.clientY - rect.top);
+    const rawMinutes = (offsetY / pixelsPerHour) * 60;
+    // Round to nearest 15 minutes
+    let snappedMinutes = Math.round(rawMinutes / 15) * 15;
+    const maxStartMinutes = (endHour - startHour) * 60 - 15;
+    snappedMinutes = Math.min(Math.max(0, snappedMinutes), maxStartMinutes);
+
+    const startTotalMinutes = startHour * 60 + snappedMinutes;
+    const startH = Math.floor(startTotalMinutes / 60);
+    const startM = startTotalMinutes % 60;
+
+    // Default duration 60 mins (or up to 22:00)
+    const endTotalMinutes = Math.min(endHour * 60, startTotalMinutes + 60);
+    const endH = Math.floor(endTotalMinutes / 60);
+    const endM = endTotalMinutes % 60;
+
+    const startFormatted = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+    const endFormatted = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+
+    setCreateSlotSeed({
+      person: colPerson,
+      start: startFormatted,
+      end: endFormatted,
+    });
+    setShowCreate(true);
+  };
+
   const handleDropOnColumn = (e: React.DragEvent, colPerson: string) => {
     e.preventDefault();
     try {
@@ -152,12 +217,38 @@ export function CalendarHost({
     } catch (error) { setError(error instanceof Error ? error.message : 'Movimiento inválido'); }
   };
 
+  // Red line Y position
+  const currentTimeTop = currentDateMinutes !== null && currentDateMinutes >= 0 && currentDateMinutes <= totalHours * 60
+    ? (currentDateMinutes / 60) * pixelsPerHour
+    : null;
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F]">
       {error && <div role="alert" className="px-3 py-2 text-sm text-rose-300">{error}</div>}
-      {showCreate && <CreateActivityModal currentUser={currentUser} date={currentDate} onClose={() => setShowCreate(false)} onCreated={activity => { setActivitiesList(prev => [...prev, activity]); setShowCreate(false); onRefresh?.(); }} />}
+      {showCreate && (
+        <CreateActivityModal
+          currentUser={currentUser}
+          date={currentDate}
+          initialPerson={createSlotSeed?.person}
+          initialStart={createSlotSeed?.start}
+          initialEnd={createSlotSeed?.end}
+          onClose={() => {
+            setShowCreate(false);
+            setCreateSlotSeed(null);
+          }}
+          onCreated={(activity) => {
+            setActivitiesList((prev) => [...prev, activity]);
+            setShowCreate(false);
+            setCreateSlotSeed(null);
+            onRefresh?.();
+          }}
+        />
+      )}
       <CalendarTopControls
-        onCreateActivity={() => setShowCreate(true)}
+        onCreateActivity={() => {
+          setCreateSlotSeed(null);
+          setShowCreate(true);
+        }}
         currentDate={currentDate}
         onSelectDate={onSelectDate}
         availableDates={availableDates}
@@ -200,11 +291,32 @@ export function CalendarHost({
                   {hour}
                 </div>
               ))}
+              {/* Current time red tag on time rail */}
+              {currentTimeTop !== null && (
+                <div
+                  style={{ top: `${currentTimeTop}px` }}
+                  className="absolute right-0 -translate-y-1/2 z-50 flex items-center"
+                >
+                  <span className="bg-[#EF4444] text-white text-[8.5px] font-bold px-1 rounded-l shadow-sm font-mono">
+                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Collaborators Columns - Fluid and Auto-expanding */}
-          <div className="flex-1 flex min-w-fit">
+          <div className="flex-1 flex min-w-fit relative">
+            {/* Global red line across all columns */}
+            {currentTimeTop !== null && (
+              <div
+                style={{ top: `${currentTimeTop + 56}px` }}
+                className="absolute left-0 right-0 h-[2px] bg-[#EF4444] z-30 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.7)]"
+              >
+                <div className="w-2 h-2 rounded-full bg-[#EF4444] -translate-y-[3px] -translate-x-1" />
+              </div>
+            )}
+
             {visiblePeople.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[#64748B]">
                 <p className="text-sm font-medium text-[#94A3B8]">No hay colaboradores visibles en el calendario</p>
@@ -220,6 +332,26 @@ export function CalendarHost({
               visiblePeople.map((person) => {
                 const personActivities = activitiesByPerson[person] || [];
                 const positioned = computeActivityOverlaps(personActivities);
+
+                // Compute person KPIs
+                let totalChecks = 0;
+                let doneChecks = 0;
+                let totalCoverageHours = 0;
+
+                personActivities.forEach((act) => {
+                  totalChecks += act.checklistTotal || 0;
+                  doneChecks += act.checklistCompleted || 0;
+                  if (act.start && act.end) {
+                    const st = new Date(act.start).getTime();
+                    const en = new Date(act.end).getTime();
+                    if (en > st) {
+                      totalCoverageHours += (en - st) / 3600000;
+                    }
+                  }
+                });
+
+                const checklistPercent = totalChecks > 0 ? Math.round((doneChecks / totalChecks) * 100) : 0;
+
                 return (
                   <div
                     key={person}
@@ -231,14 +363,23 @@ export function CalendarHost({
                     <CalendarColHeader
                       personName={person}
                       activityCount={personActivities.length}
+                      checklistPercent={checklistPercent}
+                      totalChecklistItems={totalChecks}
+                      completedChecklistItems={doneChecks}
+                      coverageHours={totalCoverageHours}
                       onSelectPerson={(p) => setSelectedPersonPreview(p)}
                     />
-                    <div className="relative flex-1 bg-[#080B0F]" style={{ height: `${canvasHeight}px` }}>
+                    <div
+                      onClick={(e) => handleColumnCanvasClick(e, person)}
+                      className="relative flex-1 bg-[#080B0F] cursor-pointer"
+                      style={{ height: `${canvasHeight}px` }}
+                      title={`Haz clic en un hueco vacío para crear actividad para ${person}`}
+                    >
                       {hoursList.map((_, idx) => (
                         <div
                           key={idx}
                           style={{ top: `${idx * pixelsPerHour}px` }}
-                          className="absolute w-full h-px bg-[#161F2B]"
+                          className="absolute w-full h-px bg-[#161F2B] pointer-events-none"
                         />
                       ))}
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (

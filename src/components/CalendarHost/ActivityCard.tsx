@@ -194,6 +194,7 @@ export function ActivityCard({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
+        data-activity-card="true"
         style={{
           top: `${top}px`,
           height: `${height}px`,

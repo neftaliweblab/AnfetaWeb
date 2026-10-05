@@ -4,11 +4,36 @@ import { NotionCalendarActivity } from '@/types/anfeta';
 import { isDirection } from '@/services/activityPermissions';
 
 const people = ['jjohn', 'nneft', 'kkarl', 'bbria', 'iisai', 'aandr', 'ggena', 'ssote', 'aacal', 'eemma'];
-export function CreateActivityModal({ currentUser, date, onClose, onCreated }: { currentUser: string; date: string; onClose: () => void; onCreated: (activity: NotionCalendarActivity) => void }) {
-  const [title, setTitle] = useState(''); const [domain, setDomain] = useState('');
-  const [person, setPerson] = useState(isDirection(currentUser) ? 'jjohn' : currentUser);
-  const [day, setDay] = useState(date); const [start, setStart] = useState('08:00'); const [end, setEnd] = useState('09:00');
-  const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+interface CreateActivityModalProps {
+  currentUser: string;
+  date: string;
+  initialPerson?: string;
+  initialStart?: string;
+  initialEnd?: string;
+  onClose: () => void;
+  onCreated: (activity: NotionCalendarActivity) => void;
+}
+
+export function CreateActivityModal({
+  currentUser,
+  date,
+  initialPerson,
+  initialStart = '08:00',
+  initialEnd = '09:00',
+  onClose,
+  onCreated,
+}: CreateActivityModalProps) {
+  const [title, setTitle] = useState('');
+  const [domain, setDomain] = useState('');
+  const [person, setPerson] = useState(() => {
+    if (initialPerson) return initialPerson;
+    return isDirection(currentUser) ? 'jjohn' : currentUser;
+  });
+  const [day, setDay] = useState(date);
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState(initialEnd);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
     <form className="w-full max-w-lg space-y-4 rounded-2xl border border-cyan-400/40 bg-slate-950 p-5 text-slate-200" onSubmit={async e => {
       e.preventDefault(); if (saving) return; setSaving(true); setError('');
