@@ -8,7 +8,16 @@ export function isDirection(user: string) {
 export function isReviewer(user: string) {
   const norm = normalizePerson(user);
   const actor = user.trim().toLowerCase();
-  return isDirection(user) || norm === 'Genaro' || norm === 'John' || actor === 'ggena' || actor === 'jjohn';
+  return (
+    isDirection(user) ||
+    norm === 'Genaro' ||
+    norm === 'John' ||
+    norm === 'Isaias' ||
+    actor === 'ggena' ||
+    actor === 'jjohn' ||
+    actor === 'iisai' ||
+    actor === 'iisaia'
+  );
 }
 
 export function isActivityLocked(activity: Partial<NotionCalendarActivity> & { IsAutomationLocked?: boolean }) {

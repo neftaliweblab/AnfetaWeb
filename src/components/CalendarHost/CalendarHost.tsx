@@ -102,28 +102,51 @@ export function CalendarHost({
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
 
-  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity>) => {
+  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; leaveVisualCopy?: boolean }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original) || pending.current.has(pageId)) return;
-    if (updates.person && normalizePerson(updates.person) !== normalizePerson(original.person) && !isDirection(currentUser)) return;
     pending.current.add(pageId); setError('');
 
+    const targetPerson = updates.reviewer ? normalizePerson(updates.reviewer) : (updates.person ? normalizePerson(updates.person) : original.person);
+    const finalUpdates: any = { ...updates };
+    if (updates.reviewer) {
+      finalUpdates.person = targetPerson;
+    }
+
     // Actualización reactiva instantánea local
-    setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
-    setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...updates } : prev);
+    setActivitiesList(prev => {
+      // Si se deja copia visual en la columna original, clonar la tarjeta visualmente como copia en revisión
+      if (updates.leaveVisualCopy && updates.reviewer) {
+        const visualCopy: NotionCalendarActivity = {
+          ...original,
+          pageId: `copy-${original.pageId}-${Date.now()}`,
+          title: `[COPIA REVISIÓN] ${original.title}`,
+          status: "rtuzREVISION",
+          person: original.person, // Se queda en la columna original
+        };
+        const updatedOriginal = { ...original, ...finalUpdates, person: targetPerson };
+        return [...prev.filter(a => a.pageId !== pageId), updatedOriginal, visualCopy];
+      }
+
+      return prev.map(a => a.pageId === pageId ? { ...a, ...finalUpdates } : a);
+    });
+
+    setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...finalUpdates } : prev);
 
     // Difusión instantánea en tiempo real
     anfetaSync.broadcast({
       type: "ACTIVITY_UPDATED",
       pageId,
-      updates,
+      updates: finalUpdates,
     });
 
     try {
       const response = await fetch('/api/data', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: updates.start ? 'update-activity-schedule' : updates.person ? 'update-activity-assignee' : 'update-activity-status',
-          payload: { id: pageId, currentUser, ...updates } }),
+        body: JSON.stringify({
+          action: updates.start ? 'update-activity-schedule' : updates.reviewer ? 'update-activity-assignee' : updates.person ? 'update-activity-assignee' : 'update-activity-status',
+          payload: { id: pageId, currentUser, ...finalUpdates }
+        }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar la actividad.');

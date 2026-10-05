@@ -6,6 +6,7 @@ import { workflowState } from "@/services/activityWorkflow";
 import { openNotionPage } from "@/services/windowsIntegration";
 import { isReviewer, isDirection } from "@/services/activityPermissions";
 import { CheckSquare, ExternalLink, Clock, User, Shield, Check, Loader2, ArrowRight, CheckCircle2, Send, ListChecks, Calendar as CalendarIcon } from "lucide-react";
+import { SendToReviewModal } from "./SendToReviewModal";
 
 export interface NotionTodoItem {
   id: string;
@@ -36,6 +37,7 @@ export function CalendarDetailPanel({
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"checklist" | "project">("checklist");
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   const title = activity.title || (activity as any)?.Title || "Sin título";
   const domain = activity.domain || (activity as any)?.ParsedDomain || "DOMINIO";
@@ -292,10 +294,7 @@ export function CalendarDetailPanel({
         {/* Botones de Acción de Flujo ANFETA (1:1 WPF) */}
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
-            onClick={() => {
-              onActivityUpdated?.({ status: "rtuzREVISION" });
-              setStatusMessage("Actividad enviada a REVISIÓN (rtuzREVISION)");
-            }}
+            onClick={() => setShowReviewModal(true)}
             className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm"
           >
             <Send className="w-3.5 h-3.5" />
@@ -308,7 +307,7 @@ export function CalendarDetailPanel({
               onActivityUpdated?.({ status: "zREVISION" });
               setStatusMessage("Actividad marcada como TERMINADA (zREVISION)");
             }}
-            title={userCanReview ? "Terminar actividad (Solo Revisores: John / Genaro)" : "Solo John o Genaro pueden terminar actividades en revisión"}
+            title={userCanReview ? "Terminar actividad (Revisores: John / Isaías / Genaro)" : "Solo John, Isaías o Genaro pueden terminar actividades en revisión"}
             className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg border text-xs font-semibold transition-all shadow-sm ${
               userCanReview
                 ? "bg-[#10251B] hover:bg-[#163826] text-[#4ADE80] border-[#166534]"
@@ -453,6 +452,24 @@ export function CalendarDetailPanel({
           <span>Abrir en Notion Web</span>
         </button>
       </div>
+
+      {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {showReviewModal && (
+        <SendToReviewModal
+          activity={activity}
+          currentUser={currentUser}
+          onClose={() => setShowReviewModal(false)}
+          onConfirm={(targetReviewer, leaveVisualCopy) => {
+            setShowReviewModal(false);
+            onActivityUpdated?.({
+              status: "rtuzREVISION",
+              reviewer: targetReviewer,
+              leaveVisualCopy,
+            } as any);
+            setStatusMessage(`Actividad enviada a REVISIÓN para ${targetReviewer}`);
+          }}
+        />
+      )}
     </aside>
   );
 }

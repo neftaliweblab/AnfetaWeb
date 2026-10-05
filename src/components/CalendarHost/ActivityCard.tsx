@@ -8,6 +8,7 @@ import { ChecklistPopup } from "./ChecklistPopup";
 import { workflowState } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
+import { SendToReviewModal } from "./SendToReviewModal";
 
 interface ActivityCardProps {
   currentUser: string;
@@ -33,6 +34,7 @@ export function ActivityCard({
   const editable = canEditActivity(currentUser, activity);
   const [showPopup, setShowPopup] = useState(false);
   const [showHover, setShowHover] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -499,16 +501,13 @@ export function ActivityCard({
           )}
           <button
             onClick={() => {
-              onUpdateActivity?.(activity.pageId, {
-                status: "rtuzREVISION",
-                isCompletedForReview: true,
-              });
               closeContextMenu();
+              setShowReviewModal(true);
             }}
             className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-[#38BDF8] flex items-center gap-2"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Mover a Revisión (rtuz)</span>
+            <span>Mover a Revisión (rtuz)...</span>
           </button>
           <button
             onClick={() => {
@@ -534,6 +533,23 @@ export function ActivityCard({
             <span>Abrir en Notion Web</span>
           </button>
         </div>
+      )}
+
+      {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {showReviewModal && (
+        <SendToReviewModal
+          activity={activity}
+          currentUser={currentUser}
+          onClose={() => setShowReviewModal(false)}
+          onConfirm={(targetReviewer, leaveVisualCopy) => {
+            setShowReviewModal(false);
+            onUpdateActivity?.(activity.pageId, {
+              status: "rtuzREVISION",
+              reviewer: targetReviewer,
+              leaveVisualCopy,
+            } as any);
+          }}
+        />
       )}
     </>
   );
