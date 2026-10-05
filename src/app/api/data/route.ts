@@ -144,6 +144,20 @@ function extractNotionPageData(page: any): LiveNotionPage {
     }
   }
 
+  // Si no se detectó persona en propiedades, resolver desde el título
+  if (!person && title) {
+    if (/\b(?:ggena|genaro)\b/i.test(title)) person = "Genaro";
+    else if (/\b(?:nneft|nnetf|neft|neftali)\b/i.test(title)) person = "Neftali";
+    else if (/\b(?:bbria|brian)\b/i.test(title)) person = "Brian";
+    else if (/\b(?:iisai|iisaia|isai|isaias)\b/i.test(title)) person = "Isaias";
+    else if (/\b(?:kkarl|karl|karla)\b/i.test(title)) person = "Karla";
+    else if (/\b(?:jjohn|john)\b/i.test(title)) person = "John";
+    else if (/\b(?:aandr|andrade)\b/i.test(title)) person = "Andrade";
+    else if (/\b(?:aacal|acalli)\b/i.test(title)) person = "Acalli";
+    else if (/\b(?:ssote|sotelo)\b/i.test(title)) person = "Sotelo";
+    else if (/\b(?:eemma|eedua|eduardo|emmanuel)\b/i.test(title)) person = "Emmanuel";
+  }
+
   return { id, url, title, status, dateStart, dateEnd, person, domain, lastEdited };
 }
 
@@ -492,7 +506,7 @@ export async function GET(req: NextRequest) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              page_size: 50,
+              page_size: 100,
               sort: { direction: "descending", timestamp: "last_edited_time" },
             }),
           });
@@ -712,6 +726,37 @@ export async function GET(req: NextRequest) {
     }
 
     if (type === "calendar" || type === "calendar-week") {
+      const calToken = (req.headers.get("x-notion-token") || searchParams.get("token") || getSettings().notionToken || "").trim();
+      if (calToken) {
+        try {
+          const nRes = await fetch("https://api.notion.com/v1/search", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${calToken}`,
+              "Notion-Version": "2022-06-28",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              page_size: 100,
+              sort: { direction: "descending", timestamp: "last_edited_time" },
+            }),
+          });
+          if (nRes.ok) {
+            const nData = await nRes.json();
+            for (const item of (nData.results || [])) {
+              if (item.object === "page") {
+                const pageData = extractNotionPageData(item);
+                if (pageData.id) {
+                  liveNotionOverrides.set(pageData.id, pageData);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Could not fetch live Notion pages in calendar:", err);
+        }
+      }
+
       const calData = readLocalJson<Record<string, any[]>>(
         "notion_calendar_cache_v13.json",
         {}

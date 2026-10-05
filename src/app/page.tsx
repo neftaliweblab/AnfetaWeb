@@ -115,12 +115,22 @@ export default function AnfetaApp() {
 
     const handleDataRefreshed = async () => {
       try {
-        const idxRes = await fetch("/api/data?type=search-index");
+        let token = "";
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) token = JSON.parse(s).notionToken || "";
+        } catch {}
+
+        const idxRes = await fetch(`/api/data?type=search-index${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+          headers: token ? { "x-notion-token": token } : {},
+        });
         if (idxRes.ok) {
           const idxData = await idxRes.json();
           if (idxData.items) setSearchIndex(idxData.items);
         }
-        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+          headers: token ? { "x-notion-token": token } : {},
+        });
         if (calRes.ok) {
           const calData = await calRes.json();
           if (calData.activities) setCalendarActivities(calData.activities);
