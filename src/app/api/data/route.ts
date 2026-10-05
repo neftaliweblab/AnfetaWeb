@@ -8,6 +8,7 @@ import { normalizeSearchRow, normalizeActivity } from "@/services/dataNormalizer
 const LOCAL_STATE_DIR =
   "C:\\Users\\nanoc\\AppData\\Local\\Packages\\c6d297e3-90b3-45d7-8116-b599de47cc6a_jwwtc8z12084g\\LocalState";
 
+const PROJECT_DATA_DIR = path.join(process.cwd(), "data");
 const SETTINGS_FILE = path.join(process.cwd(), "settings.json");
 const WIN_SETTINGS_DIR = path.join(
   process.env.LOCALAPPDATA || "C:\\Users\\nanoc\\AppData\\Local",
@@ -18,8 +19,8 @@ const WIN_SETTINGS_FILE = path.join(WIN_SETTINGS_DIR, "settings.json");
 function getSettings() {
   let settings = {
     notionToken: process.env.NOTION_TOKEN || "",
-    dropboxPath: "C:\\Users\\nanoc\\Dropbox",
-    currentUser: "nano",
+    dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
+    currentUser: "nneft",
     isDryRun: true,
   };
   try {
@@ -50,9 +51,17 @@ function saveSettings(data: any) {
 
 function readLocalJson<T>(filename: string, defaultValue: T): T {
   try {
-    const fullPath = path.join(LOCAL_STATE_DIR, filename);
-    if (fs.existsSync(fullPath)) {
-      const content = fs.readFileSync(fullPath, "utf-8");
+    // 1. Buscar en la carpeta 'data/' del proyecto (Vercel, producción en la nube)
+    const projectPath = path.join(PROJECT_DATA_DIR, filename);
+    if (fs.existsSync(projectPath)) {
+      const content = fs.readFileSync(projectPath, "utf-8");
+      return JSON.parse(content) as T;
+    }
+
+    // 2. Fallback a directorio local de Windows (desarrollo local)
+    const localPath = path.join(LOCAL_STATE_DIR, filename);
+    if (fs.existsSync(localPath)) {
+      const content = fs.readFileSync(localPath, "utf-8");
       return JSON.parse(content) as T;
     }
   } catch (err) {
