@@ -14,6 +14,7 @@ import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
 import { canEditActivity, scheduleAtDrop, isDirection } from '@/services/activityPermissions';
 import { CreateActivityModal } from './CreateActivityModal';
+import { CalendarDetailPanel } from './CalendarDetailPanel';
 interface CalendarHostProps {
   currentUser: string;
   activities: NotionCalendarActivity[];
@@ -69,6 +70,8 @@ export function CalendarHost({
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     setActivitiesList(initialActivities);
@@ -92,6 +95,7 @@ export function CalendarHost({
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar la actividad.');
       setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
+      setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...updates } : prev);
       onRefresh?.();
     } catch (error) { setError(error instanceof Error ? error.message : 'Error de conexión'); }
     finally { pending.current.delete(pageId); }
@@ -176,83 +180,100 @@ export function CalendarHost({
         onOpenStandaloneWindow={onOpenStandaloneWindow}
       />
 
-      <div className="flex-1 flex overflow-auto scrollbar-thin relative select-none">
-        {/* Sticky Left Time Rail */}
-        <div
-          className="w-16 bg-[#0F141A] border-r border-[#26323E] flex-shrink-0 sticky left-0 z-45"
-          style={{ height: `${canvasHeight + 56}px` }}
-        >
-          <div className="h-14 border-b border-[#26323E] flex items-center justify-center text-[10px] font-mono text-[#64748B]">
-            HORA
+      <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex overflow-auto scrollbar-thin relative select-none">
+          {/* Sticky Left Time Rail */}
+          <div
+            className="w-16 bg-[#0F141A] border-r border-[#26323E] flex-shrink-0 sticky left-0 z-45"
+            style={{ height: `${canvasHeight + 56}px` }}
+          >
+            <div className="h-14 border-b border-[#26323E] flex items-center justify-center text-[10px] font-mono text-[#64748B]">
+              HORA
+            </div>
+            <div className="relative" style={{ height: `${canvasHeight}px` }}>
+              {hoursList.map((hour, idx) => (
+                <div
+                  key={hour}
+                  style={{ top: `${idx * pixelsPerHour}px` }}
+                  className="absolute w-full text-right pr-2 text-[10px] font-mono text-[#64748B] -translate-y-2"
+                >
+                  {hour}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="relative" style={{ height: `${canvasHeight}px` }}>
-            {hoursList.map((hour, idx) => (
-              <div
-                key={hour}
-                style={{ top: `${idx * pixelsPerHour}px` }}
-                className="absolute w-full text-right pr-2 text-[10px] font-mono text-[#64748B] -translate-y-2"
-              >
-                {hour}
+
+          {/* Collaborators Columns - Fluid and Auto-expanding */}
+          <div className="flex-1 flex min-w-fit">
+            {visiblePeople.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[#64748B]">
+                <p className="text-sm font-medium text-[#94A3B8]">No hay colaboradores visibles en el calendario</p>
+                <p className="text-xs text-[#64748B] mt-1">Haz clic en el selector para activar columnas</p>
+                <button
+                  onClick={() => setShowPeoplePicker(true)}
+                  className="mt-3 px-3 py-1.5 rounded bg-[#131A22] hover:bg-[#18212B] text-[#38BDF8] border border-[#223848] text-xs font-medium"
+                >
+                  Configurar colaboradores
+                </button>
               </div>
-            ))}
+            ) : (
+              visiblePeople.map((person) => {
+                const personActivities = activitiesByPerson[person] || [];
+                const positioned = computeActivityOverlaps(personActivities);
+                return (
+                  <div
+                    key={person}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDropOnColumn(e, person)}
+                    className="flex-1 min-w-[200px] border-r border-[#26323E] flex flex-col"
+                    style={{ height: `${canvasHeight + 56}px` }}
+                  >
+                    <CalendarColHeader
+                      personName={person}
+                      activityCount={personActivities.length}
+                      onSelectPerson={(p) => setSelectedPersonPreview(p)}
+                    />
+                    <div className="relative flex-1 bg-[#080B0F]" style={{ height: `${canvasHeight}px` }}>
+                      {hoursList.map((_, idx) => (
+                        <div
+                          key={idx}
+                          style={{ top: `${idx * pixelsPerHour}px` }}
+                          className="absolute w-full h-px bg-[#161F2B]"
+                        />
+                      ))}
+                      {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
+                        <ActivityCard
+                          key={act.pageId || idx}
+                          activity={act}
+                          currentUser={currentUser}
+                          pixelsPerHour={pixelsPerHour}
+                          overlapIndex={overlapIndex}
+                          overlapTotal={overlapTotal}
+                          isSelected={selectedActivity?.pageId === act.pageId && isDetailOpen}
+                          onSelectActivity={(selected) => {
+                            setSelectedActivity(selected);
+                            setIsDetailOpen(true);
+                          }}
+                          onUpdateActivity={handleUpdateActivity}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Collaborators Columns - Fluid and Auto-expanding */}
-        <div className="flex-1 flex min-w-fit">
-          {visiblePeople.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[#64748B]">
-              <p className="text-sm font-medium text-[#94A3B8]">No hay colaboradores visibles en el calendario</p>
-              <p className="text-xs text-[#64748B] mt-1">Haz clic en el selector para activar columnas</p>
-              <button
-                onClick={() => setShowPeoplePicker(true)}
-                className="mt-3 px-3 py-1.5 rounded bg-[#131A22] hover:bg-[#18212B] text-[#38BDF8] border border-[#223848] text-xs font-medium"
-              >
-                Configurar colaboradores
-              </button>
-            </div>
-          ) : (
-            visiblePeople.map((person) => {
-              const personActivities = activitiesByPerson[person] || [];
-              const positioned = computeActivityOverlaps(personActivities);
-              return (
-                <div
-                  key={person}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDropOnColumn(e, person)}
-                  className="flex-1 min-w-[200px] border-r border-[#26323E] flex flex-col"
-                  style={{ height: `${canvasHeight + 56}px` }}
-                >
-                  <CalendarColHeader
-                    personName={person}
-                    activityCount={personActivities.length}
-                    onSelectPerson={(p) => setSelectedPersonPreview(p)}
-                  />
-                  <div className="relative flex-1 bg-[#080B0F]" style={{ height: `${canvasHeight}px` }}>
-                    {hoursList.map((_, idx) => (
-                      <div
-                        key={idx}
-                        style={{ top: `${idx * pixelsPerHour}px` }}
-                        className="absolute w-full h-px bg-[#161F2B]"
-                      />
-                    ))}
-                    {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
-                      <ActivityCard
-                        key={act.pageId || idx}
-                        activity={act}
-                        currentUser={currentUser}
-                        pixelsPerHour={pixelsPerHour}
-                        overlapIndex={overlapIndex}
-                        overlapTotal={overlapTotal}
-                        onUpdateActivity={handleUpdateActivity}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+        {/* Panel Lateral de Detalle y Checklist (WPF Parity) */}
+        {selectedActivity && isDetailOpen && (
+          <CalendarDetailPanel
+            activity={selectedActivity}
+            currentUser={currentUser}
+            onClose={() => setIsDetailOpen(false)}
+            onActivityUpdated={(updates) => handleUpdateActivity(selectedActivity.pageId, updates)}
+          />
+        )}
       </div>
 
       {showPeoplePicker && (

@@ -1455,6 +1455,70 @@ export async function POST(req: NextRequest) {
       } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
     }
 
+    if (action === 'get-checklist') {
+      const input = payload || body;
+      const pageId = input.pageId || input.id;
+      const settings = getSettings();
+      if (!pageId) return NextResponse.json({ error: 'Falta pageId' }, { status: 400 });
+      const cleanId = cleanPageId(pageId);
+      const items: any[] = [];
+      if (settings.notionToken) {
+        try {
+          const res = await fetch(`https://api.notion.com/v1/blocks/${cleanId}/children?page_size=100`, {
+            headers: {
+              Authorization: `Bearer ${settings.notionToken.trim()}`,
+              'Notion-Version': '2022-06-28',
+            },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            for (const block of data.results || []) {
+              if (block.type === 'to_do') {
+                const plainText = (block.to_do?.rich_text || []).map((t: any) => t.plain_text || '').join('');
+                items.push({
+                  id: block.id,
+                  blockId: block.id,
+                  text: plainText || 'Tarea sin texto',
+                  isChecked: !!block.to_do?.checked,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Error fetching Notion checklist:', err);
+        }
+      }
+      return NextResponse.json({ success: true, items });
+    }
+
+    if (action === 'toggle-checklist') {
+      const input = payload || body;
+      const blockId = input.blockId || input.id;
+      const isChecked = !!input.checked;
+      const settings = getSettings();
+      if (!blockId) return NextResponse.json({ error: 'Falta blockId' }, { status: 400 });
+      if (settings.notionToken && !String(blockId).startsWith('todo-')) {
+        try {
+          await fetch(`https://api.notion.com/v1/blocks/${cleanPageId(blockId)}`, {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${settings.notionToken.trim()}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to_do: { checked: isChecked },
+            }),
+            signal: AbortSignal.timeout(15000),
+          });
+        } catch (err) {
+          console.warn('Error toggling Notion checklist:', err);
+        }
+      }
+      return NextResponse.json({ success: true, blockId, checked: isChecked });
+    }
+
     if (action === "rename-item") {
       const { id, source, oldName, newName, path: itemPath } = payload || {};
       if (!newName || !newName.trim()) {
