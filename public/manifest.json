@@ -1,0 +1,27 @@
+{
+  "name": "ANFETA - Productividad Ejecutiva",
+  "short_name": "ANFETA",
+  "description": "Asistente de productividad ejecutiva, buscador avanzado y gestión de proyectos para Windows",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080B0F",
+  "theme_color": "#00A8FF",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/anfeta-logo.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo-150.png",
+      "sizes": "150x150",
+      "type": "image/png"
+    }
+  ]
+}

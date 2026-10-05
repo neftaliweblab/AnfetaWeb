@@ -1,69 +1,554 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { TopBar } from "@/components/TopBar";
+import { ResultsViewHost } from "@/components/ResultsViewHost/ResultsViewHost";
+import { CalendarHost } from "@/components/CalendarHost/CalendarHost";
+import { DailyProgressPanel } from "@/components/DailyProgressPanel/DailyProgressPanel";
+import { MessagesHost } from "@/components/MessagesHost/MessagesHost";
+import { RemindersCalendarHost } from "@/components/RemindersCalendarHost/RemindersCalendarHost";
+import { SettingsModal } from "@/components/SettingsModal/SettingsModal";
+import { StatusBar } from "@/components/StatusBar";
+import {
+  ActiveHostView,
+  SearchResultRow,
+  NotionCalendarActivity,
+  PendingTaskItem,
+  ActiveProjectItem,
+} from "@/types/anfeta";
+import { parseAdvancedQuery, evaluateQueryAST, matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
+import { simulateDailyAutomation } from "@/services/automationRobot";
+import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
+
+export default function AnfetaApp() {
+  const [activeView, setActiveView] = useState<ActiveHostView>("results");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentUser, setCurrentUser] = useState("jjohn");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Data states
+  const [searchIndex, setSearchIndex] = useState<SearchResultRow[]>([]);
+  const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [currentDate, setCurrentDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [pendingTasks, setPendingTasks] = useState<PendingTaskItem[]>([]);
+  const [automationReport, setAutomationReport] = useState<any>(null);
+
+  // Load local data from API route
+  useEffect(() => {
+    async function loadInitialData() {
+      try {
+        // Search index
+        const idxRes = await fetch("/api/data?type=search-index");
+        if (idxRes.ok) {
+          const idxData = await idxRes.json();
+          if (idxData.items) setSearchIndex(idxData.items);
+        }
+
+        // Calendar dates and today's activities
+        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        if (calRes.ok) {
+          const calData = await calRes.json();
+          if (calData.activities) setCalendarActivities(calData.activities);
+          if (calData.availableDates?.length) {
+            setAvailableDates(calData.availableDates);
+            // Default to most recent date if today is empty
+            if (calData.activities.length === 0 && calData.availableDates.length > 0) {
+              const latestDate = calData.availableDates[calData.availableDates.length - 1];
+              setCurrentDate(latestDate);
+            }
+          }
+        }
+
+        // Daily automation report
+        const repRes = await fetch("/api/data?type=daily-report");
+        if (repRes.ok) {
+          const repData = await repRes.json();
+          setAutomationReport(repData);
+        }
+
+        // Pending tasks (manuales del usuario)
+        try {
+          const localSaved = localStorage.getItem("anfeta_pending_tasks");
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setPendingTasks(parsed);
+            }
+          }
+        } catch {}
+
+        const penRes = await fetch("/api/data?type=pendientes");
+        if (penRes.ok) {
+          const penData = await penRes.json();
+          if (Array.isArray(penData.items) && penData.items.length > 0) {
+            setPendingTasks(penData.items);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading initial data:", err);
+      }
+    }
+    loadInitialData();
+  }, []);
+
+  // Fetch activities when date changes
+  useEffect(() => {
+    async function fetchCalendarForDate() {
+      try {
+        const res = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.activities) setCalendarActivities(data.activities);
+        }
+      } catch (err) {
+        console.error("Error fetching calendar:", err);
+      }
+    }
+    fetchCalendarForDate();
+  }, [currentDate]);
+
+  // Global hotkeys (Ctrl+Alt+B, Ctrl+Shift+K, Ctrl+Shift+J)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.altKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        setActiveView("results");
+        const el = document.getElementById("anfeta-search-input") as HTMLInputElement;
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      } else if (e.ctrlKey && e.shiftKey && (e.key === "K" || e.key === "k")) {
+        e.preventDefault();
+        setActiveView("calendar");
+      } else if (e.ctrlKey && e.shiftKey && (e.key === "J" || e.key === "j")) {
+        e.preventDefault();
+        setActiveView("dailyProgress");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario
+  useEffect(() => {
+    const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
+      if (msg.sourceWindow === "calendar") {
+        if (msg.type === "SYNC_QUERY" && typeof msg.query === "string") {
+          setSearchQuery(msg.query);
+        } else if (msg.type === "SYNC_DATE" && msg.date) {
+          setCurrentDate(msg.date);
+        }
+      } else if (msg.type === "CALENDAR_STANDALONE_READY") {
+        // Enviar estado actual a la ventana de calendario que acaba de abrirse
+        anfetaSync.broadcast({
+          type: "SYNC_QUERY",
+          query: searchQuery,
+          date: currentDate,
+          sourceWindow: "main",
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [searchQuery, currentDate]);
+
+  const handleSearchChange = useCallback((newQuery: string) => {
+    setSearchQuery(newQuery);
+    anfetaSync.broadcast({
+      type: "SYNC_QUERY",
+      query: newQuery,
+      sourceWindow: "main",
+    });
+  }, []);
+
+  const handleSelectDate = useCallback((newDate: string) => {
+    setCurrentDate(newDate);
+    anfetaSync.broadcast({
+      type: "SYNC_DATE",
+      date: newDate,
+      sourceWindow: "main",
+    });
+  }, []);
+
+  const handleOpenStandaloneCalendar = useCallback(() => {
+    const url = `/calendar?standalone=true&q=${encodeURIComponent(searchQuery)}&date=${encodeURIComponent(currentDate)}`;
+    window.open(url, "AnfetaCalendarStandalone", "width=1400,height=900,resizable=yes");
+  }, [searchQuery, currentDate]);
+
+  // Compute active projects today strictly from calendar (1:1 ANFETA WinUI)
+  const activeProjects: ActiveProjectItem[] = useMemo(() => {
+    const projectMap: Record<
+      string,
+      { count: number; activities: { title: string; rawTitle?: string; type: string; pageUrl?: string; activity?: any }[] }
+    > = {};
+
+    const domainPattern =
+      /(?<![\w@])(?:https?:\/\/)?(?:www\.)?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:com\.mx|org\.mx|gob\.mx|edu\.mx|net\.mx|com|mx|org|net|io|co|app|dev|vip))(?=$|[/:?#\s)\]}>.,;!])/i;
+
+    const isPlaceholderDomain = (d: string) => {
+      if (!d) return true;
+      const clean = d.trim().toLowerCase();
+      return (
+        [
+          "dominio.com",
+          "dominio.com.mx",
+          "dominio.mx",
+          "dominio.org",
+          "dominio.net",
+          "ejemplo.com",
+          "ejemplo.com.mx",
+          "ejemplo.mx",
+          "example.com",
+          "example.org",
+          "example.net",
+          "tudominio.com",
+          "midominio.com",
+          "midominio.com.mx",
+          "general",
+          "no content",
+        ].includes(clean) || clean.includes("sin programas")
+      );
+    };
+
+    const cleanProjectDomain = (rawDomain: string): { domain: string; detectedType: string } => {
+      if (!rawDomain) return { domain: "", detectedType: "" };
+      let d = rawDomain.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+      if (d.startsWith("tzp.")) d = d.slice(4);
+      else if (d.startsWith("tzs.")) d = d.slice(4);
+
+      let detectedType = "";
+      const prefixes = [
+        { prefix: "ads.", area: "ADS" },
+        { prefix: "ad.", area: "ADS" },
+        { prefix: "aads.", area: "ADS" },
+        { prefix: "seo.", area: "SEO" },
+        { prefix: "sseo.", area: "SEO" },
+        { prefix: "webs.", area: "WEB" },
+        { prefix: "web.", area: "WEB" },
+        { prefix: "wwebs.", area: "WEB" },
+        { prefix: "maps.", area: "MAPS" },
+        { prefix: "mmaps.", area: "MAPS" },
+        { prefix: "app.", area: "APLICACION" },
+        { prefix: "apli.", area: "APLICACION" },
+        { prefix: "aapli.", area: "APLICACION" },
+        { prefix: "software.", area: "PROGRAMAS" },
+        { prefix: "prog.", area: "PROGRAMAS" },
+        { prefix: "pprog.", area: "PROGRAMAS" },
+        { prefix: "coti.", area: "COTIZACION" },
+        { prefix: "ccoti.", area: "COTIZACION" },
+        { prefix: "redes.", area: "REDES" },
+        { prefix: "rrede.", area: "REDES" },
+        { prefix: "bibl.", area: "BIBLIOTECA" },
+        { prefix: "bbibl.", area: "BIBLIOTECA" },
+      ];
+
+      for (const p of prefixes) {
+        if (d.startsWith(p.prefix)) {
+          detectedType = p.area;
+          d = d.slice(p.prefix.length);
+          break;
+        }
+      }
+
+      return { domain: d, detectedType };
+    };
+
+    const detectAreaFromTitle = (title: string): string => {
+      const t = (title || "").toLowerCase();
+      if (t.includes("seo") || t.includes("sseo")) return "SEO";
+      if (t.includes("ads") || t.includes("aads")) return "ADS";
+      if (t.includes("web") || t.includes("wweb")) return "WEB";
+      if (t.includes("coti") || t.includes("cotiz")) return "COTI";
+      if (t.includes("map") || t.includes("mmap")) return "MAPS";
+      if (t.includes("red") || t.includes("rred") || t.includes("facebook") || t.includes("instagram")) return "REDES";
+      if (t.includes("app") || t.includes("apli") || t.includes("aapli")) return "APP";
+      if (t.includes("prog") || t.includes("pprog")) return "PROG";
+      if (t.includes("bibl") || t.includes("bbibl")) return "BIBL";
+      return "ACT";
+    };
+
+    const getCompactTitle = (title: string, domain: string): string => {
+      if (!title) return "";
+      let clean = title;
+      if (domain) {
+        const escapedDomain = domain.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+        clean = clean.replace(new RegExp("(?:[a-z0-9_-]+\\.)*" + escapedDomain, "gi"), "").trim();
+      }
+      clean = clean.replace(/(?:a?prtuz|sprtuz|rtuz|z)REVISION/gi, "").trim();
+      clean = clean.replace(/\d*-?\[[^\]]+\]/gi, "").trim();
+      clean = clean.replace(/\b(?:tzp|tzs|ads|aads|seo|sseo|webs?|wwebs|maps?|mmaps|app|apli|aapli|prog|pprog|coti|redes)\.\s*/gi, "").trim();
+      clean = clean.replace(/^[\s\-_:.]+|[\s\-_:.]+$/g, "").replace(/\s+/g, " ").trim();
+      return clean || title;
+    };
+
+    // 1. Process ONLY calendar activities for the selected date
+    calendarActivities.forEach((act) => {
+      if (act.isReviewMirror) return;
+
+      const title = act?.title || (act as any)?.Title || "";
+      const rawDomainCandidate = act?.domain || (act as any)?.ParsedDomain || "";
+      const pageUrl = act?.pageUrl || (act as any)?.PageUrl || "";
+
+      let rawDomain = "";
+      const matchDomain = rawDomainCandidate.match(domainPattern);
+      const matchTitle = title.match(domainPattern);
+
+      if (matchDomain) {
+        rawDomain = matchDomain[1];
+      } else if (matchTitle) {
+        rawDomain = matchTitle[1];
+      }
+
+      if (!rawDomain) return;
+
+      const { domain, detectedType } = cleanProjectDomain(rawDomain);
+      if (isPlaceholderDomain(domain)) return;
+
+      const area = detectedType && detectedType !== "ACT" ? detectedType : detectAreaFromTitle(title);
+      const compactTitle = getCompactTitle(title, domain);
+
+      if (!projectMap[domain]) {
+        projectMap[domain] = { count: 0, activities: [] };
+      }
+      projectMap[domain].count += 1;
+      projectMap[domain].activities.push({
+        title: compactTitle,
+        rawTitle: title,
+        type: area,
+        pageUrl,
+        activity: act,
+      });
+    });
+
+    return Object.entries(projectMap)
+      .sort((a, b) => a[0].localeCompare(b[0], "es", { sensitivity: "base" }))
+      .map(([domain, data]) => ({
+        domain,
+        count: data.count,
+        activities: data.activities,
+      }));
+  }, [calendarActivities]);
+
+  // AST parsed query
+  const queryAst = useMemo(() => {
+    return parseAdvancedQuery(searchQuery);
+  }, [searchQuery]);
+
+  const searchFilter = useCallback(
+    (item: SearchResultRow) => {
+      return matchesFlexibleOrQuotedQuery(item, searchQuery);
+    },
+    [searchQuery]
+  );
+
+  // Pending tasks handlers
+  // Persistent Pending tasks handlers (manuales del usuario)
+  const persistPendingTasks = useCallback((tasks: PendingTaskItem[]) => {
+    try {
+      localStorage.setItem("anfeta_pending_tasks", JSON.stringify(tasks));
+      fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save-pendientes", payload: tasks }),
+      }).catch((e) => console.warn("Error saving pendientes:", e));
+    } catch (e) {
+      console.warn("Error persisting pendientes:", e);
+    }
+  }, []);
+
+  const handleTogglePendingTask = useCallback(
+    (id: string) => {
+      setPendingTasks((prev) => {
+        const updated = prev.map((t) => (t.id === id ? { ...t, isCompleted: !t.isCompleted } : t));
+        persistPendingTasks(updated);
+        return updated;
+      });
+    },
+    [persistPendingTasks]
+  );
+
+  const handleAddPendingTask = useCallback(
+    (newTask: Omit<PendingTaskItem, "id">) => {
+      const item: PendingTaskItem = {
+        ...newTask,
+        id: `task_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      };
+      setPendingTasks((prev) => {
+        const updated = [item, ...prev];
+        persistPendingTasks(updated);
+        return updated;
+      });
+    },
+    [persistPendingTasks]
+  );
+
+  const handleEditPendingTask = useCallback(
+    (id: string, updatedData: Partial<PendingTaskItem>) => {
+      setPendingTasks((prev) => {
+        const updated = prev.map((t) => (t.id === id ? { ...t, ...updatedData } : t));
+        persistPendingTasks(updated);
+        return updated;
+      });
+    },
+    [persistPendingTasks]
+  );
+
+  const handleDeletePendingTask = useCallback(
+    (id: string) => {
+      setPendingTasks((prev) => {
+        const updated = prev.filter((t) => t.id !== id);
+        persistPendingTasks(updated);
+        return updated;
+      });
+    },
+    [persistPendingTasks]
+  );
+
+  const handleDeleteAllPendingTasks = useCallback(() => {
+    setPendingTasks([]);
+    persistPendingTasks([]);
+  }, [persistPendingTasks]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
+      {/* Top Bar with Navigation and Global Search */}
+      <TopBar
+        activeView={activeView}
+        onSelectView={setActiveView}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        onClearSearch={() => handleSearchChange("")}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}
+        searchIndex={searchIndex}
+        onTriggerAutomation={() => {
+          const rep = simulateDailyAutomation({ [currentDate]: calendarActivities }, currentDate);
+          setAutomationReport(rep);
+          alert(`Robot 05:00 ejecutado: ${rep.moved} tareas movidas a la jornada de hoy.`);
+        }}
+      />
+
+      {/* Multi-Host Container (0ms latency, persistent in memory) */}
+      <main className="flex-1 relative overflow-hidden">
+        {/* Layer 1: ResultsViewHost (Search & Files) */}
+        <div
+          className={`absolute inset-0 z-10 transition-opacity ${
+            activeView === "results" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <ResultsViewHost
+            items={searchIndex}
+            pendingTasks={pendingTasks}
+            activeProjects={activeProjects}
+            onTogglePendingTask={handleTogglePendingTask}
+            onAddPendingTask={handleAddPendingTask}
+            onEditPendingTask={handleEditPendingTask}
+            onDeletePendingTask={handleDeletePendingTask}
+            onDeleteAllPendingTasks={handleDeleteAllPendingTasks}
+            searchFilter={searchFilter}
+            onSelectDomain={(domain) => handleSearchChange(domain)}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onToggleCalendarView={() => setActiveView((prev) => (prev === "calendar" ? "results" : "calendar"))}
+            isCalendarActive={activeView === "calendar"}
+            onOpenStandaloneCalendar={handleOpenStandaloneCalendar}
+            onToggleMessagesView={() => setActiveView((prev) => (prev === "messages" ? "results" : "messages"))}
+            isMessagesActive={activeView === "messages"}
+            messagesCount={0}
+            onToggleRemindersView={() => setActiveView((prev) => (prev === "reminders" ? "results" : "reminders"))}
+            isRemindersActive={activeView === "reminders"}
+            remindersCount={0}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Layer 2: CalendarHost (Timeline Canvas) */}
+        <div
+          className={`absolute inset-0 z-20 transition-opacity ${
+            activeView === "calendar" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <CalendarHost
+            activities={calendarActivities}
+            currentDate={currentDate}
+            onSelectDate={handleSelectDate}
+            availableDates={availableDates}
+            onBackToSearch={() => setActiveView("results")}
+            automationReport={automationReport}
+            searchFilterQuery={searchQuery}
+            onClearSearchFilter={() => handleSearchChange("")}
+            onOpenStandaloneWindow={handleOpenStandaloneCalendar}
+            onRunAutomation={() => {
+              const rep = simulateDailyAutomation({ [currentDate]: calendarActivities }, currentDate);
+              setAutomationReport(rep);
+              alert(`Robot 05:00 ejecutado: ${rep.moved} tareas movidas a la jornada de hoy.`);
+            }}
+            onOpenDailyProgress={() => setActiveView("dailyProgress")}
+            onRefresh={async () => {
+              try {
+                const res = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.activities) setCalendarActivities(data.activities);
+                }
+              } catch (e) {
+                console.error("Error recargando calendario:", e);
+              }
+            }}
+          />
+        </div>
+
+        {/* Layer 3: DailyProgressPanel (KPIs & Lagging) */}
+        <div
+          className={`absolute inset-0 z-30 transition-opacity ${
+            activeView === "dailyProgress" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <DailyProgressPanel
+            activities={calendarActivities}
+            currentDate={currentDate}
+            automationReport={automationReport}
+          />
+        </div>
+
+        {/* Layer 4: MessagesHost (Notes & Chat) */}
+        <div
+          className={`absolute inset-0 z-40 transition-opacity ${
+            activeView === "messages" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <MessagesHost />
+        </div>
+
+        {/* Layer 5: RemindersCalendarHost (24h Canvas) */}
+        <div
+          className={`absolute inset-0 z-45 transition-opacity ${
+            activeView === "reminders" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <RemindersCalendarHost />
         </div>
       </main>
+
+      {/* Persistent Bottom Status Bar */}
+      <StatusBar
+        indexedCount={searchIndex.length}
+        currentUser={currentUser}
+        lastSyncTime="En línea (0ms)"
+      />
+
+      {/* Settings Dialog */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentUser={currentUser}
+        onSaveCurrentUser={setCurrentUser}
+      />
     </div>
   );
 }

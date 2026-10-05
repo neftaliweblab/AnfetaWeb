@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --anfeta-bg-start: #080B0F;
+  --anfeta-bg-mid: #0A1118;
+  --anfeta-bg-end: #081019;
+  
+  --anfeta-surface-base: #0F141A;
+  --anfeta-surface-elevated: #131A22;
+  --anfeta-surface-soft: #18212B;
+  
+  --anfeta-border: #26323E;
+  --anfeta-border-panel: #2A3E50;
+  
+  --anfeta-blue: #00A8FF;
+  --anfeta-neon: #1FB6FF;
+  --anfeta-halo: #38BDF8;
+  
+  --anfeta-danger: #FB7185;
+  --anfeta-danger-bg: #2B1419;
+  
+  --anfeta-success: #4ADE80;
+  --anfeta-success-bg: #10251B;
+  
+  --anfeta-review: #67E8F9;
+  --anfeta-finalized: #86EFAC;
+  --anfeta-purple: #A855F7;
+  
+  --background: #080B0F;
+  --foreground: #F1F5F9;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(135deg, #080B0F 0%, #0A1118 55%, #081019 100%);
+  color: #F1F5F9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  user-select: none;
+}
+
+:root, html, body {
+  color-scheme: dark;
+}
+
+/* Custom Scrollbars Global */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #243549 #0A0F16;
+}
+
+*::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+*::-webkit-scrollbar-track {
+  background: #090E15 !important;
+  border-radius: 4px !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #1E2E40 !important;
+  border-radius: 9999px !important;
+  border: 1px solid #14202E !important;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #38BDF8 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4) !important;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Helper Class scrollbar-thin */
+.scrollbar-thin {
+  scrollbar-width: thin !important;
+  scrollbar-color: #243549 #0A0F16 !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #090E15 !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #1E2E40 !important;
+  border-radius: 9999px !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #38BDF8 !important;
+}
+
+/* Glass & Neon effects */
+.anfeta-neon-glow {
+  box-shadow: 0 0 15px rgba(31, 182, 255, 0.25);
+}
+
+.anfeta-neon-glow-red {
+  box-shadow: 0 0 15px rgba(251, 113, 133, 0.3);
+}
+
+.anfeta-card-interactive {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.anfeta-card-interactive:hover {
+  border-color: #38BDF8;
+  transform: translateY(-1px);
 }
