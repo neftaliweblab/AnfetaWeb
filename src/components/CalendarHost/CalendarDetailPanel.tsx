@@ -42,6 +42,19 @@ export function CalendarDetailPanel({
   const status = activity.status || (activity as any)?.Status || "Pendiente";
   const person = activity.person || (activity as any)?.Person || "Sin asignar";
 
+  // Limpiar título de prefijos y tecnicismos repetitivos
+  const cleanTitle = React.useMemo(() => {
+    let t = title || "";
+    t = t.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINADO|TERMINADA|PENDIENTE)\s*/i, "");
+    t = t.replace(/^(?:aads|webs|seo|maps)\s+\d+[-–]\s*/i, "");
+    t = t.replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, "");
+    t = t.replace(/\[\d+[A-Z]+\]\s*/gi, "");
+    t = t.replace(/^\d+(?:\.\d+)?\s+/g, "");
+    t = t.replace(/\s+00\s*$/g, "");
+    t = t.trim();
+    return t || title;
+  }, [title]);
+
   const userCanReview = isReviewer(currentUser);
 
   // Actividades del mismo dominio (1:1 paridad con ANFETA WPF Actividades del Proyecto)
@@ -102,6 +115,7 @@ export function CalendarDetailPanel({
           const data = await res.json();
           if (Array.isArray(data.items) && data.items.length > 0) {
             setItems(data.items);
+            setLoading(false);
             return;
           }
         }
@@ -126,8 +140,8 @@ export function CalendarDetailPanel({
         } else {
           setItems([]);
         }
+        setLoading(false);
       }
-      if (!cancelled) setLoading(false);
     }
 
     loadChecklist();
@@ -205,11 +219,16 @@ export function CalendarDetailPanel({
           </button>
         </div>
 
-        {/* Descripción / Título */}
+        {/* Descripción / Título Limpio */}
         <div>
           <h3 className="text-xs font-semibold text-slate-100 leading-snug break-words">
-            {title}
+            {cleanTitle}
           </h3>
+          {cleanTitle !== title && (
+            <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1 truncate font-mono">
+              {title}
+            </p>
+          )}
         </div>
 
         {/* Metadata Card */}
