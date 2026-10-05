@@ -16,8 +16,29 @@ export function computeActivityOverlaps(
   if (!activities || activities.length === 0) return [];
 
   const parsed = activities.map((act) => {
-    const s = act.start ? new Date(act.start).getTime() : 0;
-    const e = act.end ? new Date(act.end).getTime() : s + 3600000;
+    let s = 8 * 60;
+    let e = 9 * 60;
+
+    const sMatch = (act.start || "").match(/T(\d{2}):(\d{2})/);
+    if (sMatch) {
+      s = parseInt(sMatch[1], 10) * 60 + parseInt(sMatch[2], 10);
+    } else if (act.start) {
+      const d = new Date(act.start);
+      if (!isNaN(d.getTime())) s = d.getHours() * 60 + d.getMinutes();
+    }
+
+    const eMatch = (act.end || "").match(/T(\d{2}):(\d{2})/);
+    if (eMatch) {
+      e = parseInt(eMatch[1], 10) * 60 + parseInt(eMatch[2], 10);
+    } else if (act.end) {
+      const d = new Date(act.end);
+      if (!isNaN(d.getTime())) e = d.getHours() * 60 + d.getMinutes();
+    } else {
+      e = s + 60;
+    }
+
+    if (e <= s) e = s + 60;
+
     return {
       act,
       start: s,

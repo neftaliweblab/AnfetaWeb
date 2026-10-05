@@ -45,64 +45,123 @@ export function ActivityCard({
   const status = activity?.status || (activity as any)?.Status || "";
   const domain = activity?.domain || (activity as any)?.ParsedDomain || "DOMINIO";
 
-  // Calculate geometry
-  const startStr = activity?.start || (activity as any)?.Start;
-  const endStr = activity?.end || (activity as any)?.End;
-  const startDate = startStr ? new Date(startStr) : new Date();
-  const endDate = endStr ? new Date(endStr) : new Date(startDate.getTime() + 3600000);
+  // Parseo horario seguro y exacto (evita descuadre de zona horaria o UTC)
+  const startStr = activity?.start || (activity as any)?.Start || "";
+  const endStr = activity?.end || (activity as any)?.End || "";
 
-  const startHour = startDate.getHours() + startDate.getMinutes() / 60;
-  const endHour = endDate.getHours() + endDate.getMinutes() / 60;
-  const durationHours = Math.max(0.25, (endDate.getTime() - startDate.getTime()) / 3600000);
+  let startH = 8;
+  let startM = 0;
+  let endH = 9;
+  let endM = 0;
 
+  const startMatch = startStr.match(/T(\d{2}):(\d{2})/);
+  if (startMatch) {
+    startH = parseInt(startMatch[1], 10);
+    startM = parseInt(startMatch[2], 10);
+  } else if (startStr) {
+    const d = new Date(startStr);
+    if (!isNaN(d.getTime())) {
+      startH = d.getHours();
+      startM = d.getMinutes();
+    }
+  }
+
+  const endMatch = endStr.match(/T(\d{2}):(\d{2})/);
+  if (endMatch) {
+    endH = parseInt(endMatch[1], 10);
+    endM = parseInt(endMatch[2], 10);
+  } else if (endStr) {
+    const d = new Date(endStr);
+    if (!isNaN(d.getTime())) {
+      endH = d.getHours();
+      endM = d.getMinutes();
+    }
+  } else {
+    endH = startH + 1;
+    endM = startM;
+  }
+
+  const startMinute = startH * 60 + startM;
+  let endMinute = endH * 60 + endM;
+  if (endMinute <= startMinute) endMinute = startMinute + 60;
+
+  const durationMinutes = Math.max(15, endMinute - startMinute);
+  const durationHours = durationMinutes / 60;
   const hours = Math.floor(durationHours);
-  const minutes = Math.round((durationHours - hours) * 60);
+  const minutes = durationMinutes % 60;
   const durationFormatted = hours > 0 ? (minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`) : `${minutes}m`;
 
-  const top = Math.max(0, (startHour - 8) * pixelsPerHour);
-  const height = Math.max(28, durationHours * pixelsPerHour);
+  const top = Math.max(0, ((startMinute - 8 * 60) / 60) * pixelsPerHour);
+  const height = Math.max(34, (durationMinutes / 60) * pixelsPerHour);
 
-  // Styles
+  // Workflow, Letra Insignia y Estilos oficiales ANFETA
   const isUrgent = !!(activity?.isUrgent || title.includes("00"));
   const wf = workflowState(status, title);
   const isCompleted = wf === "completed";
   const isReview = wf === "review";
   const isSuspended = wf === "suspended";
 
+  // Badges y colores idénticos a ANFETA Desktop
+  let badgeLetter = "P";
+  let badgeBg = "#3B1E08"; // Marrón/Naranja oscuro
+  let badgeBorder = "#F59E0B";
+  let badgeText = "#FCD34D";
+  let cardBorder = "border-[#3B2D20]";
+  let cardBg = "bg-[#18181B]";
+
   let phaseLabel = "POR HACER";
-  let phaseColor = "#3B2D6B";
-  let phaseTextColor = "#C4B5FD";
-  let borderColor = "border-[#2A3E50]";
-  let bgColor = "bg-[#11161C]";
-  let accentColor = "#00A8FF";
+  let phaseColor = "#451A03";
+  let phaseTextColor = "#FDBA74";
 
   if (isUrgent) {
-    borderColor = "border-[#FB7185] shadow-[0_0_10px_rgba(251,113,133,0.3)]";
-    bgColor = "bg-[#2B1419]";
-    accentColor = "#FB7185";
+    badgeLetter = "!";
+    badgeBg = "#4C0519";
+    badgeBorder = "#FB7185";
+    badgeText = "#FECDD3";
+    cardBorder = "border-[#FB7185]/80 shadow-[0_0_12px_rgba(251,113,133,0.3)]";
+    cardBg = "bg-[#201015]";
+    phaseLabel = "00 URGENTE";
+    phaseColor = "#4C0519";
+    phaseTextColor = "#FECDD3";
   } else if (isCompleted) {
+    badgeLetter = "T";
+    badgeBg = "#064E3B";
+    badgeBorder = "#10B981";
+    badgeText = "#6EE7B7";
+    cardBorder = "border-[#10B981]/60";
+    cardBg = "bg-[#131C17]";
     phaseLabel = "TERMINADA";
     phaseColor = "#104E3E";
     phaseTextColor = "#5EEAD4";
-    borderColor = "border-[#4ADE80]/70";
-    bgColor = "bg-[#10251B]";
-    accentColor = "#4ADE80";
   } else if (isReview) {
+    badgeLetter = "R";
+    badgeBg = "#0C4A6E";
+    badgeBorder = "#38BDF8";
+    badgeText = "#7DD3FC";
+    cardBorder = "border-[#0284C7]/60";
+    cardBg = "bg-[#0E1724]";
     phaseLabel = "EN REVISIÓN";
     phaseColor = "#1B4764";
     phaseTextColor = "#7DD3FC";
-    borderColor = "border-[#0EA5E9]/70";
-    bgColor = "bg-[#0C2233]";
-    accentColor = "#38BDF8";
   } else if (isSuspended) {
+    badgeLetter = "S";
+    badgeBg = "#3B0764";
+    badgeBorder = "#C084FC";
+    badgeText = "#E9D5FF";
+    cardBorder = "border-[#9333EA]/60";
+    cardBg = "bg-[#1B1226]";
     phaseLabel = "SUSPENDIDA";
     phaseColor = "#4A3510";
     phaseTextColor = "#FDE047";
-    borderColor = "border-[#A855F7]/70";
-    bgColor = "bg-[#1F142B]";
-    accentColor = "#A855F7";
   } else {
-    phaseLabel = "PENDIENTE";
+    // Pendiente
+    badgeLetter = "P";
+    badgeBg = "#451A03";
+    badgeBorder = "#D97706";
+    badgeText = "#FDE68A";
+    cardBorder = "border-[#78350F]/60";
+    cardBg = "bg-[#1A1817]";
+    phaseLabel = "POR HACER";
     phaseColor = "#451A03";
     phaseTextColor = "#FDBA74";
   }
@@ -201,68 +260,84 @@ export function ActivityCard({
           width: `calc(${widthPct}% - 4px)`,
           left: `calc(${leftPct}% + 2px)`,
         }}
-        className={`absolute rounded border p-1.5 flex flex-col justify-between ${
+        className={`absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-        } transition-all select-none overflow-hidden ${bgColor} ${borderColor} ${
+        } transition-all select-none overflow-hidden ${cardBg} ${cardBorder} ${
           isSelected
-            ? "ring-2 ring-cyan-400 shadow-lg shadow-cyan-500/30 z-30"
-            : "hover:z-20"
+            ? "ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(56,189,248,0.4)] z-30"
+            : "hover:z-20 hover:border-slate-500 shadow-sm"
         }`}
       >
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1 overflow-hidden">
+        {/* Fila Superior: Badge P/R/T/S + Dominio + Overlap + Checklist Pill */}
+        <div className="flex items-center justify-between gap-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+            {/* Badge circular con inicial oficial (P, R, T, S) */}
+            <span
+              style={{ backgroundColor: badgeBg, borderColor: badgeBorder, color: badgeText }}
+              className="shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-black font-mono shadow-sm"
+              title={isCompleted ? "Terminada" : isReview ? "En Revisión" : isSuspended ? "Suspendida" : "Pendiente"}
+            >
+              {badgeLetter}
+            </span>
+
+            {/* Dominio en azul claro */}
+            <span className="font-mono text-[11px] font-semibold text-[#38BDF8] truncate tracking-tight">
+              {!editable && <span aria-label="Bloqueada" className="text-[10px]">🔒 </span>}
+              {domain}
+            </span>
+
+            {/* Indicador de colisión de horario */}
+            {overlapTotal > 1 && (
               <span
-                className="font-mono text-[9px] uppercase font-bold truncate block"
-                style={{ color: accentColor }}
+                className="shrink-0 px-1 py-0.2 rounded text-[8px] font-bold bg-[#3B0764] border border-[#C084FC] text-[#E9D5FF]"
+                title={`Empalme: ${overlapIndex + 1} de ${overlapTotal}`}
               >
-                {!editable && <span aria-label="Bloqueada">🔒 </span>}
-                {domain}
+                {overlapIndex + 1}/{overlapTotal}
               </span>
-              {overlapTotal > 1 && (
-                <span
-                  className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold bg-[#3B0764] border border-[#C084FC] text-[#E9D5FF]"
-                  title={`Empalme: ${overlapIndex + 1} de ${overlapTotal}`}
-                >
-                  {overlapIndex + 1}/{overlapTotal}
-                </span>
-              )}
-            </div>
-            <h5 className="text-[11px] font-medium text-[#F1F5F9] line-clamp-2 leading-tight mt-0.5">
-              {shortTitle}
-            </h5>
+            )}
           </div>
 
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPopup(!showPopup);
-            }}
-            className="p-0.5 text-[#94A3B8] hover:text-[#00A8FF] flex-shrink-0"
-            title="Ver checklist"
-          >
-            <Eye className="w-3 h-3" />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between text-[9px] font-mono text-[#64748B] pt-0.5">
-          <span
-            title={
-              startStr && endStr
-                ? `${startStr.slice(11, 16)} – ${endStr.slice(11, 16)}`
-                : startStr?.slice(11, 16)
-            }
-          >
-            {startStr?.slice(11, 16) || "08:00"}
-            {endStr ? ` – ${endStr.slice(11, 16)}` : ""}
-          </span>
-          {totalChecklist > 0 && (
-            <span className="flex items-center gap-0.5 text-[#4ADE80]">
-              <CheckSquare className="w-2.5 h-2.5" />
+          {/* Pastilla verde de checklist estilo WPF original: [0/0] */}
+          {totalChecklist > 0 ? (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPopup(!showPopup);
+              }}
+              className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#14532D] border border-[#22C55E]/50 text-[#86EFAC] hover:bg-[#166534] transition-colors cursor-pointer"
+              title={`Checklist: ${completedChecklist} de ${totalChecklist} completadas`}
+            >
               {completedChecklist}/{totalChecklist}
             </span>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPopup(!showPopup);
+              }}
+              className="p-0.5 text-slate-500 hover:text-[#38BDF8] shrink-0 opacity-40 hover:opacity-100 transition-opacity"
+              title="Ver checklist"
+            >
+              <Eye className="w-3 h-3" />
+            </button>
           )}
-          {isUrgent && <span className="text-[#FB7185] font-bold">URGENTE</span>}
+        </div>
+
+        {/* Título de la actividad legible */}
+        <div className="my-auto py-0.5 min-w-0">
+          <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
+            {shortTitle}
+          </h5>
+        </div>
+
+        {/* Fila Inferior: Horario + Duración (ej: 09:00 - 10:00 · 1H) */}
+        <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400 pt-0.5 border-t border-[#26262B]/50">
+          <span className="truncate">
+            {startMatch ? `${startMatch[1]}:${startMatch[2]}` : startStr.slice(11, 16) || "08:00"}
+            {endMatch ? ` - ${endMatch[1]}:${endMatch[2]}` : endStr ? ` - ${endStr.slice(11, 16)}` : ""}
+            <span className="text-slate-500 ml-1">· {durationFormatted.toUpperCase()}</span>
+          </span>
+          {isUrgent && <span className="text-[#FB7185] font-black text-[9px] tracking-wide">00 URGENTE</span>}
         </div>
       </div>
 

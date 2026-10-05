@@ -4,13 +4,20 @@ import { NotionCalendarActivity } from '@/types/anfeta';
 export function isDirection(user: string) {
   return user === '__all__' || user.toLowerCase() === 'jjohn';
 }
+
+export function isReviewer(user: string) {
+  const norm = normalizePerson(user);
+  const actor = user.trim().toLowerCase();
+  return isDirection(user) || norm === 'Genaro' || norm === 'John' || actor === 'ggena' || actor === 'jjohn';
+}
+
 export function isActivityLocked(activity: Partial<NotionCalendarActivity> & { IsAutomationLocked?: boolean }) {
   return !!(activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
 }
 export function canEditActivity(user: string, activity: Partial<NotionCalendarActivity>) {
   const actor = user.trim().toLowerCase();
   const knownActor = Object.entries(PERSON_ALIASES).some(([name, aliases]) => name.toLowerCase() === actor || aliases.includes(actor));
-  return !isActivityLocked(activity) && (isDirection(user) ||
+  return !isActivityLocked(activity) && (isDirection(user) || isReviewer(user) ||
     (knownActor && normalizePerson(user) === normalizePerson(activity.person || '')));
 }
 

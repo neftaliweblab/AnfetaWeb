@@ -461,6 +461,8 @@ export function CalendarHost({
           <CalendarDetailPanel
             activity={selectedActivity}
             currentUser={currentUser}
+            allActivities={activitiesList}
+            onSelectActivity={(act) => setSelectedActivity(act)}
             onClose={() => setIsDetailOpen(false)}
             onActivityUpdated={(updates) => handleUpdateActivity(selectedActivity.pageId, updates)}
           />
