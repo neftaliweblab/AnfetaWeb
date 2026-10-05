@@ -5,10 +5,19 @@
  */
 
 export interface AnfetaSyncMessage {
-  type: "SYNC_QUERY" | "SYNC_DATE" | "SYNC_SELECT_DOMAIN" | "CALENDAR_STANDALONE_READY";
+  type:
+    | "SYNC_QUERY"
+    | "SYNC_DATE"
+    | "SYNC_SELECT_DOMAIN"
+    | "CALENDAR_STANDALONE_READY"
+    | "ACTIVITY_UPDATED"
+    | "ACTIVITY_CREATED";
   query?: string;
   date?: string;
   domain?: string;
+  pageId?: string;
+  activity?: any;
+  updates?: any;
   sourceWindow?: "main" | "calendar";
   timestamp?: number;
 }

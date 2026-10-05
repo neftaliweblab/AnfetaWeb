@@ -8,6 +8,7 @@ import { DailyProgressPanel } from "@/components/DailyProgressPanel/DailyProgres
 import { MessagesHost } from "@/components/MessagesHost/MessagesHost";
 import { RemindersCalendarHost } from "@/components/RemindersCalendarHost/RemindersCalendarHost";
 import { SettingsModal } from "@/components/SettingsModal/SettingsModal";
+import { LoginModal } from "@/components/LoginModal/LoginModal";
 import { StatusBar } from "@/components/StatusBar";
 import {
   ActiveHostView,
@@ -21,9 +22,47 @@ import { simulateDailyAutomation } from "@/services/automationRobot";
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 export default function AnfetaApp() {
-  const [activeView, setActiveView] = useState<ActiveHostView>("results");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const auth = localStorage.getItem("anfeta_auth_session");
+      if (auth) {
+        const parsed = JSON.parse(auth);
+        return !!parsed.authenticated;
+      }
+    } catch {}
+    return false;
+  });
+
+  const [activeView, setActiveView] = useState<ActiveHostView>(() => {
+    if (typeof window === "undefined") return "results";
+    try {
+      const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
+      if (savedView && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(savedView)) {
+        return savedView;
+      }
+    } catch {}
+    return "results";
+  });
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentUser, setCurrentUser] = useState("nneft");
+  const [currentUser, setCurrentUser] = useState(() => {
+    if (typeof window === "undefined") return "nneft";
+    try {
+      const auth = localStorage.getItem("anfeta_auth_session");
+      if (auth) {
+        const parsed = JSON.parse(auth);
+        if (parsed.user) return parsed.user;
+      }
+      const saved = localStorage.getItem("anfeta_settings");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.currentUser) return parsed.currentUser;
+      }
+    } catch {}
+    return "nneft";
+  });
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Data states
@@ -184,10 +223,27 @@ export default function AnfetaApp() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario
+  // Persistir activeView en localStorage
+  const handleSelectView = useCallback((view: ActiveHostView) => {
+    setActiveView(view);
+    try {
+      localStorage.setItem("anfeta_active_view", view);
+    } catch {}
+  }, []);
+
+  // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario y actividades
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
-      if (msg.sourceWindow === "calendar") {
+      if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+        setCalendarActivities((prev) =>
+          prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
+        );
+      } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
+        setCalendarActivities((prev) => {
+          if (prev.some((a) => a.pageId === msg.activity.pageId)) return prev;
+          return [...prev, msg.activity];
+        });
+      } else if (msg.sourceWindow === "calendar") {
         if (msg.type === "SYNC_QUERY" && typeof msg.query === "string") {
           setSearchQuery(msg.query);
         } else if (msg.type === "SYNC_DATE" && msg.date) {
@@ -472,11 +528,18 @@ export default function AnfetaApp() {
       {/* Top Bar with Navigation and Global Search */}
       <TopBar
         activeView={activeView}
-        onSelectView={setActiveView}
+        onSelectView={handleSelectView}
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
         onClearSearch={() => handleSearchChange("")}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        currentUser={currentUser}
+        onLogout={() => {
+          try {
+            localStorage.removeItem("anfeta_auth_session");
+          } catch {}
+          setIsAuthenticated(false);
+        }}
         unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}
         searchIndex={searchIndex}
         onTriggerAutomation={() => {
@@ -608,6 +671,16 @@ export default function AnfetaApp() {
         currentUser={currentUser}
         onSaveCurrentUser={setCurrentUser}
       />
+
+      {/* Login Corporativo Modal */}
+      {!isAuthenticated && (
+        <LoginModal
+          onSuccess={(userTag) => {
+            setCurrentUser(userTag);
+            setIsAuthenticated(true);
+          }}
+        />
+      )}
     </div>
   );
 }

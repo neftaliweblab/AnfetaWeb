@@ -15,6 +15,7 @@ import { computeActivityOverlaps } from "@/utils/calendarLayout";
 import { canEditActivity, scheduleAtDrop, isDirection } from '@/services/activityPermissions';
 import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
+import { anfetaSync } from '@/lib/anfetaBroadcastSync';
 interface CalendarHostProps {
   currentUser: string;
   activities: NotionCalendarActivity[];
@@ -77,6 +78,26 @@ export function CalendarHost({
     setActivitiesList(initialActivities);
   }, [initialActivities]);
 
+  // Listener en tiempo real multi-ventana y multi-pestaña
+  useEffect(() => {
+    const unsubscribe = anfetaSync.subscribe((msg) => {
+      if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+        setActivitiesList((prev) =>
+          prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
+        );
+        setSelectedActivity((prev) =>
+          prev && prev.pageId === msg.pageId ? { ...prev, ...msg.updates } : prev
+        );
+      } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
+        setActivitiesList((prev) => {
+          if (prev.some((a) => a.pageId === msg.activity.pageId)) return prev;
+          return [...prev, msg.activity];
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const handleChangeZoom = (delta: number) => {
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
@@ -86,6 +107,18 @@ export function CalendarHost({
     if (!original || !canEditActivity(currentUser, original) || pending.current.has(pageId)) return;
     if (updates.person && normalizePerson(updates.person) !== normalizePerson(original.person) && !isDirection(currentUser)) return;
     pending.current.add(pageId); setError('');
+
+    // Actualización reactiva instantánea local
+    setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
+    setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...updates } : prev);
+
+    // Difusión instantánea en tiempo real
+    anfetaSync.broadcast({
+      type: "ACTIVITY_UPDATED",
+      pageId,
+      updates,
+    });
+
     try {
       const response = await fetch('/api/data', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -94,8 +127,6 @@ export function CalendarHost({
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar la actividad.');
-      setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
-      setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...updates } : prev);
       onRefresh?.();
     } catch (error) { setError(error instanceof Error ? error.message : 'Error de conexión'); }
     finally { pending.current.delete(pageId); }
@@ -252,6 +283,10 @@ export function CalendarHost({
           }}
           onCreated={(activity) => {
             setActivitiesList((prev) => [...prev, activity]);
+            anfetaSync.broadcast({
+              type: "ACTIVITY_CREATED",
+              activity,
+            });
             setShowCreate(false);
             setCreateSlotSeed(null);
             onRefresh?.();

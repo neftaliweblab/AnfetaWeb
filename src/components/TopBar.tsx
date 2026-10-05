@@ -11,6 +11,7 @@ import {
   X,
   Clock,
   Sparkles,
+  LogOut,
 } from "lucide-react";
 import { ActiveHostView } from "@/types/anfeta";
 import { SearchPredictiveFlyout } from "./ResultsViewHost/SearchPredictiveFlyout";
@@ -23,6 +24,8 @@ interface TopBarProps {
   onSearchChange: (q: string) => void;
   onClearSearch: () => void;
   onOpenSettings: () => void;
+  onLogout?: () => void;
+  currentUser?: string;
   unreadCount?: number;
   onTriggerAutomation?: () => void;
   searchIndex?: any[];
@@ -35,6 +38,8 @@ export function TopBar({
   onSearchChange,
   onClearSearch,
   onOpenSettings,
+  onLogout,
+  currentUser,
   unreadCount = 0,
   onTriggerAutomation,
   searchIndex = [],
@@ -244,6 +249,17 @@ export function TopBar({
         >
           <Settings className="w-4 h-4" />
         </button>
+
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title={currentUser ? `Cerrar sesión (${currentUser})` : "Cerrar sesión"}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 border border-rose-900/40 rounded transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden md:inline font-mono text-[11px]">{currentUser || "Salir"}</span>
+          </button>
+        )}
       </div>
     </header>
   );
