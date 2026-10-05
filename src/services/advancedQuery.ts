@@ -334,6 +334,7 @@ export function matchesFlexibleOrQuotedQuery(
     item.sourceName,
     item.source,
     item.assignedPerson,
+    ...(item.assignmentKeys || []),
   ]
     .filter(Boolean)
     .join(" ")
@@ -490,6 +491,30 @@ export function matchesFlexibleOrQuotedQuery(
             searchable.includes("[clientes") ||
             searchable.includes("[dominios") ||
             searchable.includes("[cobrar");
+        } else if (cleanSp === "nneft" || cleanSp === "nnetf" || cleanSp === "neftali" || cleanSp === "neft") {
+          has =
+            searchable.includes("neftali") ||
+            searchable.includes("nneft") ||
+            searchable.includes("nnetf") ||
+            searchable.includes("neft");
+        } else if (cleanSp === "jjohn" || cleanSp === "john") {
+          has = searchable.includes("john") || searchable.includes("jjohn");
+        } else if (cleanSp === "kkarl" || cleanSp === "karla" || cleanSp === "karl") {
+          has = searchable.includes("karla") || searchable.includes("kkarl") || searchable.includes("karl");
+        } else if (cleanSp === "bbria" || cleanSp === "brian") {
+          has = searchable.includes("brian") || searchable.includes("bbria");
+        } else if (cleanSp === "ggena" || cleanSp === "genaro") {
+          has = searchable.includes("genaro") || searchable.includes("ggena");
+        } else if (cleanSp === "iisai" || cleanSp === "isai" || cleanSp === "isaias" || cleanSp === "iisaia") {
+          has = searchable.includes("isaias") || searchable.includes("isai") || searchable.includes("iisai") || searchable.includes("iisaia");
+        } else if (cleanSp === "ssote" || cleanSp === "sotelo") {
+          has = searchable.includes("sotelo") || searchable.includes("ssote");
+        } else if (cleanSp === "aacal" || cleanSp === "acalli") {
+          has = searchable.includes("acalli") || searchable.includes("aacal");
+        } else if (cleanSp === "aandr" || cleanSp === "andrade") {
+          has = searchable.includes("andrade") || searchable.includes("aandr");
+        } else if (cleanSp === "eemma" || cleanSp === "eedua" || cleanSp === "emmanuel" || cleanSp === "eduardo") {
+          has = searchable.includes("emmanuel") || searchable.includes("eduardo") || searchable.includes("eemma") || searchable.includes("eedua");
         }
       }
 

@@ -36,26 +36,33 @@ export default function AnfetaApp() {
 
   // Load local data from API route
   useEffect(() => {
-    // 0. Cargar configuración persistida del usuario
+    let userToken = "";
     try {
       const savedSettings = localStorage.getItem("anfeta_settings");
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
         if (parsed.currentUser) setCurrentUser(parsed.currentUser);
+        if (parsed.notionToken) userToken = parsed.notionToken;
       }
     } catch {}
 
     async function loadInitialData() {
       try {
-        // Search index
-        const idxRes = await fetch("/api/data?type=search-index");
+        // Search index con token en vivo si está configurado
+        const idxUrl = `/api/data?type=search-index${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
+        const idxRes = await fetch(idxUrl, {
+          headers: userToken ? { "x-notion-token": userToken } : {},
+        });
         if (idxRes.ok) {
           const idxData = await idxRes.json();
           if (idxData.items) setSearchIndex(idxData.items);
         }
 
         // Calendar dates and today's activities
-        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        const calUrl = `/api/data?type=calendar&date=${currentDate}${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
+        const calRes = await fetch(calUrl, {
+          headers: userToken ? { "x-notion-token": userToken } : {},
+        });
         if (calRes.ok) {
           const calData = await calRes.json();
           if (calData.activities) setCalendarActivities(calData.activities);
@@ -502,6 +509,8 @@ export default function AnfetaApp() {
             onToggleRemindersView={() => setActiveView((prev) => (prev === "reminders" ? "results" : "reminders"))}
             isRemindersActive={activeView === "reminders"}
             remindersCount={0}
+            currentUser={currentUser}
+            onChangeCurrentUser={setCurrentUser}
           />
         </div>
 

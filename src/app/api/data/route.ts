@@ -424,7 +424,94 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ total: items.length, items });
     }
 
+    if (type === "users") {
+      const token = (req.headers.get("x-notion-token") || searchParams.get("token") || getSettings().notionToken || "").trim();
+      const defaultUsers = [
+        { code: "nneft", name: "Neftali", email: "nnetf@practicante.com" },
+        { code: "jjohn", name: "John", email: "jjohn@pprin.com" },
+        { code: "kkarl", name: "Karla", email: "kkarl@pprin.com" },
+        { code: "bbria", name: "Brian", email: "bbria@pprin.com" },
+        { code: "ggena", name: "Genaro", email: "ggena@pprin.com" },
+        { code: "iisai", name: "Isaias", email: "iisai@pprin.com" },
+        { code: "ssote", name: "Sotelo", email: "ssote@pprin.com" },
+        { code: "aacal", name: "Acalli", email: "aacal@pprin.com" },
+        { code: "aandr", name: "Andrade", email: "aandr@pprin.com" },
+        { code: "eemma", name: "Emmanuel", email: "eedua@pprin.com" },
+      ];
+
+      const usersMap = new Map<string, { code: string; name: string; email?: string; avatarUrl?: string }>();
+      for (const u of defaultUsers) {
+        usersMap.set(u.code.toLowerCase(), u);
+      }
+
+      if (token) {
+        try {
+          const uRes = await fetch("https://api.notion.com/v1/users", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Notion-Version": "2022-06-28",
+            },
+          });
+          if (uRes.ok) {
+            const uData = await uRes.json();
+            for (const nu of (uData.results || [])) {
+              if (nu.type === "person" || nu.name) {
+                const name = nu.name || nu.person?.email?.split("@")[0] || "Usuario Notion";
+                const email = nu.person?.email || "";
+                const code = email ? email.split("@")[0].slice(0, 5).toLowerCase() : name.slice(0, 5).toLowerCase();
+                if (!usersMap.has(code)) {
+                  usersMap.set(code, {
+                    code,
+                    name,
+                    email,
+                    avatarUrl: nu.avatar_url,
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch Notion users:", e);
+        }
+      }
+
+      return NextResponse.json({ users: Array.from(usersMap.values()) });
+    }
+
     if (type === "search-index") {
+      const token = (req.headers.get("x-notion-token") || searchParams.get("token") || getSettings().notionToken || "").trim();
+
+      // Sincronización dinámica en caliente con la API de Notion
+      if (token) {
+        try {
+          const nRes = await fetch("https://api.notion.com/v1/search", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Notion-Version": "2022-06-28",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              page_size: 50,
+              sort: { direction: "descending", timestamp: "last_edited_time" },
+            }),
+          });
+          if (nRes.ok) {
+            const nData = await nRes.json();
+            for (const item of (nData.results || [])) {
+              if (item.object === "page") {
+                const pageData = extractNotionPageData(item);
+                if (pageData.id) {
+                  liveNotionOverrides.set(pageData.id, pageData);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Could not fetch live Notion pages in search-index:", err);
+        }
+      }
+
       const rawIndex = readLocalJson<any[]>("index_cache.json", []);
       const items = rawIndex.map(normalizeSearchRow);
 

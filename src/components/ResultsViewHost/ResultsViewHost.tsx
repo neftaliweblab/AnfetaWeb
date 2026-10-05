@@ -50,6 +50,8 @@ interface ResultsViewHostProps {
   onToggleRemindersView?: () => void;
   isRemindersActive?: boolean;
   remindersCount?: number;
+  currentUser?: string;
+  onChangeCurrentUser?: (user: string) => void;
 }
 
 export function ResultsViewHost({
@@ -75,6 +77,8 @@ export function ResultsViewHost({
   onToggleRemindersView,
   isRemindersActive = false,
   remindersCount = 0,
+  currentUser = "nneft",
+  onChangeCurrentUser,
 }: ResultsViewHostProps) {
   // Tabs state
   const [tabs, setTabs] = useState<SearchTab[]>([
@@ -99,6 +103,7 @@ export function ResultsViewHost({
   const [isPendientesOpen, setIsPendientesOpen] = useState(true);
   const [editingTask, setEditingTask] = useState<PendingTaskItem | null>(null);
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
+  const [isSyncingNotion, setIsSyncingNotion] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
@@ -681,17 +686,49 @@ export function ResultsViewHost({
   };
 
   const handleRefreshIndex = async () => {
+    setIsSyncingNotion(true);
     try {
-      const res = await fetch("/api/data?type=search-index");
+      let token = "";
+      try {
+        const saved = localStorage.getItem("anfeta_settings");
+        if (saved) token = JSON.parse(saved).notionToken || "";
+      } catch {}
+
+      if (!token || !token.trim()) {
+        const prompted = window.prompt("Ingresa tu Notion Token de integración para sincronizar en vivo con Notion:");
+        if (prompted && prompted.trim()) {
+          token = prompted.trim();
+          try {
+            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, notionToken: token }));
+          } catch {}
+        }
+      }
+
+      // Si hay token de Notion, forzar sincronización en vivo de páginas modificadas
+      if (token && token.trim()) {
+        await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "sync-notion", payload: { token: token.trim() } }),
+        }).catch(() => {});
+      }
+
+      const res = await fetch(`/api/data?type=search-index${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+        headers: token ? { "x-notion-token": token } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.items) {
           setItems(data.items);
-          alert(`Índice local sincronizado: ${data.items.length.toLocaleString()} páginas cargadas.`);
+          window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: data }));
+          sendWindowsNotification("ANFETA Sincronizado", `${data.items.length.toLocaleString()} páginas cargadas con Notion en vivo.`);
         }
       }
     } catch {
-      alert("Error al sincronizar índice local.");
+      alert("Error al sincronizar con Notion.");
+    } finally {
+      setIsSyncingNotion(false);
     }
   };
 
@@ -937,6 +974,21 @@ export function ResultsViewHost({
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
+        currentUser={currentUser}
+        onChangeCurrentUser={(newUser) => {
+          onChangeCurrentUser?.(newUser);
+          try {
+            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: newUser }));
+          } catch {}
+          if (newUser !== "__all__") {
+            handleQueryChange(newUser);
+          } else {
+            handleQueryChange("");
+          }
+        }}
+        onSyncNotion={handleRefreshIndex}
+        isSyncingNotion={isSyncingNotion}
         selectedTag={selectedTag}
         onChangeTag={handleTagChange}
         customTag={customTag}

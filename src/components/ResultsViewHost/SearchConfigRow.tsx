@@ -1,9 +1,19 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Check, Columns, RefreshCw } from "lucide-react";
+import { Check, Columns, RefreshCw, User, Plus, Loader2 } from "lucide-react";
+
+export interface UserOption {
+  code: string;
+  name: string;
+  email?: string;
+}
 
 interface SearchConfigRowProps {
+  currentUser?: string;
+  onChangeCurrentUser?: (user: string) => void;
+  onSyncNotion?: () => Promise<void> | void;
+  isSyncingNotion?: boolean;
   selectedTag: string;
   onChangeTag: (tag: string) => void;
   customTag?: string;
@@ -62,6 +72,10 @@ const VIEW_ZOOM_LABELS: Record<string, string> = {
 };
 
 export function SearchConfigRow({
+  currentUser,
+  onChangeCurrentUser,
+  onSyncNotion,
+  isSyncingNotion = false,
   selectedTag,
   onChangeTag,
   customTag,
@@ -88,6 +102,78 @@ export function SearchConfigRow({
 }: SearchConfigRowProps) {
   const [showColsMenu, setShowColsMenu] = useState(false);
   const colsRef = useRef<HTMLDivElement>(null);
+
+  const [userList, setUserList] = useState<UserOption[]>(() => {
+    const defaults: UserOption[] = [
+      { code: "nneft", name: "Neftali" },
+      { code: "jjohn", name: "John" },
+      { code: "kkarl", name: "Karla" },
+      { code: "bbria", name: "Brian" },
+      { code: "ggena", name: "Genaro" },
+      { code: "iisai", name: "Isaias" },
+      { code: "ssote", name: "Sotelo" },
+      { code: "aacal", name: "Acalli" },
+      { code: "aandr", name: "Andrade" },
+      { code: "eemma", name: "Emmanuel" },
+    ];
+    try {
+      const saved = localStorage.getItem("anfeta_custom_users");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return defaults;
+  });
+
+  // Carga dinámica de usuarios de Notion / Backend
+  useEffect(() => {
+    async function loadDynamicUsers() {
+      try {
+        let token = "";
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) token = JSON.parse(s).notionToken || "";
+        } catch {}
+
+        const res = await fetch(`/api/data?type=users${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+          headers: token ? { "x-notion-token": token } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            setUserList((prev) => {
+              const map = new Map<string, UserOption>();
+              prev.forEach((u) => map.set(u.code.toLowerCase(), u));
+              data.users.forEach((u: UserOption) => map.set(u.code.toLowerCase(), u));
+              const combined = Array.from(map.values());
+              try {
+                localStorage.setItem("anfeta_custom_users", JSON.stringify(combined));
+              } catch {}
+              return combined;
+            });
+          }
+        }
+      } catch {}
+    }
+    loadDynamicUsers();
+  }, []);
+
+  const handleAddNewUser = () => {
+    const input = window.prompt("Ingrese el código o nombre del nuevo usuario (ej: mariana, jcarl, soporte):");
+    if (!input || !input.trim()) return;
+    const clean = input.trim().toLowerCase();
+    const displayName = input.trim();
+    setUserList((prev) => {
+      if (prev.some((u) => u.code.toLowerCase() === clean)) return prev;
+      const updated = [...prev, { code: clean, name: displayName }];
+      try {
+        localStorage.setItem("anfeta_custom_users", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    onChangeCurrentUser?.(clean);
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -137,6 +223,86 @@ export function SearchConfigRow({
         style={{ gap: `${Math.round(8 * scale)}px` }}
         className="flex items-center overflow-x-auto scrollbar-none flex-1"
       >
+        {/* Selector de Usuario Activo Dinámico */}
+        <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
+          <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#38BDF8] font-semibold flex items-center gap-1">
+            <User style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} className="text-[#38BDF8]" />
+            Usuario:
+          </span>
+          <select
+            value={currentUser || "nneft"}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === "__add_new__") {
+                handleAddNewUser();
+              } else {
+                onChangeCurrentUser?.(val);
+              }
+            }}
+            style={{
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
+            }}
+            className="bg-[#141B26] text-[#38BDF8] font-bold border border-[#38BDF8]/60 hover:border-[#38BDF8] rounded focus:outline-none cursor-pointer"
+            title="Seleccionar usuario activo del sistema o añadir uno nuevo"
+          >
+            {userList.map((u) => (
+              <option key={u.code} value={u.code}>
+                👤 {u.name} ({u.code})
+              </option>
+            ))}
+            <option value="__all__">🌐 Todos (__all__)</option>
+            <option value="__add_new__">➕ Agregar usuario...</option>
+          </select>
+          <button
+            type="button"
+            onClick={handleAddNewUser}
+            style={{
+              padding: `${Math.round(3 * scale)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+            }}
+            className="rounded bg-[#162235] border border-[#38BDF8]/40 hover:border-[#38BDF8] text-[#38BDF8] hover:bg-[#1E3A5F] transition-colors flex items-center justify-center cursor-pointer"
+            title="Agregar un nuevo usuario al equipo"
+          >
+            <Plus style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }} />
+          </button>
+        </div>
+
+        {/* Botón Sincronizar Notion en Vivo */}
+        {onSyncNotion && (
+          <button
+            type="button"
+            onClick={() => onSyncNotion()}
+            disabled={isSyncingNotion}
+            style={{
+              gap: `${Math.round(4 * scale)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+            }}
+            className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
+              isSyncingNotion
+                ? "bg-[#1E3A5F] border-[#38BDF8] text-[#38BDF8] opacity-80"
+                : "bg-[#14233A] border-[#25466A] hover:border-[#38BDF8] text-[#38BDF8] hover:bg-[#1B2F4E]"
+            }`}
+            title="Sincronizar cambios en vivo desde Notion API"
+          >
+            {isSyncingNotion ? (
+              <Loader2
+                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                className="animate-spin text-[#38BDF8]"
+              />
+            ) : (
+              <RefreshCw
+                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                className="text-[#38BDF8]"
+              />
+            )}
+            <span>{isSyncingNotion ? "Sincronizando Notion..." : "Sync Notion"}</span>
+          </button>
+        )}
+
         {/* Tag inicial */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">

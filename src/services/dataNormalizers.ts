@@ -1,17 +1,18 @@
 import path from "path";
 import { SearchResultRow, NotionCalendarActivity } from "@/types/anfeta";
 
-function resolveAssignedPerson(text: string): string {
-  if (/\b(?:ggena|genaro)\b/i.test(text)) return "Genaro";
-  if (/\b(?:nneft|neft|neftali)\b/i.test(text)) return "Neftali";
-  if (/\b(?:bbria|brian)\b/i.test(text)) return "Brian";
-  if (/\b(?:iisai|isai|isaias)\b/i.test(text)) return "Isaias";
-  if (/\b(?:kkarl|karl|karla)\b/i.test(text)) return "Karla";
-  if (/\b(?:jjohn|john)\b/i.test(text)) return "John";
-  if (/\b(?:aandr|andrade)\b/i.test(text)) return "Andrade";
-  if (/\b(?:aacal|acalli)\b/i.test(text)) return "Acalli";
-  if (/\b(?:ssote|sotelo)\b/i.test(text)) return "Sotelo";
-  if (/\b(?:eemma|emmanuel)\b/i.test(text)) return "Emmanuel";
+function resolveAssignedPerson(text: string, keys: string[] = []): string {
+  const combined = `${text} ${keys.join(" ")}`.toLowerCase();
+  if (/\b(?:ggena|genaro|ggena@pprin\.com)\b/i.test(combined)) return "Genaro";
+  if (/\b(?:nneft|nnetf|neft|neftali|nnetf@practicante\.com)\b/i.test(combined)) return "Neftali";
+  if (/\b(?:bbria|brian|bbria@pprin\.com)\b/i.test(combined)) return "Brian";
+  if (/\b(?:iisai|iisaia|isai|isaias|iisai@pprin\.com)\b/i.test(combined)) return "Isaias";
+  if (/\b(?:kkarl|karl|karla|kkarl@pprin\.com)\b/i.test(combined)) return "Karla";
+  if (/\b(?:jjohn|john|jjohn@pprin\.com)\b/i.test(combined)) return "John";
+  if (/\b(?:aandr|andrade|aandr@pprin\.com)\b/i.test(combined)) return "Andrade";
+  if (/\b(?:aacal|acalli|aacal@pprin\.com)\b/i.test(combined)) return "Acalli";
+  if (/\b(?:ssote|sotelo|ssote@pprin\.com)\b/i.test(combined)) return "Sotelo";
+  if (/\b(?:eemma|eedua|eduardo|emmanuel|eedua@pprin\.com)\b/i.test(combined)) return "Emmanuel";
   return "Sin asignar";
 }
 
@@ -28,6 +29,22 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
   const source: "Notion" | "Dropbox" | "Local" =
     sourceCode === 2 ? "Notion" : sourceCode === 1 ? "Dropbox" : "Local";
 
+  const assignmentKeys: string[] = Array.isArray(raw.AssignmentKeys)
+    ? raw.AssignmentKeys
+    : Array.isArray(raw.assignmentKeys)
+    ? raw.assignmentKeys
+    : [];
+
+  const assignedPerson =
+    raw.AssignedPerson ||
+    raw.assignedPerson ||
+    resolveAssignedPerson(name + " " + (raw.SearchText || ""), assignmentKeys);
+
+  const rawSearchText = raw.SearchText || raw.searchText || "";
+  const combinedSearchText = [rawSearchText, name, assignedPerson, ...assignmentKeys]
+    .filter(Boolean)
+    .join(" ");
+
   return {
     id: raw.NodeId || raw.ExternalId || filePath || `idx-${idx}`,
     name,
@@ -39,18 +56,19 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     serverModified: raw.ServerModified || "",
     daysModified: raw.DaysModified || raw.daysModified || 0,
     source,
-    sourceName: raw.ExternalSourceName || (source === "Notion" ? "Notion" : "Dropbox"),
+    sourceName: raw.ExternalSourceName || (source === "Notion" ? "Revisiones" : "Dropbox"),
     externalId: raw.ExternalId || raw.externalId,
     externalUrl: raw.ExternalUrl || raw.externalUrl,
     scheduledDate: raw.ScheduledDate || "",
     updateStatus: raw.ProjectUpdateStatus || raw.statusLabel || "",
     description: raw.Description || raw.description || "",
-    contentSnippet: raw.Description || raw.SearchText || "",
-    searchText: raw.SearchText || "",
+    contentSnippet: raw.Description || rawSearchText || "",
+    searchText: combinedSearchText,
+    assignmentKeys,
     isFolder,
     type: raw.Type || (source === "Notion" ? "PAGE" : isFolder ? "FOLDER" : "FILE"),
     target: raw.Target || filePath,
-    assignedPerson: raw.AssignedPerson || resolveAssignedPerson(name),
+    assignedPerson,
     checklistProgressText: raw.ChecklistProgressText || "",
     hasChecklistProgress: !!raw.ChecklistProgressText,
   };
