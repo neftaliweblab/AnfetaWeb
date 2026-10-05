@@ -43,11 +43,11 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     display = display.replace(wfMatch[0], '');
   } else if (status) {
     const s = status.toLowerCase();
-    if (s.includes('cobrado terminado') || s.includes('pendiente cobrar')) workflow = 'TERMINADA';
-    else if (s.includes('revisar revisiones') || s.includes('terminado rev cobro')) workflow = 'EN REVISIÓN';
-    else if (s.includes('suspex')) workflow = 'SUSPENDIDA';
-    else if (s.includes('arrancar asignar')) workflow = 'POR HACER';
-    else if (s.includes('prtuz por hacer')) workflow = 'PENDIENTE';
+    if (s.includes('cobrado terminado') || s.includes('pendiente cobrar') || s.includes('terminada') || s.includes('terminado')) workflow = 'TERMINADA';
+    else if (s.includes('revisar revisiones') || s.includes('terminado rev cobro') || s.includes('revisión') || s.includes('revision')) workflow = 'EN REVISIÓN';
+    else if (s.includes('suspex') || s.includes('suspe')) workflow = 'SUSPENDIDA';
+    else if (s.includes('arrancar asignar') || s.includes('arrancar') || s.includes('por hacer')) workflow = 'POR HACER';
+    else if (s.includes('prtuz por hacer') || s.includes('prtuz') || s.includes('pendiente')) workflow = 'PENDIENTE';
   }
 
   let workflowColor = '#94A3B8';
