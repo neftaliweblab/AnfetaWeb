@@ -214,6 +214,27 @@ export function CalendarDetailPanel({
             <span className="font-mono text-cyan-300 font-semibold">{timeLabel}</span>
           </div>
 
+          {/* Estado de Notion interactivo */}
+          <div className="flex items-center justify-between pt-1 border-t border-[#2D2D33]">
+            <span className="text-slate-400">Estado Notion:</span>
+            <select
+              value={status}
+              onChange={(e) => {
+                const nextStatus = e.target.value;
+                onActivityUpdated?.({ status: nextStatus });
+                setStatusMessage(`Estado cambiado a: ${nextStatus}`);
+              }}
+              className="bg-[#121215] border border-[#3A3A44] text-[#E2E8F0] text-[11px] rounded px-2 py-0.5 focus:outline-none focus:border-cyan-400"
+            >
+              <option value="POR HACER">POR HACER</option>
+              <option value="EN REVISIÓN">EN REVISIÓN</option>
+              <option value="rtuzREVISION">rtuzREVISION</option>
+              <option value="zREVISION">zREVISION</option>
+              <option value="TERMINADA">TERMINADA</option>
+              <option value="SUSPENDIDA">SUSPENDIDA</option>
+            </select>
+          </div>
+
           <div className="pt-1 border-t border-[#2D2D33] space-y-1.5">
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-400 flex items-center gap-1">

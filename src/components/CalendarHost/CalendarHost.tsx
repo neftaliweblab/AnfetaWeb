@@ -209,12 +209,26 @@ export function CalendarHost({
   const handleDropOnColumn = (e: React.DragEvent, colPerson: string) => {
     e.preventDefault();
     try {
-      const { pageId, offsetY = 0 } = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const dataStr = e.dataTransfer.getData('text/plain');
+      if (!dataStr) return;
+      const { pageId, offsetY = 0 } = JSON.parse(dataStr);
       const activity = activitiesList.find(a => a.pageId === pageId);
       if (!activity || !canEditActivity(currentUser, activity) || normalizePerson(activity.person) !== colPerson) return;
-      const y = e.clientY - e.currentTarget.getBoundingClientRect().top - 56 - offsetY;
-      void handleUpdateActivity(pageId, scheduleAtDrop(activity, currentDate, y / pixelsPerHour * 60));
-    } catch (error) { setError(error instanceof Error ? error.message : 'Movimiento inválido'); }
+
+      const columnRect = e.currentTarget.getBoundingClientRect();
+      // 56px es la altura del CalendarColHeader
+      const y = Math.max(0, e.clientY - columnRect.top - 56 - offsetY);
+      const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
+
+      // 1. Optimistic Update inmediato para fluidez absoluta
+      setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...newSchedule } : a));
+      setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...newSchedule } : prev);
+
+      // 2. Persistir en Notion API / backend en segundo plano
+      void handleUpdateActivity(pageId, newSchedule);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Movimiento inválido');
+    }
   };
 
   // Red line Y position
@@ -256,6 +270,7 @@ export function CalendarHost({
         totalActivitiesCount={filteredActivities.length}
         pixelsPerHour={pixelsPerHour}
         onChangeZoom={handleChangeZoom}
+        onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
         onToggleCobros={() => setFilterCobros(!filterCobros)}
         filterPagos={filterPagos}
@@ -305,8 +320,8 @@ export function CalendarHost({
             </div>
           </div>
 
-          {/* Collaborators Columns - Fluid and Auto-expanding */}
-          <div className="flex-1 flex min-w-fit relative">
+          {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
+          <div className="flex min-w-full w-max relative">
             {/* Global red line across all columns */}
             {currentTimeTop !== null && (
               <div
@@ -357,7 +372,7 @@ export function CalendarHost({
                     key={person}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnColumn(e, person)}
-                    className="flex-1 min-w-[200px] border-r border-[#26323E] flex flex-col"
+                    className="flex-1 min-w-[220px] max-w-[320px] border-r border-[#26323E] flex flex-col"
                     style={{ height: `${canvasHeight + 56}px` }}
                   >
                     <CalendarColHeader

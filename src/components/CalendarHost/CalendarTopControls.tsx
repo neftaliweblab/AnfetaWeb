@@ -28,6 +28,7 @@ interface CalendarTopControlsProps {
   totalActivitiesCount: number;
   pixelsPerHour: number;
   onChangeZoom: (delta: number) => void;
+  onResetZoom?: () => void;
   filterCobros: boolean;
   onToggleCobros: () => void;
   filterPagos: boolean;
@@ -51,6 +52,7 @@ export function CalendarTopControls({
   totalActivitiesCount,
   pixelsPerHour,
   onChangeZoom,
+  onResetZoom,
   filterCobros,
   onToggleCobros,
   filterPagos,
@@ -191,19 +193,23 @@ export function CalendarTopControls({
         <button
           onClick={() => onChangeZoom(-12)}
           disabled={pixelsPerHour <= 48}
-          className="text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 p-0.5 text-xs font-bold"
-          title="Reducir zoom horario"
+          className="text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 p-0.5 text-xs font-bold cursor-pointer"
+          title="Reducir zoom horario (-)"
         >
           −
         </button>
-        <span className="font-mono text-[11px] text-[#38BDF8] px-1 font-semibold min-w-[38px] text-center">
+        <button
+          onClick={() => onResetZoom?.()}
+          className="font-mono text-[11px] text-[#38BDF8] hover:text-white px-1 font-semibold min-w-[38px] text-center cursor-pointer transition-colors"
+          title="Restablecer zoom a 100%"
+        >
           {zoomPercent}%
-        </span>
+        </button>
         <button
           onClick={() => onChangeZoom(12)}
           disabled={pixelsPerHour >= 120}
-          className="text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 p-0.5 text-xs font-bold"
-          title="Aumentar zoom horario"
+          className="text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 p-0.5 text-xs font-bold cursor-pointer"
+          title="Aumentar zoom horario (+)"
         >
           +
         </button>
