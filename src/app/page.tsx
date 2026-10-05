@@ -36,6 +36,15 @@ export default function AnfetaApp() {
 
   // Load local data from API route
   useEffect(() => {
+    // 0. Cargar configuración persistida del usuario
+    try {
+      const savedSettings = localStorage.getItem("anfeta_settings");
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.currentUser) setCurrentUser(parsed.currentUser);
+      }
+    } catch {}
+
     async function loadInitialData() {
       try {
         // Search index
@@ -90,7 +99,36 @@ export default function AnfetaApp() {
       }
     }
     loadInitialData();
-  }, []);
+
+    const handleSettingsChanged = (e: any) => {
+      if (e.detail?.currentUser) {
+        setCurrentUser(e.detail.currentUser);
+      }
+    };
+
+    const handleDataRefreshed = async () => {
+      try {
+        const idxRes = await fetch("/api/data?type=search-index");
+        if (idxRes.ok) {
+          const idxData = await idxRes.json();
+          if (idxData.items) setSearchIndex(idxData.items);
+        }
+        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        if (calRes.ok) {
+          const calData = await calRes.json();
+          if (calData.activities) setCalendarActivities(calData.activities);
+        }
+      } catch {}
+    };
+
+    window.addEventListener("anfeta_settings_changed", handleSettingsChanged);
+    window.addEventListener("anfeta_data_refreshed", handleDataRefreshed);
+
+    return () => {
+      window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
+      window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
+    };
+  }, [currentDate]);
 
   // Fetch activities when date changes
   useEffect(() => {

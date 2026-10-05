@@ -652,6 +652,11 @@ export function ResultsViewHost({
 
   const handleOpenItem = (item: any) => {
     if (!item) return;
+    if (item.isFolder || item.type === "FOLDER") {
+      const folderName = item.name || item.target || item.path;
+      handleQueryChange(`folder:${folderName}`);
+      return;
+    }
     if (item.externalUrl) {
       window.open(item.externalUrl, "_blank");
     } else if (item.target || item.path) {
@@ -916,7 +921,14 @@ export function ResultsViewHost({
       {/* 2. Pills de Ámbitos / Bases Notion */}
       <ScopePillsRow
         selectedScope={selectedScope}
-        onSelectScope={setSelectedScope}
+        onSelectScope={(scope) => {
+          setSelectedScope(scope);
+          // Si el usuario tenía su tag personal y selecciona una base global, limpiar el tag para ver todos los registros
+          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr", "eemma"];
+          if (userTags.includes(query.trim().toLowerCase())) {
+            handleQueryChange("");
+          }
+        }}
         filterFavorites={filterFavorites}
         onToggleFavorites={() => setFilterFavorites(!filterFavorites)}
         onOpenSettings={onOpenSettings}

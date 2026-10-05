@@ -61,12 +61,35 @@ export function SettingsModal({
   useEffect(() => {
     if (isOpen) {
       getWindowsAudioDevices().then(setDevices);
+
+      // 1. Leer inmediatamente de localStorage (para persistencia 100% confiable en la web/Vercel)
+      try {
+        const stored = localStorage.getItem("anfeta_settings");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.notionToken) setNotionToken(parsed.notionToken);
+          if (parsed.dropboxPath) setDropboxPath(parsed.dropboxPath);
+          if (parsed.currentUser) setUserTag(parsed.currentUser);
+        }
+      } catch (err) {
+        console.warn("Error leyendo localStorage anfeta_settings:", err);
+      }
+
+      // 2. Complementar con datos del backend si faltan
       fetch("/api/data?type=settings")
         .then((res) => res.json())
         .then((data) => {
-          if (data.notionToken) setNotionToken(data.notionToken);
-          if (data.dropboxPath) setDropboxPath(data.dropboxPath);
-          if (data.currentUser) setUserTag(data.currentUser);
+          try {
+            const stored = localStorage.getItem("anfeta_settings");
+            const parsed = stored ? JSON.parse(stored) : {};
+            if (!parsed.notionToken && data.notionToken) setNotionToken(data.notionToken);
+            if (!parsed.dropboxPath && data.dropboxPath) setDropboxPath(data.dropboxPath);
+            if (!parsed.currentUser && data.currentUser) setUserTag(data.currentUser);
+          } catch {
+            if (data.notionToken) setNotionToken(data.notionToken);
+            if (data.dropboxPath) setDropboxPath(data.dropboxPath);
+            if (data.currentUser) setUserTag(data.currentUser);
+          }
         })
         .catch(() => {});
     }
@@ -123,6 +146,8 @@ export function SettingsModal({
       });
       const data = await res.json();
       if (data.success) {
+        // Disparar evento para que la vista recargue los datos actualizados de Notion
+        window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: data }));
         alert(data.message || `Sincronizadas ${data.count} páginas con Notion.`);
       } else {
         alert(`Error al sincronizar con Notion: ${data.error}`);
@@ -135,14 +160,32 @@ export function SettingsModal({
   };
 
   const handleSave = async () => {
+    const savedConfig = {
+      notionToken: notionToken.trim(),
+      dropboxPath: dropboxPath.trim(),
+      currentUser: userTag,
+    };
+
+    // 1. Guardar en localStorage inmediatamente (persistencia cliente)
+    try {
+      localStorage.setItem("anfeta_settings", JSON.stringify(savedConfig));
+    } catch (err) {
+      console.warn("Error guardando anfeta_settings en localStorage:", err);
+    }
+
+    // 2. Notificar globalmente cambios de configuración
+    window.dispatchEvent(new CustomEvent("anfeta_settings_changed", { detail: savedConfig }));
+
+    // 3. Persistir en backend
     await fetch("/api/data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "save-settings",
-        payload: { notionToken: notionToken.trim(), dropboxPath, currentUser: userTag },
+        payload: savedConfig,
       }),
     }).catch(() => {});
+
     onSaveCurrentUser(userTag);
     onClose();
   };

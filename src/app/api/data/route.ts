@@ -74,6 +74,79 @@ function readLocalJson<T>(filename: string, defaultValue: T): T {
 const previewMemoryCache = new Map<string, { timestamp: number; payload: any }>();
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
+interface LiveNotionPage {
+  id: string;
+  url: string;
+  title: string;
+  status: string;
+  dateStart: string;
+  dateEnd?: string;
+  person: string;
+  domain: string;
+  lastEdited: string;
+}
+
+const liveNotionOverrides = new Map<string, LiveNotionPage>();
+
+function extractNotionPageData(page: any): LiveNotionPage {
+  const id = page.id ? String(page.id).replace(/-/g, "").toLowerCase() : "";
+  const url = page.url || `https://notion.so/${id}`;
+  const lastEdited = page.last_edited_time || new Date().toISOString();
+
+  let title = "";
+  let status = "";
+  let dateStart = "";
+  let dateEnd = "";
+  let person = "";
+  let domain = "";
+
+  if (page.properties) {
+    for (const [propName, propVal] of Object.entries(page.properties as Record<string, any>)) {
+      if (!propVal) continue;
+      const type = propVal.type;
+      const lowerName = propName.toLowerCase();
+
+      // Title
+      if (type === "title" && Array.isArray(propVal.title)) {
+        title = propVal.title.map((t: any) => t?.plain_text || t?.text?.content || "").join("").trim();
+      }
+
+      // Status
+      if ((type === "status" || type === "select") && propVal[type]?.name) {
+        if (!status || lowerName.includes("estado") || lowerName.includes("status")) {
+          status = propVal[type].name;
+        }
+      }
+
+      // Date
+      if (type === "date" && propVal.date?.start) {
+        if (!dateStart || lowerName.includes("fecha") || lowerName.includes("date")) {
+          dateStart = propVal.date.start;
+          dateEnd = propVal.date.end || "";
+        }
+      }
+
+      // Person
+      if (type === "people" && Array.isArray(propVal.people) && propVal.people.length > 0) {
+        person = propVal.people.map((p: any) => p?.name || "").filter(Boolean).join(", ");
+      } else if (type === "select" && (lowerName.includes("persona") || lowerName.includes("responsable") || lowerName.includes("asignado"))) {
+        person = propVal.select?.name || person;
+      }
+
+      // Domain
+      if (lowerName.includes("dominio") || lowerName.includes("domain")) {
+        if (type === "rich_text" && Array.isArray(propVal.rich_text)) {
+          domain = propVal.rich_text.map((t: any) => t?.plain_text || "").join("");
+        } else if (type === "select" && propVal.select?.name) {
+          domain = propVal.select.name;
+        }
+      }
+    }
+  }
+
+  return { id, url, title, status, dateStart, dateEnd, person, domain, lastEdited };
+}
+
 const STRUCTURAL_CONTAINERS = new Set([
   "column_list",
   "column",
@@ -374,27 +447,78 @@ export async function GET(req: NextRequest) {
 
       const seen = new Set<string>();
       for (const row of items) {
-        const pid = String(row.externalId || "").replace(/-/g, "").toLowerCase();
+        const pid = String(row.externalId || row.id || "").replace(/-/g, "").toLowerCase();
         if (!pid) continue;
         seen.add(pid);
-        const cal = latestByPage.get(pid);
-        if (!cal) continue;
-        const calTitle: string = cal.raw.Title || "";
-        if (!calTitle) continue;
-        const baseMatch = row.name.match(/^\[[^\]]+\]\s*/);
-        const indexTitle = row.name.replace(/^\[[^\]]+\]\s*/, "").trim();
-        if (calTitle.trim() !== indexTitle) {
-          row.searchText = [row.searchText, row.name].filter(Boolean).join(" ");
-          row.name = `${baseMatch ? baseMatch[0] : ""}${calTitle.trim()}`;
+
+        // 1. Prioridad 1: Actualizaciones en vivo desde la API de Notion
+        const live = liveNotionOverrides.get(pid);
+        if (live) {
+          if (live.title) {
+            const baseMatch = row.name.match(/^\[[^\]]+\]\s*/);
+            row.name = `${baseMatch ? baseMatch[0] : ""}${live.title.trim()}`;
+          }
+          if (live.status) {
+            row.updateStatus = live.status;
+            row.projectUpdateStatus = live.status;
+          }
+          if (live.dateStart) row.scheduledDate = live.dateStart;
+          if (live.lastEdited) row.serverModified = live.lastEdited;
+          row.searchText = [row.searchText, row.name, live.title, live.person, live.domain].filter(Boolean).join(" ");
         }
-        if (!row.scheduledDate && cal.raw.Start) row.scheduledDate = cal.raw.Start;
-        if (!row.externalUrl && cal.raw.PageUrl) row.externalUrl = cal.raw.PageUrl;
+
+        // 2. Prioridad 2: Actualizaciones del calendario local si no vino en vivo
+        const cal = latestByPage.get(pid);
+        if (cal && !live) {
+          const calTitle: string = cal.raw.Title || "";
+          if (calTitle) {
+            const baseMatch = row.name.match(/^\[[^\]]+\]\s*/);
+            const indexTitle = row.name.replace(/^\[[^\]]+\]\s*/, "").trim();
+            if (calTitle.trim() !== indexTitle) {
+              row.searchText = [row.searchText, row.name].filter(Boolean).join(" ");
+              row.name = `${baseMatch ? baseMatch[0] : ""}${calTitle.trim()}`;
+            }
+          }
+          if (!row.scheduledDate && cal.raw.Start) row.scheduledDate = cal.raw.Start;
+          if (!row.externalUrl && cal.raw.PageUrl) row.externalUrl = cal.raw.PageUrl;
+        }
       }
 
-      // Páginas del calendario que aún no existen en el índice local (recién creadas)
+      // Páginas nuevas de Notion API en vivo que no existían en el índice previo
       let injected = 0;
+      for (const [pid, live] of liveNotionOverrides) {
+        if (seen.has(pid)) continue;
+        seen.add(pid);
+        items.unshift({
+          id: live.id,
+          name: `[Revisiones] ${live.title || "Nueva actividad Notion"}`,
+          path: "",
+          folder: "",
+          extension: "",
+          sizeBytes: 0,
+          modifiedLocalDate: (live.dateStart || live.lastEdited).slice(0, 10),
+          serverModified: live.lastEdited,
+          source: "Notion",
+          sourceName: "Revisiones",
+          externalSourceName: "Revisiones",
+          externalId: live.id,
+          externalUrl: live.url,
+          scheduledDate: live.dateStart,
+          updateStatus: live.status || "prtuzREVISION",
+          projectUpdateStatus: live.status || "prtuzREVISION",
+          searchText: `${live.title} ${live.person} ${live.domain}`,
+          type: "PAGE",
+          target: live.url,
+          assignedPerson: live.person || "Sin asignar",
+          domainChip: live.domain,
+        } as any);
+        injected++;
+      }
+
+      // Páginas del calendario que aún no existen en el índice local
       for (const [pid, cal] of latestByPage) {
         if (seen.has(pid)) continue;
+        seen.add(pid);
         const a = cal.raw;
         const title = a.Title || "";
         if (!title) continue;
@@ -536,6 +660,49 @@ export async function GET(req: NextRequest) {
 
       const rawActivities = calData[date] || [];
       const activities = rawActivities.map(normalizeActivity);
+
+      // Fusionar páginas actualizadas en vivo desde Notion
+      if (liveNotionOverrides.size > 0) {
+        for (const [pid, live] of liveNotionOverrides) {
+          if (live.dateStart && live.dateStart.startsWith(date)) {
+            const existing = activities.find((a: any) => String(a.pageId || "").replace(/-/g, "").toLowerCase() === pid);
+            if (existing) {
+              if (live.title) existing.title = live.title;
+              if (live.status) existing.status = live.status;
+              if (live.person) existing.person = live.person;
+            } else {
+              activities.unshift({
+                pageId: live.id,
+                pageUrl: live.url,
+                title: live.title || "Actividad Notion",
+                shortTitle: live.title || "Actividad Notion",
+                person: live.person || "Sin asignar",
+                originalPerson: live.person || "Sin asignar",
+                project: live.domain || "",
+                domain: live.domain || "general",
+                status: live.status || "prtuzREVISION",
+                start: live.dateStart,
+                end: live.dateEnd || live.dateStart,
+                originalScheduledDate: date,
+                currentScheduledDate: date,
+                moveCount: 0,
+                routeDates: [],
+                checklistScanned: false,
+                checklistTotal: 0,
+                checklistCompleted: 0,
+                todayChecklistCompleted: 0,
+                isUrgent: false,
+                isCompletedForReview: live.status?.includes("rtuzREVISION") || false,
+                isFinalized: live.status?.includes("zREVISION") || false,
+                isSuspended: false,
+                isLocked: false,
+                estimatedWorkMinutes: 30,
+              } as any);
+            }
+          }
+        }
+      }
+
       return NextResponse.json({
         date,
         count: activities.length,
@@ -581,22 +748,80 @@ export async function GET(req: NextRequest) {
 
     if (type === "dropbox-folders") {
       const settings = getSettings();
-      const baseDropbox = settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox";
-      const drxPath = path.join(baseDropbox, "DRX");
-      const folders: { name: string; path: string }[] = [];
+      const baseDropbox = (searchParams.get("dropboxPath") || settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
+      const drxPath = path.join(baseDropbox, "CARPETA UNIKA drx");
+      const folders: { name: string; path: string; count?: number }[] = [];
 
+      // 1. Explorar en disco si la ruta física existe localmente en Windows
       try {
-        if (fs.existsSync(drxPath)) {
-          const items = fs.readdirSync(drxPath, { withFileTypes: true });
-          items.forEach((it) => {
+        if (fs.existsSync(baseDropbox)) {
+          const topItems = fs.readdirSync(baseDropbox, { withFileTypes: true });
+          for (const it of topItems) {
             if (it.isDirectory()) {
-              folders.push({ name: it.name, path: path.join(drxPath, it.name) });
+              const fullP = path.join(baseDropbox, it.name);
+              folders.push({ name: it.name, path: fullP });
+              if (it.name.toLowerCase().includes("unika") || it.name.toLowerCase().includes("drx")) {
+                try {
+                  const subItems = fs.readdirSync(fullP, { withFileTypes: true });
+                  for (const sub of subItems) {
+                    if (sub.isDirectory()) {
+                      folders.push({ name: sub.name, path: path.join(fullP, sub.name) });
+                    }
+                  }
+                } catch {}
+              }
             }
-          });
+          }
         }
       } catch (e) {
-        console.error("Error reading Dropbox folders:", e);
+        console.error("Error reading Dropbox folders from disk:", e);
       }
+
+      // 2. Si no se encontraron carpetas físicas (entorno web/Vercel o ruta remota), extraer del índice local index_cache.json
+      if (folders.length === 0) {
+        try {
+          const rawIndex = readLocalJson<any[]>("index_cache.json", []);
+          const folderMap = new Map<string, { path: string; count: number }>();
+
+          rawIndex.forEach((x) => {
+            const isF = x.IsFolder || x.Type === "FOLDER";
+            const p = x.Path || x.Target || "";
+            const isDropbox = x.Source === 0 || x.Source === 1 || p.toLowerCase().includes("dropbox");
+            if (!isDropbox) return;
+
+            if (isF && x.Name) {
+              const current = folderMap.get(x.Name) || { path: p, count: 0 };
+              folderMap.set(x.Name, current);
+            }
+
+            // Detectar carpetas en la ruta
+            const parts = p.split(/[\\\/]/).filter(Boolean);
+            if (parts.length > 1) {
+              const parentFolder = parts[parts.length - 2];
+              if (
+                parentFolder &&
+                !parentFolder.toLowerCase().includes("users") &&
+                !parentFolder.toLowerCase().includes("nanoc") &&
+                !parentFolder.toLowerCase().includes("dropbox")
+              ) {
+                const current = folderMap.get(parentFolder) || {
+                  path: p.slice(0, p.lastIndexOf(parts[parts.length - 1])),
+                  count: 0,
+                };
+                current.count++;
+                folderMap.set(parentFolder, current);
+              }
+            }
+          });
+
+          for (const [name, info] of folderMap.entries()) {
+            folders.push({ name, path: info.path, count: info.count });
+          }
+        } catch (e) {
+          console.error("Error extracting Dropbox folders from index_cache:", e);
+        }
+      }
+
       return NextResponse.json({ baseDropbox, drxPath, folders });
     }
 
@@ -1017,7 +1242,10 @@ export async function POST(req: NextRequest) {
             "Notion-Version": "2022-06-28",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ page_size: 100 }),
+          body: JSON.stringify({
+            page_size: 100,
+            sort: { direction: "descending", timestamp: "last_edited_time" },
+          }),
         });
 
         if (!res.ok) {
@@ -1029,11 +1257,24 @@ export async function POST(req: NextRequest) {
         }
 
         const data = await res.json();
-        const pages = data.results || [];
+        const results = data.results || [];
+        let updatedCount = 0;
+
+        for (const item of results) {
+          if (item.object === "page") {
+            const pageData = extractNotionPageData(item);
+            if (pageData.id) {
+              liveNotionOverrides.set(pageData.id, pageData);
+              updatedCount++;
+            }
+          }
+        }
+
         return NextResponse.json({
           success: true,
-          count: pages.length,
-          message: `Sincronizadas ${pages.length} páginas desde la API en vivo de Notion`,
+          count: updatedCount,
+          totalFetched: results.length,
+          message: `Sincronizadas ${updatedCount} páginas recientes desde Notion API`,
         });
       } catch (err: any) {
         return NextResponse.json({ success: false, error: err.message }, { status: 500 });

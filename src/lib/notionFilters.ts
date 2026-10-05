@@ -10,7 +10,11 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
   switch (tag) {
     case "notion":
     case "todas bases":
-      return items.filter((x) => (x.source || "").toLowerCase() === "notion");
+      return items.filter((x) => {
+        const s = (x.source || "").toLowerCase();
+        const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
+        return s === "notion" || src.length > 0;
+      });
 
     case "dropbox":
       return items.filter((x) => {
@@ -29,15 +33,13 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
       return items.filter((x) => {
         const s = (x.source || "").toLowerCase();
         return (
-          s === "notion" &&
+          (s === "notion" || s === "dropbox") &&
           !!(x.contentSnippet || x.description || x.pageContent || (x as any).SearchText)
         );
       });
 
     case "revisiones":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
         return src.includes("revision") || name.includes("[revisiones]") || name.includes("revision");
@@ -46,64 +48,80 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
     case "zclientes":
     case "clientes":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return src.includes("cliente") || name.includes("[clientes") || name.includes("zclientes");
+        return src.includes("cliente") || name.includes("[clientes") || name.includes("zcliente");
       });
 
     case "zdominios":
     case "dominios":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return src.includes("dominio") || name.includes("[dominios") || name.includes("zdominios");
+        return src.includes("dominio") || name.includes("[dominios") || name.includes("zdominio");
       });
 
     case "zproyectos":
-    case "programas":
+    case "proyectos":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
+        const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
+        const name = (x.name || "").toLowerCase();
+        return (
+          src.includes("proyecto") ||
+          src.includes("programas y proyectos") ||
+          name.includes("zproyecto") ||
+          name.includes("[programas y proyectos]") ||
+          name.includes("[proyectos")
+        );
+      });
+
+    case "programas":
+    case "zprogramas":
+      return items.filter((x) => {
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
         return (
           src.includes("programa") ||
-          src.includes("proyecto") ||
           name.includes("[programas") ||
-          name.includes("zproyectos") ||
-          name.includes("pprog")
+          name.includes("pprog") ||
+          name.includes("programa") ||
+          name.includes("software") ||
+          name.includes("ssoft")
         );
       });
 
     case "zpagar":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return (src.includes("pagar") || src.includes("cobrar")) && name.includes("pagar");
+        return (
+          (src.includes("pagar") || src.includes("cobrar")) &&
+          (name.includes("pagar") || name.includes("zpagar"))
+        );
       });
 
     case "zcobrar":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return (src.includes("pagar") || src.includes("cobrar")) && name.includes("cobrar");
+        return (
+          (src.includes("pagar") || src.includes("cobrar")) &&
+          (name.includes("cobrar") || name.includes("zcobrar"))
+        );
       });
 
     case "zcorreos":
+    case "correos":
       return items.filter((x) => {
-        const s = (x.source || "").toLowerCase();
-        if (s !== "notion") return false;
         const src = (x.sourceName || x.externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return src.includes("correo") || name.includes("[correos") || name.includes("zcorreos");
+        return (
+          src.includes("correo") ||
+          name.includes("[correos") ||
+          name.includes("zcorreo") ||
+          name.includes("ccorr") ||
+          name.includes("@")
+        );
       });
 
     default:

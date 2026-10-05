@@ -29,8 +29,14 @@ const ARCHIVOS_ITEMS = [
   { label: "🖼 Imágenes (PNG, JPG, WebP)", tag: "ext:png;jpg;jpeg;webp;gif;bmp" },
   { label: "🔗 Enlaces y accesos directos (.url)", tag: "ext:url" },
   { isSeparator: true },
-  { label: "📁 Solo carpetas (.folder)", tag: ".folder" },
+  { label: "📁 Solo carpetas (.folder)", tag: "type:folder" },
   { label: "📋 Todos los documentos", tag: "ext:doc;docx;pdf;xls;xlsx;txt" },
+  { isSeparator: true },
+  { label: "📂 Carpeta: CARPETA UNIKA drx", tag: "folder:CARPETA UNIKA" },
+  { label: "📂 Carpeta: AGAPE", tag: "folder:AGAPE" },
+  { label: "📂 Carpeta: EURO CONSTRUCTORA", tag: "folder:EURO CONSTRUCTORA" },
+  { label: "📂 Carpeta: Respaldos", tag: "folder:Respaldos" },
+  { label: "📂 Carpeta: Organizar", tag: "folder:Organizar" },
 ];
 
 // 2. Opciones de Personas

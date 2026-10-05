@@ -300,10 +300,15 @@ export function matchesFlexibleOrQuotedQuery(
   const q = (query || "").trim();
   if (!q) return true;
 
+  // Normalización inteligente de queries compuestos en español / ANFETA (ej. "z programas" -> "zprogramas")
+  let normalizedQ = q
+    .replace(/\bz\s+(programas?|proyectos?|clientes?|dominios?|correos?|pagar|cobrar|revision(?:es)?)\b/gi, "z$1")
+    .trim();
+
   // 1. Coincidencia directa por ID o UUID de Notion
   const rawId = (item.id || "").replace(/-/g, "").toLowerCase();
   const rawExtId = ((item as any).externalId || "").replace(/-/g, "").toLowerCase();
-  const cleanQ = q.replace(/-/g, "").toLowerCase();
+  const cleanQ = normalizedQ.replace(/-/g, "").toLowerCase();
   if (cleanQ.length >= 8 && (rawId === cleanQ || rawExtId === cleanQ)) {
     return true;
   }
@@ -343,7 +348,7 @@ export function matchesFlexibleOrQuotedQuery(
   const regex = /"([^"]+)"|(\S+)/g;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(q)) !== null) {
+  while ((match = regex.exec(normalizedQ)) !== null) {
     if (match[1]) {
       tokens.push({ value: match[1], isExact: true, isNegated: false });
     } else if (match[2]) {
@@ -373,21 +378,29 @@ export function matchesFlexibleOrQuotedQuery(
       return token.isNegated ? !extMatch : extMatch;
     }
 
-    // Filtro por carpeta (ej. folder:dropbox)
+    // Filtro por carpeta (ej. folder:dropbox, folder:agape)
     if (valLow.startsWith("folder:") && !token.isExact) {
-      const fWant = valLow.slice(7);
-      const folderVal = ((item as any).folder || item.target || item.path || "").toLowerCase();
+      const fWant = valLow.slice(7).toLowerCase().trim();
+      const folderVal = (
+        ((item as any).folder || "") +
+        " " +
+        (item.target || "") +
+        " " +
+        (item.path || "") +
+        " " +
+        (item.name || "")
+      ).toLowerCase();
       const fMatch = folderVal.includes(fWant);
       return token.isNegated ? !fMatch : fMatch;
     }
 
     // Filtros de tipo: folder / file
     if (valLow === "type:folder" && !token.isExact) {
-      const isFolder = item.isFolder || item.extension === "FOLDER";
+      const isFolder = item.isFolder || item.extension === "FOLDER" || item.type === "FOLDER";
       return token.isNegated ? !isFolder : isFolder;
     }
     if (valLow === "type:file" && !token.isExact) {
-      const isFile = !item.isFolder && item.extension !== "FOLDER";
+      const isFile = !item.isFolder && item.extension !== "FOLDER" && item.type !== "FOLDER";
       return token.isNegated ? !isFile : isFile;
     }
 
@@ -406,10 +419,80 @@ export function matchesFlexibleOrQuotedQuery(
     for (const sp of subParts) {
       const cleanSp = sp.replace(/^\.+|\.+$/g, "");
       if (!cleanSp) continue;
-      const has =
+
+      const srcName = (
+        (item.sourceName || (item as any).externalSourceName || "") +
+        " " +
+        (item.source || "")
+      ).toLowerCase();
+
+      let has =
         searchable.includes(cleanSp) ||
         searchableWithSpaces.includes(cleanSp) ||
-        (cleanSp.length >= 4 && searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, "")));
+        (cleanSp.length >= 4 &&
+          searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, "")));
+
+      if (!has) {
+        // Alias y equivalencias automáticas de ANFETA
+        if (cleanSp === "zproyectos" || cleanSp === "zproyecto" || cleanSp === "proyectos" || cleanSp === "proyecto") {
+          has =
+            searchable.includes("zproyecto") ||
+            searchable.includes("zproyectos") ||
+            (srcName.includes("programa") && searchable.includes("proyecto")) ||
+            searchable.includes("[programas y proyectos]");
+        } else if (cleanSp === "programas" || cleanSp === "programa" || cleanSp === "pprog" || cleanSp === "zprogramas" || cleanSp === "zprograma") {
+          has =
+            srcName.includes("programa") ||
+            searchable.includes("programas y proyectos") ||
+            searchable.includes("pprog") ||
+            searchable.includes("programa") ||
+            searchable.includes("software") ||
+            searchable.includes("ssoft");
+        } else if (cleanSp === "zclientes" || cleanSp === "zcliente" || cleanSp === "clientes" || cleanSp === "cliente") {
+          has =
+            srcName.includes("cliente") ||
+            searchable.includes("zcliente") ||
+            searchable.includes("cliente") ||
+            searchable.includes("[clientes");
+        } else if (cleanSp === "zdominios" || cleanSp === "zdominio" || cleanSp === "dominios" || cleanSp === "dominio") {
+          has =
+            srcName.includes("dominio") ||
+            searchable.includes("zdominio") ||
+            searchable.includes("dominio") ||
+            searchable.includes("[dominios");
+        } else if (cleanSp === "zcorreos" || cleanSp === "zcorreo" || cleanSp === "correos" || cleanSp === "correo") {
+          has =
+            srcName.includes("correo") ||
+            searchable.includes("correos contraseñas") ||
+            searchable.includes("ccorr") ||
+            searchable.includes("zcorreo") ||
+            searchable.includes("correo") ||
+            searchable.includes("@");
+        } else if (cleanSp === "zpagar" || cleanSp === "pagar") {
+          has = searchable.includes("pagar") || srcName.includes("pagar");
+        } else if (cleanSp === "zcobrar" || cleanSp === "cobrar") {
+          has = searchable.includes("cobrar") || srcName.includes("cobrar");
+        } else if (cleanSp === "revisiones" || cleanSp === "revision" || cleanSp === "prtuzrevision" || cleanSp === "rtuzrevision" || cleanSp === "zrevision") {
+          has =
+            srcName.includes("revision") ||
+            searchable.includes("revision") ||
+            searchable.includes("rtuzrevision") ||
+            searchable.includes("prtuzrevision");
+        } else if (cleanSp === "z") {
+          has =
+            searchable.includes("zproyecto") ||
+            searchable.includes("zcliente") ||
+            searchable.includes("zdominio") ||
+            searchable.includes("zpagar") ||
+            searchable.includes("zcobrar") ||
+            searchable.includes("zrevision") ||
+            searchable.includes("[programas") ||
+            searchable.includes("[clientes") ||
+            searchable.includes("[dominios") ||
+            searchable.includes("[cobrar");
+        }
+      }
+
       if (token.isNegated ? has : !has) return false;
     }
 
