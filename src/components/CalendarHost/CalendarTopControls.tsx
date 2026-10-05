@@ -20,11 +20,10 @@ import {
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 
 interface CalendarTopControlsProps {
+  onCreateActivity: () => void;
   currentDate: string;
   onSelectDate: (date: string) => void;
   availableDates: string[];
-  extraHours: boolean;
-  onToggleExtraHours: () => void;
   onOpenPeoplePicker: () => void;
   totalActivitiesCount: number;
   pixelsPerHour: number;
@@ -45,11 +44,9 @@ interface CalendarTopControlsProps {
 }
 
 export function CalendarTopControls({
-  currentDate,
+  currentDate, onCreateActivity,
   onSelectDate,
   availableDates,
-  extraHours,
-  onToggleExtraHours,
   onOpenPeoplePicker,
   totalActivitiesCount,
   pixelsPerHour,
@@ -78,6 +75,7 @@ export function CalendarTopControls({
 
   return (
     <div className="h-11 bg-[#0F141A] border-b border-[#26323E] px-3 flex items-center justify-between gap-2 text-xs select-none flex-shrink-0 overflow-x-auto scrollbar-none">
+      <button onClick={onCreateActivity} className="shrink-0 rounded border border-cyan-400/40 bg-cyan-500/15 px-3 py-1 text-cyan-300">+ Nueva Actividad</button>
       {/* 1. Date Navigation: Ayer, Hoy, Mañana, ‹ ›, Título largo con Badge */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <button
@@ -281,18 +279,7 @@ export function CalendarTopControls({
           </button>
         )}
 
-        {/* Toggle 22:00 */}
-        <button
-          onClick={onToggleExtraHours}
-          className={`px-2 py-1 rounded border text-[11px] transition-colors cursor-pointer ${
-            extraHours
-              ? "bg-[#18212B] text-[#00A8FF] border-[#00A8FF]/40"
-              : "bg-[#131A22] text-[#94A3B8] border-[#223848]"
-          }`}
-          title="Jornada hasta las 22:00"
-        >
-          {extraHours ? "22h" : "21h"}
-        </button>
+        <span className="shrink-0 text-[11px] text-cyan-300" title="Jornada de 08:00 a 22:00">08–22h</span>
 
         {/* People Picker */}
         <button

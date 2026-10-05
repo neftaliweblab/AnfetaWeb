@@ -19,7 +19,9 @@ import {
   sendWindowsNotification,
 } from "@/services/windowsIntegration";
 
+import { captureFromBlob } from '@/services/globalPaste';
 export interface GlobalPasteImagePayload {
+  contentType?: string;
   dataUrl: string;
   base64: string;
   filename: string;
@@ -27,6 +29,8 @@ export interface GlobalPasteImagePayload {
 }
 
 interface GlobalPasteModalProps {
+  currentUser: string;
+  initialFiles?: GlobalPasteImagePayload[];
   isOpen: boolean;
   onClose: () => void;
   initialText?: string;
@@ -64,12 +68,13 @@ const DOMAIN_REGEX =
   /(?:https?:\/\/)?(?:www\.)?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:com\.mx|org\.mx|gob\.mx|edu\.mx|net\.mx|com|mx|org|net|io|co|app|dev))/i;
 
 export function GlobalPasteModal({
-  isOpen,
+  isOpen, currentUser, initialFiles = [],
   onClose,
   initialText = "",
   initialImage = null,
   onSuccess,
 }: GlobalPasteModalProps) {
+  const [files, setFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [dest, setDest] = useState<"notion" | "dropbox">("dropbox");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -83,9 +88,11 @@ export function GlobalPasteModal({
       setStatusMsg(null);
       setIsSubmitting(false);
       setImagePayload(initialImage || null);
+      setFiles(initialFiles);
       setBody(initialText || "");
 
-      if (initialImage) {
+      if (initialFiles.length) { setTitle(initialFiles[0].filename); setBody(""); setDest("dropbox"); }
+      else if (initialImage) {
         setDest("dropbox");
         setTitle(initialImage.filename);
       } else {
@@ -103,7 +110,7 @@ export function GlobalPasteModal({
         }
       }
     }
-  }, [isOpen, initialText, initialImage]);
+  }, [isOpen, initialText, initialImage, initialFiles]);
 
   if (!isOpen) return null;
 
@@ -165,19 +172,8 @@ export function GlobalPasteModal({
           for (const type of item.types) {
             if (type.startsWith("image/")) {
               const blob = await item.getType(type);
-              const reader = new FileReader();
-              reader.onload = () => {
-                const dataUrl = reader.result as string;
-                const base64 = dataUrl.split(",")[1];
-                const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-                const filename = `Captura_${timestamp}.png`;
-                setImagePayload({ dataUrl, base64, filename, sizeBytes: blob.size });
-                setTitle(filename);
-                setDest("dropbox");
-                playCopyChime();
-                setStatusMsg({ ok: true, text: "✓ Imagen cargada desde el portapapeles" });
-              };
-              reader.readAsDataURL(blob);
+              const image = await captureFromBlob(blob); setImagePayload(image); setFiles([]); setTitle(image.filename); setDest('dropbox'); setBody('');
+              setStatusMsg({ ok: true, text: '✓ Captura cargada desde el portapapeles' });
               return;
             }
           }
@@ -203,7 +199,7 @@ export function GlobalPasteModal({
       setStatusMsg({ ok: false, text: "Ingresa un título o nombre para continuar." });
       return;
     }
-    if (!imagePayload && !body.trim()) {
+    if (!imagePayload && !files.length && !body.trim()) {
       setStatusMsg({ ok: false, text: "Ingresa el contenido o pega una imagen." });
       return;
     }
@@ -212,49 +208,23 @@ export function GlobalPasteModal({
     setStatusMsg(null);
 
     try {
-      // 1. Caso Imagen pegada a Dropbox
-      if (imagePayload) {
-        const res = await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "upload-to-dropbox",
-            payload: {
-              targetDir: `C:\\Users\\nanoc\\Dropbox\\DRX\\${currentDomain}.Carpeta`,
-              filename: title.trim().endsWith(".png") ? title.trim() : `${title.trim()}.png`,
-              base64: imagePayload.base64,
-            },
-          }),
-        });
-
-        const data = await res.json();
-        setIsSubmitting(false);
-
-        if (res.ok && data.success) {
-          playCheckChime();
-          sendWindowsNotification("Dropbox ANFETA", `Captura guardada en DRX: ${data.filename}`);
-          setStatusMsg({ ok: true, text: `✓ Captura guardada con éxito en Dropbox: ${data.filename}` });
-          onSuccess({
-            id: `dropbox-paste-${Date.now()}`,
-            name: data.filename,
-            path: data.path,
-            target: data.path,
-            folder: data.targetDir,
-            extension: "png",
-            sizeBytes: data.sizeBytes,
-            modifiedLocalDate: new Date().toISOString().slice(0, 10),
-            daysModified: 0,
-            serverModified: new Date().toISOString(),
-            source: "Dropbox",
-            sourceName: "Dropbox",
-            isFolder: false,
-            type: "FILE",
-          });
-          setTimeout(() => onClose(), 1000);
+      if (files.length || imagePayload) {
+        const batch = files.length ? files : [imagePayload!];
+        if (dest === 'notion') {
+          const response = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create-notion-page', payload: { title: title.trim(), body, currentUser, files: batch } }) });
+          const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo adjuntar a Notion');
+          onSuccess({ id: data.pageId, externalId: data.pageId, name: title.trim(), path: data.pageUrl, externalUrl: data.pageUrl, source: 'Notion', type: 'PAGE' });
         } else {
-          setStatusMsg({ ok: false, text: data.error || "Error al guardar captura en Dropbox" });
+          for (let index = 0; index < batch.length; index++) {
+            const file = batch[index]; const ext = file.filename.includes('.') ? file.filename.slice(file.filename.lastIndexOf('.')) : '';
+            const base = title.trim().replace(/\.[^.]+$/, '');
+            const filename = batch.length > 1 ? file.filename : base + ext;
+            const response = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-to-dropbox', payload: { domain: currentDomain, filename, base64: file.base64 } }) });
+            const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo subir el archivo');
+            onSuccess({ id: 'dropbox-' + Date.now() + '-' + index, name: data.filename, path: data.path, target: data.path, folder: data.targetDir, extension: ext.slice(1), source: 'Dropbox', type: 'FILE', sizeBytes: data.sizeBytes });
+          }
         }
-        return;
+        setIsSubmitting(false); playCheckChime(); onClose(); return;
       }
 
       // 2. Caso Texto/URL a Dropbox
@@ -278,7 +248,7 @@ export function GlobalPasteModal({
 
         if (res.ok && data.success) {
           playCheckChime();
-          sendWindowsNotification("Dropbox ANFETA", `Guardado en DRX/${currentDomain}.Carpeta: ${data.filename}`);
+          sendWindowsNotification("Dropbox ANFETA", `Guardado en DRX/${currentDomain}.proyecto: ${data.filename}`);
           setStatusMsg({ ok: true, text: `✓ Guardado con éxito en Dropbox: ${data.filename}` });
           onSuccess({
             id: `dropbox-paste-${Date.now()}`,
@@ -311,6 +281,7 @@ export function GlobalPasteModal({
           action: "create-notion-page",
           payload: {
             title: title.trim(),
+            currentUser,
             body: body.trim(),
           },
         }),
@@ -350,12 +321,16 @@ export function GlobalPasteModal({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Pegado Global ANFETA"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="bg-[#0B1017] border-2 border-[#00A8FF]/60 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh] anfeta-neon-glow">
+        {files.length > 0 && <div className="border-b border-cyan-500/20 px-5 py-3 text-xs text-cyan-200">📦 {files.length} archivos · {files.map(file => file.filename).join(', ')}</div>}
         {/* Cabecera */}
         <div className="px-5 py-3.5 bg-[#0F1722] border-b border-[#1E2C3D] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -364,13 +339,13 @@ export function GlobalPasteModal({
             </div>
             <div>
               <h3 className="text-xs font-bold text-[#F1F5F9] flex items-center gap-1.5">
-                {imagePayload ? (
+                {imagePayload && dest === "dropbox" ? (
                   <>
                     <span>🖼️ Guardar Captura de Pantalla</span>
                     <span className="px-1.5 py-0.2 rounded bg-[#0284C7]/30 text-[#7DD3FC] text-[9.5px]">Ctrl+V</span>
                   </>
                 ) : dest === "dropbox" ? (
-                  isUrl ? `🔗 Guardar enlace en Dropbox · DRX/${currentDomain}.Carpeta` : `📄 Guardar texto en Dropbox · DRX/${currentDomain}.Carpeta`
+                  isUrl ? `🔗 Guardar enlace en Dropbox · DRX/${currentDomain}.proyecto` : `📄 Guardar texto en Dropbox · DRX/${currentDomain}.proyecto`
                 ) : (
                   "📋 Pegar en Notion · Revisiones"
                 )}
@@ -412,7 +387,7 @@ export function GlobalPasteModal({
                   {imagePayload.filename}
                 </p>
                 <p className="text-[9.5px] text-[#64748B] mt-0.5">
-                  Se guardará automáticamente en <strong className="text-[#38BDF8]">DRX/{currentDomain}.Carpeta/</strong>
+                  Se guardará automáticamente en <strong className="text-[#38BDF8]">DRX/{currentDomain}.proyecto/</strong>
                 </p>
               </div>
             </div>
@@ -433,7 +408,7 @@ export function GlobalPasteModal({
                   className="accent-[#38BDF8]"
                 />
                 <span className="font-semibold text-xs flex items-center gap-1">
-                  <Folder className="w-3.5 h-3.5 text-[#F59E0B]" /> Dropbox · DRX/{currentDomain}.Carpeta
+                  <Folder className="w-3.5 h-3.5 text-[#F59E0B]" /> Dropbox · DRX/{currentDomain}.proyecto
                 </span>
               </label>
 
@@ -454,7 +429,7 @@ export function GlobalPasteModal({
             {dest === "dropbox" ? (
               <div className="mt-2 p-2 rounded bg-[#78350F]/20 border border-[#D97706]/40 text-[#FDE68A] text-[10.5px]">
                 📁 <strong>Aviso de Dropbox:</strong> Se guardará dentro de{" "}
-                <span className="font-mono text-white">DRX/{currentDomain}.Carpeta/</span> y se sincronizará e indexará de inmediato.
+                <span className="font-mono text-white">DRX/{currentDomain}.proyecto/</span> y se sincronizará e indexará de inmediato.
               </div>
             ) : (
               <p className="text-[10px] text-[#64748B]">

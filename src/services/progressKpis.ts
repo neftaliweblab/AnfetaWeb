@@ -1,4 +1,5 @@
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
+import { workflowState } from './activityWorkflow';
 import { normalizePerson } from "./identityNormalizer";
 
 export interface ActivityLagStatus {
@@ -11,11 +12,7 @@ export function evaluateLagStatus(
   activity: NotionCalendarActivity,
   currentTime: Date = new Date()
 ): ActivityLagStatus {
-  const statusUpper = (activity.status || "").toUpperCase();
-  const isPendingStatus =
-    statusUpper.includes("PRTUZ") ||
-    statusUpper === "P" ||
-    statusUpper.includes("POR HACER");
+  const isPendingStatus = workflowState(activity.status, activity.title) === "pending";
 
   if (!isPendingStatus) {
     return { isLagging: false, isMissingChecklist: false };
@@ -71,10 +68,10 @@ export function computeDailyKPIs(
     if (lag.isLagging) laggingCount++;
     if (lag.isMissingChecklist) missingChecklistCount++;
 
-    if (act.isCompletedForReview || act.status?.includes("rtuzREVISION")) {
+    if (workflowState(act.status, act.title) === "review" || (workflowState(act.status, act.title) === "unknown" && act.isCompletedForReview)) {
       reviewCount++;
     }
-    if (act.isFinalized || act.status?.includes("zREVISION")) {
+    if (workflowState(act.status, act.title) === "completed" || (workflowState(act.status, act.title) === "unknown" && act.isFinalized)) {
       completedCount++;
     }
 

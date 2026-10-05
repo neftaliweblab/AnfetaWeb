@@ -16,6 +16,12 @@ export default function StandaloneCalendarPage() {
     return new Date().toISOString().slice(0, 10);
   });
 
+  const [currentUser, setCurrentUser] = useState('');
+  useEffect(() => {
+    const readUser = () => { try { setCurrentUser(JSON.parse(localStorage.getItem('anfeta_settings') || '{}').currentUser || 'nneft'); } catch { setCurrentUser('nneft'); } };
+    readUser(); window.addEventListener('storage', readUser); window.addEventListener('anfeta_settings_changed', readUser);
+    return () => { window.removeEventListener('storage', readUser); window.removeEventListener('anfeta_settings_changed', readUser); };
+  }, []);
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [searchFilterQuery, setSearchFilterQuery] = useState<string>("");
@@ -155,6 +161,7 @@ export default function StandaloneCalendarPage() {
       {/* Canvas del Calendario */}
       <main className="flex-1 relative overflow-hidden">
         <CalendarHost
+          currentUser={currentUser}
           activities={calendarActivities}
           currentDate={currentDate}
           onSelectDate={handleSelectDate}

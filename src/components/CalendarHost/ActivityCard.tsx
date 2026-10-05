@@ -6,7 +6,11 @@ import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
 import { ChecklistPopup } from "./ChecklistPopup";
 
+import { workflowState } from '@/services/activityWorkflow';
+import { canEditActivity, isActivityLocked, isDirection } from '@/services/activityPermissions';
+import { PERSON_ALIASES, normalizePerson } from '@/services/identityNormalizer';
 interface ActivityCardProps {
+  currentUser: string;
   activity: NotionCalendarActivity;
   pixelsPerHour: number;
   overlapIndex: number;
@@ -15,12 +19,13 @@ interface ActivityCardProps {
 }
 
 export function ActivityCard({
-  activity,
+  activity, currentUser,
   pixelsPerHour,
   overlapIndex,
   overlapTotal,
   onUpdateActivity,
 }: ActivityCardProps) {
+  const editable = canEditActivity(currentUser, activity);
   const [showPopup, setShowPopup] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -38,16 +43,16 @@ export function ActivityCard({
 
   const startHour = startDate.getHours() + startDate.getMinutes() / 60;
   const endHour = endDate.getHours() + endDate.getMinutes() / 60;
-  const durationHours = Math.max(0.5, endHour - startHour);
+  const durationHours = Math.max(0.25, (endDate.getTime() - startDate.getTime()) / 3600000);
 
   const top = Math.max(0, (startHour - 8) * pixelsPerHour);
   const height = Math.max(28, durationHours * pixelsPerHour);
 
   // Styles
   const isUrgent = !!(activity?.isUrgent || title.includes("00"));
-  const isCompleted = !!(activity?.isFinalized || status.includes("zREVISION") || title.includes("zREVISION"));
-  const isReview = !!(activity?.isCompletedForReview || status.includes("rtuzREVISION") || title.includes("rtuzREVISION"));
-  const isSuspended = !!(activity?.isSuspended || status.includes("sprtuzREVISION") || title.includes("sprtuzREVISION"));
+  const isCompleted = workflowState(status, title) === "completed";
+  const isReview = workflowState(status, title) === "review";
+  const isSuspended = workflowState(status, title) === "suspended";
 
   let borderColor = "border-[#2A3E50]";
   let bgColor = "bg-[#11161C]";
@@ -78,6 +83,7 @@ export function ActivityCard({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!editable) return;
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
@@ -92,12 +98,14 @@ export function ActivityCard({
   return (
     <>
       <div
-        draggable={true}
+        draggable={editable}
+        title={editable ? undefined : isActivityLocked(activity) ? 'Actividad bloqueada' : 'Solo el responsable asignado puede mover esta actividad'}
         onDragStart={(e) => {
+          if (!editable) { e.preventDefault(); return; }
           e.dataTransfer.setData("text/plain", JSON.stringify({
             pageId: activity.pageId,
             person: activity.person,
-            durationHours,
+            durationHours, offsetY: e.clientY - e.currentTarget.getBoundingClientRect().top,
           }));
         }}
         onContextMenu={handleContextMenu}
@@ -108,7 +116,7 @@ export function ActivityCard({
           left: `calc(${leftPct}% + 2px)`,
         }}
         onDoubleClick={() => openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl)}
-        className={`absolute rounded border p-1.5 flex flex-col justify-between cursor-grab active:cursor-grabbing transition-all hover:z-30 select-none overflow-hidden ${bgColor} ${borderColor}`}
+        className={`absolute rounded border p-1.5 flex flex-col justify-between ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"} transition-all hover:z-30 select-none overflow-hidden ${bgColor} ${borderColor}`}
       >
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0 flex-1">
@@ -116,7 +124,7 @@ export function ActivityCard({
               className="font-mono text-[9px] uppercase font-bold truncate block"
               style={{ color: accentColor }}
             >
-              {domain}
+              {!editable && <span aria-label="Bloqueada">🔒 </span>}{domain}
             </span>
             <h5 className="text-[11px] font-medium text-[#F1F5F9] line-clamp-2 leading-tight">
               {shortTitle}
@@ -168,6 +176,11 @@ export function ActivityCard({
           <div className="px-3 py-1 text-[10px] font-mono text-[#64748B] border-b border-[#1E2836]">
             ACCIONES DE ACTIVIDAD
           </div>
+          {isDirection(currentUser) && <label className="block px-3 py-2 text-[10px] text-cyan-300">Reasignar responsable
+            <select aria-label="Reasignar responsable" className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-1 text-xs" value={normalizePerson(activity.person)} onChange={e => { onUpdateActivity?.(activity.pageId, { person: e.target.value }); closeContextMenu(); }}>
+              {Object.keys(PERSON_ALIASES).map(person => <option key={person}>{person}</option>)}
+            </select>
+          </label>}
           <button
             onClick={() => {
               onUpdateActivity?.(activity.pageId, { status: "rtuzREVISION", isCompletedForReview: true });

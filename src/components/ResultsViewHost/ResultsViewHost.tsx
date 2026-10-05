@@ -27,7 +27,9 @@ import {
   sendWindowsNotification,
 } from "@/services/windowsIntegration";
 
+import { captureFromBlob, isTextEditing } from '@/services/globalPaste';
 interface ResultsViewHostProps {
+  isActive?: boolean;
   items: SearchResultRow[];
   pendingTasks: PendingTaskItem[];
   activeProjects: ActiveProjectItem[];
@@ -55,7 +57,7 @@ interface ResultsViewHostProps {
 }
 
 export function ResultsViewHost({
-  items: initialItems,
+  items: initialItems, isActive = true,
   pendingTasks,
   activeProjects,
   onTogglePendingTask,
@@ -110,6 +112,9 @@ export function ResultsViewHost({
   const [isDropboxModalOpen, setIsDropboxModalOpen] = useState(false);
   const [dropboxTargetDir, setDropboxTargetDir] = useState("");
   const [isGlobalPasteOpen, setIsGlobalPasteOpen] = useState(false);
+  const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
+  const [draggingFiles, setDraggingFiles] = useState(false);
+  const [statusError, setStatusError] = useState('');
   const [globalPasteText, setGlobalPasteText] = useState("");
   const [globalPasteImage, setGlobalPasteImage] = useState<GlobalPasteImagePayload | null>(null);
 
@@ -427,7 +432,9 @@ export function ResultsViewHost({
 
   // Atajos de Teclado Globales (F5 refrescar, Enter abrir, Delete borrar)
   React.useEffect(() => {
+    if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isGlobalPasteOpen) return;
       const activeTag = document.activeElement?.tagName.toLowerCase();
       const isInput = activeTag === "input" || activeTag === "textarea";
 
@@ -452,7 +459,7 @@ export function ResultsViewHost({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, selectedItem, items]);
+  }, [selectedIds, selectedItem, items, isActive, isGlobalPasteOpen]);
 
   const handleOpenDropboxUpload = (targetDir?: string) => {
     if (targetDir) {
@@ -467,193 +474,62 @@ export function ResultsViewHost({
 
   // Flujo Global de Pegar en ANFETA con Ctrl + V (Abre Modal en el centro)
   const triggerGlobalPaste = async (clipboardData?: DataTransfer | null) => {
-    // 1. Si tenemos clipboardData del evento 'paste' nativo
-    if (clipboardData) {
-      const items = clipboardData.items;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith("image/")) {
-          const blob = items[i].getAsFile();
-          if (blob) {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = reader.result as string;
-              const base64 = dataUrl.split(",")[1];
-              const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-              const filename = `Captura_${timestamp}.png`;
-              setGlobalPasteImage({ dataUrl, base64, filename, sizeBytes: blob.size });
-              setGlobalPasteText("");
-              setIsGlobalPasteOpen(true);
-              playCopyChime();
-            };
-            reader.readAsDataURL(blob);
-            return;
-          }
-        }
-      }
-
-      if (clipboardData.files && clipboardData.files.length > 0) {
-        const file = clipboardData.files[0];
-        if (file.type.startsWith("image/")) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            const base64 = dataUrl.split(",")[1];
-            setGlobalPasteImage({ dataUrl, base64, filename: file.name, sizeBytes: file.size });
-            setGlobalPasteText("");
-            setIsGlobalPasteOpen(true);
-            playCopyChime();
-          };
-          reader.readAsDataURL(file);
-          return;
-        }
-      }
-
-      const text = clipboardData.getData("text");
-      if (text && text.trim()) {
-        setGlobalPasteImage(null);
-        setGlobalPasteText(text.trim());
-        setIsGlobalPasteOpen(true);
-        playCopyChime();
-        return;
-      }
-    }
-
-    // 2. Si se disparó por Keydown Ctrl+V o navigator.clipboard
+    setGlobalFiles([]);
     try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.read) {
-        const items = await navigator.clipboard.read();
-        for (const item of items) {
-          for (const type of item.types) {
-            if (type.startsWith("image/")) {
-              const blob = await item.getType(type);
-              const reader = new FileReader();
-              reader.onload = () => {
-                const dataUrl = reader.result as string;
-                const base64 = dataUrl.split(",")[1];
-                const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-                const filename = `Captura_${timestamp}.png`;
-                setGlobalPasteImage({ dataUrl, base64, filename, sizeBytes: blob.size });
-                setGlobalPasteText("");
-                setIsGlobalPasteOpen(true);
-                playCopyChime();
-              };
-              reader.readAsDataURL(blob);
-              return;
-            }
+      if (clipboardData) {
+        const image = Array.from(clipboardData.items).find(item => item.type.startsWith('image/'))?.getAsFile();
+        if (image) { setGlobalPasteImage(await captureFromBlob(image)); setGlobalPasteText(''); setIsGlobalPasteOpen(true); playCopyChime(); return; }
+        const text = clipboardData.getData('text/plain');
+        if (text.trim()) { setGlobalPasteImage(null); setGlobalPasteText(text.trim()); setIsGlobalPasteOpen(true); playCopyChime(); return; }
+      } else {
+        if (navigator.clipboard?.read) {
+          const entries = await navigator.clipboard.read();
+          for (const entry of entries) {
+            const type = entry.types.find(type => type.startsWith('image/'));
+            if (type) { setGlobalPasteImage(await captureFromBlob(await entry.getType(type))); setGlobalPasteText(''); setIsGlobalPasteOpen(true); return; }
           }
         }
+        const text = await navigator.clipboard.readText(); setGlobalPasteImage(null); setGlobalPasteText(text); setIsGlobalPasteOpen(true); return;
       }
-
-      if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
-        const text = await navigator.clipboard.readText();
-        if (text && text.trim()) {
-          setGlobalPasteImage(null);
-          setGlobalPasteText(text.trim());
-          setIsGlobalPasteOpen(true);
-          playCopyChime();
-          return;
-        }
-      }
-    } catch {
-      // Ignorar restricción de permisos y abrir modal manual
-    }
-
-    // 3. Fallback: Siempre abrir modal centrada
-    setGlobalPasteImage(null);
-    setGlobalPasteText("");
-    setIsGlobalPasteOpen(true);
+    } catch (error) { setStatusError(error instanceof Error ? error.message : 'No se pudo leer el portapapeles.'); }
+    setGlobalPasteImage(null); setGlobalPasteText(''); setIsGlobalPasteOpen(true);
   };
 
   React.useEffect(() => {
-    // Listener de Teclado (Ctrl + V) idéntico a RootLayout_GlobalPasteKeyDown de ANFETA
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
-        const activeEl = document.activeElement;
-        const activeTag = activeEl?.tagName.toLowerCase();
-        if (
-          activeTag === "input" ||
-          activeTag === "textarea" ||
-          (activeEl as HTMLElement)?.isContentEditable
-        ) {
-          return;
-        }
-
-        e.preventDefault();
-        triggerGlobalPaste(null);
-      }
-    };
-
+    if (!isActive) return;
     // Listener de Paste nativo
     const handlePaste = (e: ClipboardEvent) => {
-      const activeEl = document.activeElement;
-      const activeTag = activeEl?.tagName.toLowerCase();
-      if (
-        activeTag === "input" ||
-        activeTag === "textarea" ||
-        (activeEl as HTMLElement)?.isContentEditable
-      ) {
-        return;
-      }
-
+      if (isTextEditing(document.activeElement)) return;
+      if (e.clipboardData?.files.length && !Array.from(e.clipboardData.files).some(file => file.type.startsWith("image/"))) { e.preventDefault(); void handleDropFiles(Array.from(e.clipboardData.files)).catch(error => setStatusError(error.message)); return; }
       e.preventDefault();
-      triggerGlobalPaste(e.clipboardData);
+      setGlobalFiles([]);
+      void triggerGlobalPaste(e.clipboardData);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("paste", handlePaste);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("paste", handlePaste);
     };
-  }, []);
+  }, [isActive]);
 
   // Arrastrar y soltar archivos directamente en la tabla (Drop Surface)
   const handleDropFiles = async (droppedFiles: File[]) => {
-    if (!droppedFiles || droppedFiles.length === 0) return;
-    const destDir = selectedItem?.target || selectedItem?.path || "C:\\Users\\nanoc\\Dropbox\\DRX";
-
-    for (const file of droppedFiles) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(",")[1];
-        try {
-          const res = await fetch("/api/data", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "upload-to-dropbox",
-              payload: { targetDir: destDir, filename: file.name, base64 },
-            }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            playCheckChime();
-            sendWindowsNotification("Dropbox ANFETA", `Archivo subido: ${file.name}`);
-            const newRow: SearchResultRow = {
-              id: `dropbox-drop-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              name: file.name,
-              path: data.path,
-              target: data.path,
-              folder: data.targetDir,
-              extension: file.name.split(".").pop() || "",
-              sizeBytes: data.sizeBytes,
-              modifiedLocalDate: new Date().toISOString().slice(0, 10),
-              serverModified: new Date().toISOString(),
-              source: "Dropbox",
-              sourceName: "Dropbox",
-              isFolder: false,
-              type: "FILE",
-            };
-            setItems((prev) => [newRow, ...prev]);
-            setSelectedItem(newRow);
-          }
-        } catch (err) {
-          console.error("Error subiendo archivo arrastrado:", err);
-        }
-      };
+    if (!droppedFiles.length) return;
+    const files = await Promise.all(droppedFiles.map(file => new Promise<GlobalPasteImagePayload>((resolve, reject) => {
+      const reader = new FileReader(); reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.onload = () => { const dataUrl = String(reader.result); resolve({ dataUrl, base64: dataUrl.split(',')[1], filename: file.name, sizeBytes: file.size, contentType: file.type }); };
       reader.readAsDataURL(file);
-    }
+    })));
+    setGlobalFiles(files); setGlobalPasteImage(null); setGlobalPasteText(''); setIsGlobalPasteOpen(true);
   };
+  useEffect(() => {
+    if (!isActive) return;
+    const over = (event: DragEvent) => { if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); setDraggingFiles(true); } };
+    const leave = (event: DragEvent) => { if (!event.relatedTarget) setDraggingFiles(false); };
+    const drop = (event: DragEvent) => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); event.stopPropagation(); setDraggingFiles(false); void handleDropFiles(Array.from(event.dataTransfer.files)).catch(e => setStatusError(e.message)); };
+    window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop, true);
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop, true); };
+  }, [isActive]);
 
   const handleOpenItem = (item: any) => {
     if (!item) return;
@@ -740,10 +616,12 @@ export function ResultsViewHost({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "update-activity-status",
-          payload: { id: item.id, status: newStatus },
+          payload: { id: item.externalId || item.id, status: newStatus, currentUser },
         }),
       });
+      if (!res.ok) { const data = await res.json(); setStatusError(data.error || "No se pudo actualizar el estado"); return; }
       if (res.ok) {
+        setStatusError("");
         setItems((prev) =>
           prev.map((it) =>
             it.id === item.id
@@ -772,6 +650,7 @@ export function ResultsViewHost({
           "Estado actualizado",
           `Actividad "${item.name}" cambiada a ${newStatus} ✅`
         );
+        window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
       }
     } catch (err) {
       console.error("Error updating status:", err);
@@ -1024,6 +903,7 @@ export function ResultsViewHost({
           try {
             const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
             localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: newUser }));
+            window.dispatchEvent(new CustomEvent("anfeta_settings_changed", { detail: { currentUser: newUser } }));
           } catch {}
           if (newUser !== "__all__") {
             handleQueryChange(newUser);
@@ -1110,6 +990,7 @@ export function ResultsViewHost({
 
         {/* Col 2: RESULTADOS (Central) */}
         <ResultsVirtualTable
+          currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}
           selectedIds={selectedIds}
@@ -1284,17 +1165,23 @@ export function ResultsViewHost({
       />
 
       {/* Modal Pegar Texto / Captura Global (Ctrl+V) */}
+      {statusError && <div role="alert" className="fixed bottom-12 left-4 z-50 rounded bg-slate-900 p-3 text-rose-300">{statusError}</div>}
+      {draggingFiles && <div className="pointer-events-none fixed inset-4 z-[100] flex items-center justify-center rounded-2xl border-2 border-dashed border-cyan-300 bg-slate-950/80 text-xl text-cyan-200">📥 Soltar archivo aquí para Pegado Global ANFETA (Dropbox / Notion)</div>}
       <GlobalPasteModal
         isOpen={isGlobalPasteOpen}
         onClose={() => {
           setIsGlobalPasteOpen(false);
           setGlobalPasteImage(null);
+          setGlobalFiles([]);
         }}
+        currentUser={currentUser}
+        initialFiles={globalFiles}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
         onSuccess={(newRow) => {
           setItems((prev) => [newRow, ...prev]);
           setSelectedItem(newRow);
+          if (newRow.source === 'Notion') window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
         }}
       />
 

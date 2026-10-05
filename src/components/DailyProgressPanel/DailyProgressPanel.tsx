@@ -15,6 +15,8 @@ import { playTickSound } from "@/utils/soundAndFx";
 
 interface DailyProgressPanelProps {
   activities: NotionCalendarActivity[];
+  currentUser: string;
+  onSelectDate: (date: string) => void;
   currentDate: string;
   automationReport?: any;
 }
@@ -32,13 +34,18 @@ const COLLABORATORS = [
 ];
 
 export function DailyProgressPanel({
-  activities,
+  activities, currentUser, onSelectDate,
   currentDate,
   automationReport,
 }: DailyProgressPanelProps) {
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
   const [scope, setScope] = useState<"day" | "week">("day");
   const [weekActivities, setWeekActivities] = useState<NotionCalendarActivity[]>([]);
+  const [summary, setSummary] = useState('');
+  const [summaryError, setSummaryError] = useState('');
+  const [summarizing, setSummarizing] = useState(false);
+  const summaryAbort = React.useRef<AbortController | null>(null);
+  useEffect(() => { summaryAbort.current?.abort(); setSummarizing(false); setSummary(''); setSummaryError(''); setWeekActivities([]); return () => summaryAbort.current?.abort(); }, [currentDate]);
   const [copied, setCopied] = useState(false);
   const [showAutoReport, setShowAutoReport] = useState(false);
 
@@ -61,7 +68,7 @@ export function DailyProgressPanel({
   }, [scope, currentDate]);
 
   const activeActivities = useMemo(() => {
-    if (scope === "week" && weekActivities.length > 0) {
+    if (scope === "week") {
       return weekActivities;
     }
     return activities;
@@ -80,9 +87,9 @@ export function DailyProgressPanel({
     );
   }, [activeActivities, selectedPerson]);
 
-  const handleCopyReport = () => {
-    const md = generateMarkdownReport(kpis, displayedActivities);
-    navigator.clipboard.writeText(md);
+  const handleCopyReport = async () => {
+    const md = summary || generateMarkdownReport(kpis, displayedActivities);
+    try { await navigator.clipboard.writeText(md); } catch { setSummaryError('No se pudo copiar el reporte.'); return; }
     playTickSound();
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -104,7 +111,17 @@ export function DailyProgressPanel({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input aria-label="Fecha del avance diario" type="date" value={currentDate} onChange={e => onSelectDate(e.target.value)} className="rounded border border-slate-700 bg-slate-900 p-2 text-xs" />
+          <button disabled={summarizing} className="rounded border border-cyan-500/40 px-3 py-2 text-xs text-cyan-300 disabled:opacity-50" onClick={async () => {
+            const controller = new AbortController(); summaryAbort.current = controller;
+            setSummarizing(true); setSummaryError('');
+            try {
+              const response = await fetch('/api/data', { signal: controller.signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'daily-ai-summary', payload: { date: currentDate, currentUser } }) });
+              const data = await response.json(); if (!response.ok) throw new Error(data.error); setSummary(data.summary);
+            } catch (e) { if (!controller.signal.aborted) setSummaryError(e instanceof Error ? e.message : 'No se pudo generar el resumen.'); }
+            finally { if (!controller.signal.aborted) setSummarizing(false); }
+          }}>{summarizing ? 'Redactando…' : '✨ Redactar Resumen del Día con IA'}</button>
           {automationReport && (
             <button
               onClick={() => setShowAutoReport(true)}
@@ -134,6 +151,8 @@ export function DailyProgressPanel({
         </div>
       </div>
 
+      {summaryError && <p role="alert" className="text-sm text-rose-300">{summaryError}</p>}
+      {summary && <article className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-cyan-500/25 bg-slate-900 p-4 text-sm text-slate-200">{summary}</article>}
       {/* KPI Cards Grid */}
       <KpiCardsGrid kpis={kpis} />
 

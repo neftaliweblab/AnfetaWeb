@@ -39,6 +39,7 @@ export interface ResultItem {
 }
 
 interface ResultsTableProps {
+  currentUser: string;
   items: any[];
   selectedId: string | null;
   selectedIds: Set<string>;
@@ -160,7 +161,7 @@ export function ResultsVirtualTable({
   onRename,
   onDuplicate,
   onCreateFolder,
-  onUpdateStatus,
+  onUpdateStatus, currentUser,
   onToggleSelectAll,
   onClearSelection,
   onDeleteSelected,
@@ -454,32 +455,10 @@ export function ResultsVirtualTable({
             style={{ width: `${colWidths.status}px` }}
             className="shrink-0 px-1 flex items-center gap-1 overflow-hidden"
           >
-            {parsed.workflow ? (
-              <span
-                style={{
-                  fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
-                  padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
-                }}
-                className="inline-flex items-center gap-1 rounded-full font-bold bg-[#1E293B] border border-current/20 truncate"
-              >
-                <span
-                  className="rounded-full shrink-0"
-                  style={{
-                    width: `${Math.max(4, Math.round(6 * scale))}px`,
-                    height: `${Math.max(4, Math.round(6 * scale))}px`,
-                    backgroundColor: parsed.workflowColor,
-                  }}
-                />
-                <span style={{ color: parsed.workflowColor }} className="truncate">{parsed.workflow}</span>
-              </span>
-            ) : (
-              <span
-                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
-                className="text-[#94A3B8] truncate"
-              >
-                {item.updateStatus || "—"}
-              </span>
-            )}
+            {item.source === 'Notion' ? <select aria-label="Cambiar estado" title={`Estado · ${currentUser}`} value={item.updateStatus || item.statusLabel || 'PENDIENTE'} onClick={e => e.stopPropagation()} onChange={e => onUpdateStatus?.(item, e.target.value)} className="max-w-full rounded-full border border-cyan-500/30 bg-slate-900 px-2 py-1 text-[10px] text-cyan-200">
+              {!['PENDIENTE', 'TERMINADO', 'EN REVISIÓN'].includes(item.updateStatus || item.statusLabel || 'PENDIENTE') && <option>{item.updateStatus || item.statusLabel}</option>}
+              {['PENDIENTE', 'TERMINADO', 'EN REVISIÓN'].map(status => <option key={status}>{status}</option>)}
+            </select> : <span className="text-xs text-slate-400">{parsed.workflow || item.updateStatus || '—'}</span>}
           </div>
         )}
 

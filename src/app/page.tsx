@@ -23,7 +23,7 @@ import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 export default function AnfetaApp() {
   const [activeView, setActiveView] = useState<ActiveHostView>("results");
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentUser, setCurrentUser] = useState("jjohn");
+  const [currentUser, setCurrentUser] = useState("nneft");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Data states
@@ -68,11 +68,6 @@ export default function AnfetaApp() {
           if (calData.activities) setCalendarActivities(calData.activities);
           if (calData.availableDates?.length) {
             setAvailableDates(calData.availableDates);
-            // Default to most recent date if today is empty
-            if (calData.activities.length === 0 && calData.availableDates.length > 0) {
-              const latestDate = calData.availableDates[calData.availableDates.length - 1];
-              setCurrentDate(latestDate);
-            }
           }
         }
 
@@ -149,9 +144,11 @@ export default function AnfetaApp() {
 
   // Fetch activities when date changes
   useEffect(() => {
+    const controller = new AbortController();
+    setCalendarActivities([]);
     async function fetchCalendarForDate() {
       try {
-        const res = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+        const res = await fetch(`/api/data?type=calendar&date=${currentDate}`, { signal: controller.signal });
         if (res.ok) {
           const data = await res.json();
           if (data.activities) setCalendarActivities(data.activities);
@@ -161,6 +158,7 @@ export default function AnfetaApp() {
       }
     }
     fetchCalendarForDate();
+    return () => controller.abort();
   }, [currentDate]);
 
   // Global hotkeys (Ctrl+Alt+B, Ctrl+Shift+K, Ctrl+Shift+J)
@@ -497,6 +495,7 @@ export default function AnfetaApp() {
           }`}
         >
           <ResultsViewHost
+            isActive={activeView === "results"}
             items={searchIndex}
             pendingTasks={pendingTasks}
             activeProjects={activeProjects}
@@ -531,6 +530,7 @@ export default function AnfetaApp() {
           }`}
         >
           <CalendarHost
+            currentUser={currentUser}
             activities={calendarActivities}
             currentDate={currentDate}
             onSelectDate={handleSelectDate}
@@ -567,6 +567,8 @@ export default function AnfetaApp() {
           }`}
         >
           <DailyProgressPanel
+            currentUser={currentUser}
+            onSelectDate={handleSelectDate}
             activities={calendarActivities}
             currentDate={currentDate}
             automationReport={automationReport}

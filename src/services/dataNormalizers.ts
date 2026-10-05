@@ -74,8 +74,11 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
   };
 }
 
+import { workflowState } from './activityWorkflow';
+
 export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity {
   const title = raw.Title || raw.title || "";
+  const workflow = workflowState(raw.Status || raw.status || "", title);
   return {
     pageId: raw.PageId || raw.pageId || `act-${idx}`,
     pageUrl: raw.PageUrl || raw.pageUrl || "",
@@ -88,23 +91,21 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     status: raw.Status || raw.status || "Pendiente",
     start: raw.Start || raw.start || "",
     end: raw.End || raw.end || "",
-    originalScheduledDate: raw.ActivityCreatedDate || "",
-    currentScheduledDate: raw.DatePropertyName || "",
-    moveCount: raw.MoveCount || 0,
-    routeDates: raw.RouteDates || [],
+    originalScheduledDate: raw.originalScheduledDate || raw.ActivityCreatedDate || "",
+    currentScheduledDate: raw.currentScheduledDate || (raw.Start || raw.start || "").slice(0,10),
+    moveCount: raw.MoveCount ?? raw.moveCount ?? 0,
+    routeDates: raw.RouteDates || raw.routeDates || [],
     checklistScanned: !!(raw.ChecklistScanned ?? raw.checklistScanned),
     checklistTotal: raw.ChecklistTotal ?? raw.checklistTotal ?? 0,
     checklistCompleted: raw.ChecklistCompleted ?? raw.checklistCompleted ?? 0,
     todayChecklistCompleted:
       raw.TodayChecklistCompleted ?? raw.todayChecklistCompleted ?? raw.ChecklistCompleted ?? 0,
     isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? title.includes("00")),
-    isCompletedForReview: !!(
-      raw.IsCompletedForReview ?? raw.isCompletedForReview ?? title.includes("rtuzREVISION")
-    ),
-    isFinalized: !!(raw.IsFinalized ?? raw.isFinalized ?? title.includes("zREVISION")),
-    isSuspended: !!(raw.IsSuspended ?? raw.isSuspended ?? title.includes("sprtuzREVISION")),
+    isCompletedForReview: workflow === 'review' || (workflow === 'unknown' && !!(raw.IsCompletedForReview ?? raw.isCompletedForReview)),
+    isFinalized: workflow === 'completed' || (workflow === 'unknown' && !!(raw.IsFinalized ?? raw.isFinalized)),
+    isSuspended: workflow === 'suspended' || (workflow === 'unknown' && !!(raw.IsSuspended ?? raw.isSuspended)),
     isLocked: !!(
-      raw.IsAutomationLocked ?? raw.isLocked ?? title.includes("Bloqueada_ANFETA")
+      raw.IsAutomationLocked || raw.isLocked || /Bloqueada_ANFETA/i.test(title)
     ),
     estimatedWorkMinutes: raw.EstimatedWorkMinutes ?? raw.estimatedWorkMinutes ?? 0,
   };

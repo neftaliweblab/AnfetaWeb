@@ -12,7 +12,10 @@ import { AutomationReportModal } from "../DailyProgressPanel/AutomationReportMod
 import { normalizePerson } from "@/services/identityNormalizer";
 import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
+import { canEditActivity, scheduleAtDrop, isDirection } from '@/services/activityPermissions';
+import { CreateActivityModal } from './CreateActivityModal';
 interface CalendarHostProps {
+  currentUser: string;
   activities: NotionCalendarActivity[];
   currentDate: string;
   onSelectDate: (date: string) => void;
@@ -41,7 +44,7 @@ const DEFAULT_COLLABORATORS = [
 ];
 
 export function CalendarHost({
-  activities: initialActivities,
+  activities: initialActivities, currentUser,
   currentDate,
   onSelectDate,
   availableDates,
@@ -55,8 +58,10 @@ export function CalendarHost({
   onRefresh,
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
+  const [error, setError] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const pending = React.useRef(new Set<string>());
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
-  const [extraHours, setExtraHours] = useState(false);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -74,28 +79,26 @@ export function CalendarHost({
   };
 
   const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity>) => {
-    setActivitiesList((prev) =>
-      prev.map((a) => (a.pageId === pageId ? { ...a, ...updates } : a))
-    );
-    if (updates.status) {
-      try {
-        await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "update-activity-status",
-            pageId,
-            status: updates.status,
-          }),
-        });
-      } catch (err) {
-        console.error("Error al sincronizar estado de actividad con la API:", err);
-      }
-    }
+    const original = activitiesList.find(a => a.pageId === pageId);
+    if (!original || !canEditActivity(currentUser, original) || pending.current.has(pageId)) return;
+    if (updates.person && normalizePerson(updates.person) !== normalizePerson(original.person) && !isDirection(currentUser)) return;
+    pending.current.add(pageId); setError('');
+    try {
+      const response = await fetch('/api/data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: updates.start ? 'update-activity-schedule' : updates.person ? 'update-activity-assignee' : 'update-activity-status',
+          payload: { id: pageId, currentUser, ...updates } }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar la actividad.');
+      setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
+      onRefresh?.();
+    } catch (error) { setError(error instanceof Error ? error.message : 'Error de conexión'); }
+    finally { pending.current.delete(pageId); }
   };
 
   const startHour = 8;
-  const endHour = extraHours ? 22 : 21;
+  const endHour = 22;
   const totalHours = endHour - startHour;
   const canvasHeight = totalHours * pixelsPerHour;
 
@@ -137,36 +140,23 @@ export function CalendarHost({
   const handleDropOnColumn = (e: React.DragEvent, colPerson: string) => {
     e.preventDefault();
     try {
-      const dataStr = e.dataTransfer.getData("text/plain");
-      if (!dataStr) return;
-      const { pageId, durationHours = 1 } = JSON.parse(dataStr);
-      const colRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const dropY = Math.max(0, e.clientY - colRect.top);
-      const minutesFromStart = Math.round(((dropY / pixelsPerHour) * 60) / 15) * 15;
-      const targetHour = Math.min(21, Math.max(8, 8 + Math.floor(minutesFromStart / 60)));
-      const targetMinute = Math.min(45, Math.max(0, minutesFromStart % 60));
-      const hourStr = targetHour.toString().padStart(2, "0");
-      const minStr = targetMinute.toString().padStart(2, "0");
-      const endH = Math.min(22, targetHour + Math.ceil(durationHours)).toString().padStart(2, "0");
-
-      handleUpdateActivity(pageId, {
-        person: colPerson,
-        start: `${currentDate}T${hourStr}:${minStr}:00-06:00`,
-        end: `${currentDate}T${endH}:${minStr}:00-06:00`,
-      });
-    } catch (err) {
-      console.error("Drop error:", err);
-    }
+      const { pageId, offsetY = 0 } = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const activity = activitiesList.find(a => a.pageId === pageId);
+      if (!activity || !canEditActivity(currentUser, activity) || normalizePerson(activity.person) !== colPerson) return;
+      const y = e.clientY - e.currentTarget.getBoundingClientRect().top - 56 - offsetY;
+      void handleUpdateActivity(pageId, scheduleAtDrop(activity, currentDate, y / pixelsPerHour * 60));
+    } catch (error) { setError(error instanceof Error ? error.message : 'Movimiento inválido'); }
   };
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F]">
+      {error && <div role="alert" className="px-3 py-2 text-sm text-rose-300">{error}</div>}
+      {showCreate && <CreateActivityModal currentUser={currentUser} date={currentDate} onClose={() => setShowCreate(false)} onCreated={activity => { setActivitiesList(prev => [...prev, activity]); setShowCreate(false); onRefresh?.(); }} />}
       <CalendarTopControls
+        onCreateActivity={() => setShowCreate(true)}
         currentDate={currentDate}
         onSelectDate={onSelectDate}
         availableDates={availableDates}
-        extraHours={extraHours}
-        onToggleExtraHours={() => setExtraHours(!extraHours)}
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
         totalActivitiesCount={filteredActivities.length}
         pixelsPerHour={pixelsPerHour}
@@ -250,6 +240,7 @@ export function CalendarHost({
                       <ActivityCard
                         key={act.pageId || idx}
                         activity={act}
+                        currentUser={currentUser}
                         pixelsPerHour={pixelsPerHour}
                         overlapIndex={overlapIndex}
                         overlapTotal={overlapTotal}
