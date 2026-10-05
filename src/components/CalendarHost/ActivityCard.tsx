@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import { Eye, CheckSquare, Tag, ExternalLink } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
@@ -44,6 +44,36 @@ export function ActivityCard({
   const shortTitle = activity?.shortTitle || (activity as any)?.ShortTitle || title;
   const status = activity?.status || (activity as any)?.Status || "";
   const domain = activity?.domain || (activity as any)?.ParsedDomain || "DOMINIO";
+
+  // Limpiar título de tecnicismos redundantes como prtuzREVISION, nneft, jjohn, fechas [10OCT], etc.
+  const cleanTitle = useMemo(() => {
+    let t = shortTitle || title || "";
+    // Remover prefijos de fase al inicio (prtuzREVISION, rtuzREVISION, zREVISION, sprtuzREVISION)
+    t = t.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINADO|TERMINADA|PENDIENTE)\s*/i, "");
+    // Remover usuario tag duplicado al inicio (ej. aads 26-, webs 26-)
+    t = t.replace(/^(?:aads|webs|seo|maps)\s+\d+[-–]\s*/i, "");
+    // Remover tokens de persona o códigos repetitivos
+    t = t.replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, "");
+    // Limpiar corchetes de fecha si vienen pegados como [10OCT] 8.00 Recurrente -> Recurrente
+    t = t.replace(/\[\d+[A-Z]+\]\s*/gi, "");
+    t = t.replace(/^\d+(?:\.\d+)?\s+/g, ""); // Remover prefijos numéricos como 8.00 o 15.00
+    t = t.replace(/\s+00\s*$/g, ""); // Quitar sufijo 00 de urgente
+    t = t.trim();
+    return t || shortTitle || title;
+  }, [shortTitle, title]);
+
+  // Detección del Tipo de Proyecto (ADS, WEBS, SEO, MAPS, DISENO, SOPORTE, etc.)
+  const typeLabel = useMemo(() => {
+    const raw = `${title} ${activity?.project || ""}`.toLowerCase();
+    if (/\b(?:google\s*ads|ads|campaña|campañas|aads)\b/i.test(raw)) return "ADS";
+    if (/\b(?:seo|posicionamiento|keywords|articulos|blog)\b/i.test(raw)) return "SEO";
+    if (/\b(?:web|sitio\s*web|wordpress|landing|elementor|hosting|webs)\b/i.test(raw)) return "WEBS";
+    if (/\b(?:maps|google\s*maps|ficha|gmb)\b/i.test(raw)) return "MAPS";
+    if (/\b(?:diseño|diseno|branding|logo|flyer|grafico)\b/i.test(raw)) return "DISEÑO";
+    if (/\b(?:cobranza|cobro|pago|factura)\b/i.test(raw)) return "COBRO";
+    if (/\b(?:soporte|ticket|correo|mantenimiento)\b/i.test(raw)) return "SOPORTE";
+    return null;
+  }, [title, activity?.project]);
 
   // Parseo horario seguro y exacto (evita descuadre de zona horaria o UTC)
   const startStr = activity?.start || (activity as any)?.Start || "";
@@ -94,76 +124,76 @@ export function ActivityCard({
   const top = Math.max(0, ((startMinute - 8 * 60) / 60) * pixelsPerHour);
   const height = Math.max(34, (durationMinutes / 60) * pixelsPerHour);
 
-  // Workflow, Letra Insignia y Estilos oficiales ANFETA
+  // Workflow, Letra Insignia y Estilos sobrios con colores balanceados (sin saturación chillona)
   const isUrgent = !!(activity?.isUrgent || title.includes("00"));
   const wf = workflowState(status, title);
   const isCompleted = wf === "completed";
   const isReview = wf === "review";
   const isSuspended = wf === "suspended";
 
-  // Badges y colores idénticos a ANFETA Desktop
+  // Badges y colores más tenues, profesionales y oscuros (WPF Parity)
   let badgeLetter = "P";
-  let badgeBg = "#3B1E08"; // Marrón/Naranja oscuro
-  let badgeBorder = "#F59E0B";
-  let badgeText = "#FCD34D";
-  let cardBorder = "border-[#3B2D20]";
-  let cardBg = "bg-[#18181B]";
+  let badgeBg = "#261A10";
+  let badgeBorder = "#B45309";
+  let badgeText = "#FDE68A";
+  let cardBorder = "border-[#382818]";
+  let cardBg = "bg-[#161516]";
 
   let phaseLabel = "POR HACER";
-  let phaseColor = "#451A03";
+  let phaseColor = "#2E1909";
   let phaseTextColor = "#FDBA74";
 
   if (isUrgent) {
     badgeLetter = "!";
-    badgeBg = "#4C0519";
-    badgeBorder = "#FB7185";
-    badgeText = "#FECDD3";
-    cardBorder = "border-[#FB7185]/80 shadow-[0_0_12px_rgba(251,113,133,0.3)]";
-    cardBg = "bg-[#201015]";
+    badgeBg = "#300D15";
+    badgeBorder = "#E11D48";
+    badgeText = "#FDA4AF";
+    cardBorder = "border-[#9F1239]/70 shadow-[0_0_10px_rgba(225,29,72,0.18)]";
+    cardBg = "bg-[#181114]";
     phaseLabel = "00 URGENTE";
-    phaseColor = "#4C0519";
-    phaseTextColor = "#FECDD3";
+    phaseColor = "#300D15";
+    phaseTextColor = "#FDA4AF";
   } else if (isCompleted) {
     badgeLetter = "T";
-    badgeBg = "#064E3B";
-    badgeBorder = "#10B981";
+    badgeBg = "#062E22";
+    badgeBorder = "#059669";
     badgeText = "#6EE7B7";
-    cardBorder = "border-[#10B981]/60";
-    cardBg = "bg-[#131C17]";
+    cardBorder = "border-[#065F46]/70";
+    cardBg = "bg-[#111815]";
     phaseLabel = "TERMINADA";
-    phaseColor = "#104E3E";
-    phaseTextColor = "#5EEAD4";
+    phaseColor = "#062E22";
+    phaseTextColor = "#6EE7B7";
   } else if (isReview) {
     badgeLetter = "R";
-    badgeBg = "#0C4A6E";
-    badgeBorder = "#38BDF8";
+    badgeBg = "#0C2E46";
+    badgeBorder = "#0284C7";
     badgeText = "#7DD3FC";
-    cardBorder = "border-[#0284C7]/60";
-    cardBg = "bg-[#0E1724]";
+    cardBorder = "border-[#075985]/70";
+    cardBg = "bg-[#101720]";
     phaseLabel = "EN REVISIÓN";
-    phaseColor = "#1B4764";
+    phaseColor = "#0C2E46";
     phaseTextColor = "#7DD3FC";
   } else if (isSuspended) {
     badgeLetter = "S";
-    badgeBg = "#3B0764";
-    badgeBorder = "#C084FC";
-    badgeText = "#E9D5FF";
-    cardBorder = "border-[#9333EA]/60";
-    cardBg = "bg-[#1B1226]";
+    badgeBg = "#240E3E";
+    badgeBorder = "#9333EA";
+    badgeText = "#D8B4FE";
+    cardBorder = "border-[#6B21A8]/70";
+    cardBg = "bg-[#15121E]";
     phaseLabel = "SUSPENDIDA";
-    phaseColor = "#4A3510";
-    phaseTextColor = "#FDE047";
+    phaseColor = "#240E3E";
+    phaseTextColor = "#D8B4FE";
   } else {
     // Pendiente
     badgeLetter = "P";
-    badgeBg = "#451A03";
-    badgeBorder = "#D97706";
+    badgeBg = "#261A10";
+    badgeBorder = "#B45309";
     badgeText = "#FDE68A";
-    cardBorder = "border-[#78350F]/60";
-    cardBg = "bg-[#1A1817]";
+    cardBorder = "border-[#3D2614]/80";
+    cardBg = "bg-[#171514]";
     phaseLabel = "POR HACER";
-    phaseColor = "#451A03";
-    phaseTextColor = "#FDBA74";
+    phaseColor = "#261A10";
+    phaseTextColor = "#FDE68A";
   }
 
   const widthPct = 100 / Math.max(1, overlapTotal);
@@ -280,6 +310,13 @@ export function ActivityCard({
               {badgeLetter}
             </span>
 
+            {/* Badge de tipo de actividad (ADS, WEBS, SEO, MAPS, etc.) */}
+            {typeLabel && (
+              <span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#1E293B] border border-[#38BDF8]/40 text-[#38BDF8] tracking-wider">
+                {typeLabel}
+              </span>
+            )}
+
             {/* Dominio en azul claro */}
             <span className="font-mono text-[11px] font-semibold text-[#38BDF8] truncate tracking-tight">
               {!editable && <span aria-label="Bloqueada" className="text-[10px]">🔒 </span>}
@@ -323,10 +360,10 @@ export function ActivityCard({
           )}
         </div>
 
-        {/* Título de la actividad legible */}
+        {/* Título de la actividad limpio y legible */}
         <div className="my-auto py-0.5 min-w-0">
           <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
-            {shortTitle}
+            {cleanTitle}
           </h5>
         </div>
 

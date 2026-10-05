@@ -407,7 +407,7 @@ export function CalendarHost({
                     key={person}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnColumn(e, person)}
-                    className="flex-1 min-w-[220px] max-w-[320px] border-r border-[#26323E] flex flex-col"
+                    className="w-[205px] min-w-[185px] max-w-[240px] flex-shrink-0 border-r border-[#202832] flex flex-col"
                     style={{ height: `${canvasHeight + 56}px` }}
                   >
                     <CalendarColHeader
