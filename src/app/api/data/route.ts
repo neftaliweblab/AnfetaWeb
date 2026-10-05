@@ -749,27 +749,23 @@ export async function GET(req: NextRequest) {
     if (type === "dropbox-folders") {
       const settings = getSettings();
       const baseDropbox = (searchParams.get("dropboxPath") || settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
-      const drxPath = path.join(baseDropbox, "CARPETA UNIKA drx");
+      const drxPath = path.join(baseDropbox, "DRX");
       const folders: { name: string; path: string; count?: number }[] = [];
 
       // 1. Explorar en disco si la ruta física existe localmente en Windows
       try {
-        if (fs.existsSync(baseDropbox)) {
+        if (fs.existsSync(drxPath)) {
+          const items = fs.readdirSync(drxPath, { withFileTypes: true });
+          for (const it of items) {
+            if (it.isDirectory()) {
+              folders.push({ name: it.name, path: path.join(drxPath, it.name) });
+            }
+          }
+        } else if (fs.existsSync(baseDropbox)) {
           const topItems = fs.readdirSync(baseDropbox, { withFileTypes: true });
           for (const it of topItems) {
             if (it.isDirectory()) {
-              const fullP = path.join(baseDropbox, it.name);
-              folders.push({ name: it.name, path: fullP });
-              if (it.name.toLowerCase().includes("unika") || it.name.toLowerCase().includes("drx")) {
-                try {
-                  const subItems = fs.readdirSync(fullP, { withFileTypes: true });
-                  for (const sub of subItems) {
-                    if (sub.isDirectory()) {
-                      folders.push({ name: sub.name, path: path.join(fullP, sub.name) });
-                    }
-                  }
-                } catch {}
-              }
+              folders.push({ name: it.name, path: path.join(baseDropbox, it.name) });
             }
           }
         }
@@ -781,42 +777,26 @@ export async function GET(req: NextRequest) {
       if (folders.length === 0) {
         try {
           const rawIndex = readLocalJson<any[]>("index_cache.json", []);
-          const folderMap = new Map<string, { path: string; count: number }>();
+          const topFolderMap = new Map<string, { path: string; count: number }>();
 
           rawIndex.forEach((x) => {
             const isF = x.IsFolder || x.Type === "FOLDER";
             const p = x.Path || x.Target || "";
-            const isDropbox = x.Source === 0 || x.Source === 1 || p.toLowerCase().includes("dropbox");
-            if (!isDropbox) return;
+            const folder = (x.Folder || "").toLowerCase();
 
-            if (isF && x.Name) {
-              const current = folderMap.get(x.Name) || { path: p, count: 0 };
-              folderMap.set(x.Name, current);
-            }
-
-            // Detectar carpetas en la ruta
-            const parts = p.split(/[\\\/]/).filter(Boolean);
-            if (parts.length > 1) {
-              const parentFolder = parts[parts.length - 2];
-              if (
-                parentFolder &&
-                !parentFolder.toLowerCase().includes("users") &&
-                !parentFolder.toLowerCase().includes("nanoc") &&
-                !parentFolder.toLowerCase().includes("dropbox")
-              ) {
-                const current = folderMap.get(parentFolder) || {
-                  path: p.slice(0, p.lastIndexOf(parts[parts.length - 1])),
-                  count: 0,
-                };
-                current.count++;
-                folderMap.set(parentFolder, current);
+            // Extraer carpetas raíz dentro de DRX
+            if (isF && (folder.endsWith("\\drx") || folder.endsWith("/drx") || x.Name === "DRX")) {
+              if (x.Name && !topFolderMap.has(x.Name)) {
+                topFolderMap.set(x.Name, { path: p, count: 0 });
               }
             }
           });
 
-          for (const [name, info] of folderMap.entries()) {
+          // Si se encontraron las carpetas de DRX
+          for (const [name, info] of topFolderMap.entries()) {
             folders.push({ name, path: info.path, count: info.count });
           }
+          folders.sort((a, b) => a.name.localeCompare(b.name));
         } catch (e) {
           console.error("Error extracting Dropbox folders from index_cache:", e);
         }
