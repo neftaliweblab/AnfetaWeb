@@ -11,12 +11,14 @@ export interface AnfetaSyncMessage {
     | "SYNC_SELECT_DOMAIN"
     | "CALENDAR_STANDALONE_READY"
     | "ACTIVITY_UPDATED"
-    | "ACTIVITY_CREATED";
+    | "ACTIVITY_CREATED"
+    | "CALENDAR_REFRESHED";
   query?: string;
   date?: string;
   domain?: string;
   pageId?: string;
   activity?: any;
+  activities?: any[];
   updates?: any;
   sourceWindow?: "main" | "calendar";
   timestamp?: number;
@@ -60,6 +62,7 @@ class AnfetaSyncService {
       timestamp: Date.now(),
     };
 
+    this.notifyListeners(payload);
     if (this.channel) {
       try {
         this.channel.postMessage(payload);

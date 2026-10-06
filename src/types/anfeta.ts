@@ -66,6 +66,7 @@ export interface NotionCalendarActivity {
   checklistScanned: boolean;
   checklistTotal: number;
   checklistCompleted: number;
+  completedChecks?: {id:string;blockId:string;text:string;editedAt:string;isChecked:boolean}[];
   todayChecklistCompleted: number;
   isUrgent: boolean; // Tag '00'
   isCompletedForReview: boolean; // Tag 'rtuzREVISION'

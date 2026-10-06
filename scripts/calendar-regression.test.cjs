@@ -31,15 +31,20 @@ state={page:fixture(),calls:[],flow:undefined,failMetadata:false,failChecklist:f
 function response(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});}
 global.fetch=async(url,options={})=>{
   assert.ok(String(url).startsWith('https://api.notion.com/v1/'),'Tests must not call an external service');
-  const target=String(url).split('/v1/')[1],method=options.method || 'GET',body=options.body?JSON.parse(options.body):undefined;
+  const target=String(url).split('/v1/')[1].replace(pid.replace(/-/g,''),pid).replace(other.replace(/-/g,''),other),method=options.method || 'GET',body=options.body?JSON.parse(options.body):undefined;
   state.calls.push({target,method,body});
-  if(target==='pages' && method==='POST')return state.failAlert ? response({message:'Alert rejected'},403) : response({id:other,url:'https://notion.so/'+other,properties:body.properties});
-  if(target==='pages/'+other && method==='GET')return response({id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
+  if(target==='pages' && method==='POST') {
+    if(state.failAlert || state.failCreate)return response({message:'Creation rejected'},403);
+    const properties={};for(const [name,prop] of Object.entries(body.properties)) {assert.ok(!Array.isArray(prop),'Notion properties must be objects');const type=Object.keys(prop)[0];properties[name]={type,...prop};if(type==='people')properties[name].people=prop.people.map(u=>({...u,name:u.id==='neft-id'?'Neftali':'John'}));}
+    state.createdPage={id:other,url:'https://notion.so/'+other,parent:body.parent,properties};return response(state.createdPage);
+  }
+  if(target==='pages/'+other && method==='GET')return response(state.createdPage ? {...state.createdPage,archived:!!state.archivedAlert} : {id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
   if(target==='pages/'+other && method==='PATCH')return response({id:other});
+  if(target.startsWith('blocks/'+other+'/children') && method==='GET')return response({results:[],has_more:false});
   if(target==='blocks/'+other+'/children' && method==='PATCH')return response({results:body.children});
   if(target==='pages/'+pid && method==='GET')return response(state.page);
-  if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
-  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
+  if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
+  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
   if(target.endsWith('/query') && state.guestReviewer) return response({results:[{...fixture(),properties:{...fixture().properties,'Assignee/Ejecutor Principal':{type:'people',people:[{id:'guest-isaias',name:'iisai@pprin.com'}]}}}],has_more:false});
   if(target.endsWith('/query')) return response(body.start_cursor ? {results:[{...fixture(),id:other}],has_more:false} : {results:[state.queryCurrent ? state.page : fixture()],has_more:true,next_cursor:'page-two'});
   if(target.startsWith('users?'))return response({results:state.usersMissing?[]:[{id:'john-id',type:'person',name:'John',person:{email:'jjohn@pprin.com'}},{id:'genaro-id',type:'person',name:'Genaro',person:{email:'ggena@pprin.com'}}],has_more:false});
@@ -55,7 +60,7 @@ global.fetch=async(url,options={})=>{
   if(target==='blocks/'+pid+'/children' && method==='PATCH'){
     if(state.failMetadata)return response({message:'Metadata rejected'},403);
     const text=body.children[0].toggle.children[0].paragraph.rich_text[0].text.content;
-    state.flow=JSON.parse(Buffer.from(text.slice(calendar.REVIEW_PREFIX.length),'base64').toString());
+    if(text.startsWith(calendar.REVIEW_PREFIX))state.flow=JSON.parse(Buffer.from(text.slice(calendar.REVIEW_PREFIX.length),'base64').toString());
     return response({results:body.children});
   }
   if(target.startsWith('blocks/'+pid+'/children')){
@@ -181,7 +186,71 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   });
   await test('Error de aviso es visible sin fingir que falló la actividad guardada',async()=>{
     state.failAlert=true;const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
-    assert.match(page.__notificationWarning,/Alert rejected/);assert.equal(page.__reviewFlow.State,'pending');
+    assert.match(page.__notificationWarning,/Creation rejected/);assert.equal(page.__reviewFlow.State,'pending');
+  });
+  await test('Solo el revisor asignado aprueba o devuelve una revisión pendiente',async()=>{
+    await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    await assert.rejects(mutations.mutateActivity(settings,'ggena',pid,{status:'zREVISION'}),/revisor asignado/);
+    await assert.rejects(mutations.mutateActivity(settings,'ggena',pid,{reviewAction:'return',note:'Corregir'}),/revisor asignado/);
+  });
+  await test('Devolver revisión restaura People, prefijo pendiente y comentarios',async()=>{
+    await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    const page=await mutations.mutateActivity(settings,'jjohn',pid,{reviewAction:'return',note:'Corregir encabezado'});
+    assert.equal(page.__reviewFlow.State,'returned');assert.equal(page.__reviewFlow.Note,'Corregir encabezado');
+    assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^prtuzREVISION/);
+    assert.match(state.calls.filter(c=>c.target==='pages/'+other&&c.method==='PATCH').at(-1).body.properties.Name.title[0].text.content,/nneft de:john.*Correcciones solicitadas/);
+  });
+  await test('Devolver sin comentarios no modifica Notion',async()=>{
+    await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    const before=state.calls.filter(c=>c.method==='PATCH').length;
+    await assert.rejects(mutations.mutateActivity(settings,'jjohn',pid,{reviewAction:'return',note:''}),/Describe/);
+    assert.equal(state.calls.filter(c=>c.method==='PATCH').length,before);
+  });
+  await test('El progreso del día no usa el total acumulado ni inventa checks',async()=>{
+    const normalizer=require(root+'/src/services/dataNormalizers.ts');
+    assert.equal(normalizer.normalizeActivity({ChecklistCompleted:9},0).todayChecklistCompleted,0);
+    assert.deepEqual(normalizer.normalizeActivity({ChecklistCompleted:9},0).completedChecks,[]);
+  });
+  await test('Creación rápida usa la fuente de calendario y resuelve el People invitado',async()=>{
+    const result=await mutations.createActivity(settings,'nneft',{title:'anfeta.com Diseño',domain:'anfeta.com',person:'Neftali',start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'});
+    const call=state.calls.find(c=>c.target==='pages'&&c.method==='POST');
+    assert.equal(call.body.parent.data_source_id,'2eeabd7d-91b7-8193-a131-000b08cd54e2');assert.equal(call.body.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
+    assert.equal((result.activity.title.match(/anfeta.com/g)||[]).length,1);
+  });
+  await test('Plantillas fallidas no crean actividades ficticias ni confirman éxito',async()=>{
+    state.failCreate=true;
+    const res=await route.POST(request('create-from-template',{currentUser:'nneft',date:'2026-10-05',requests:[{sourcePageId:pid,title:'prtuzREVISION nneft anfeta.com Diseño',person:'Neftali',start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'}]}));
+    const data=await res.json();assert.equal(data.success,false);assert.equal(data.createdActivities.length,0);assert.equal(data.results[0].success,false);
+  });
+  await test('Plantilla guarda People seleccionado con propiedades válidas de Notion',async()=>{
+    const res=await route.POST(request('create-from-template',{currentUser:'jjohn',date:'2026-10-05',requests:[{sourcePageId:pid,title:'prtuzREVISION jjohn anfeta.com Diseño',person:'John',start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'}]}));
+    const data=await res.json();assert.equal(data.success,true,data.error);assert.equal(data.createdActivities[0].person,'John');
+    assert.equal(state.calls.find(c=>c.target==='pages'&&c.method==='POST').body.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');
+  });
+  await test('Planificador respeta horarios fijos y no excede la jornada',async()=>{
+    const planner=require(root+'/src/services/calendarPlanner.ts');
+    const activities=[{pageId:pid,person:'Neftali',title:'prtuzREVISION Pendiente',status:'POR HACER',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00'},{pageId:other,person:'Neftali',title:'rtuzREVISION Revisión',status:'EN REVISIÓN',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00'}];
+    const changes=planner.planOneClick(activities,'2026-10-05','Neftali');assert.equal(changes.length,1);assert.match(changes[0].start,/T09:00/);
+    assert.throws(()=>planner.planOneClick(activities,'2026-10-05','Neftali',1305),/jornada/);
+  });
+  await test('Robot consulta 14 días, propone movimientos reales y no escribe durante la vista previa',async()=>{
+    const robot=require(root+'/src/services/calendarAutomation.ts');const report=await robot.planDailyAutomation(settings,'nneft','2026-10-06',new Date('2026-10-06T12:00:00Z'));
+    assert.equal(report.movements.length,2);assert.equal(report.moved,0);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);
+    assert.equal(state.calls.find(c=>c.target.endsWith('/query')).body.filter.and[0].date.on_or_after,'2026-09-22T00:00:00-06:00');assert.match(report.movements[0].start,/^2026-10-06T08:00/);
+  });
+  await test('Robot excluye revisiones y rechaza corrida antes de las 05:00',async()=>{
+    const robot=require(root+'/src/services/calendarAutomation.ts');state.queryCurrent=true;state.page.properties.Estado.status.name='En revisión';
+    const report=await robot.planDailyAutomation(settings,'jjohn','2026-10-06',new Date('2026-10-06T12:00:00Z'));assert.equal(report.skippedReview,1);assert.equal(report.movements.length,1);
+    await assert.rejects(robot.planDailyAutomation(settings,'jjohn','2026-10-06',new Date('2026-10-06T10:00:00Z')),/05:00/);
+  });
+  await test('Hilo de revisión no permite responder desde una cuenta ajena',async()=>{
+    const notifications=require(root+'/src/services/reviewNotifications.ts');await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    await assert.rejects(notifications.replyNotification(settings,'ggena',other,'Respuesta'),/tu cuenta/);
+    const entry=await notifications.replyNotification(settings,'jjohn',other,'Revisaré el encabezado');assert.equal(entry.Kind,'Message');assert.equal(entry.AuthorName,'John');
+  });
+  await test('Sesión de trabajo guarda metadatos reales y rechaza duración inválida',async()=>{
+    let res=await route.POST(request('calendar-work-session',{pageId:pid,currentUser:'nneft',session:{id:'session-test',startedAt:'2026-10-05T15:00:00Z',endedAt:'2026-10-05T15:10:00Z',seconds:600}}));assert.equal(res.status,200);assert.equal((await res.json()).success,true);
+    res=await route.POST(request('calendar-work-session',{pageId:pid,currentUser:'nneft',session:{id:'invalid',seconds:-1}}));assert.equal(res.status,400);
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

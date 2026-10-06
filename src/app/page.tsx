@@ -20,7 +20,9 @@ import {
   ActiveProjectItem,
 } from "@/types/anfeta";
 import { parseAdvancedQuery, evaluateQueryAST, matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
-import { simulateDailyAutomation } from "@/services/automationRobot";
+import {runCalendarAutomation} from '@/services/runCalendarAutomation';
+import {mexicoMinutes} from '@/services/calendarPresentation';
+import { CalendarAutomationModal } from "@/components/CalendarHost/CalendarAutomationModal";
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 export default function AnfetaApp() {
@@ -74,6 +76,7 @@ export default function AnfetaApp() {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
   const [pendingTasks, setPendingTasks] = useState<PendingTaskItem[]>([]);
+  const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
   // Load local data from API route
@@ -119,7 +122,7 @@ export default function AnfetaApp() {
         const repRes = await fetch("/api/data?type=daily-report");
         if (repRes.ok) {
           const repData = await repRes.json();
-          setAutomationReport(repData);
+          try {const local=JSON.parse(localStorage.getItem('anfeta-calendar-automation-report') || 'null');setAutomationReport(local && Date.parse(local.generatedAt)>Date.parse(repData.generatedAt || repData.GeneratedAt || '1970-01-01') ? local : repData);}catch{setAutomationReport(repData);}
         }
 
         // Pending tasks (manuales del usuario)
@@ -209,6 +212,27 @@ export default function AnfetaApp() {
     return () => controller.abort();
   }, [currentDate]);
 
+  useEffect(()=>{
+    if(!currentUser || !isAuthenticated) return;
+    let running=false,stopped=false,lastAttempt=0;
+    const check=async()=>{
+      if(running||stopped||document.hidden||Date.now()-lastAttempt<300000) return;
+      const today=mexicoDate(),key='anfeta-robot-confirmed:'+currentUser+':'+today;
+      if(mexicoMinutes(new Date().toISOString())<300) return;
+      try {if(localStorage.getItem(key)) return;} catch{}
+      running=true;lastAttempt=Date.now();
+      try {
+        const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);});
+        if(!stopped){setAutomationReport(report);window.dispatchEvent(new Event('anfeta_data_refreshed'));}
+        if(!report.failed)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
+        if(report.failed&&!stopped)setCalendarLoadError(report.errors.join(' · '));
+      }catch(e){if(!stopped)setCalendarLoadError('Robot 05:00: '+(e instanceof Error?e.message:'No se pudo preparar la jornada.'));}
+      finally{running=false;}
+    };
+    const timer=setInterval(check,60000);
+    return()=>{stopped=true;clearInterval(timer);};
+  },[currentUser,isAuthenticated]);
+
   // Global hotkeys (Ctrl+Alt+B, Ctrl+Shift+K, Ctrl+Shift+J)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -243,7 +267,12 @@ export default function AnfetaApp() {
   // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario y actividades
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
-      if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+      if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
+        setCalendarActivities(msg.activities);
+        const byId=new Map(msg.activities.filter((a:any)=>!a.isReviewMirror).map((a:any)=>[a.pageId.replace(/-/g,''),a]));
+        setSearchIndex(prev=>prev.map(row=>{const a:any=byId.get((row.externalId || row.id || '').replace(/-/g,''));return a?{...row,name:a.title,assignedPerson:a.person,scheduledDate:mexicoDate(a.start),statusLabel:a.status}:row;}));
+      } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+        setSearchIndex(prev=>prev.map(row=>(row.externalId || row.id || '').replace(/-/g,'')===msg.pageId!.replace(/-/g,'') ? {...row,...(msg.updates.title?{name:msg.updates.title}:{}),...(msg.updates.person?{assignedPerson:msg.updates.person}:{}),...(msg.updates.status?{statusLabel:msg.updates.status}:{})}:row));
         setCalendarActivities((prev) =>
           prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
         );
@@ -551,11 +580,7 @@ export default function AnfetaApp() {
         }}
         unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}
         searchIndex={searchIndex}
-        onTriggerAutomation={() => {
-          const rep = simulateDailyAutomation({ [currentDate]: calendarActivities }, currentDate);
-          setAutomationReport(rep);
-          alert(`Robot 05:00 ejecutado: ${rep.moved} tareas movidas a la jornada de hoy.`);
-        }}
+        onTriggerAutomation={() => setShowAutomation(true)}
       />
 
       {/* Multi-Host Container (0ms latency, persistent in memory) */}
@@ -601,6 +626,7 @@ export default function AnfetaApp() {
             activeView === "calendar" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
           }`}
         >
+          {showAutomation && <CalendarAutomationModal currentUser={currentUser} date={currentDate} onClose={()=>setShowAutomation(false)} onComplete={report=>{setAutomationReport(report);try{localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}window.dispatchEvent(new Event('anfeta_data_refreshed'));}} />}
           <CalendarHost
                 loadError={calendarLoadError}
             currentUser={currentUser}
@@ -613,11 +639,7 @@ export default function AnfetaApp() {
             searchFilterQuery={searchQuery}
             onClearSearchFilter={() => handleSearchChange("")}
             onOpenStandaloneWindow={handleOpenStandaloneCalendar}
-            onRunAutomation={() => {
-              const rep = simulateDailyAutomation({ [currentDate]: calendarActivities }, currentDate);
-              setAutomationReport(rep);
-              alert(`Robot 05:00 ejecutado: ${rep.moved} tareas movidas a la jornada de hoy.`);
-            }}
+            onRunAutomation={() => setShowAutomation(true)}
             onOpenDailyProgress={() => setActiveView("dailyProgress")}
             onRefresh={async () => {
               try {

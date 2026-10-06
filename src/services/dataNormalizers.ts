@@ -100,8 +100,9 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     checklistScanned: !!(raw.ChecklistScanned ?? raw.checklistScanned),
     checklistTotal: raw.ChecklistTotal ?? raw.checklistTotal ?? 0,
     checklistCompleted: raw.ChecklistCompleted ?? raw.checklistCompleted ?? 0,
+    completedChecks:raw.completedChecks || [],
     todayChecklistCompleted:
-      raw.TodayChecklistCompleted ?? raw.todayChecklistCompleted ?? raw.ChecklistCompleted ?? 0,
+      raw.TodayChecklistCompleted ?? raw.todayChecklistCompleted ?? 0,
     isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? calendarUrgent(title)),
     isReviewMirror: !!(raw.IsReviewMirror ?? raw.isReviewMirror),
     reviewFlow: raw.ReviewFlow || raw.reviewFlow,

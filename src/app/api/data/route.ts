@@ -1,9 +1,11 @@
-import { listReviewNotifications } from '@/services/reviewNotifications';
-import { queryCalendarPages, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, calendarStatusField } from '@/services/notionCalendar';
+import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
+import { canEditActivity } from '@/services/activityPermissions';
+import { listReviewNotifications, readNotificationThread, replyNotification } from '@/services/reviewNotifications';
+import { queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder } from '@/services/dropboxUpload';
-import { createActivity, mutateActivity, notionRequest } from '@/services/notionMutations';
+import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
 import { NextRequest, NextResponse } from "next/server";
@@ -303,7 +305,7 @@ async function duplicateNotionPageWithoutBody({
   overrideTitle?: string;
   overrideDate?: { start: string; end?: string; timeZone?: string };
   overridePerson?: string;
-}): Promise<{ pageId: string; pageUrl: string; title: string }> {
+}): Promise<{ page:any; pageId: string; pageUrl: string; title: string }> {
   const cleanId = sourcePageId.replace(/-/g, "");
   const pageRes = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
     headers: {
@@ -329,36 +331,48 @@ async function duplicateNotionPageWithoutBody({
       titlePropName = propName;
     }
     if (propVal?.type === "date") {
-      if (propName.toLowerCase().includes("por hacer") || !datePropName) {
+      if (/^fecha por hacer$/i.test(propName.trim())) {
         datePropName = propName;
       }
     }
 
     const writable = buildWritablePropertyValue(propVal);
     if (writable) {
-      duplicateProperties[propName] = writable[propVal.type];
+      duplicateProperties[propName] = writable;
     }
   }
 
   // 1. Sobrescribir título final formateado
   if (overrideTitle && overrideTitle.trim()) {
-    duplicateProperties[titlePropName] = [
+    duplicateProperties[titlePropName] = {title:[
       {
         type: "text",
         text: { content: overrideTitle.trim() },
       },
-    ];
+    ]};
   }
 
   // 2. Sobrescribir fecha programada (Fecha POR Hacer)
+  if (overrideDate && !datePropName) throw new Error('La plantilla no tiene Fecha POR Hacer editable.');
   if (overrideDate && overrideDate.start && datePropName) {
-    duplicateProperties[datePropName] = {
+    duplicateProperties[datePropName] = {date:{
       start: overrideDate.start,
       ...(overrideDate.end ? { end: overrideDate.end } : {}),
       ...(overrideDate.timeZone ? { time_zone: overrideDate.timeZone } : {}),
-    };
+    }};
   }
 
+  if (overridePerson) {
+    const person = normalizePerson(overridePerson), field = assignedField(sourcePage);
+    if (!field) throw new Error('La plantilla no tiene responsable editable.');
+    const [name, prop] = field;
+    if (prop.type === 'people') {
+      const mapping = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
+      const id = mapping[person] || mapping[overridePerson] || await resolveTeamPersonId({notionToken:token,currentUser:person},person);
+      if (!id) throw new Error('No se encontró la cuenta real de ' + person);
+      duplicateProperties[name] = {people:[{id}]};
+    } else duplicateProperties[name] = prop.type === 'select' ? {select:{name:person}} : {rich_text:[{text:{content:person}}]};
+  }
   // 3. Crear en Notion SIN BODY (sin children) - Paridad 1:1 ANFETA DuplicatePageWithoutBodyAsync
   const createPayload: any = {
     parent: sourcePage.parent,
@@ -369,7 +383,7 @@ async function duplicateNotionPageWithoutBody({
     method: "POST",
     headers: {
       Authorization: `Bearer ${token.trim()}`,
-      "Notion-Version": "2022-06-28",
+      "Notion-Version": sourcePage.parent?.data_source_id ? "2026-03-11" : "2022-06-28",
       "Content-Type": "application/json",
     },
     body: JSON.stringify(createPayload),
@@ -385,6 +399,7 @@ async function duplicateNotionPageWithoutBody({
   const newUrl = createdPage.url || `https://notion.so/${newId.replace(/-/g, "")}`;
 
   return {
+    page:createdPage,
     pageId: newId,
     pageUrl: newUrl,
     title: overrideTitle || "Actividad desde plantilla",
@@ -779,7 +794,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (type === "calendar" || type === "calendar-week") {
+    if (type === "calendar" || type === "calendar-week" || type === "calendar-project") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return NextResponse.json({error:'Fecha inválida.'}, {status:400});
       const settings = getSettings();
       const token = (req.headers.get('x-notion-token') || searchParams.get('token') || settings.notionToken || '').trim();
@@ -794,23 +809,25 @@ export async function GET(req: NextRequest) {
       let warning: string | undefined;
       if (token) {
         try {
-          const pages = await queryCalendarPages({...settings, notionToken:token}, first, shift(first, days.length));
+          const liveSettings = {...settings,notionToken:token};
+          const pages = type === 'calendar-project' ? await queryProjectPages({...settings,notionToken:token},searchParams.get('domain') || '') : await queryCalendarPages({...settings, notionToken:token}, first, shift(first, days.length));
           const byId = new Map(cached.map(a => [cleanPageId(a.pageId), a]));
           activities = [];
           // Bound parallel metadata requests to avoid flooding Notion.
           for (let offset=0; offset<pages.length; offset+=3) {
             const batch = await Promise.all(pages.slice(offset,offset+3).map(async page => {
               const live = extractNotionPageData(page);
-              if (!live.dateStart || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
+              if (!live.dateStart || (type === 'calendar-project' && calendarDomain(live.title,live.domain) !== (searchParams.get('domain') || '').replace(/^www\./,'')) || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
-              const reviewFlow = state === 'review' ? await cachedReviewFlow({...settings,notionToken:token}, page) : undefined;
+              const reviewFlow = await cachedReviewFlow(liveSettings, page);
+              const checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart));
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
                 reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
-                isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false}, 0);
+                isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
             }));
             activities.push(...batch.filter(Boolean));
           }
@@ -1384,7 +1401,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Path missing" }, { status: 400 });
     }
 
-    if (action === 'update-activity-status' || action === 'update-activity-schedule' || action === 'update-activity-assignee') {
+    if (action === 'update-activity-status' || action === 'update-activity-schedule' || action === 'update-activity-assignee' || action === 'update-activity-details') {
       const input = payload || body;
       const id = input.id || input.pageId;
       const settings = getSettings(); const actor = input.currentUser || settings.currentUser;
@@ -1400,10 +1417,60 @@ export async function POST(req: NextRequest) {
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
-        return NextResponse.json({ success:true, activity, warning:page.__notificationWarning || undefined });
+        return NextResponse.json({ success:true, activity, warning:[page.__notificationWarning,page.__historyWarning].filter(Boolean).join(' · ') || undefined });
       } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
     }
 
+    if (action === 'get-review-thread' || action === 'reply-review-thread') {
+      try {
+        const settings=getSettings(),input=payload || body, actor=input.currentUser || settings.currentUser;
+        if(action === 'reply-review-thread')return NextResponse.json({success:true,entry:await replyNotification(settings,actor,input.pageId,input.text)});
+        const thread=await readNotificationThread(settings,actor,input.pageId);
+        return NextResponse.json({success:true,title:thread.title,entries:thread.entries,url:thread.page.url});
+      }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo cargar el hilo.'},{status:400});}
+    }
+    if (action === 'calendar-movement-history') {
+      try {const settings=getSettings(),input=payload || body;return NextResponse.json({success:true,items:await readMovementHistory(settings,input.pageId)});}
+      catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo leer el historial.'},{status:400});}
+    }
+    if (action === 'calendar-work-session') {
+      try {
+        const settings=getSettings(), input=payload || body;
+        await assertChecklistAccess(settings,input.currentUser || settings.currentUser,input.pageId);
+        const session=input.session;
+        if (!session?.id || !Number.isFinite(session.seconds) || session.seconds<0 || session.seconds>86400 || !Number.isFinite(Date.parse(session.startedAt)) || !Number.isFinite(Date.parse(session.endedAt))) throw new Error('Sesión de trabajo inválida.');
+        const blocks=await readBlocks(settings,input.pageId);
+        const existing=blocks.filter(block=>block.type==='toggle' && block.has_children);
+        for (const block of existing) for (const child of await readBlocks(settings,block.id)) {
+          const text=(child.paragraph?.rich_text || []).map((t:any)=>t.plain_text || t.text?.content || '').join('');
+          if (text.startsWith('[ANFETA_WEB_WORK_SESSION_V1]')) {try{if(JSON.parse(Buffer.from(text.slice('[ANFETA_WEB_WORK_SESSION_V1]'.length),'base64').toString()).id===session.id)return NextResponse.json({success:true});}catch{}}
+        }
+        const value={...session,person:input.currentUser || settings.currentUser};
+        const text='[ANFETA_WEB_WORK_SESSION_V1]'+Buffer.from(JSON.stringify(value)).toString('base64');
+        await notionRequest(settings,'blocks/'+input.pageId+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{text:{content:'Datos internos de ANFETA'}}],children:[{object:'block',type:'paragraph',paragraph:{rich_text:[{text:{content:text}}]}}]}}]});
+        return NextResponse.json({success:true});
+      }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se guardó la sesión.'},{status:400});}
+    }
+    if (action === 'calendar-automation-preview' || action === 'calendar-automation-run') {
+      try {
+        const settings=getSettings(), input=payload || body, actor=input.currentUser || settings.currentUser;
+        if (action === 'calendar-automation-preview') return NextResponse.json({success:true,report:await planDailyAutomation(settings,actor,input.date || mexicoDate())});
+        const report=await executeDailyAutomation(settings,actor,input.date || mexicoDate());
+        report.pages.forEach(page=>{const live=extractNotionPageData(page);persistCalendarActivity(normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0));});
+        const {pages,...publicReport}=report;
+        return NextResponse.json({success:true,report:publicReport});
+      } catch(error) {return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo ejecutar el robot.'},{status:400});}
+    }
+    if (action === 'calendar-batch-schedule') {
+      const settings=getSettings(), input=payload || body;
+      if (!Array.isArray(input.changes) || !input.changes.length || input.changes.length>30) return NextResponse.json({error:'Selecciona entre 1 y 30 actividades.'},{status:400});
+      const results:any[]=[];
+      for (const change of input.changes) {
+        try {const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);persistCalendarActivity(activity);results.push({success:true,activity});}
+        catch(error){results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
+      }
+      return NextResponse.json({success:results.every(result=>result.success),results});
+    }
     if (action === 'get-checklist' || action === 'toggle-checklist') {
       const input = payload || body;
       const settings = getSettings();
@@ -1420,6 +1487,7 @@ export async function POST(req: NextRequest) {
         const block = await notionRequest(settings, 'blocks/' + item.blockId, 'PATCH', {to_do:{checked:input.checked}});
         const checked = !!block.to_do?.checked;
         if (checked !== input.checked) throw new Error('Notion no confirmó el cambio del checklist.');
+        invalidateChecklist(settings,pageId);
         return NextResponse.json({success:true, blockId:item.blockId, checked});
       } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }
     }
@@ -1572,118 +1640,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id });
     }
 
-    if (action === "create-from-template") {
-      const { date, requests } = payload || body;
-      const targetDate = date || new Date().toISOString().split("T")[0];
-      const itemsList = Array.isArray(requests) ? requests : [];
-
-      if (itemsList.length === 0) {
-        return NextResponse.json({ error: "No se proporcionaron plantillas para crear" }, { status: 400 });
+    if (action === 'create-from-template') {
+      const input = payload || body, settings = getSettings();
+      const actor = input.currentUser || settings.currentUser;
+      const requests = input.requests;
+      if (!Array.isArray(requests) || !requests.length || requests.length > 30) return NextResponse.json({error:'Selecciona entre 1 y 30 plantillas.'},{status:400});
+      const createdActivities:any[] = [], results:any[] = [];
+      for (const [index, item] of requests.entries()) {
+        try {
+          if (!item.sourcePageId || !item.person || !item.title) throw new Error('Completa plantilla, título y responsable.');
+          if (!canEditActivity(actor,{person:normalizePerson(item.person)})) throw new Error('No puedes crear actividades para esa persona.');
+          validateSchedule(item.start,item.end);
+          const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:{start:item.start,end:item.end},overridePerson:item.person});
+          const created = result.page;
+          const live = extractNotionPageData(created);
+          const activity = normalizeActivity({pageId:created.id,pageUrl:created.url,title:live.title,person:live.person,start:live.dateStart,end:live.dateEnd,domain:calendarDomain(live.title,item.domain),status:live.status},0);
+          createdActivities.push(activity); persistCalendarActivity(activity);
+          results.push({index,success:true,pageId:created.id});
+        } catch (error) {results.push({index,success:false,error:error instanceof Error ? error.message : 'No se pudo crear la plantilla.'});}
       }
-
-      const settings = getSettings();
-      const token = settings.notionToken;
-
-      // Cargar caché del calendario
-      const calData = calendarSnapshot();
-      if (!calData[targetDate]) {
-        calData[targetDate] = [];
-      }
-
-      const createdActivities: any[] = [];
-      const timestamp = Date.now();
-
-      for (let idx = 0; idx < itemsList.length; idx++) {
-        const req = itemsList[idx];
-        const finalTitle = req.title || "Actividad desde plantilla";
-        const shortTitle = req.shortTitle || finalTitle.replace(/^prtuzREVISION\s+/i, "");
-        const sourcePageId = req.sourcePageId;
-
-        let createdPageId = `tpl-${timestamp}-${idx}`;
-        let createdPageUrl = sourcePageId ? `https://notion.so/${sourcePageId.replace(/-/g, "")}` : "";
-
-        // Duplicación real 1:1 en Notion (DuplicatePageWithoutBody):
-        // Hereda todas las propiedades de la plantilla pero SIN CONTENIDO (body vacío).
-        if (token && token.trim() && sourcePageId) {
-          try {
-            const dupResult = await duplicateNotionPageWithoutBody({
-              token,
-              sourcePageId,
-              overrideTitle: finalTitle,
-              overrideDate: {
-                start: req.start || `${targetDate}T10:00:00-06:00`,
-                end: req.end || `${targetDate}T10:30:00-06:00`,
-              },
-              overridePerson: req.person,
-            });
-            createdPageId = dupResult.pageId;
-            createdPageUrl = dupResult.pageUrl;
-          } catch (notionErr: any) {
-            console.warn(`[NOTION_TEMPLATE_DUPLICATE] Fallback local tras error: ${notionErr?.message}`);
-          }
-        }
-
-        // Estructura idéntica a ANFETA WinUI: actividad duplicada sin body previo (checklistItems vacíos)
-        const newAct = {
-          pageId: createdPageId,
-          title: finalTitle,
-          shortTitle,
-          start: req.start || `${targetDate}T10:00:00-06:00`,
-          end: req.end || `${targetDate}T10:30:00-06:00`,
-          person: req.person || "Sin asignar",
-          domain: req.domain || "DOMINIO",
-          status: "rtuzREVISION",
-          isCompletedForReview: true,
-          checklistTotal: 0,
-          checklistCompleted: 0,
-          checklistItems: [], // Vacío: la plantilla se duplica sin contenido para que el usuario escriba el suyo
-          pageUrl: createdPageUrl,
-          isFinalized: false,
-          isUrgent: false,
-        };
-
-        calData[targetDate].push(newAct);
-        createdActivities.push(newAct);
-      }
-
-      // Guardar en notion_calendar_cache_v13.json
-      try {
-        const fullCalPath = path.join(LOCAL_STATE_DIR, "notion_calendar_cache_v13.json");
-        fs.writeFileSync(fullCalPath, JSON.stringify(calData, null, 2), "utf-8");
-      } catch (err) {
-        console.warn("Error guardando notion_calendar_cache_v13.json:", err);
-      }
-
-      // También indexar en index_cache.json al inicio (posición 0) como hace ANFETA WinUI
-      try {
-        const rawIndex = readLocalJson<any[]>("index_cache.json", []);
-        createdActivities.forEach((act) => {
-          rawIndex.unshift({
-            id: act.pageId,
-            name: act.title,
-            source: "Notion",
-            sourceName: "Revisiones",
-            type: "Notion",
-            url: act.pageUrl,
-            serverModified: new Date().toISOString(),
-            scheduledDate: targetDate,
-            assignedPerson: act.person,
-            domainChip: act.domain,
-            statusLabel: act.status,
-          });
-        });
-        const fullIndexPath = path.join(LOCAL_STATE_DIR, "index_cache.json");
-        fs.writeFileSync(fullIndexPath, JSON.stringify(rawIndex, null, 2), "utf-8");
-      } catch (err) {
-        console.warn("Error guardando index_cache.json:", err);
-      }
-
-      return NextResponse.json({
-        success: true,
-        count: createdActivities.length,
-        createdActivities,
-        date: targetDate,
-      });
+      return NextResponse.json({success:results.every(item=>item.success),createdActivities,results,count:createdActivities.length,error:results.filter(item=>!item.success).map(item=> 'Plantilla ' + (item.index+1) + ': ' + item.error).join(' · ')});
     }
 
     return NextResponse.json({ error: "Action not supported" }, { status: 400 });

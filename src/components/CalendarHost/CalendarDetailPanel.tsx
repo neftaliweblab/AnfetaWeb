@@ -7,6 +7,8 @@ import { workflowState } from "@/services/activityWorkflow";
 import { openNotionPage } from "@/services/windowsIntegration";
 import { isReviewer, isDirection, canEditActivity } from "@/services/activityPermissions";
 import { CheckSquare, ExternalLink, Clock, User, Shield, Check, Loader2, ArrowRight, CheckCircle2, Send, ListChecks, Calendar as CalendarIcon } from "lucide-react";
+import { CalendarActivityTools } from './CalendarActivityTools';
+import { normalizePerson } from '@/services/identityNormalizer';
 import { SendToReviewModal } from "./SendToReviewModal";
 
 export interface NotionTodoItem {
@@ -41,6 +43,9 @@ export function CalendarDetailPanel({
   const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [projectActivities,setProjectActivities] = useState<NotionCalendarActivity[]>([]);
+  const [projectError,setProjectError] = useState('');
+  const [projectLoading,setProjectLoading]=useState(false);
   const [activeTab, setActiveTab] = useState<"checklist" | "project">("checklist");
   const [showReviewModal, setShowReviewModal] = useState(false);
 
@@ -52,16 +57,22 @@ export function CalendarDetailPanel({
   // Limpiar título de prefijos y tecnicismos repetitivos
   const cleanTitle = calendarDisplayTitle(title, domain);
   const editable = canEditActivity(currentUser, activity);
-  const userCanReview = isReviewer(currentUser) && editable;
+  const userCanReview = isReviewer(currentUser) && editable && (activity.reviewFlow?.State !== 'pending' || normalizePerson(currentUser) === normalizePerson(activity.reviewFlow.ReviewAssignee));
 
   // Actividades del mismo dominio (1:1 paridad con ANFETA WPF Actividades del Proyecto)
-  const domainActivities = (allActivities || []).filter((a) => {
+  const domainActivities = (projectActivities.length ? projectActivities : allActivities || []).filter((a) => {
     if (!a.domain || a.domain === "general") return false;
     const cleanD = a.domain.trim().toLowerCase();
     const targetD = domain.trim().toLowerCase();
     return cleanD.replace(/^www\./,'') === targetD.replace(/^www\./,'');
   });
 
+  useEffect(()=>{
+    if(activeTab !== 'project' || domain === 'general') return;
+    const controller=new AbortController();setProjectLoading(true);setProjectError('');setProjectActivities([]);
+    fetch('/api/data?type=calendar-project&domain='+encodeURIComponent(domain),{cache:'no-store',signal:controller.signal}).then(async res=>{const data=await res.json();if(!res.ok)throw new Error(data.error);setProjectActivities(data.activities || []);}).catch(e=>{if(!controller.signal.aborted)setProjectError(e.message);}).finally(()=>{if(!controller.signal.aborted)setProjectLoading(false);});
+    return()=>controller.abort();
+  },[activeTab,domain]);
   const startStr = activity.start || (activity as any)?.Start;
   const endStr = activity.end || (activity as any)?.End;
   const timeLabel = startStr && endStr ? `${calendarTime(startStr)} – ${calendarTime(endStr)}` : startStr ? calendarTime(startStr) : "08:00";
@@ -272,6 +283,7 @@ export function CalendarDetailPanel({
           </button>
         </div>
 
+        {onActivityUpdated && <CalendarActivityTools activity={activity} currentUser={currentUser} onSave={onActivityUpdated} />}
         {/* Pestañas: Checklist de Notion vs Actividades del Proyecto (Dominio) */}
         <div className="flex items-center justify-between border-b border-[#27272A] pt-2">
           <div className="flex gap-2">
@@ -367,7 +379,9 @@ export function CalendarDetailPanel({
               <p className="text-xs italic text-slate-500 py-3">No hay más actividades con este dominio.</p>
             ) : (
               <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {domainActivities.map((act) => {
+                {projectLoading && <p className="text-xs text-slate-400">Cargando historial del proyecto…</p>}
+              {projectError && <p role="alert" className="text-xs text-rose-300">{projectError}</p>}
+              {domainActivities.map((act) => {
                   const isCurrent = act.pageId === activity.pageId;
                   const actStart = act.start ? calendarTime(act.start) : "";
                   const actEnd = act.end ? calendarTime(act.end) : "";

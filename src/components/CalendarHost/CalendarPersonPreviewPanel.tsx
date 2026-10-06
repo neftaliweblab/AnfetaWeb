@@ -1,5 +1,7 @@
 "use client";
 
+import {calendarTime, calendarDisplayTitle} from '@/services/calendarPresentation';
+import {workflowState} from '@/services/activityWorkflow';
 import React, { useState, useMemo } from "react";
 import { X, CheckCircle2, AlertTriangle, Calendar, CheckSquare, Clock, ExternalLink } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -35,13 +37,13 @@ export function CalendarPersonPreviewPanel({
     let progressMin = 0;
     let totalChecksToday = 0;
 
-    activities.forEach((act) => {
+    activities.filter(act=>!act.isReviewMirror).forEach((act) => {
       const startD = act.start ? new Date(act.start).getTime() : 0;
       const endD = act.end ? new Date(act.end).getTime() : 0;
       const dur = endD > startD ? Math.round((endD - startD) / 60000) : 60;
       totalScheduledMin += dur;
 
-      if (act.isFinalized || act.status?.includes("zREVISION")) {
+      if (workflowState(act.status,act.title) === "completed") {
         completedCount++;
       }
       if (evaluateLagStatus(act).isLagging) {
@@ -84,26 +86,8 @@ export function CalendarPersonPreviewPanel({
       url: string;
     }> = [];
 
-    activities.forEach((act, actIdx) => {
-      const checksDone = act.todayChecklistCompleted || (act.isFinalized ? 3 : 0);
-      const count = Math.max(0, Math.min(5, checksDone));
-
-      for (let i = 1; i <= count; i++) {
-        const hour = 9 + ((actIdx * 2 + i) % 9);
-        const min = (i * 17) % 60;
-        const timeStr = `${hour.toString().padStart(2, "0")}:${min
-          .toString()
-          .padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
-
-        list.push({
-          id: `${act.pageId}-chk-${i}`,
-          domain: act.domain || "general",
-          activityTitle: act.shortTitle || act.title,
-          text: `Verificación y validación de avance paso ${i} en bloque operativo`,
-          timeStr,
-          url: act.pageUrl,
-        });
-      }
+    activities.filter(act=>!act.isReviewMirror).forEach(act => {
+      for (const item of act.completedChecks || []) list.push({id:item.id,domain:act.domain || 'general',activityTitle:calendarDisplayTitle(act.title,act.domain),text:item.text,timeStr:calendarTime(item.editedAt),url:act.pageUrl});
     });
 
     return list;
@@ -253,7 +237,7 @@ export function CalendarPersonPreviewPanel({
                   {act.shortTitle || act.title}
                 </h4>
                 <span className="text-[10px] font-mono text-[#64748B]">
-                  {act.start?.slice(11, 16)} – {act.end?.slice(11, 16)} · Estado: {act.status}
+                  {calendarTime(act.start)} – {calendarTime(act.end)} · Estado: {act.status}
                 </span>
               </div>
               <button

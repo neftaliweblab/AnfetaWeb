@@ -37,6 +37,7 @@ import {
 interface CalendarTemplatesModalProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUser?: string;
   currentDate?: string;
   onApplyTemplate?: (templateTitle: string) => void;
   onActivitiesCreated?: (createdActivities: any[]) => void;
@@ -69,12 +70,13 @@ const REVIEWERS = [
 export function CalendarTemplatesModal({
   isOpen,
   onClose,
-  currentDate = mexicoDate(),
+  currentDate = mexicoDate(), currentUser,
   onApplyTemplate,
   onActivitiesCreated,
 }: CalendarTemplatesModalProps) {
   // Estado general
   const [templates, setTemplates] = useState<any[]>([]);
+  const [creationError, setCreationError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CalendarQuickTemplateDefinition>(
     CALENDAR_QUICK_TEMPLATES[0] // "todos"
@@ -247,6 +249,7 @@ export function CalendarTemplatesModal({
         body: JSON.stringify({
           action: "create-from-template",
           payload: {
+            currentUser,
             date: configDate,
             requests,
           },
@@ -254,15 +257,16 @@ export function CalendarTemplatesModal({
       });
 
       const data = await res.json();
-      if (data.success && data.createdActivities) {
-        onActivitiesCreated?.(data.createdActivities);
-        onClose();
-      } else {
-        alert(`Error al crear actividades: ${data.error || "Error desconocido"}`);
+      if (data.createdActivities?.length) onActivitiesCreated?.(data.createdActivities);
+      if (res.ok && data.success) onClose();
+      else {
+        const successful = new Set((data.results || []).filter((item:any)=>item.success).map((item:any)=>requests[item.index]?.sourcePageId));
+        setSelectedIds(prev=>new Set([...prev].filter(id=>!successful.has(id))));
+        setCreationError(data.error || 'No se confirmó la creación en Notion.');
       }
     } catch (err: any) {
       console.error("Error al aplicar plantillas:", err);
-      alert(`Error al conectar con el servidor: ${err.message}`);
+      setCreationError(err.message || "No se pudo conectar con Notion.");
     } finally {
       setIsSubmitting(false);
     }
@@ -280,6 +284,7 @@ export function CalendarTemplatesModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera modal */}
+        {creationError && <p role="alert" className="m-3 rounded border border-rose-700 bg-rose-950/40 p-3 text-sm text-rose-200">{creationError}</p>}
         <div className="h-12 px-4 border-b border-[#1E2836] flex items-center justify-between bg-[#0F141C]">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-[#38BDF8]/10 border border-[#38BDF8]/30 flex items-center justify-center">

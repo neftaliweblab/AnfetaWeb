@@ -1,4 +1,6 @@
 "use client";
+import {workflowState} from '@/services/activityWorkflow';
+import {CalendarBatchModal} from './CalendarBatchModal';
 import { CalendarReviewNotifications } from './CalendarReviewNotifications';
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -64,6 +66,7 @@ export function CalendarHost({
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
+  const [showBatch,setShowBatch]=useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
@@ -71,6 +74,8 @@ export function CalendarHost({
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [phaseFilter,setPhaseFilter]=useState('');
+  const [extraHours,setExtraHours]=useState(false);
   const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
@@ -91,14 +96,15 @@ export function CalendarHost({
         if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
+    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour})); }
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours})); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -117,7 +123,9 @@ export function CalendarHost({
   // Listener en tiempo real multi-ventana y multi-pestaña
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg) => {
-      if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+      if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
+        setActivitiesList(msg.activities);
+      } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         setActivitiesList((prev) =>
           (() => {
             const saved = prev.find(a => a.pageId === msg.pageId);
@@ -140,7 +148,7 @@ export function CalendarHost({
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [currentDate]);
 
   useEffect(() => {
     let stopped = false, busy = false;
@@ -155,6 +163,7 @@ export function CalendarHost({
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         setActivitiesList(data.activities || []);
+        anfetaSync.broadcast({type:"CALENDAR_REFRESHED",date:currentDate,activities:data.activities || []});
         setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
         if (data.warning) setError(data.warning);
       } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
@@ -177,7 +186,7 @@ export function CalendarHost({
     try {
       const response = await fetch('/api/data', {
         method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
-        body:JSON.stringify({ action:updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates} }),
+        body:JSON.stringify({ action:updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates,...(updates.start?{expectedStart:original.start}:{})} }),
       });
       const data = await response.json();
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
@@ -202,7 +211,7 @@ export function CalendarHost({
   };
 
   const startHour = 8;
-  const endHour = 22;
+  const endHour = extraHours ? 22 : 21;
   const totalHours = endHour - startHour;
   const canvasHeight = totalHours * pixelsPerHour;
 
@@ -216,6 +225,7 @@ export function CalendarHost({
 
   const filteredActivities = useMemo(() => {
     return activitiesList.filter((act) => {
+      if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
       if (filterCobros && !text.includes("cobro") && !text.includes("cobrar")) return false;
       if (filterPagos && !text.includes("pago") && !text.includes("pagar")) return false;
@@ -226,7 +236,7 @@ export function CalendarHost({
       }
       return true;
     });
-  }, [activitiesList, filterCobros, filterPagos, searchFilterQuery]);
+  }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter]);
 
   const activitiesByPerson = useMemo(() => {
     const map: Record<string, NotionCalendarActivity[]> = {};
@@ -320,11 +330,6 @@ export function CalendarHost({
       const y = Math.max(0, e.clientY - columnRect.top - 56 - offsetY);
       const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
 
-      // 1. Optimistic Update inmediato para fluidez absoluta
-      setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...newSchedule } : a));
-      setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...newSchedule } : prev);
-
-      // 2. Persistir en Notion API / backend en segundo plano
       void handleUpdateActivity(pageId, newSchedule);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Movimiento inválido');
@@ -361,6 +366,7 @@ export function CalendarHost({
           </button>
         </div>
       )}
+      {showBatch && <CalendarBatchModal activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>setShowBatch(false)} onSaved={items=>{items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}
@@ -385,6 +391,11 @@ export function CalendarHost({
         />
       )}
       <CalendarTopControls
+        phaseFilter={phaseFilter}
+        onPhaseFilter={setPhaseFilter}
+        extraHours={extraHours}
+        onExtraHours={()=>setExtraHours(prev=>!prev)}
+        onOpenBatch={()=>setShowBatch(true)}
         reviewNotifications={<CalendarReviewNotifications currentUser={currentUser} />}
         onCreateActivity={() => {
           setCreateSlotSeed(null);
@@ -514,7 +525,7 @@ export function CalendarHost({
                     />
                     <div
                       onClick={(e) => handleColumnCanvasClick(e, person)}
-                      className="relative flex-1 bg-[#080B0F] cursor-pointer"
+                      className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px` }}
                       title={`Haz clic en un hueco vacío para crear actividad para ${person}`}
                     >
@@ -596,11 +607,14 @@ export function CalendarHost({
 
       {showTemplates && (
         <CalendarTemplatesModal
+          currentUser={currentUser}
           isOpen={showTemplates}
           onClose={() => setShowTemplates(false)}
           currentDate={currentDate}
           onActivitiesCreated={(created) => {
             setActivitiesList((prev) => [...prev, ...created]);
+            created.forEach(activity=>anfetaSync.broadcast({type:"ACTIVITY_CREATED",activity}));
+            onRefresh?.();
           }}
         />
       )}

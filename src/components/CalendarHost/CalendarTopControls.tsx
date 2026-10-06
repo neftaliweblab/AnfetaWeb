@@ -20,6 +20,11 @@ import {
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 
 interface CalendarTopControlsProps {
+  phaseFilter?:string;
+  onPhaseFilter?:(phase:string)=>void;
+  extraHours?:boolean;
+  onExtraHours?:()=>void;
+  onOpenBatch?: () => void;
   reviewNotifications?: React.ReactNode;
   onCreateActivity: () => void;
   currentDate: string;
@@ -46,7 +51,7 @@ interface CalendarTopControlsProps {
 }
 
 export function CalendarTopControls({
-  currentDate, onCreateActivity, reviewNotifications,
+  currentDate, onCreateActivity, reviewNotifications, onOpenBatch, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
   onSelectDate,
   availableDates,
   onOpenPeoplePicker,
@@ -216,6 +221,7 @@ export function CalendarTopControls({
         </button>
       </div>
 
+      {onOpenBatch && <button onClick={onOpenBatch} className="shrink-0 rounded border border-cyan-900 px-2 py-1 text-cyan-200">Reprogramar / Planificar</button>}
       {reviewNotifications}
       {/* 3. Action Toggles and Buttons */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -287,7 +293,8 @@ export function CalendarTopControls({
           </button>
         )}
 
-        <span className="shrink-0 text-[11px] text-cyan-300" title="Jornada de 08:00 a 22:00">08–22h</span>
+        <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1 text-xs text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
+        <button onClick={onExtraHours} aria-pressed={!!extraHours} className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Mostrar tramo extra de 21:00 a 22:00">{extraHours?'08–22h':'08–21h'}</button>
 
         {/* People Picker */}
         <button

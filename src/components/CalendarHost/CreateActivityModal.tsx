@@ -1,9 +1,10 @@
 'use client';
 import React, { useState } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
-import { isDirection } from '@/services/activityPermissions';
+import { normalizePerson } from '@/services/identityNormalizer';
+import { isDirection, isReviewer } from '@/services/activityPermissions';
 
-const people = ['jjohn', 'nneft', 'kkarl', 'bbria', 'iisai', 'aandr', 'ggena', 'ssote', 'aacal', 'eemma'];
+const people = ['John','Neftali','Karla','Brian','Isaias','Andrade','Genaro','Sotelo','Acalli','Emmanuel'];
 interface CreateActivityModalProps {
   currentUser: string;
   date: string;
@@ -26,8 +27,8 @@ export function CreateActivityModal({
   const [title, setTitle] = useState('');
   const [domain, setDomain] = useState('');
   const [person, setPerson] = useState(() => {
-    if (initialPerson) return initialPerson;
-    return isDirection(currentUser) ? 'jjohn' : currentUser;
+    if (initialPerson) return normalizePerson(initialPerson);
+    return normalizePerson(currentUser);
   });
   const [day, setDay] = useState(date);
   const [start, setStart] = useState(initialStart);
@@ -45,7 +46,7 @@ export function CreateActivityModal({
       <h2 className="font-semibold">+ Nueva Actividad</h2>
       <label className="block text-sm">Título<input required autoFocus maxLength={1800} value={title} onChange={e => setTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" /></label>
       <label className="block text-sm">Dominio<input required value={domain} onChange={e => setDomain(e.target.value)} placeholder="dominio.com" className="mt-1 w-full rounded bg-slate-800 p-2" /></label>
-      <label className="block text-sm">Responsable<select disabled={!isDirection(currentUser)} value={person} onChange={e => setPerson(e.target.value)} className="ml-2 rounded bg-slate-800 p-2">{people.map(p => <option key={p}>{p}</option>)}</select></label>
+      <label className="block text-sm">Responsable<select disabled={!isDirection(currentUser) && !isReviewer(currentUser)} value={person} onChange={e => setPerson(e.target.value)} className="ml-2 rounded bg-slate-800 p-2">{people.map(p => <option key={p}>{p}</option>)}</select></label>
       <div className="flex gap-3"><input aria-label="Fecha" required type="date" value={day} onChange={e => setDay(e.target.value)} className="min-w-0 rounded bg-slate-800 p-2" />
         <input aria-label="Inicio" required type="time" min="08:00" max="21:45" step={900} value={start} onChange={e => setStart(e.target.value)} className="min-w-0 rounded bg-slate-800 p-2" />
         <input aria-label="Fin" required type="time" min="08:15" max="22:00" step={900} value={end} onChange={e => setEnd(e.target.value)} className="min-w-0 rounded bg-slate-800 p-2" /></div>

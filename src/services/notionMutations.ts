@@ -1,12 +1,12 @@
 import { sendReviewNotification } from './reviewNotifications';
-import { resolveTeamPersonId, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
+import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
 import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 
-type Settings = { notionToken: string; currentUser: string; notionDatabaseId?: string };
+type Settings = { notionToken: string; currentUser: string; notionDatabaseId?: string; notionDataSourceId?: string };
 type Property = { type: string; [key: string]: any };
 export function validateSchedule(start: string, end: string) {
   const format = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):00-06:00$/;
@@ -23,7 +23,7 @@ export async function notionRequest(settings: Settings, endpoint: string, method
     await new Promise(resolve => setTimeout(resolve, wait * 1000));
     return notionRequest(settings, endpoint, method, body, attempt + 1);
   }
-  const data = await res.json(); if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); return data;
+  const data = await res.json(); if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); if(method === 'PATCH' || method === 'DELETE' || (method === 'POST' && endpoint === 'pages')) clearReadBlocksCache(settings); return data;
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
 const mutationLocks = new Set<string>();
@@ -42,11 +42,19 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
+  const returned = updates.reviewAction === 'return';
+  const reassigned = updates.reviewAction === 'reassign';
+  if (returned) updates = {...updates,status:'prtuzREVISION'};
+  if (reassigned) updates = {...updates,status:'prtuzREVISION'};
   if (updates.status && workflowState(updates.status) === 'review' && !updates.reviewer) throw new Error('Selecciona a quién enviar la actividad en el modal de revisión.');
   const completed = updates.status && workflowState(updates.status) === 'completed';
   if (completed && !isReviewer(actor)) throw new Error('Solo John, Isaías o Genaro pueden terminar una revisión.');
-  const previousFlow = updates.reviewer || completed ? await readReviewFlow(settings, id) : undefined;
-  if (completed && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
+  const previousFlow = updates.reviewer || completed || returned || reassigned ? await readReviewFlow(settings, id) : undefined;
+  if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
+  if (returned && (!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
+  if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
+  if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
+  if ((completed || returned) && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
   let reviewFlow: any;
   let nextTitle = title;
   const properties: Record<string, any> = {};
@@ -61,8 +69,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
     const person = normalizePerson(target);
     if (updates.reviewer && !['John','Isaias','Genaro'].includes(person)) throw new Error('Selecciona a John, Isaías o Genaro como revisor.');
-    const clearing = completed && person === 'Sin asignar';
-    const restoring = completed && previousFlow?.OriginalAssigneeUserId;
+    const clearing = (completed || returned) && person === 'Sin asignar';
+    const restoring = (completed || returned) && previousFlow?.OriginalAssigneeUserId;
     if (!PERSON_ALIASES[person] && !clearing && !restoring) throw new Error('Selecciona un responsable válido del equipo.');
     const personField = assignedField(page);
     if (!personField) throw new Error('No se encontró la propiedad editable de persona asignada en Notion.');
@@ -71,7 +79,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       if (prop.type === 'people' && clearing) properties[name] = {people:[]};
       else if (prop.type === 'people') {
         const ids = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
-        let userId = completed && previousFlow?.OriginalAssigneeUserId || ids[PERSON_ALIASES[person]?.[0] || person] || ids[person];
+        let userId = (completed || returned) && previousFlow?.OriginalAssigneeUserId || ids[PERSON_ALIASES[person]?.[0] || person] || ids[person];
         if (!userId) userId = await resolveTeamPersonId(settings, person);
         if (!userId) {
           let cursor: string | undefined;
@@ -92,7 +100,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       const ownerCodes = (PERSON_ALIASES[normalizePerson(activity.person)] || []).filter(alias => /^(.)\1/.test(alias));
       const ownerToken = ownerCodes.length ? new RegExp('\\b(?:' + ownerCodes.join('|') + ')(?:0{2,4}|00[1-3])?\\b','i') : null;
       const tag = PERSON_ALIASES[person]?.[0] || '';
-      const baseTitle = isSendingToReview || completed ? title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '') : title;
+      const baseTitle = isSendingToReview || completed || returned || reassigned ? title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '') : title;
       nextTitle = ownerToken?.test(baseTitle) ? baseTitle.replace(ownerToken, () => tag) : tag ? tag + ' ' + baseTitle : baseTitle;
       if (isSendingToReview) {
         // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
@@ -102,10 +110,17 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       properties[titleField[0]] = { title: [{ text: { content: nextTitle } }] };
     }
   }
+  if (updates.title !== undefined) {
+    if (!String(updates.title).trim() || String(updates.title).length > 1800) throw new Error('El título debe tener entre 1 y 1800 caracteres.');
+    const field = fields.find(([,p])=>p.type === 'title');
+    if (!field) throw new Error('No se encontró el título editable.');
+    properties[field[0]] = {title:[{text:{content:String(updates.title).trim()}}]};
+  }
   if (updates.start) {
     validateSchedule(updates.start, updates.end);
     const date = fields.find(([name,p]) => p.type === 'date' && /^fecha por hacer$/i.test(name.trim()));
     if (!date) throw new Error('La página no tiene una propiedad de fecha editable.');
+    if(updates.expectedStart && date[1].date?.start !== updates.expectedStart) throw new Error('El horario cambió desde que se preparó la propuesta; actualiza antes de moverla.');
     properties[date[0]] = { date: { start: updates.start, end: updates.end } };
   }
   if (updates.status) {
@@ -130,6 +145,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       if (desired === 'rtuzREVISION' || updates.status === 'rtuzREVISION') {
         const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
         properties[titleField[0]] = { title: [{ text: { content: `rtuzREVISION ${clean.trim()}` } }] };
+      } else if (['pending','suspended'].includes(workflowState(desired))) {
+        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        properties[titleField[0]] = {title:[{text:{content:(workflowState(desired) === 'suspended' ? 'sprtuzREVISION ' : 'prtuzREVISION ') + clean.trim()}}]};
       } else if (desired === 'zREVISION' || updates.status === 'zREVISION' || workflowState(desired) === 'completed') {
         const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
         properties[titleField[0]] = { title: [{ text: { content: `zREVISION ${clean.trim()}` } }] };
@@ -144,20 +162,29 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     properties[titleProp[0]] = { title: [{ text: { content: nextTitle } }] };
   }
   if (!Object.keys(properties).length) throw new Error('No hay cambios válidos para guardar.');
-  if (updates.reviewer || (completed && previousFlow)) {
+  if (updates.reviewer || ((completed || returned || reassigned) && previousFlow)) {
     const field = assignedField(page);
     reviewFlow = { ...previousFlow,
-      OriginalPerson: previousFlow?.OriginalPerson || activity.person,
+      OriginalPerson: reassigned ? normalizePerson(updates.person) : previousFlow?.OriginalPerson || activity.person,
       ReviewAssignee: updates.reviewer ? normalizePerson(updates.reviewer) : previousFlow.ReviewAssignee,
-      OriginalAssigneeUserId: previousFlow?.OriginalAssigneeUserId || (field?.[1].type === 'people' ? field[1].people?.[0]?.id : '') || '',
+      OriginalAssigneeUserId: reassigned && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.OriginalAssigneeUserId || (field?.[1].type === 'people' ? field[1].people?.[0]?.id : '') || '',
       ReviewAssigneeUserId: updates.reviewer && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.ReviewAssigneeUserId || '',
-      State: completed ? 'approved' : 'pending', SubmittedAt: previousFlow?.SubmittedAt || new Date().toISOString(),
-      UpdatedAt: new Date().toISOString(), UpdatedBy: actor, Note: completed ? 'Revisión terminada desde ANFETA web.' : 'Enviada a revisión desde ANFETA web.',
+      State: returned ? 'returned' : reassigned ? 'reassigned' : completed ? 'approved' : 'pending', SubmittedAt: previousFlow?.SubmittedAt || new Date().toISOString(),
+      UpdatedAt: new Date().toISOString(), UpdatedBy: actor, Note: returned ? String(updates.note).trim() : reassigned ? 'Reasignada para continuar trabajo.' : completed ? 'Revisión terminada desde ANFETA web.' : 'Enviada a revisión desde ANFETA web.',
       LeaveVisualCopy: updates.reviewer ? updates.leaveVisualCopy !== false : previousFlow?.LeaveVisualCopy,
       AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
     };
   }
   const updated = await notionRequest(settings, 'pages/' + id, 'PATCH', { properties });
+  if (updates.start) {
+    const old:any = fields.find(([name,p])=>p.type === 'date' && /^fecha por hacer$/i.test(name.trim()))?.[1]?.date;
+    if(old?.start !== updates.start || old?.end !== updates.end) {
+      try {
+        const text='[ANFETA_WEB_MOVE_V1]'+Buffer.from(JSON.stringify({fromStart:old?.start,fromEnd:old?.end,toStart:updates.start,toEnd:updates.end,updatedAt:new Date().toISOString(),updatedBy:actor})).toString('base64');
+        await notionRequest(settings,'blocks/'+id+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{text:{content:'Datos internos de ANFETA'}}],children:[{object:'block',type:'paragraph',paragraph:{rich_text:[{text:{content:text}}]}}]}}]});
+      } catch(error) {updated.__historyWarning='El horario se guardó, pero no se pudo guardar su historial. '+(error instanceof Error?error.message:'');}
+    }
+  }
   if (reviewFlow) {
     try { await saveReviewFlow(settings, id, reviewFlow); }
     catch (error) {
@@ -173,9 +200,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       catch { throw new Error('Notion guardó parte del cambio, pero no el flujo de revisión. Actualiza el calendario y revisa la actividad antes de volver a enviarla.'); }
       throw new Error('No se guardó el flujo de revisión; se restauró la actividad. ' + (error instanceof Error ? error.message : ''));
     }
-    if (updates.reviewer || (completed && previousFlow?.State === 'pending')) {
+    if (updates.reviewer || ((completed || returned) && previousFlow?.State === 'pending')) {
       try {
-        const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed);
+        const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed || returned);
         reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
         await saveReviewFlow(settings, id, reviewFlow);
       } catch (error) {
@@ -190,32 +217,37 @@ export async function createActivity(settings: Settings, actor: string, payload:
   const { start, end, domain, person, title } = payload;
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
-  if (person && !isDirection(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
+  if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
   let databaseId = process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
   const referencedId = String(payload.body || '').match(/https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s]*?([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:[?\s/#]|$)/i)?.[1];
   if (!databaseId && referencedId) {
     try { const source = await notionRequest(settings, `pages/${referencedId}`); databaseId = source.parent?.database_id; }
     catch { const source = await notionRequest(settings, `databases/${referencedId}`); databaseId = source.id; }
   }
-  if (!databaseId) throw new Error('Configura NOTION_DATABASE_ID o notionDatabaseId para crear páginas en Notion.');
-  const database = await notionRequest(settings, `databases/${databaseId}`);
+  const sourceId = start ? process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2' : undefined;
+  if (!sourceId && !databaseId) throw new Error('Configura la base de Notion para crear páginas.');
+  const database = await notionRequest(settings, sourceId ? 'data_sources/' + sourceId : 'databases/' + databaseId);
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');
   if (!titleField) throw new Error('La base no tiene propiedad de título.');
-  const composed = [domain, person, title.trim()].filter(Boolean).join(' ');
+  const canonicalPerson = normalizePerson(person || actor);
+  const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
+  const composed = start ? ['prtuzREVISION', domain, PERSON_ALIASES[canonicalPerson]?.[0], description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
-    const dateField = fields.find(([n,p]) => p.type === 'date' && /hacer|program|schedule/i.test(n)) || fields.find(([,p]) => p.type === 'date');
+    const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));
     if (!dateField) throw new Error('La base no tiene fecha programada.');
     properties[dateField[0]] = { date: { start, end } };
   }
-  const personField = fields.find(([n,p]) => /persona|responsable|asignad/i.test(n) && ['select','rich_text','people'].includes(p.type));
+  const personField = assignedField(database);
+  if (person && !personField) throw new Error('La fuente no tiene persona asignada editable.');
   if (person && personField) {
     const [name, prop] = personField;
     if (prop.type === 'people') {
       const mapping = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
-      if (!mapping[person]) throw new Error(`Configura NOTION_PERSON_IDS para el responsable ${person}.`);
-      properties[name] = { people: [{ id: mapping[person] }] };
+      const userId = mapping[person] || mapping[canonicalPerson] || mapping[PERSON_ALIASES[canonicalPerson]?.[0]] || await resolveTeamPersonId(settings,canonicalPerson);
+      if (!userId) throw new Error('No se pudo resolver la persona asignada en Notion.');
+      properties[name] = { people: [{ id:userId }] };
     } else properties[name] = prop.type === 'select' ? { select: { name: normalizePerson(person) } } : { rich_text: [{ text: { content: person } }] };
   }
   const domainField = fields.find(([n,p]) => /dominio|domain/i.test(n) && ['select','rich_text'].includes(p.type));
@@ -230,6 +262,6 @@ export async function createActivity(settings: Settings, actor: string, payload:
     if (!res.ok) throw new Error('Notion rechazó el archivo adjunto.');
     children.push({ object: 'block', type: 'file', file: { type: 'file_upload', file_upload: { id: upload.id } } });
   }
-  const page = await notionRequest(settings, 'pages', 'POST', { parent: { database_id: databaseId }, properties, children });
+  const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
   return { page, activity: normalizeActivity({ pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
 }

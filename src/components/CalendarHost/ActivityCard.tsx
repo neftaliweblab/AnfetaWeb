@@ -455,7 +455,7 @@ export function ActivityCard({
             <span>Mover a Revisión (rtuz)...</span>
           </button>
           <button
-            disabled={!editable || !isReviewer(currentUser)}
+            disabled={!editable || !isReviewer(currentUser) || (activity.reviewFlow?.State === 'pending' && normalizePerson(currentUser) !== normalizePerson(activity.reviewFlow.ReviewAssignee))}
             onClick={() => {
               onUpdateActivity?.(activity.pageId, {
                 status: "zREVISION",

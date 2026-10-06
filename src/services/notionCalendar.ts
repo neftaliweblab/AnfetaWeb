@@ -1,3 +1,4 @@
+import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
@@ -56,6 +57,16 @@ export async function resolveTeamPersonId(settings: CalendarSettings, person: st
     } while (cursor);
     ids = teamIds.get(settings.notionToken)?.get(person);
   }
+  if (!ids?.size) {
+    const found=new Set<string>();let cursor:string|undefined;
+    do {
+      const users=await notionRequest(settings,'users?page_size=100'+(cursor?'&start_cursor='+encodeURIComponent(cursor):''));
+      for(const user of users.results || []) if(user.type==='person'&&(normalizePerson(user.name)===person||normalizePerson(user.person?.email)===person))found.add(user.id);
+      if(users.has_more&&(!users.next_cursor||users.next_cursor===cursor))throw new Error('Directorio de usuarios incompleto.');
+      cursor=users.has_more?users.next_cursor:undefined;
+    }while(cursor);
+    ids=found;teamIds.get(settings.notionToken)?.set(person,found);
+  }
   if (ids && ids.size > 1) throw new Error('Hay varias cuentas de Notion para ' + person + '; configura NOTION_PERSON_IDS para elegir la correcta.');
   return ids?.values().next().value;
 }
@@ -78,7 +89,15 @@ export async function queryCalendarPages(settings: CalendarSettings, start: stri
   rememberPeople(settings,pages);
   return pages;
 }
-export async function readBlocks(settings: CalendarSettings, id: string) {
+const requestBlocks = new WeakMap<CalendarSettings,Map<string,Promise<any[]>>>();
+export function clearReadBlocksCache(settings:CalendarSettings) {requestBlocks.delete(settings);}
+export function readBlocks(settings:CalendarSettings,id:string):Promise<any[]> {
+  let cache=requestBlocks.get(settings);if(!cache){cache=new Map();requestBlocks.set(settings,cache);}
+  const key=settings.notionToken+':'+id;
+  let result=cache.get(key);if(!result){result=readBlocksUncached(settings,id).catch(error=>{cache!.delete(key);throw error;});cache.set(key,result);}
+  return result;
+}
+async function readBlocksUncached(settings: CalendarSettings, id: string) {
   const blocks: any[] = [];
   let cursor: string | undefined;
   do {
@@ -90,14 +109,15 @@ export async function readBlocks(settings: CalendarSettings, id: string) {
   return blocks;
 }
 export async function readChecklist(settings: CalendarSettings, pageId: string) {
-  const items: { id: string; blockId: string; text: string; isChecked: boolean }[] = [];
+  const items: { id: string; blockId: string; text: string; isChecked: boolean; editedAt: string }[] = [];
   const visited = new Set<string>();
   async function walk(id: string, depth: number) {
     if (depth > 20) throw new Error('El checklist tiene demasiados niveles de anidación.');
     if (visited.has(id)) return;
     visited.add(id);
     for (const block of await readBlocks(settings, id)) {
-      if (block.type === 'to_do') items.push({ id: block.id, blockId: block.id, text: (block.to_do.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('') || 'Tarea sin texto', isChecked: !!block.to_do.checked });
+      if (block.type === 'to_do') items.push({ id: block.id, blockId: block.id, text: (block.to_do.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('') || 'Tarea sin texto', isChecked: !!block.to_do.checked, editedAt:block.last_edited_time || '' });
+      if(block.type === 'toggle' && (block.toggle?.rich_text || []).map((t:any)=>t.plain_text || t.text?.content || '').join('') === 'Datos internos de ANFETA') continue;
       const synced = block.synced_block?.synced_from?.block_id;
       if (synced || block.has_children) await walk(synced || block.id, depth + 1);
     }
@@ -132,4 +152,48 @@ export async function assertChecklistAccess(settings: CalendarSettings, actor: s
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1];
   const locked = page.archived || page.in_trash || Object.entries(page.properties || {}).some(([name,p]: any) => /lock|bloquead/i.test(name) && p.type === 'checkbox' && p.checkbox);
   if (!canEditActivity(actor, { title, person: assignedPerson(page, inferred), isLocked: !!locked })) throw new Error('No puedes modificar esta actividad o está bloqueada.');
+}
+
+const checklistCache = new Map<string,{edited:string;expires:number;items:Awaited<ReturnType<typeof readChecklist>>}>();
+export async function checklistSnapshot(settings: CalendarSettings, page: any, day: string) {
+  const key = settings.notionToken + ':' + page.id;
+  let cached = checklistCache.get(key);
+  if (!cached || cached.edited !== page.last_edited_time || cached.expires < Date.now()) {
+    const items = await readChecklist(settings,page.id);
+    cached = {edited:page.last_edited_time,expires:Date.now()+60000,items};
+    if (checklistCache.size > 512) checklistCache.delete(checklistCache.keys().next().value!);
+    checklistCache.set(key,cached);
+  }
+  const completedChecks = cached.items.filter(item=>item.isChecked && item.editedAt && mexicoDate(item.editedAt) === day);
+  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length,completedChecks};
+}
+export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);}
+
+export async function queryProjectPages(settings:CalendarSettings, domain:string) {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) throw new Error('Selecciona un dominio válido.');
+  const source=process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
+  const schema=await notionRequest(settings,'data_sources/'+source);
+  const title=Object.entries(schema.properties || {}).find(([,p]:any)=>p.type==='title')?.[0];
+  if(!title)throw new Error('La fuente no tiene título.');
+  const pages:any[]=[];let cursor:string|undefined;
+  do {
+    const batch=await notionRequest(settings,'data_sources/'+source+'/query','POST',{page_size:100,filter:{property:title,title:{contains:domain}},...(cursor?{start_cursor:cursor}:{})});
+    pages.push(...(batch.results || []).filter((p:any)=>!p.archived&&!p.in_trash));
+    if(batch.has_more&&(!batch.next_cursor||batch.next_cursor===cursor))throw new Error('La búsqueda de proyecto está incompleta.');
+    cursor=batch.has_more?batch.next_cursor:undefined;
+  }while(cursor);
+  rememberPeople(settings,pages);return pages;
+}
+
+export async function readMovementHistory(settings:CalendarSettings,pageId:string) {
+  const history:any[]=[];
+  for(const block of await readBlocks(settings,pageId)) {
+    if(block.type!=='toggle'||!block.has_children)continue;
+    for(const child of await readBlocks(settings,block.id)) {
+      const text=(child.paragraph?.rich_text || []).map((t:any)=>t.plain_text || t.text?.content || '').join('');
+      if(!text.startsWith('[ANFETA_WEB_MOVE_V1]'))continue;
+      try{history.push(JSON.parse(Buffer.from(text.slice('[ANFETA_WEB_MOVE_V1]'.length),'base64').toString()));}catch{}
+    }
+  }
+  return history.sort((a,b)=>Date.parse(a.updatedAt)-Date.parse(b.updatedAt));
 }
