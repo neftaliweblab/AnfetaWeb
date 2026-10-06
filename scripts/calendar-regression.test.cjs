@@ -33,9 +33,13 @@ global.fetch=async(url,options={})=>{
   assert.ok(String(url).startsWith('https://api.notion.com/v1/'),'Tests must not call an external service');
   const target=String(url).split('/v1/')[1],method=options.method || 'GET',body=options.body?JSON.parse(options.body):undefined;
   state.calls.push({target,method,body});
+  if(target==='pages' && method==='POST')return state.failAlert ? response({message:'Alert rejected'},403) : response({id:other,url:'https://notion.so/'+other,properties:body.properties});
+  if(target==='pages/'+other && method==='GET')return response({id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
+  if(target==='pages/'+other && method==='PATCH')return response({id:other});
+  if(target==='blocks/'+other+'/children' && method==='PATCH')return response({results:body.children});
   if(target==='pages/'+pid && method==='GET')return response(state.page);
-  if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
-  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
+  if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
+  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
   if(target.endsWith('/query') && state.guestReviewer) return response({results:[{...fixture(),properties:{...fixture().properties,'Assignee/Ejecutor Principal':{type:'people',people:[{id:'guest-isaias',name:'iisai@pprin.com'}]}}}],has_more:false});
   if(target.endsWith('/query')) return response(body.start_cursor ? {results:[{...fixture(),id:other}],has_more:false} : {results:[state.queryCurrent ? state.page : fixture()],has_more:true,next_cursor:'page-two'});
   if(target.startsWith('users?'))return response({results:state.usersMissing?[]:[{id:'john-id',type:'person',name:'John',person:{email:'jjohn@pprin.com'}},{id:'genaro-id',type:'person',name:'Genaro',person:{email:'ggena@pprin.com'}}],has_more:false});
@@ -158,6 +162,26 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const page=await mutations.mutateActivity(settings,'jjohn',pid,{status:'zREVISION'});
     assert.deepEqual(page.properties['Assignee/Ejecutor Principal'].people,[]);
     assert.match(page.properties.Name.title[0].text.content,/^zREVISION/);
+  });
+  await test('Al enviar revisión crea un aviso dirigido al revisor y vincula el hilo', async () => {
+    const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'Genaro',status:'rtuzREVISION'});
+    assert.equal(page.__notificationWarning,undefined);assert.equal(page.__reviewFlow.AlertPageId,other);
+    const alert=state.calls.find(c=>c.target==='pages' && c.method==='POST');
+    assert.match(alert.body.properties.Name.title[0].text.content,/ggena de:neftali \[RESPUESTA\]/);
+    assert.equal(alert.body.parent.data_source_id,'2eeabd7d-91b7-8193-a131-000b08cd54e2');
+  });
+  await test('Reenvío reutiliza hilo y la aprobación avisa al responsable original',async()=>{
+    await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    await mutations.mutateActivity(settings,'jjohn',pid,{reviewer:'Genaro',status:'rtuzREVISION'});
+    const page=await mutations.mutateActivity(settings,'ggena',pid,{status:'zREVISION'});
+    assert.equal(page.__notificationWarning,undefined);
+    assert.equal(state.calls.filter(c=>c.target==='pages' && c.method==='POST').length,1);
+    const titles=state.calls.filter(c=>c.target==='pages/'+other && c.method==='PATCH');
+    assert.match(titles.at(-1).body.properties.Name.title[0].text.content,/nneft de:genaro.*Revisión aprobada/);
+  });
+  await test('Error de aviso es visible sin fingir que falló la actividad guardada',async()=>{
+    state.failAlert=true;const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    assert.match(page.__notificationWarning,/Alert rejected/);assert.equal(page.__reviewFlow.State,'pending');
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

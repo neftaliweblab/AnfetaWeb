@@ -1,4 +1,5 @@
 "use client";
+import { CalendarReviewNotifications } from './CalendarReviewNotifications';
 
 import React, { useState, useMemo, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -64,6 +65,7 @@ export function CalendarHost({
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
@@ -72,6 +74,36 @@ export function CalendarHost({
   const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
+  const [peopleOrder, setPeopleOrder] = useState<string[]>(DEFAULT_COLLABORATORS);
+  const [columnWidth, setColumnWidth] = useState(260);
+  const [preferencesLoaded, setPreferencesLoaded] = useState('');
+  const preferencesKey = 'anfeta-calendar-layout-v1:' + normalizePerson(currentUser);
+  useEffect(() => {
+    let visible = DEFAULT_COLLABORATORS, order = DEFAULT_COLLABORATORS, width = 260, height = 72;
+    try {
+      const saved = JSON.parse(localStorage.getItem(preferencesKey) || 'null');
+      if (saved) {
+        const valid = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((p): p is string => typeof p === 'string' && DEFAULT_COLLABORATORS.includes(p)))] : DEFAULT_COLLABORATORS;
+        order = valid(saved.order);
+        order = [...order, ...DEFAULT_COLLABORATORS.filter(p => !order.includes(p))];
+        visible = valid(saved.visible);
+        if (Number.isFinite(saved.width)) width = Math.min(600, Math.max(180, saved.width));
+        if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
+      }
+    } catch { /* Invalid or unavailable storage falls back to defaults. */ }
+    setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
+    setPreferencesLoaded(preferencesKey);
+  }, [preferencesKey]);
+  useEffect(() => {
+    if (preferencesLoaded !== preferencesKey) return;
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour})); }
+    catch { /* Layout remains usable when browser storage is unavailable. */ }
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour]);
+  const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
+    const index = prev.indexOf(person), target = index + direction;
+    if (index < 0 || target < 0 || target >= prev.length) return prev;
+    const next = [...prev]; [next[index], next[target]] = [next[target], next[index]]; return next;
+  });
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -110,6 +142,29 @@ export function CalendarHost({
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let stopped = false, busy = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (stopped || busy || document.hidden || pending.current.size) return;
+      busy = true;
+      const version = mutationVersion.current;
+      try {
+        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
+        if (stopped || pending.current.size || version !== mutationVersion.current) return;
+        setActivitiesList(data.activities || []);
+        setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
+        if (data.warning) setError(data.warning);
+      } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
+      finally {busy = false;}
+    };
+    const timer = setInterval(refresh, 20000);
+    window.addEventListener('focus', refresh); window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
+    return () => {stopped = true; controller.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
+  }, [currentDate, currentUser]);
+
   const handleChangeZoom = (delta: number) => {
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
@@ -118,7 +173,7 @@ export function CalendarHost({
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
-    pending.current.add(pageId); setError('');
+    pending.current.add(pageId); mutationVersion.current++; setError('');
     try {
       const response = await fetch('/api/data', {
         method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
@@ -136,6 +191,8 @@ export function CalendarHost({
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
       // Broadcast only the state confirmed by Notion.
       anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
+      if (data.warning) setError(data.warning);
+      window.dispatchEvent(new Event('anfeta_review_saved'));
       onRefresh?.();
       return true;
     } catch (error) {
@@ -292,7 +349,7 @@ export function CalendarHost({
               ✕
             </span>
             <div className="text-xs">
-              <strong className="block text-white font-bold leading-tight">Acción no completada</strong>
+              <strong className="block text-white font-bold leading-tight">{error.startsWith('La actividad se guardó') ? 'Guardado con aviso pendiente' : 'Acción no completada'}</strong>
               <span className="text-rose-200/90 leading-tight break-words">{error}</span>
             </div>
           </div>
@@ -328,6 +385,7 @@ export function CalendarHost({
         />
       )}
       <CalendarTopControls
+        reviewNotifications={<CalendarReviewNotifications currentUser={currentUser} />}
         onCreateActivity={() => {
           setCreateSlotSeed(null);
           setShowCreate(true);
@@ -390,7 +448,7 @@ export function CalendarHost({
           </div>
 
           {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
-          <div className="flex min-w-full w-max relative">
+          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length) * columnWidth }}>
             {/* Global red line across all columns */}
             {currentTimeTop !== null && (
               <div
@@ -413,7 +471,7 @@ export function CalendarHost({
                 </button>
               </div>
             ) : (
-              visiblePeople.map((person) => {
+              peopleOrder.filter(person => visiblePeople.includes(person)).map((person) => {
                 const personActivities = activitiesByPerson[person] || [];
                 const positioned = computeActivityOverlaps(personActivities, currentDate);
 
@@ -442,8 +500,8 @@ export function CalendarHost({
                     key={person}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnColumn(e, person)}
-                    className="min-w-[220px] flex-shrink-0 border-r border-[#202832] flex flex-col"
-                    style={{ height: `${canvasHeight + 56}px`, width: Math.max(220, ...positioned.map(p => p.overlapTotal * 150 + 12)) }}
+                    className="min-w-0 border-r border-[#202832] flex flex-col"
+                    style={{ height: `${canvasHeight + 56}px`, flex: `1 0 ${columnWidth}px`, width: columnWidth }}
                   >
                     <CalendarColHeader
                       personName={person}
@@ -513,7 +571,10 @@ export function CalendarHost({
 
       {showPeoplePicker && (
         <CalendarPeoplePickerModal
-          allPeople={DEFAULT_COLLABORATORS}
+          allPeople={peopleOrder}
+          columnWidth={columnWidth}
+          onChangeWidth={setColumnWidth}
+          onMovePerson={movePerson}
           visiblePeople={visiblePeople}
           onTogglePerson={(p) => {
             setVisiblePeople((prev) =>

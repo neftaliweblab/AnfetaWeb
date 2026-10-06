@@ -1,3 +1,4 @@
+import { sendReviewNotification } from './reviewNotifications';
 import { resolveTeamPersonId, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
@@ -16,7 +17,7 @@ export function validateSchedule(start: string, end: string) {
 }
 export async function notionRequest(settings: Settings, endpoint: string, method = 'GET', body?: any, attempt = 0): Promise<any> {
   if (!settings.notionToken.trim()) throw new Error('Configura el token de Notion para guardar cambios.');
-  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': endpoint.startsWith('data_sources/') ? '2026-03-11' : '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
+  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': (endpoint.startsWith('data_sources/') || body?.parent?.data_source_id) ? '2026-03-11' : '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
   if (res.status === 429 && attempt < 3) {
     const wait = Math.min(10, Math.max(1, Number(res.headers.get('retry-after')) || 1));
     await new Promise(resolve => setTimeout(resolve, wait * 1000));
@@ -25,7 +26,15 @@ export async function notionRequest(settings: Settings, endpoint: string, method
   const data = await res.json(); if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); return data;
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
+const mutationLocks = new Set<string>();
 export async function mutateActivity(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
+  const key = settings.notionToken + ':' + id;
+  if (mutationLocks.has(key)) throw new Error('La actividad se está guardando; espera antes de reenviarla.');
+  mutationLocks.add(key);
+  try { return await mutateActivityUnlocked(settings, actor, id, updates, cached); }
+  finally {mutationLocks.delete(key);}
+}
+async function mutateActivityUnlocked(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
   const title = titleOf(page);
@@ -163,6 +172,15 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
       try { await notionRequest(settings, 'pages/' + id, 'PATCH', { properties:restore }); }
       catch { throw new Error('Notion guardó parte del cambio, pero no el flujo de revisión. Actualiza el calendario y revisa la actividad antes de volver a enviarla.'); }
       throw new Error('No se guardó el flujo de revisión; se restauró la actividad. ' + (error instanceof Error ? error.message : ''));
+    }
+    if (updates.reviewer || (completed && previousFlow?.State === 'pending')) {
+      try {
+        const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed);
+        reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
+        await saveReviewFlow(settings, id, reviewFlow);
+      } catch (error) {
+        updated.__notificationWarning = 'La actividad se guardó, pero no se confirmó el aviso de revisión. ' + (error instanceof Error ? error.message : '');
+      }
     }
     updated.__reviewFlow = reviewFlow;
   }

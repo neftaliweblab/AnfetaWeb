@@ -1,3 +1,4 @@
+import { listReviewNotifications } from '@/services/reviewNotifications';
 import { queryCalendarPages, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
@@ -475,6 +476,10 @@ export async function GET(req: NextRequest) {
   const scope = searchParams.get("scope") || "day";
 
   try {
+    if (type === 'review-notifications') {
+      try { const settings = getSettings(); return NextResponse.json({items:await listReviewNotifications(settings, searchParams.get('person') || settings.currentUser)}, {headers:{'Cache-Control':'no-store'}}); }
+      catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.'},{status:502}); }
+    }
     if (type === "settings") {
       return NextResponse.json(getSettings());
     }
@@ -1395,7 +1400,7 @@ export async function POST(req: NextRequest) {
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
-        return NextResponse.json({ success:true, activity });
+        return NextResponse.json({ success:true, activity, warning:page.__notificationWarning || undefined });
       } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
     }
 

@@ -96,22 +96,29 @@ export function CalendarDetailPanel({
   useEffect(() => {
     const controller = new AbortController();
     setItems([]); setLoading(true); setChecklistError(''); setStatusMessage('');
+    let busy = false;
     async function load() {
+      if (busy || document.hidden || updating.current) return;
+      busy = true;
       try {
         const pageId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, '') : activity.pageId;
         const res = await fetch('/api/data', {method:'POST',headers:{'Content-Type':'application/json'}, signal:AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]), body:JSON.stringify({action:'get-checklist',payload:{pageId}})});
         const data = await res.json();
         if (!res.ok || !data.success || !Array.isArray(data.items)) throw new Error(data.error || 'No se pudieron cargar las tareas de Notion.');
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && !updating.current) {
+          setChecklistError('');
           setItems(data.items);
           onChecklistUpdated?.({checklistTotal:data.items.length,checklistCompleted:data.items.filter((i: NotionTodoItem) => i.isChecked).length,checklistScanned:true});
         }
       } catch (error) {
         if (!controller.signal.aborted) setChecklistError(error instanceof Error ? error.message : 'No se pudieron cargar las tareas.');
-      } finally { if (!controller.signal.aborted) setLoading(false); }
+      } finally { busy = false; if (!controller.signal.aborted) setLoading(false); }
     }
     load();
-    return () => controller.abort();
+    const timer = setInterval(load, 30000);
+    window.addEventListener('focus', load);
+    document.addEventListener('visibilitychange', load);
+    return () => {controller.abort();clearInterval(timer);window.removeEventListener('focus', load);document.removeEventListener('visibilitychange', load);};
   }, [activity.pageId, activity.isReviewMirror, retry]);
 
   const updating = React.useRef(false);

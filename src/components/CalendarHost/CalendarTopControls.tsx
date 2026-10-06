@@ -20,6 +20,7 @@ import {
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 
 interface CalendarTopControlsProps {
+  reviewNotifications?: React.ReactNode;
   onCreateActivity: () => void;
   currentDate: string;
   onSelectDate: (date: string) => void;
@@ -45,7 +46,7 @@ interface CalendarTopControlsProps {
 }
 
 export function CalendarTopControls({
-  currentDate, onCreateActivity,
+  currentDate, onCreateActivity, reviewNotifications,
   onSelectDate,
   availableDates,
   onOpenPeoplePicker,
@@ -215,6 +216,7 @@ export function CalendarTopControls({
         </button>
       </div>
 
+      {reviewNotifications}
       {/* 3. Action Toggles and Buttons */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         {/* Toggle Cobros */}
