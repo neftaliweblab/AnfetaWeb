@@ -1,4 +1,6 @@
 "use client";
+import { mexicoDate } from "@/services/calendarPresentation";
+
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -13,7 +15,7 @@ export default function StandaloneCalendarPage() {
       const urlDate = p.get("date");
       if (urlDate) return urlDate;
     }
-    return new Date().toISOString().slice(0, 10);
+    return mexicoDate();
   });
 
   const [currentUser, setCurrentUser] = useState('');
@@ -22,6 +24,7 @@ export default function StandaloneCalendarPage() {
     readUser(); window.addEventListener('storage', readUser); window.addEventListener('anfeta_settings_changed', readUser);
     return () => { window.removeEventListener('storage', readUser); window.removeEventListener('anfeta_settings_changed', readUser); };
   }, []);
+  const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [searchFilterQuery, setSearchFilterQuery] = useState<string>("");
@@ -33,13 +36,15 @@ export default function StandaloneCalendarPage() {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/data?type=calendar&date=${dateToLoad}`);
-      if (res.ok) {
+      {
         const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
+          setCalendarLoadError(data.warning || '');
         if (data.activities) setCalendarActivities(data.activities);
         if (data.availableDates) setAvailableDates(data.availableDates);
       }
     } catch (err) {
-      console.error("Error al cargar actividades en ventana de calendario:", err);
+      setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
     } finally {
       setIsLoading(false);
     }
@@ -161,6 +166,7 @@ export default function StandaloneCalendarPage() {
       {/* Canvas del Calendario */}
       <main className="flex-1 relative overflow-hidden">
         <CalendarHost
+                loadError={calendarLoadError}
           currentUser={currentUser}
           activities={calendarActivities}
           currentDate={currentDate}

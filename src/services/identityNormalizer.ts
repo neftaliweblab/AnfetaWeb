@@ -30,7 +30,7 @@ export const PERSON_METADATA: Record<
 
 export function normalizePerson(input: string | null | undefined): string {
   if (!input) return "Sin asignar";
-  let clean = input.trim().toLowerCase();
+  let clean = input.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
   if (clean === "—" || clean === "-" || clean === "sin asignar" || clean === "") {
     return "Sin asignar";
   }
@@ -42,7 +42,7 @@ export function normalizePerson(input: string | null | undefined): string {
 
   for (const [canonical, aliases] of Object.entries(PERSON_ALIASES)) {
     if (canonical.toLowerCase() === clean) return canonical;
-    if (aliases.some((alias) => clean === alias || clean.includes(alias) || alias.includes(clean))) {
+    if (aliases.some((alias) => clean === alias || new RegExp('^' + alias + '(?:0{2,4}|00[1-3])$').test(clean))) {
       return canonical;
     }
   }

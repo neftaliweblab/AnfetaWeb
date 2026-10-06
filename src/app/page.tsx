@@ -1,4 +1,6 @@
 "use client";
+import { mexicoDate } from "@/services/calendarPresentation";
+
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { TopBar } from "@/components/TopBar";
@@ -67,9 +69,10 @@ export default function AnfetaApp() {
 
   // Data states
   const [searchIndex, setSearchIndex] = useState<SearchResultRow[]>([]);
+  const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [currentDate, setCurrentDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [currentDate, setCurrentDate] = useState(() => mexicoDate());
   const [pendingTasks, setPendingTasks] = useState<PendingTaskItem[]>([]);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
@@ -102,8 +105,10 @@ export default function AnfetaApp() {
         const calRes = await fetch(calUrl, {
           headers: userToken ? { "x-notion-token": userToken } : {},
         });
-        if (calRes.ok) {
+        {
           const calData = await calRes.json();
+          if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
+          setCalendarLoadError(calData.warning || '');
           if (calData.activities) setCalendarActivities(calData.activities);
           if (calData.availableDates?.length) {
             setAvailableDates(calData.availableDates);
@@ -136,7 +141,7 @@ export default function AnfetaApp() {
           }
         }
       } catch (err) {
-        console.error("Error loading initial data:", err);
+        setCalendarLoadError(err instanceof Error ? err.message : "No se pudieron cargar los datos.");
       }
     }
     loadInitialData();
@@ -165,8 +170,10 @@ export default function AnfetaApp() {
         const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
-        if (calRes.ok) {
+        {
           const calData = await calRes.json();
+          if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
+          setCalendarLoadError(calData.warning || '');
           if (calData.activities) setCalendarActivities(calData.activities);
         }
       } catch {}
@@ -188,12 +195,14 @@ export default function AnfetaApp() {
     async function fetchCalendarForDate() {
       try {
         const res = await fetch(`/api/data?type=calendar&date=${currentDate}`, { signal: controller.signal });
-        if (res.ok) {
+        {
           const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
+          setCalendarLoadError(data.warning || '');
           if (data.activities) setCalendarActivities(data.activities);
         }
       } catch (err) {
-        console.error("Error fetching calendar:", err);
+        if (!controller.signal.aborted) setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
       }
     }
     fetchCalendarForDate();
@@ -593,6 +602,7 @@ export default function AnfetaApp() {
           }`}
         >
           <CalendarHost
+                loadError={calendarLoadError}
             currentUser={currentUser}
             activities={calendarActivities}
             currentDate={currentDate}
@@ -612,12 +622,14 @@ export default function AnfetaApp() {
             onRefresh={async () => {
               try {
                 const res = await fetch(`/api/data?type=calendar&date=${currentDate}`);
-                if (res.ok) {
+                {
                   const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
+          setCalendarLoadError(data.warning || '');
                   if (data.activities) setCalendarActivities(data.activities);
                 }
               } catch (e) {
-                console.error("Error recargando calendario:", e);
+                setCalendarLoadError(e instanceof Error ? e.message : "No se pudo cargar el calendario.");
               }
             }}
           />

@@ -1,29 +1,32 @@
 "use client";
 
+import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
 import { Eye, CheckSquare, Tag, ExternalLink } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
 import { ChecklistPopup } from "./ChecklistPopup";
 import { workflowState } from "@/services/activityWorkflow";
-import { canEditActivity, isActivityLocked, isDirection } from "@/services/activityPermissions";
+import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
 import { SendToReviewModal } from "./SendToReviewModal";
 
 interface ActivityCardProps {
   currentUser: string;
+  displayDate?: string;
   activity: NotionCalendarActivity;
   pixelsPerHour: number;
   overlapIndex: number;
   overlapTotal: number;
   isSelected?: boolean;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
-  onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => void;
+  onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
 }
 
 export function ActivityCard({
   activity,
   currentUser,
+  displayDate,
   pixelsPerHour,
   overlapIndex,
   overlapTotal,
@@ -48,75 +51,15 @@ export function ActivityCard({
   const domain = activity?.domain || (activity as any)?.ParsedDomain || "DOMINIO";
 
   // Limpiar título de tecnicismos redundantes como prtuzREVISION, nneft, jjohn, fechas [10OCT], etc.
-  const cleanTitle = useMemo(() => {
-    let t = shortTitle || title || "";
-    // Remover prefijos de fase al inicio (prtuzREVISION, rtuzREVISION, zREVISION, sprtuzREVISION)
-    t = t.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINADO|TERMINADA|PENDIENTE)\s*/i, "");
-    // Remover usuario tag duplicado al inicio (ej. aads 26-, webs 26-)
-    t = t.replace(/^(?:aads|webs|seo|maps)\s+\d+[-–]\s*/i, "");
-    // Remover tokens de persona o códigos repetitivos
-    t = t.replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, "");
-    // Limpiar corchetes de fecha si vienen pegados como [10OCT] 8.00 Recurrente -> Recurrente
-    t = t.replace(/\[\d+[A-Z]+\]\s*/gi, "");
-    t = t.replace(/^\d+(?:\.\d+)?\s+/g, ""); // Remover prefijos numéricos como 8.00 o 15.00
-    t = t.replace(/\s+00\s*$/g, ""); // Quitar sufijo 00 de urgente
-    t = t.trim();
-    return t || shortTitle || title;
-  }, [shortTitle, title]);
-
-  // Detección del Tipo de Proyecto (ADS, WEBS, SEO, MAPS, DISENO, SOPORTE, etc.)
-  const typeLabel = useMemo(() => {
-    const raw = `${title} ${activity?.project || ""}`.toLowerCase();
-    if (/\b(?:google\s*ads|ads|campaña|campañas|aads)\b/i.test(raw)) return "ADS";
-    if (/\b(?:seo|posicionamiento|keywords|articulos|blog)\b/i.test(raw)) return "SEO";
-    if (/\b(?:web|sitio\s*web|wordpress|landing|elementor|hosting|webs)\b/i.test(raw)) return "WEBS";
-    if (/\b(?:maps|google\s*maps|ficha|gmb)\b/i.test(raw)) return "MAPS";
-    if (/\b(?:diseño|diseno|branding|logo|flyer|grafico)\b/i.test(raw)) return "DISEÑO";
-    if (/\b(?:cobranza|cobro|pago|factura)\b/i.test(raw)) return "COBRO";
-    if (/\b(?:soporte|ticket|correo|mantenimiento)\b/i.test(raw)) return "SOPORTE";
-    return null;
-  }, [title, activity?.project]);
-
-  // Parseo horario seguro y exacto (evita descuadre de zona horaria o UTC)
-  const startStr = activity?.start || (activity as any)?.Start || "";
-  const endStr = activity?.end || (activity as any)?.End || "";
-
-  let startH = 8;
-  let startM = 0;
-  let endH = 9;
-  let endM = 0;
-
-  const startMatch = startStr.match(/T(\d{2}):(\d{2})/);
-  if (startMatch) {
-    startH = parseInt(startMatch[1], 10);
-    startM = parseInt(startMatch[2], 10);
-  } else if (startStr) {
-    const d = new Date(startStr);
-    if (!isNaN(d.getTime())) {
-      startH = d.getHours();
-      startM = d.getMinutes();
-    }
-  }
-
-  const endMatch = endStr.match(/T(\d{2}):(\d{2})/);
-  if (endMatch) {
-    endH = parseInt(endMatch[1], 10);
-    endM = parseInt(endMatch[2], 10);
-  } else if (endStr) {
-    const d = new Date(endStr);
-    if (!isNaN(d.getTime())) {
-      endH = d.getHours();
-      endM = d.getMinutes();
-    }
-  } else {
-    endH = startH + 1;
-    endM = startM;
-  }
-
-  const startMinute = startH * 60 + startM;
-  let endMinute = endH * 60 + endM;
-  if (endMinute <= startMinute) endMinute = startMinute + 60;
-
+  const cleanTitle = calendarDisplayTitle(title, domain);
+  const typeLabel = calendarType(title, activity.project);
+  const startStr = activity.start || '';
+  const endStr = activity.end || '';
+  const interval = calendarInterval(startStr, endStr, displayDate);
+  const startMinute = interval.start;
+  const endMinute = interval.end;
+  const startH = Math.floor(startMinute / 60), startM = startMinute % 60;
+  const endH = Math.floor(endMinute / 60), endM = endMinute % 60;
   const durationMinutes = Math.max(15, endMinute - startMinute);
   const durationHours = durationMinutes / 60;
   const hours = Math.floor(durationHours);
@@ -127,7 +70,7 @@ export function ActivityCard({
   const height = Math.max(34, (durationMinutes / 60) * pixelsPerHour);
 
   // Workflow, Letra Insignia y Estilos sobrios con colores balanceados (sin saturación chillona)
-  const isUrgent = !!(activity?.isUrgent || title.includes("00"));
+  const isUrgent = !!(activity?.isUrgent || calendarUrgent(title));
   const wf = workflowState(status, title);
   const isCompleted = wf === "completed";
   const isReview = wf === "review";
@@ -246,6 +189,8 @@ export function ActivityCard({
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
 
+  if (interval.end <= interval.start) return null;
+
   return (
     <>
       <div
@@ -321,14 +266,14 @@ export function ActivityCard({
 
             {/* Dominio en azul claro */}
             <span className="font-mono text-[11px] font-semibold text-[#38BDF8] truncate tracking-tight">
-              {!editable && <span aria-label="Bloqueada" className="text-[10px]">🔒 </span>}
+              {isActivityLocked(activity) && <span aria-label="Bloqueada" className="text-[10px]">🔒 </span>}
               {domain}
             </span>
 
             {/* Indicador de colisión de horario */}
             {overlapTotal > 1 && (
               <span
-                className="shrink-0 px-1 py-0.2 rounded text-[8px] font-bold bg-[#3B0764] border border-[#C084FC] text-[#E9D5FF]"
+                className="shrink-0 px-1 py-0.2 rounded text-[8px] font-bold bg-[#211C2D] border border-[#65547A] text-[#C4B5D5]"
                 title={`Empalme: ${overlapIndex + 1} de ${overlapTotal}`}
               >
                 {overlapIndex + 1}/{overlapTotal}
@@ -343,7 +288,7 @@ export function ActivityCard({
                 e.stopPropagation();
                 setShowPopup(!showPopup);
               }}
-              className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#14532D] border border-[#22C55E]/50 text-[#86EFAC] hover:bg-[#166534] transition-colors cursor-pointer"
+              className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#16291F] border border-[#42654E] text-[#A0BEAA] hover:bg-[#20362A] transition-colors cursor-pointer"
               title={`Checklist: ${completedChecklist} de ${totalChecklist} completadas`}
             >
               {completedChecklist}/{totalChecklist}
@@ -372,8 +317,8 @@ export function ActivityCard({
         {/* Fila Inferior: Horario + Duración (ej: 09:00 - 10:00 · 1H) */}
         <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400 pt-0.5 border-t border-[#26262B]/50">
           <span className="truncate">
-            {startMatch ? `${startMatch[1]}:${startMatch[2]}` : startStr.slice(11, 16) || "08:00"}
-            {endMatch ? ` - ${endMatch[1]}:${endMatch[2]}` : endStr ? ` - ${endStr.slice(11, 16)}` : ""}
+            {calendarTime(startStr)}
+            {endStr ? ` – ${calendarTime(endStr)}` : ""}
             <span className="text-slate-500 ml-1">· {durationFormatted.toUpperCase()}</span>
           </span>
           {isUrgent && <span className="text-[#FB7185] font-black text-[9px] tracking-wide">00 URGENTE</span>}
@@ -381,7 +326,7 @@ export function ActivityCard({
       </div>
 
       {/* Hover Preview Popover */}
-      {showHover && hoverPos && (
+      {showHover && hoverPos && !isSelected && (
         <div
           style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
           className="fixed z-[100] w-80 rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-3.5 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-none transition-opacity duration-150 animate-in fade-in zoom-in-95"
@@ -429,8 +374,8 @@ export function ActivityCard({
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400">Horario:</span>
               <span className="font-mono text-cyan-300 font-semibold">
-                {startStr?.slice(11, 16) || "08:00"}
-                {endStr ? ` – ${endStr.slice(11, 16)}` : ""} ({durationFormatted})
+                {calendarTime(startStr)}
+                {endStr ? ` – ${calendarTime(endStr)}` : ""} ({durationFormatted})
               </span>
             </div>
             {totalChecklist > 0 && (
@@ -510,6 +455,7 @@ export function ActivityCard({
             <span>Mover a Revisión (rtuz)...</span>
           </button>
           <button
+            disabled={!editable || !isReviewer(currentUser)}
             onClick={() => {
               onUpdateActivity?.(activity.pageId, {
                 status: "zREVISION",
@@ -541,13 +487,14 @@ export function ActivityCard({
           activity={activity}
           currentUser={currentUser}
           onClose={() => setShowReviewModal(false)}
-          onConfirm={(targetReviewer, leaveVisualCopy) => {
-            setShowReviewModal(false);
-            onUpdateActivity?.(activity.pageId, {
+          onConfirm={async (targetReviewer, leaveVisualCopy) => {
+            const saved = await onUpdateActivity?.(activity.pageId, {
               status: "rtuzREVISION",
               reviewer: targetReviewer,
               leaveVisualCopy,
             } as any);
+            if (saved === false) return false;
+            setShowReviewModal(false);
           }}
         />
       )}

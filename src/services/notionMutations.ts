@@ -1,6 +1,8 @@
+import { resolveTeamPersonId, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
+import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 
 type Settings = { notionToken: string; currentUser: string; notionDatabaseId?: string };
@@ -8,33 +10,36 @@ type Property = { type: string; [key: string]: any };
 export function validateSchedule(start: string, end: string) {
   const format = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):00-06:00$/;
   const a = format.exec(start || ''), b = format.exec(end || '');
-  if (!a || !b || start.slice(0,10) !== end.slice(0,10) || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)) || new Date(start).toISOString().slice(0,10) !== start.slice(0,10) || Date.parse(end) <= Date.parse(start)) throw new Error('Fecha u horario inválidos.');
+  if (!a || !b || start.slice(0,10) !== end.slice(0,10) || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)) || mexicoDate(start) !== start.slice(0,10) || Date.parse(end) <= Date.parse(start)) throw new Error('Fecha u horario inválidos.');
   const am = Number(a[1])*60+Number(a[2]), bm = Number(b[1])*60+Number(b[2]);
   if (am < 480 || bm > 1320 || am % 15 || bm % 15) throw new Error('El horario debe usar bloques de 15 minutos entre 08:00 y 22:00.');
 }
-export async function notionRequest(settings: Settings, endpoint: string, method = 'GET', body?: any) {
+export async function notionRequest(settings: Settings, endpoint: string, method = 'GET', body?: any, attempt = 0): Promise<any> {
   if (!settings.notionToken.trim()) throw new Error('Configura el token de Notion para guardar cambios.');
-  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
+  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': endpoint.startsWith('data_sources/') ? '2026-03-11' : '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
+  if (res.status === 429 && attempt < 3) {
+    const wait = Math.min(10, Math.max(1, Number(res.headers.get('retry-after')) || 1));
+    await new Promise(resolve => setTimeout(resolve, wait * 1000));
+    return notionRequest(settings, endpoint, method, body, attempt + 1);
+  }
   const data = await res.json(); if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); return data;
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
-function personOf(page: any, fallback: string) {
-  const fields = Object.entries(page.properties || {}) as [string, Property][];
-  const assigned = fields.find(([name, prop]) => /persona|responsable|asignad/i.test(name) && ['people','select','rich_text'].includes(prop.type));
-  if (!assigned) return fallback;
-  const prop = assigned[1];
-  if (prop.type === 'people') return (prop.people || []).map((p: any) => p.name || '').join(', ');
-  if (prop.type === 'select') return prop.select?.name || '';
-  return (prop.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('');
-}
 export async function mutateActivity(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
   const title = titleOf(page);
   const locks = Object.entries(page.properties || {}).some(([name, prop]: any) => /lock|bloquead/i.test(name) && prop.type === 'checkbox' && prop.checkbox);
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
-  const activity = { ...cached, title, person: personOf(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
+  const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
+  if (updates.status && workflowState(updates.status) === 'review' && !updates.reviewer) throw new Error('Selecciona a quién enviar la actividad en el modal de revisión.');
+  const completed = updates.status && workflowState(updates.status) === 'completed';
+  if (completed && !isReviewer(actor)) throw new Error('Solo John, Isaías o Genaro pueden terminar una revisión.');
+  const previousFlow = updates.reviewer || completed ? await readReviewFlow(settings, id) : undefined;
+  if (completed && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
+  let reviewFlow: any;
+  let nextTitle = title;
   const properties: Record<string, any> = {};
   const fields = Object.entries(page.properties || {}) as [string, Property][];
 
@@ -46,20 +51,40 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
     }
     const person = normalizePerson(target);
-    if (!PERSON_ALIASES[person]) throw new Error('Selecciona un responsable válido del equipo.');
-    const personField = fields.find(([name,p]) => /persona|responsable|asignad/i.test(name) && ['people','select','rich_text'].includes(p.type));
+    if (updates.reviewer && !['John','Isaias','Genaro'].includes(person)) throw new Error('Selecciona a John, Isaías o Genaro como revisor.');
+    const clearing = completed && person === 'Sin asignar';
+    const restoring = completed && previousFlow?.OriginalAssigneeUserId;
+    if (!PERSON_ALIASES[person] && !clearing && !restoring) throw new Error('Selecciona un responsable válido del equipo.');
+    const personField = assignedField(page);
+    if (!personField) throw new Error('No se encontró la propiedad editable de persona asignada en Notion.');
     if (personField) {
       const [name, prop] = personField;
-      if (prop.type === 'people') {
-        const ids = JSON.parse(process.env.NOTION_PERSON_IDS || '{}'); const id = ids[PERSON_ALIASES[person][0]] || ids[person];
-        if (id) properties[name] = { people: [{ id }] };
-      } else properties[name] = prop.type === 'select' ? { select: { name: person } } : { rich_text: [{ text: { content: person } }] };
+      if (prop.type === 'people' && clearing) properties[name] = {people:[]};
+      else if (prop.type === 'people') {
+        const ids = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
+        let userId = completed && previousFlow?.OriginalAssigneeUserId || ids[PERSON_ALIASES[person]?.[0] || person] || ids[person];
+        if (!userId) userId = await resolveTeamPersonId(settings, person);
+        if (!userId) {
+          let cursor: string | undefined;
+          do {
+            const users = await notionRequest(settings, 'users?page_size=100' + (cursor ? '&start_cursor=' + encodeURIComponent(cursor) : ''));
+            const matches = (users.results || []).filter((u: any) => u.type === 'person' && (normalizePerson(u.name) === person || normalizePerson(u.person?.email) === person));
+            if (matches.length > 1) throw new Error('Hay varias personas de Notion con ese nombre; configura NOTION_PERSON_IDS.');
+            userId = matches[0]?.id;
+            cursor = users.has_more ? users.next_cursor : undefined;
+          } while (!userId && cursor);
+        }
+        if (!userId) throw new Error('No se pudo resolver la cuenta real de Notion para ' + person + '. Configura NOTION_PERSON_IDS.');
+        properties[name] = { people: [{ id: userId }] };
+      } else properties[name] = prop.type === 'select' ? { select: clearing ? null : { name:person } } : {rich_text:clearing ? [] : [{text:{content:person}}]};
     }
     const titleField = fields.find(([,p]) => p.type === 'title');
     if (titleField) {
-      const ownerToken = /\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i;
-      const tag = PERSON_ALIASES[person][0];
-      let nextTitle = ownerToken.test(title) ? title.replace(ownerToken, tag) : `${tag} ${title}`;
+      const ownerCodes = (PERSON_ALIASES[normalizePerson(activity.person)] || []).filter(alias => /^(.)\1/.test(alias));
+      const ownerToken = ownerCodes.length ? new RegExp('\\b(?:' + ownerCodes.join('|') + ')(?:0{2,4}|00[1-3])?\\b','i') : null;
+      const tag = PERSON_ALIASES[person]?.[0] || '';
+      const baseTitle = isSendingToReview || completed ? title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '') : title;
+      nextTitle = ownerToken?.test(baseTitle) ? baseTitle.replace(ownerToken, () => tag) : tag ? tag + ' ' + baseTitle : baseTitle;
       if (isSendingToReview) {
         // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
         nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
@@ -70,33 +95,34 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
   }
   if (updates.start) {
     validateSchedule(updates.start, updates.end);
-    const date = fields.find(([name, p]) => p.type === 'date' && /fecha.*hacer|program|schedule/i.test(name)) || fields.find(([,p]) => p.type === 'date');
+    const date = fields.find(([name,p]) => p.type === 'date' && /^fecha por hacer$/i.test(name.trim()));
     if (!date) throw new Error('La página no tiene una propiedad de fecha editable.');
     properties[date[0]] = { date: { start: updates.start, end: updates.end } };
   }
   if (updates.status) {
-    const status = fields.find(([name,p]) => /estado|status/i.test(name) && ['status','select'].includes(p.type));
+    const status = calendarStatusField(page);
     if (!status) throw new Error('No se encontró la propiedad Estado de Notion.');
     let desired = updates.status;
-    if (page.parent?.database_id) {
-      const schema = await notionRequest(settings, `databases/${page.parent.database_id}`);
+    if (page.parent?.data_source_id || page.parent?.database_id) {
+      const schema = await notionRequest(settings, page.parent?.data_source_id ? `data_sources/${page.parent.data_source_id}` : `databases/${page.parent.database_id}`);
       const options: { name: string }[] = schema.properties?.[status[0]]?.[status[1].type]?.options || [];
       const exact = options.find(option => option.name.toLowerCase() === desired.toLowerCase());
       const state = workflowState(desired);
       const equivalent = state !== 'unknown' ? options.find(option => workflowState(option.name) === state) : undefined;
       if (exact || equivalent) desired = (exact || equivalent)!.name;
-      else if (status[1].type === 'status' && options.length) throw new Error('Ese estado no está disponible en la base de Notion.');
+      else if (options.length) throw new Error('Ese estado no está disponible en la base de Notion.');
     }
     properties[status[0]] = { [status[1].type]: { name: desired } };
 
-    // En ANFETA original: actualizar el prefijo del título (rtuzREVISION o zREVISION)
+    // Compose the phase after reassignment, preserving the remaining description.
     const titleField = fields.find(([,p]) => p.type === 'title');
-    if (titleField && !properties[titleField[0]]) {
+    if (titleField) {
+      const currentTitle = (properties[titleField[0]]?.title || []).map((t: any) => t.text?.content || "").join("") || title;
       if (desired === 'rtuzREVISION' || updates.status === 'rtuzREVISION') {
-        const clean = title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
         properties[titleField[0]] = { title: [{ text: { content: `rtuzREVISION ${clean.trim()}` } }] };
       } else if (desired === 'zREVISION' || updates.status === 'zREVISION' || workflowState(desired) === 'completed') {
-        const clean = title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
         properties[titleField[0]] = { title: [{ text: { content: `zREVISION ${clean.trim()}` } }] };
       }
     }
@@ -104,11 +130,43 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
   if (updates.isUrgent !== undefined) {
     const titleProp = fields.find(([,p]) => p.type === 'title');
     if (!titleProp) throw new Error('No se encontró el título de Notion.');
-    const nextTitle = updates.isUrgent ? `${title.replace(/\s+00$/, '')} 00` : title.replace(/\s+00$/, '');
+    nextTitle = (properties[titleProp[0]]?.title || []).map((t: any) => t.text?.content || '').join('') || nextTitle;
+    nextTitle = updates.isUrgent ? `${nextTitle.replace(/\s+00$/, '')} 00` : nextTitle.replace(/\s+00$/, '');
     properties[titleProp[0]] = { title: [{ text: { content: nextTitle } }] };
   }
   if (!Object.keys(properties).length) throw new Error('No hay cambios válidos para guardar.');
-  return notionRequest(settings, `pages/${id}`, 'PATCH', { properties });
+  if (updates.reviewer || (completed && previousFlow)) {
+    const field = assignedField(page);
+    reviewFlow = { ...previousFlow,
+      OriginalPerson: previousFlow?.OriginalPerson || activity.person,
+      ReviewAssignee: updates.reviewer ? normalizePerson(updates.reviewer) : previousFlow.ReviewAssignee,
+      OriginalAssigneeUserId: previousFlow?.OriginalAssigneeUserId || (field?.[1].type === 'people' ? field[1].people?.[0]?.id : '') || '',
+      ReviewAssigneeUserId: updates.reviewer && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.ReviewAssigneeUserId || '',
+      State: completed ? 'approved' : 'pending', SubmittedAt: previousFlow?.SubmittedAt || new Date().toISOString(),
+      UpdatedAt: new Date().toISOString(), UpdatedBy: actor, Note: completed ? 'Revisión terminada desde ANFETA web.' : 'Enviada a revisión desde ANFETA web.',
+      LeaveVisualCopy: updates.reviewer ? updates.leaveVisualCopy !== false : previousFlow?.LeaveVisualCopy,
+      AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
+    };
+  }
+  const updated = await notionRequest(settings, 'pages/' + id, 'PATCH', { properties });
+  if (reviewFlow) {
+    try { await saveReviewFlow(settings, id, reviewFlow); }
+    catch (error) {
+      // Notion has no transaction across a page and its blocks. Restore the page if metadata fails.
+      const restore: Record<string, any> = {};
+      for (const name of Object.keys(properties)) {
+        const p: any = page.properties[name];
+        if (p.type === 'title' || p.type === 'rich_text') restore[name] = { [p.type]: (p[p.type] || []).map((t: any) => ({ type:'text', text:{content:t.plain_text || t.text?.content || ''} })) };
+        else if (p.type === 'people') restore[name] = { people: (p.people || []).map((u: any) => ({id:u.id})) };
+        else restore[name] = { [p.type]: p[p.type] };
+      }
+      try { await notionRequest(settings, 'pages/' + id, 'PATCH', { properties:restore }); }
+      catch { throw new Error('Notion guardó parte del cambio, pero no el flujo de revisión. Actualiza el calendario y revisa la actividad antes de volver a enviarla.'); }
+      throw new Error('No se guardó el flujo de revisión; se restauró la actividad. ' + (error instanceof Error ? error.message : ''));
+    }
+    updated.__reviewFlow = reviewFlow;
+  }
+  return updated;
 }
 export async function createActivity(settings: Settings, actor: string, payload: any) {
   const { start, end, domain, person, title } = payload;

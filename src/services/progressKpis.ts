@@ -50,6 +50,7 @@ export function computeDailyKPIs(
   dateStr: string,
   now: Date = new Date()
 ): DailyProgressKPIs {
+  activities = activities.filter(activity => !activity.isReviewMirror);
   let scheduledMinutes = 0;
   let progressMinutes = 0;
   let laggingCount = 0;

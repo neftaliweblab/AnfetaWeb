@@ -1,3 +1,4 @@
+import { calendarInterval } from "@/services/calendarPresentation";
 import { NotionCalendarActivity } from "@/types/anfeta";
 
 export interface PositionedActivity {
@@ -11,33 +12,14 @@ export interface PositionedActivity {
  * de solapamiento de actividades dentro de una misma columna del calendario.
  */
 export function computeActivityOverlaps(
-  activities: NotionCalendarActivity[]
+  activities: NotionCalendarActivity[],
+  day?: string
 ): PositionedActivity[] {
   if (!activities || activities.length === 0) return [];
 
   const parsed = activities.map((act) => {
-    let s = 8 * 60;
-    let e = 9 * 60;
-
-    const sMatch = (act.start || "").match(/T(\d{2}):(\d{2})/);
-    if (sMatch) {
-      s = parseInt(sMatch[1], 10) * 60 + parseInt(sMatch[2], 10);
-    } else if (act.start) {
-      const d = new Date(act.start);
-      if (!isNaN(d.getTime())) s = d.getHours() * 60 + d.getMinutes();
-    }
-
-    const eMatch = (act.end || "").match(/T(\d{2}):(\d{2})/);
-    if (eMatch) {
-      e = parseInt(eMatch[1], 10) * 60 + parseInt(eMatch[2], 10);
-    } else if (act.end) {
-      const d = new Date(act.end);
-      if (!isNaN(d.getTime())) e = d.getHours() * 60 + d.getMinutes();
-    } else {
-      e = s + 60;
-    }
-
-    if (e <= s) e = s + 60;
+    const interval = calendarInterval(act.start, act.end, day);
+    const s = interval.start, e = interval.end;
 
     return {
       act,

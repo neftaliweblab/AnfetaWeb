@@ -30,6 +30,7 @@ interface CalendarHostProps {
   onRunAutomation?: () => void;
   onOpenDailyProgress?: () => void;
   onRefresh?: () => void;
+  loadError?: string;
 }
 
 const DEFAULT_COLLABORATORS = [
@@ -58,6 +59,7 @@ export function CalendarHost({
   onRunAutomation,
   onOpenDailyProgress,
   onRefresh,
+  loadError,
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
@@ -76,14 +78,24 @@ export function CalendarHost({
 
   useEffect(() => {
     setActivitiesList(initialActivities);
+    setSelectedActivity(prev => prev ? initialActivities.find(a => a.pageId === prev.pageId) || null : null);
   }, [initialActivities]);
+  useEffect(() => { if (loadError) setError(loadError); }, [loadError]);
 
   // Listener en tiempo real multi-ventana y multi-pestaña
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg) => {
       if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         setActivitiesList((prev) =>
-          prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
+          (() => {
+            const saved = prev.find(a => a.pageId === msg.pageId);
+            if (!saved) return prev;
+            const activity = {...saved,...msg.updates};
+            const next = prev.filter(a => a.pageId !== msg.pageId && a.pageId !== 'review-mirror-' + msg.pageId);
+            next.push(activity);
+            if (activity.reviewFlow?.State === 'pending' && activity.reviewFlow.LeaveVisualCopy !== false && normalizePerson(activity.reviewFlow.OriginalPerson) !== normalizePerson(activity.person)) next.push({...activity,pageId:'review-mirror-' + activity.pageId,person:normalizePerson(activity.reviewFlow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] ' + activity.title});
+            return next;
+          })()
         );
         setSelectedActivity((prev) =>
           prev && prev.pageId === msg.pageId ? { ...prev, ...msg.updates } : prev
@@ -104,55 +116,32 @@ export function CalendarHost({
 
   const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; leaveVisualCopy?: boolean }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
-    if (!original || !canEditActivity(currentUser, original) || pending.current.has(pageId)) return;
+    if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
+    if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
     pending.current.add(pageId); setError('');
-
-    const targetPerson = updates.reviewer ? normalizePerson(updates.reviewer) : (updates.person ? normalizePerson(updates.person) : original.person);
-    const finalUpdates: any = { ...updates };
-    if (updates.reviewer) {
-      finalUpdates.person = targetPerson;
-    }
-
-    // Actualización reactiva instantánea local
-    setActivitiesList(prev => {
-      // Si se deja copia visual en la columna original, clonar la tarjeta visualmente como copia en revisión
-      if (updates.leaveVisualCopy && updates.reviewer) {
-        const visualCopy: NotionCalendarActivity = {
-          ...original,
-          pageId: `copy-${original.pageId}-${Date.now()}`,
-          title: `[COPIA REVISIÓN] ${original.title}`,
-          status: "rtuzREVISION",
-          person: original.person, // Se queda en la columna original
-        };
-        const updatedOriginal = { ...original, ...finalUpdates, person: targetPerson };
-        return [...prev.filter(a => a.pageId !== pageId), updatedOriginal, visualCopy];
-      }
-
-      return prev.map(a => a.pageId === pageId ? { ...a, ...finalUpdates } : a);
-    });
-
-    setSelectedActivity(prev => prev && prev.pageId === pageId ? { ...prev, ...finalUpdates } : prev);
-
-    // Difusión instantánea en tiempo real
-    anfetaSync.broadcast({
-      type: "ACTIVITY_UPDATED",
-      pageId,
-      updates: finalUpdates,
-    });
-
     try {
       const response = await fetch('/api/data', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: updates.start ? 'update-activity-schedule' : updates.reviewer ? 'update-activity-assignee' : updates.person ? 'update-activity-assignee' : 'update-activity-status',
-          payload: { id: pageId, currentUser, ...finalUpdates }
-        }),
+        method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
+        body:JSON.stringify({ action:updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates} }),
       });
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar la actividad.');
+      if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
+      const saved: NotionCalendarActivity = data.activity;
+      setActivitiesList(prev => {
+        const next = prev.filter(a => a.pageId !== pageId && a.pageId !== 'review-mirror-' + pageId);
+        next.push(saved);
+        if (saved.reviewFlow?.State === 'pending' && saved.reviewFlow.LeaveVisualCopy !== false && normalizePerson(saved.reviewFlow.OriginalPerson) !== normalizePerson(saved.person)) next.push({...saved, pageId:'review-mirror-' + pageId, person:normalizePerson(saved.reviewFlow.OriginalPerson), isReviewMirror:true, title:'[COPIA REVISIÓN] ' + saved.title});
+        return next;
+      });
+      setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
+      // Broadcast only the state confirmed by Notion.
+      anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
       onRefresh?.();
-    } catch (error) { setError(error instanceof Error ? error.message : 'Error de conexión'); }
-    finally { pending.current.delete(pageId); }
+      return true;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Error de conexión.');
+      return false;
+    } finally { pending.current.delete(pageId); }
   };
 
   const startHour = 8;
@@ -347,7 +336,7 @@ export function CalendarHost({
         onSelectDate={onSelectDate}
         availableDates={availableDates}
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
-        totalActivitiesCount={filteredActivities.length}
+        totalActivitiesCount={filteredActivities.filter(a => !a.isReviewMirror).length}
         pixelsPerHour={pixelsPerHour}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
@@ -426,7 +415,7 @@ export function CalendarHost({
             ) : (
               visiblePeople.map((person) => {
                 const personActivities = activitiesByPerson[person] || [];
-                const positioned = computeActivityOverlaps(personActivities);
+                const positioned = computeActivityOverlaps(personActivities, currentDate);
 
                 // Compute person KPIs
                 let totalChecks = 0;
@@ -434,6 +423,7 @@ export function CalendarHost({
                 let totalCoverageHours = 0;
 
                 personActivities.forEach((act) => {
+                  if (act.isReviewMirror) return;
                   totalChecks += act.checklistTotal || 0;
                   doneChecks += act.checklistCompleted || 0;
                   if (act.start && act.end) {
@@ -452,8 +442,8 @@ export function CalendarHost({
                     key={person}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnColumn(e, person)}
-                    className="w-[205px] min-w-[185px] max-w-[240px] flex-shrink-0 border-r border-[#202832] flex flex-col"
-                    style={{ height: `${canvasHeight + 56}px` }}
+                    className="min-w-[220px] flex-shrink-0 border-r border-[#202832] flex flex-col"
+                    style={{ height: `${canvasHeight + 56}px`, width: Math.max(220, ...positioned.map(p => p.overlapTotal * 150 + 12)) }}
                   >
                     <CalendarColHeader
                       personName={person}
@@ -481,6 +471,7 @@ export function CalendarHost({
                         <ActivityCard
                           key={act.pageId || idx}
                           activity={act}
+                          displayDate={currentDate}
                           currentUser={currentUser}
                           pixelsPerHour={pixelsPerHour}
                           overlapIndex={overlapIndex}
@@ -510,6 +501,12 @@ export function CalendarHost({
             onSelectActivity={(act) => setSelectedActivity(act)}
             onClose={() => setIsDetailOpen(false)}
             onActivityUpdated={(updates) => handleUpdateActivity(selectedActivity.pageId, updates)}
+            onChecklistUpdated={(updates) => {
+              const pageId = selectedActivity.pageId;
+              setActivitiesList(prev => prev.map(a => a.pageId === pageId ? {...a,...updates} : a));
+              setSelectedActivity(prev => prev ? {...prev,...updates} : prev);
+              anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates});
+            }}
           />
         )}
       </div>

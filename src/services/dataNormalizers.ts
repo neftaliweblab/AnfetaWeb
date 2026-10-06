@@ -1,4 +1,6 @@
 import path from "path";
+import { calendarUrgent, mexicoDate } from "./calendarPresentation";
+import { normalizePerson } from "./identityNormalizer";
 import { SearchResultRow, NotionCalendarActivity } from "@/types/anfeta";
 
 function resolveAssignedPerson(text: string, keys: string[] = []): string {
@@ -84,7 +86,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     pageUrl: raw.PageUrl || raw.pageUrl || "",
     title,
     shortTitle: raw.ShortTitle || raw.shortTitle || title,
-    person: raw.Person || raw.person || "—",
+    person: normalizePerson(raw.Person || raw.person),
     originalPerson: raw.OriginalPerson || raw.originalPerson || "—",
     project: raw.Project || raw.project || "",
     domain: raw.ParsedDomain || raw.domain || "general",
@@ -100,7 +102,9 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     checklistCompleted: raw.ChecklistCompleted ?? raw.checklistCompleted ?? 0,
     todayChecklistCompleted:
       raw.TodayChecklistCompleted ?? raw.todayChecklistCompleted ?? raw.ChecklistCompleted ?? 0,
-    isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? title.includes("00")),
+    isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? calendarUrgent(title)),
+    isReviewMirror: !!(raw.IsReviewMirror ?? raw.isReviewMirror),
+    reviewFlow: raw.ReviewFlow || raw.reviewFlow,
     isCompletedForReview: workflow === 'review' || (workflow === 'unknown' && !!(raw.IsCompletedForReview ?? raw.isCompletedForReview)),
     isFinalized: workflow === 'completed' || (workflow === 'unknown' && !!(raw.IsFinalized ?? raw.isFinalized)),
     isSuspended: workflow === 'suspended' || (workflow === 'unknown' && !!(raw.IsSuspended ?? raw.isSuspended)),

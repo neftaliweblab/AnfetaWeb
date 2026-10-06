@@ -1,5 +1,8 @@
+import { queryCalendarPages, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, calendarStatusField } from '@/services/notionCalendar';
+import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
+import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder } from '@/services/dropboxUpload';
-import { createActivity, mutateActivity } from '@/services/notionMutations';
+import { createActivity, mutateActivity, notionRequest } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
 import { NextRequest, NextResponse } from "next/server";
@@ -25,6 +28,7 @@ function getSettings() {
     notionToken: process.env.NOTION_TOKEN || "",
     dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
     currentUser: "nneft",
+    notionDataSourceId: process.env.NOTION_CALENDAR_DATA_SOURCE_ID || "2eeabd7d-91b7-8193-a131-000b08cd54e2",
     isDryRun: true,
   };
   try {
@@ -76,6 +80,8 @@ function readLocalJson<T>(filename: string, defaultValue: T): T {
 }
 
 // Caché en memoria para vistas previas con TTL de 15 minutos
+export const maxDuration = 120;
+
 const previewMemoryCache = new Map<string, { timestamp: number; payload: any }>();
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
@@ -150,15 +156,15 @@ function extractNotionPageData(page: any): LiveNotionPage {
 
       // Status
       if ((type === "status" || type === "select") && propVal[type]?.name) {
-        if (!status || lowerName.includes("estado") || lowerName.includes("status")) {
+        if (lowerName.includes("estado") || lowerName.includes("status")) {
           status = propVal[type].name;
         }
       }
 
       // Date
       if (type === "date" && propVal.date?.start) {
-        const priority = /fecha.*hacer|program|schedule/i.test(lowerName) ? 3 : /^(fecha|date)$/.test(lowerName) ? 2 : 1;
-        if (priority > datePriority) {
+        const priority = /^fecha por hacer$/i.test(lowerName.trim()) ? 3 : 0;
+        if (priority === 3 && priority > datePriority) {
           datePriority = priority;
           dateStart = propVal.date.start;
           dateEnd = propVal.date.end || "";
@@ -197,6 +203,9 @@ function extractNotionPageData(page: any): LiveNotionPage {
     else if (/\b(?:eemma|eedua|eduardo|emmanuel)\b/i.test(title)) person = "Emmanuel";
   }
 
+  person = assignedPerson(page, person);
+  const statusProp = calendarStatusField(page)?.[1];
+  status = statusProp?.[statusProp.type]?.name || '';
   return { id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
@@ -462,7 +471,7 @@ async function fetchNotionBlocksRecursive(
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
-  const date = searchParams.get("date") || new Date().toISOString().split("T")[0];
+  const date = searchParams.get("date") || mexicoDate();
   const scope = searchParams.get("scope") || "day";
 
   try {
@@ -766,122 +775,53 @@ export async function GET(req: NextRequest) {
     }
 
     if (type === "calendar" || type === "calendar-week") {
-      const calToken = (req.headers.get("x-notion-token") || searchParams.get("token") || getSettings().notionToken || "").trim();
-      if (calToken) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return NextResponse.json({error:'Fecha inválida.'}, {status:400});
+      const settings = getSettings();
+      const token = (req.headers.get('x-notion-token') || searchParams.get('token') || settings.notionToken || '').trim();
+      const isWeek = scope === 'week' || type === 'calendar-week';
+      const shift = (day: string, n: number) => new Date(Date.parse(day + 'T12:00:00Z') + n*86400000).toISOString().slice(0,10);
+      const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
+      const first = isWeek ? shift(date, -((weekday + 6) % 7)) : date;
+      const days = Array.from({length:isWeek ? 7 : 1}, (_,i) => shift(first,i));
+      const snapshot = calendarSnapshot();
+      const cached = Object.values(snapshot).flat().map(normalizeActivity);
+      let activities: any[];
+      let warning: string | undefined;
+      if (token) {
         try {
-          const nRes = await fetch("https://api.notion.com/v1/search", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${calToken}`,
-              "Notion-Version": "2022-06-28",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              page_size: 100,
-              sort: { direction: "descending", timestamp: "last_edited_time" },
-            }),
-          });
-          if (nRes.ok) {
-            const nData = await nRes.json();
-            for (const item of (nData.results || [])) {
-              if (item.object === "page") {
-                const pageData = extractNotionPageData(item);
-                if (pageData.id) {
-                  liveNotionOverrides.set(pageData.id, pageData);
-                  calendarMemoryUpdates.delete(pageData.id);
-                }
-              }
-            }
+          const pages = await queryCalendarPages({...settings, notionToken:token}, first, shift(first, days.length));
+          const byId = new Map(cached.map(a => [cleanPageId(a.pageId), a]));
+          activities = [];
+          // Bound parallel metadata requests to avoid flooding Notion.
+          for (let offset=0; offset<pages.length; offset+=3) {
+            const batch = await Promise.all(pages.slice(offset,offset+3).map(async page => {
+              const live = extractNotionPageData(page);
+              if (!live.dateStart || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
+              const old = byId.get(live.id);
+              const state = workflowState(live.status, live.title);
+              const reviewFlow = state === 'review' ? await cachedReviewFlow({...settings,notionToken:token}, page) : undefined;
+              return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
+                person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
+                reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,
+                start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
+                end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
+                isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false}, 0);
+            }));
+            activities.push(...batch.filter(Boolean));
           }
-        } catch (err) {
-          console.warn("Could not fetch live Notion pages in calendar:", err);
+        } catch (error) {
+          return NextResponse.json({error:'No se pudo cargar el calendario de Notion. ' + (error instanceof Error ? error.message : '')}, {status:502});
         }
+      } else {
+        activities = cached.filter(a => days.includes(mexicoDate(a.start)));
+        warning = 'Calendario en caché: configura el acceso a Notion para ver las actividades actuales.';
       }
-
-      const calData = calendarSnapshot();
-      const availableDates = Object.keys(calData).sort();
-
-      if (scope === "week" || type === "calendar-week") {
-        const targetD = new Date(date);
-        const weekDates = availableDates.filter((d) => {
-          const dt = new Date(d);
-          const diffDays = Math.abs((dt.getTime() - targetD.getTime()) / (1000 * 3600 * 24));
-          return diffDays <= 3.5;
-        });
-
-        const finalDates = weekDates.length > 0 ? weekDates : availableDates.slice(-7);
-        const allWeekRaw: any[] = [];
-        finalDates.forEach((d) => {
-          if (Array.isArray(calData[d])) {
-            allWeekRaw.push(...calData[d]);
-          }
-        });
-
-        const activities = allWeekRaw.map(normalizeActivity);
-        return NextResponse.json({
-          date,
-          scope: "week",
-          dates: finalDates,
-          count: activities.length,
-          activities,
-          availableDates,
-        });
-      }
-
-      const rawActivities = calData[date] || [];
-      const activities = rawActivities.map(normalizeActivity);
-
-      // Fusionar páginas actualizadas en vivo desde Notion
-      if (liveNotionOverrides.size > 0) {
-        for (const [pid, live] of liveNotionOverrides) {
-          if (live.dateStart && live.dateStart.startsWith(date)) {
-            const existing = activities.find((a: any) => String(a.pageId || "").replace(/-/g, "").toLowerCase() === pid);
-            if (existing) {
-              existing.isLocked = existing.isLocked || live.isLocked;
-              if (live.dateStart) existing.start = live.dateStart;
-              if (live.dateEnd) existing.end = live.dateEnd;
-              if (live.title) existing.title = live.title;
-              if (live.status) existing.status = live.status;
-              if (live.person) existing.person = live.person;
-            } else {
-              activities.unshift({
-                pageId: live.id,
-                pageUrl: live.url,
-                title: live.title || "Actividad Notion",
-                shortTitle: live.title || "Actividad Notion",
-                person: live.person || "Sin asignar",
-                originalPerson: live.person || "Sin asignar",
-                project: live.domain || "",
-                domain: live.domain || "general",
-                status: live.status || "prtuzREVISION",
-                start: live.dateStart,
-                end: live.dateEnd || live.dateStart,
-                originalScheduledDate: date,
-                currentScheduledDate: date,
-                moveCount: 0,
-                routeDates: [],
-                checklistScanned: false,
-                checklistTotal: 0,
-                checklistCompleted: 0,
-                todayChecklistCompleted: 0,
-                isUrgent: false,
-                isCompletedForReview: live.status?.includes("rtuzREVISION") || false,
-                isFinalized: live.status?.includes("zREVISION") || false,
-                isSuspended: false,
-                isLocked: live.isLocked,
-                estimatedWorkMinutes: 30,
-              } as any);
-            }
-          }
-        }
-      }
-
-      return NextResponse.json({
-        date,
-        count: activities.length,
-        activities,
-        availableDates,
-      });
+      const unique = [...new Map(activities.map(a => [cleanPageId(a.pageId),a])).values()];
+      const mirrors = unique.filter(a => a.reviewFlow?.State === 'pending' && a.reviewFlow.LeaveVisualCopy !== false && normalizePerson(a.reviewFlow.OriginalPerson) !== normalizePerson(a.person)).map(a => ({...a,
+        pageId:'review-mirror-' + a.pageId, person:normalizePerson(a.reviewFlow.OriginalPerson), isReviewMirror:true,
+        title:'[COPIA REVISIÓN] ' + a.title, shortTitle:a.title,
+      }));
+      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, activities:[...unique,...mirrors], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
     }
 
     if (type === "calendar-dates") {
@@ -1444,79 +1384,39 @@ export async function POST(req: NextRequest) {
       const id = input.id || input.pageId;
       const settings = getSettings(); const actor = input.currentUser || settings.currentUser;
       if (action === 'update-activity-schedule' && (!input.start || !input.end)) return NextResponse.json({ error: 'Completa inicio y fin.' }, { status: 400 });
-      if (action === 'update-activity-assignee' && !input.person) return NextResponse.json({ error: 'Selecciona un responsable.' }, { status: 400 });
+      if (action === 'update-activity-assignee' && !input.person && !input.reviewer) return NextResponse.json({ error: 'Selecciona un responsable.' }, { status: 400 });
       const cached = Object.values(calendarSnapshot()).flat().map(normalizeActivity).find(a => cleanPageId(a.pageId) === cleanPageId(id));
       try {
         const page = await mutateActivity(settings, actor, id, input, cached);
         const live = extractNotionPageData(page); liveNotionOverrides.set(live.id, live);
-        if (cached) persistCalendarActivity(normalizeActivity({ ...cached, title: live.title || cached.title, ...(input.start ? { start: input.start, end: input.end } : {}), ...(input.status ? { status: live.status || input.status } : {}), ...(input.person ? { person: live.person || normalizePerson(input.person) } : {}), ...(input.isUrgent !== undefined ? { isUrgent: input.isUrgent } : {}) }, 0));
+        const activity = normalizeActivity({ ...cached, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
+          start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
+          person:live.person, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
+          reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
+        persistCalendarActivity(activity);
         previewMemoryCache.clear();
-        return NextResponse.json({ success: true, id, start: input.start, end: input.end, status: input.status });
+        return NextResponse.json({ success:true, activity });
       } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
     }
 
-    if (action === 'get-checklist') {
+    if (action === 'get-checklist' || action === 'toggle-checklist') {
       const input = payload || body;
-      const pageId = input.pageId || input.id;
       const settings = getSettings();
-      if (!pageId) return NextResponse.json({ error: 'Falta pageId' }, { status: 400 });
-      const cleanId = cleanPageId(pageId);
-      const items: any[] = [];
-      if (settings.notionToken) {
-        try {
-          const res = await fetch(`https://api.notion.com/v1/blocks/${cleanId}/children?page_size=100`, {
-            headers: {
-              Authorization: `Bearer ${settings.notionToken.trim()}`,
-              'Notion-Version': '2022-06-28',
-            },
-            signal: AbortSignal.timeout(15000),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            for (const block of data.results || []) {
-              if (block.type === 'to_do') {
-                const plainText = (block.to_do?.rich_text || []).map((t: any) => t.plain_text || '').join('');
-                items.push({
-                  id: block.id,
-                  blockId: block.id,
-                  text: plainText || 'Tarea sin texto',
-                  isChecked: !!block.to_do?.checked,
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('Error fetching Notion checklist:', err);
-        }
-      }
-      return NextResponse.json({ success: true, items });
-    }
-
-    if (action === 'toggle-checklist') {
-      const input = payload || body;
-      const blockId = input.blockId || input.id;
-      const isChecked = !!input.checked;
-      const settings = getSettings();
-      if (!blockId) return NextResponse.json({ error: 'Falta blockId' }, { status: 400 });
-      if (settings.notionToken && !String(blockId).startsWith('todo-')) {
-        try {
-          await fetch(`https://api.notion.com/v1/blocks/${cleanPageId(blockId)}`, {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${settings.notionToken.trim()}`,
-              'Notion-Version': '2022-06-28',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to_do: { checked: isChecked },
-            }),
-            signal: AbortSignal.timeout(15000),
-          });
-        } catch (err) {
-          console.warn('Error toggling Notion checklist:', err);
-        }
-      }
-      return NextResponse.json({ success: true, blockId, checked: isChecked });
+      const pageId = input.pageId;
+      try {
+        if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
+        if (action === 'get-checklist') return NextResponse.json({ success:true, items:await readChecklist(settings, pageId) });
+        const actor = input.currentUser || settings.currentUser;
+        await assertChecklistAccess(settings, actor, pageId);
+        const items = await readChecklist(settings, pageId);
+        const item = items.find(i => cleanPageId(i.blockId) === cleanPageId(input.blockId || ''));
+        if (!item) throw new Error('La tarea no pertenece al checklist de esta actividad.');
+        if (typeof input.checked !== 'boolean') throw new Error('Estado de checklist inválido.');
+        const block = await notionRequest(settings, 'blocks/' + item.blockId, 'PATCH', {to_do:{checked:input.checked}});
+        const checked = !!block.to_do?.checked;
+        if (checked !== input.checked) throw new Error('Notion no confirmó el cambio del checklist.');
+        return NextResponse.json({success:true, blockId:item.blockId, checked});
+      } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }
     }
 
     if (action === "rename-item") {

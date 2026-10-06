@@ -1,10 +1,11 @@
 "use client";
 
+import { calendarDisplayTitle, calendarTime } from "@/services/calendarPresentation";
 import React, { useState, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { workflowState } from "@/services/activityWorkflow";
 import { openNotionPage } from "@/services/windowsIntegration";
-import { isReviewer, isDirection } from "@/services/activityPermissions";
+import { isReviewer, isDirection, canEditActivity } from "@/services/activityPermissions";
 import { CheckSquare, ExternalLink, Clock, User, Shield, Check, Loader2, ArrowRight, CheckCircle2, Send, ListChecks, Calendar as CalendarIcon } from "lucide-react";
 import { SendToReviewModal } from "./SendToReviewModal";
 
@@ -20,7 +21,8 @@ interface CalendarDetailPanelProps {
   activity: NotionCalendarActivity;
   onClose: () => void;
   currentUser: string;
-  onActivityUpdated?: (updates: Partial<NotionCalendarActivity>) => void;
+  onActivityUpdated?: (updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
+  onChecklistUpdated?: (updates: Partial<NotionCalendarActivity>) => void;
   allActivities?: NotionCalendarActivity[];
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
 }
@@ -30,10 +32,13 @@ export function CalendarDetailPanel({
   onClose,
   currentUser,
   onActivityUpdated,
+  onChecklistUpdated,
   allActivities = [],
   onSelectActivity,
 }: CalendarDetailPanelProps) {
   const [items, setItems] = useState<NotionTodoItem[]>([]);
+  const [checklistError, setChecklistError] = useState("");
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"checklist" | "project">("checklist");
@@ -45,31 +50,21 @@ export function CalendarDetailPanel({
   const person = activity.person || (activity as any)?.Person || "Sin asignar";
 
   // Limpiar título de prefijos y tecnicismos repetitivos
-  const cleanTitle = React.useMemo(() => {
-    let t = title || "";
-    t = t.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINADO|TERMINADA|PENDIENTE)\s*/i, "");
-    t = t.replace(/^(?:aads|webs|seo|maps)\s+\d+[-–]\s*/i, "");
-    t = t.replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, "");
-    t = t.replace(/\[\d+[A-Z]+\]\s*/gi, "");
-    t = t.replace(/^\d+(?:\.\d+)?\s+/g, "");
-    t = t.replace(/\s+00\s*$/g, "");
-    t = t.trim();
-    return t || title;
-  }, [title]);
-
-  const userCanReview = isReviewer(currentUser);
+  const cleanTitle = calendarDisplayTitle(title, domain);
+  const editable = canEditActivity(currentUser, activity);
+  const userCanReview = isReviewer(currentUser) && editable;
 
   // Actividades del mismo dominio (1:1 paridad con ANFETA WPF Actividades del Proyecto)
   const domainActivities = (allActivities || []).filter((a) => {
     if (!a.domain || a.domain === "general") return false;
     const cleanD = a.domain.trim().toLowerCase();
     const targetD = domain.trim().toLowerCase();
-    return cleanD === targetD || cleanD.includes(targetD) || targetD.includes(cleanD);
+    return cleanD.replace(/^www\./,'') === targetD.replace(/^www\./,'');
   });
 
   const startStr = activity.start || (activity as any)?.Start;
   const endStr = activity.end || (activity as any)?.End;
-  const timeLabel = startStr && endStr ? `${startStr.slice(11, 16)} – ${endStr.slice(11, 16)}` : startStr?.slice(11, 16) || "08:00";
+  const timeLabel = startStr && endStr ? `${calendarTime(startStr)} – ${calendarTime(endStr)}` : startStr ? calendarTime(startStr) : "08:00";
 
   const wf = workflowState(status, title);
   let phaseLabel = "POR HACER";
@@ -94,109 +89,58 @@ export function CalendarDetailPanel({
     phaseTextColor = "#FDBA74";
   }
 
-  const checklistTotal = activity.checklistTotal || items.length;
-  const checklistDone = activity.checklistCompleted || items.filter((i) => i.isChecked).length;
+  const checklistTotal = items.length;
+  const checklistDone = items.filter((i) => i.isChecked).length;
   const pct = checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : 0;
 
-  // Load Notion to-do items from API or fallback
   useEffect(() => {
-    let cancelled = false;
-    async function loadChecklist() {
-      setLoading(true);
-      setStatusMessage("");
+    const controller = new AbortController();
+    setItems([]); setLoading(true); setChecklistError(''); setStatusMessage('');
+    async function load() {
       try {
-        const res = await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "get-checklist",
-            payload: { pageId: activity.pageId },
-          }),
-        });
-        if (!cancelled && res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.items) && data.items.length > 0) {
-            setItems(data.items);
-            setLoading(false);
-            return;
-          }
+        const pageId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, '') : activity.pageId;
+        const res = await fetch('/api/data', {method:'POST',headers:{'Content-Type':'application/json'}, signal:AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]), body:JSON.stringify({action:'get-checklist',payload:{pageId}})});
+        const data = await res.json();
+        if (!res.ok || !data.success || !Array.isArray(data.items)) throw new Error(data.error || 'No se pudieron cargar las tareas de Notion.');
+        if (!controller.signal.aborted) {
+          setItems(data.items);
+          onChecklistUpdated?.({checklistTotal:data.items.length,checklistCompleted:data.items.filter((i: NotionTodoItem) => i.isChecked).length,checklistScanned:true});
         }
-      } catch {
-        // Fallback to local simulated items if API unreachable
-      }
-
-      if (!cancelled) {
-        // Simulated items if none returned from Notion API
-        const total = activity.checklistTotal || 0;
-        const done = activity.checklistCompleted || 0;
-        if (total > 0) {
-          const fallback: NotionTodoItem[] = [];
-          for (let i = 1; i <= total; i++) {
-            fallback.push({
-              id: `todo-${activity.pageId}-${i}`,
-              text: `Tarea ${i} de checklist (${domain})`,
-              isChecked: i <= done,
-            });
-          }
-          setItems(fallback);
-        } else {
-          setItems([]);
-        }
-        setLoading(false);
-      }
+      } catch (error) {
+        if (!controller.signal.aborted) setChecklistError(error instanceof Error ? error.message : 'No se pudieron cargar las tareas.');
+      } finally { if (!controller.signal.aborted) setLoading(false); }
     }
+    load();
+    return () => controller.abort();
+  }, [activity.pageId, activity.isReviewMirror, retry]);
 
-    loadChecklist();
-    return () => {
-      cancelled = true;
-    };
-  }, [activity.pageId, activity.checklistTotal, activity.checklistCompleted, domain]);
-
+  const updating = React.useRef(false);
+  const activePage = React.useRef(activity.pageId);
+  activePage.current = activity.pageId;
   const handleToggle = async (item: NotionTodoItem) => {
-    const targetState = !item.isChecked;
-    const prevItems = [...items];
-
-    // Optimistic update
-    const updated = items.map((it) =>
-      it.id === item.id ? { ...it, isChecked: targetState, isUpdating: true } : it
-    );
-    setItems(updated);
-
-    const newDone = updated.filter((it) => it.isChecked).length;
-    onActivityUpdated?.({
-      checklistCompleted: newDone,
-      todayChecklistCompleted: newDone,
-    });
-
+    if (!editable || updating.current || loading || item.isUpdating) return;
+    const pageId = activity.pageId;
+    updating.current = true; setChecklistError(''); setStatusMessage('');
+    setItems(prev => prev.map(i => i.id === item.id ? {...i,isUpdating:true} : i));
     try {
-      const res = await fetch("/api/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "toggle-checklist",
-          payload: {
-            pageId: activity.pageId,
-            blockId: item.blockId || item.id,
-            checked: targetState,
-          },
-        }),
-      });
-      if (res.ok) {
-        setStatusMessage(`Checklist actualizado: ${newDone}/${checklistTotal}`);
-      }
-    } catch {
-      setStatusMessage("Actualizado localmente en caché");
-    } finally {
-      setItems((current) =>
-        current.map((it) => (it.id === item.id ? { ...it, isUpdating: false } : it))
-      );
-    }
+      const response = await fetch('/api/data', { method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
+        body:JSON.stringify({action:'toggle-checklist',payload:{pageId,blockId:item.blockId || item.id,checked:!item.isChecked,currentUser}}) });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Notion no confirmó el cambio.');
+      if (activePage.current !== pageId) return;
+      const updated = items.map(i => i.id === item.id ? {...i,isChecked:data.checked,isUpdating:false} : i);
+      setItems(updated);
+      const completed = updated.filter(i => i.isChecked).length;
+      onChecklistUpdated?.({checklistTotal:updated.length,checklistCompleted:completed,checklistScanned:true});
+      setStatusMessage('Checklist guardado en Notion.');
+    } catch (error) { if (activePage.current === pageId) setChecklistError(error instanceof Error ? error.message : 'No se pudo guardar el checklist.'); }
+    finally { updating.current = false; if (activePage.current === pageId) setItems(prev => prev.map(i => ({...i,isUpdating:false}))); }
   };
 
   return (
     <aside
       aria-label="Detalle de actividad"
-      className="w-[380px] shrink-0 border-l border-[#27272A] bg-[#141416] p-4 flex flex-col justify-between overflow-y-auto select-none z-40 text-slate-200"
+      className="fixed top-14 bottom-0 right-0 w-full max-w-[380px] xl:static xl:w-[380px] shrink-0 shadow-2xl border-l border-[#27272A] bg-[#141416] p-4 flex flex-col justify-between overflow-y-auto select-none z-50 text-slate-200"
     >
       <div className="space-y-4">
         {/* Header */}
@@ -255,14 +199,16 @@ export function CalendarDetailPanel({
           <div className="flex items-center justify-between pt-1 border-t border-[#2D2D33]">
             <span className="text-slate-400">Estado Notion:</span>
             <select
+              disabled={!editable}
               value={status}
-              onChange={(e) => {
+              onChange={async (e) => {
                 const nextStatus = e.target.value;
-                onActivityUpdated?.({ status: nextStatus });
-                setStatusMessage(`Estado cambiado a: ${nextStatus}`);
+                if (workflowState(nextStatus) === "review") { setShowReviewModal(true); return; }
+                if (await onActivityUpdated?.({status:nextStatus}) !== false) setStatusMessage(`Estado guardado: ${nextStatus}`);
               }}
               className="bg-[#121215] border border-[#3A3A44] text-[#E2E8F0] text-[11px] rounded px-2 py-0.5 focus:outline-none focus:border-cyan-400"
             >
+              {!["POR HACER","EN REVISIÓN","rtuzREVISION","zREVISION","TERMINADA","SUSPENDIDA"].includes(status) && <option value={status}>{status}</option>}
               <option value="POR HACER">POR HACER</option>
               <option value="EN REVISIÓN">EN REVISIÓN</option>
               <option value="rtuzREVISION">rtuzREVISION</option>
@@ -294,8 +240,9 @@ export function CalendarDetailPanel({
         {/* Botones de Acción de Flujo ANFETA (1:1 WPF) */}
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
+            disabled={!editable}
             onClick={() => setShowReviewModal(true)}
-            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm"
+            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Enviar a revisión...</span>
@@ -303,9 +250,8 @@ export function CalendarDetailPanel({
 
           <button
             disabled={!userCanReview}
-            onClick={() => {
-              onActivityUpdated?.({ status: "zREVISION" });
-              setStatusMessage("Actividad marcada como TERMINADA (zREVISION)");
+            onClick={async () => {
+              if (await onActivityUpdated?.({ status: "zREVISION" }) !== false) setStatusMessage("Actividad terminada y guardada en Notion.");
             }}
             title={userCanReview ? "Terminar actividad (Revisores: John / Isaías / Genaro)" : "Solo John, Isaías o Genaro pueden terminar actividades en revisión"}
             className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg border text-xs font-semibold transition-all shadow-sm ${
@@ -353,6 +299,7 @@ export function CalendarDetailPanel({
         {/* Tab 1: Checklist To-Do Box */}
         {activeTab === "checklist" && (
           <div className="rounded-lg border border-[#27272A] bg-[#18181B] p-3 space-y-2">
+            {checklistError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"><p>{checklistError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 underline font-semibold">Volver a cargar</button></div>}
             {loading ? (
               <div className="flex items-center gap-2 py-4 text-xs text-slate-400 italic">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
@@ -360,7 +307,7 @@ export function CalendarDetailPanel({
               </div>
             ) : items.length === 0 ? (
               <p className="text-xs italic text-slate-500 py-2">
-                Sin tareas adicionales en caché.
+                Esta actividad no contiene tareas de checklist.
               </p>
             ) : (
               <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -368,6 +315,9 @@ export function CalendarDetailPanel({
                   <li
                     key={item.id}
                     onClick={() => handleToggle(item)}
+                    role="checkbox" aria-checked={item.isChecked} aria-disabled={!editable || item.isUpdating}
+                    tabIndex={editable ? 0 : -1}
+                    onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleToggle(item); } }}
                     className={`flex items-start gap-2.5 p-1.5 rounded cursor-pointer transition-colors text-xs ${
                       item.isChecked
                         ? "text-slate-400 line-through bg-emerald-950/20"
@@ -393,7 +343,7 @@ export function CalendarDetailPanel({
             )}
 
             {statusMessage && (
-              <p className="text-[10px] text-cyan-400 font-mono italic pt-1">{statusMessage}</p>
+              <p className="text-xs text-cyan-200 pt-1">{statusMessage}</p>
             )}
           </div>
         )}
@@ -412,8 +362,8 @@ export function CalendarDetailPanel({
               <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                 {domainActivities.map((act) => {
                   const isCurrent = act.pageId === activity.pageId;
-                  const actStart = act.start?.slice(11, 16) || "";
-                  const actEnd = act.end?.slice(11, 16) || "";
+                  const actStart = act.start ? calendarTime(act.start) : "";
+                  const actEnd = act.end ? calendarTime(act.end) : "";
                   return (
                     <li
                       key={act.pageId}
@@ -459,13 +409,14 @@ export function CalendarDetailPanel({
           activity={activity}
           currentUser={currentUser}
           onClose={() => setShowReviewModal(false)}
-          onConfirm={(targetReviewer, leaveVisualCopy) => {
-            setShowReviewModal(false);
-            onActivityUpdated?.({
+          onConfirm={async (targetReviewer, leaveVisualCopy) => {
+            const saved = await onActivityUpdated?.({
               status: "rtuzREVISION",
               reviewer: targetReviewer,
               leaveVisualCopy,
             } as any);
+            if (saved === false) return false;
+            setShowReviewModal(false);
             setStatusMessage(`Actividad enviada a REVISIÓN para ${targetReviewer}`);
           }}
         />

@@ -1,4 +1,6 @@
 "use client";
+import { calendarTime } from "@/services/calendarPresentation";
+
 
 import React from "react";
 import { CheckSquare, MessageSquare, Clock } from "lucide-react";
@@ -61,7 +63,7 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
       <div className="flex items-center justify-between text-[10px] text-[#94A3B8] font-mono pt-1">
         <span className="flex items-center gap-1">
           <Clock className="w-3 h-3 text-[#38BDF8]" />
-          {activity.start?.slice(11, 16)} – {activity.end?.slice(11, 16)}
+          {calendarTime(activity.start)} – {calendarTime(activity.end)}
         </span>
         <span className="px-1.5 py-0.5 rounded bg-[#18212B] text-[#CBD5E1]">
           {activity.status || "Pendiente"}

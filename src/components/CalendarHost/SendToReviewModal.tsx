@@ -1,5 +1,6 @@
 "use client";
 
+import { calendarDisplayTitle } from "@/services/calendarPresentation";
 import React, { useState } from "react";
 import { Send, X, UserCheck, ShieldCheck, Check } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -9,7 +10,7 @@ interface SendToReviewModalProps {
   activity: NotionCalendarActivity;
   currentUser: string;
   onClose: () => void;
-  onConfirm: (targetReviewer: string, leaveVisualCopy: boolean) => void;
+  onConfirm: (targetReviewer: string, leaveVisualCopy: boolean) => Promise<boolean | void> | void;
 }
 
 const REVIEWERS = [
@@ -24,23 +25,32 @@ export function SendToReviewModal({
   onClose,
   onConfirm,
 }: SendToReviewModalProps) {
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
   const [selectedReviewer, setSelectedReviewer] = useState<string>("John");
   const [leaveCopy, setLeaveCopy] = useState<boolean>(true);
 
   const title = activity.title || (activity as any)?.Title || "Actividad";
   const domain = activity.domain || (activity as any)?.ParsedDomain || "DOMINIO";
 
-  const handleSend = () => {
-    onConfirm(selectedReviewer, leaveCopy);
+  const handleSend = async () => {
+    if (sending) return;
+    setSending(true); setError('');
+    try {
+      if (await onConfirm(selectedReviewer, leaveCopy) === false) throw new Error('No se confirmó el envío. Revisa el aviso de error e inténtalo nuevamente.');
+    } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo enviar a revisión.'); }
+    finally { setSending(false); }
   };
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-      onClick={onClose}
+      onClick={() => { if (!sending) onClose(); }}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-[#2B3B4E] bg-[#0E1520] p-5 shadow-2xl text-slate-200 space-y-4 select-none animate-in zoom-in-95 duration-150"
+        role="dialog" aria-modal="true" aria-labelledby="review-modal-heading"
+        onKeyDown={e => { if (e.key === "Escape" && !sending) onClose(); }}
+        className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-[#2B3B4E] bg-[#0E1520] p-5 shadow-2xl text-slate-200 space-y-4 select-none animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -50,12 +60,12 @@ export function SendToReviewModal({
               <Send className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Enviar a Revisión</h3>
-              <p className="text-[11px] text-slate-400">Flujo oficial de revisión ANFETA (rtuzREVISION)</p>
+              <h3 id="review-modal-heading" className="text-sm font-bold text-white">Enviar a Revisión</h3>
+              <p className="text-[11px] text-slate-400">Selecciona quién revisará la actividad</p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => { if (!sending) onClose(); }}
             className="rounded p-1 text-slate-400 hover:bg-[#1E293B] hover:text-white transition-colors"
           >
             <X className="w-4 h-4" />
@@ -70,7 +80,7 @@ export function SendToReviewModal({
               {activity.checklistCompleted ?? 0}/{activity.checklistTotal ?? 0} checklist
             </span>
           </div>
-          <p className="text-slate-300 font-medium line-clamp-2 leading-snug">{title}</p>
+          <p className="text-slate-300 font-medium line-clamp-2 leading-snug">{calendarDisplayTitle(title,domain)}</p>
         </div>
 
         {/* Selector de Revisor: John, Isaias, Genaro */}
@@ -85,7 +95,9 @@ export function SendToReviewModal({
               return (
                 <div
                   key={rev.id}
-                  onClick={() => setSelectedReviewer(rev.id)}
+                  role="radio" aria-checked={isSelected} tabIndex={0}
+                  onKeyDown={e => { if (!sending && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSelectedReviewer(rev.id); } }}
+                  onClick={() => { if (!sending) setSelectedReviewer(rev.id); }}
                   className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${
                     isSelected
                       ? "bg-[#1E293B] border-sky-400/80 shadow-[0_0_12px_rgba(56,189,248,0.25)]"
@@ -124,7 +136,9 @@ export function SendToReviewModal({
 
         {/* Opción de copia visual / historial */}
         <div
-          onClick={() => setLeaveCopy(!leaveCopy)}
+          role="checkbox" aria-checked={leaveCopy} tabIndex={0}
+          onKeyDown={e => { if (!sending && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setLeaveCopy(!leaveCopy); } }}
+          onClick={() => { if (!sending) setLeaveCopy(!leaveCopy); }}
           className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[#111822] border border-[#223246] cursor-pointer hover:border-slate-600 transition-colors"
         >
           <div
@@ -144,20 +158,22 @@ export function SendToReviewModal({
           </div>
         </div>
 
+        {error && <p role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100">{error}</p>}
         {/* Footer Buttons */}
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1E293B]">
           <button
-            onClick={onClose}
+            onClick={() => { if (!sending) onClose(); }}
             className="px-3.5 py-1.5 rounded-lg border border-[#2B3B4E] text-xs font-semibold text-slate-300 hover:bg-[#1E293B] transition-colors"
           >
             Cancelar
           </button>
           <button
+            disabled={sending}
             onClick={handleSend}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold transition-all shadow-md active:scale-95"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Enviar a {selectedReviewer}</span>
+            <span>{sending ? "Guardando en Notion…" : `Enviar a ${selectedReviewer}`}</span>
           </button>
         </div>
       </div>

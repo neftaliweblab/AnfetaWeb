@@ -21,11 +21,11 @@ export function isReviewer(user: string) {
 }
 
 export function isActivityLocked(activity: Partial<NotionCalendarActivity> & { IsAutomationLocked?: boolean }) {
-  return !!(activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
+  return !!(activity.isReviewMirror || activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
 }
 export function canEditActivity(user: string, activity: Partial<NotionCalendarActivity>) {
   const actor = user.trim().toLowerCase();
-  const knownActor = Object.entries(PERSON_ALIASES).some(([name, aliases]) => name.toLowerCase() === actor || aliases.includes(actor));
+  const knownActor = Object.entries(PERSON_ALIASES).some(([name, aliases]) => name === normalizePerson(user));
   return !isActivityLocked(activity) && (isDirection(user) || isReviewer(user) ||
     (knownActor && normalizePerson(user) === normalizePerson(activity.person || '')));
 }

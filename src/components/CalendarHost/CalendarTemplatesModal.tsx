@@ -1,4 +1,6 @@
 "use client";
+import { mexicoDate } from "@/services/calendarPresentation";
+
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -67,7 +69,7 @@ const REVIEWERS = [
 export function CalendarTemplatesModal({
   isOpen,
   onClose,
-  currentDate = new Date().toISOString().split("T")[0],
+  currentDate = mexicoDate(),
   onApplyTemplate,
   onActivitiesCreated,
 }: CalendarTemplatesModalProps) {

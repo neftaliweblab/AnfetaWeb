@@ -1,3 +1,4 @@
+import { mexicoDate } from "@/services/calendarPresentation";
 /**
  * dateUtils.ts
  * Utilidades centralizadas de formateo de fechas inteligentes en español para ANFETA.
@@ -237,11 +238,5 @@ export function shiftDayString(dateStr: string, offset: number): string {
 /**
  * Obtiene la fecha actual en formato local YYYY-MM-DD sin desfase UTC.
  */
-export function getTodayDateString(): string {
-  const dt = new Date();
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const d = String(dt.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+export function getTodayDateString(): string { return mexicoDate(); }
 
