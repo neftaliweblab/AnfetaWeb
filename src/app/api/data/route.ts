@@ -820,8 +820,13 @@ export async function GET(req: NextRequest) {
               if (!live.dateStart || (type === 'calendar-project' && calendarDomain(live.title,live.domain) !== (searchParams.get('domain') || '').replace(/^www\./,'')) || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
-              const reviewFlow = await cachedReviewFlow(liveSettings, page);
-              const checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart));
+              // A restricted nested/synced block must not hide every calendar page.
+              let reviewFlow: any;
+              let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
+              try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
+              catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
+              try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
+              catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
                 reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,

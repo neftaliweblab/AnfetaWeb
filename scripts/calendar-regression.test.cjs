@@ -252,6 +252,12 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     let res=await route.POST(request('calendar-work-session',{pageId:pid,currentUser:'nneft',session:{id:'session-test',startedAt:'2026-10-05T15:00:00Z',endedAt:'2026-10-05T15:10:00Z',seconds:600}}));assert.equal(res.status,200);assert.equal((await res.json()).success,true);
     res=await route.POST(request('calendar-work-session',{pageId:pid,currentUser:'nneft',session:{id:'invalid',seconds:-1}}));assert.equal(res.status,400);
   });
+  await test('Un bloque sin acceso no oculta las actividades ni inventa checklist',async()=>{
+    state.blockFailure=true;
+    const res=await route.GET(new Request('http://localhost/api/data?type=calendar&date=2026-10-05'));
+    assert.equal(res.status,200);const data=await res.json();assert.equal(data.count,2);assert.match(data.warning,/checklists/);
+    const activity=data.activities.find(a=>a.pageId.replace(/-/g,'')===pid.replace(/-/g,''));assert.equal(activity.checklistScanned,false);assert.equal(activity.todayChecklistCompleted,0);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
