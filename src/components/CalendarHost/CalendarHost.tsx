@@ -291,8 +291,30 @@ export function CalendarHost({
     : null;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F]">
-      {error && <div role="alert" className="px-3 py-2 text-sm text-rose-300">{error}</div>}
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">
+      {/* Notificación de Error / Alerta Visible y Elegante */}
+      {error && (
+        <div
+          role="alert"
+          className="absolute top-14 left-1/2 -translate-x-1/2 z-[300] max-w-lg w-full px-4 py-3 rounded-xl bg-[#2A0E14] border-2 border-[#E11D48] text-rose-200 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top duration-200"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-[#E11D48] text-white flex items-center justify-center font-bold text-xs">
+              ✕
+            </span>
+            <div className="text-xs">
+              <strong className="block text-white font-bold leading-tight">Acción no completada</strong>
+              <span className="text-rose-200/90 leading-tight break-words">{error}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setError("")}
+            className="shrink-0 rounded p-1 text-rose-300 hover:text-white hover:bg-rose-950/40 transition-colors text-xs font-bold"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}

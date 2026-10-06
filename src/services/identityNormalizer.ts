@@ -30,14 +30,19 @@ export const PERSON_METADATA: Record<
 
 export function normalizePerson(input: string | null | undefined): string {
   if (!input) return "Sin asignar";
-  const clean = input.trim().toLowerCase();
+  let clean = input.trim().toLowerCase();
   if (clean === "—" || clean === "-" || clean === "sin asignar" || clean === "") {
     return "Sin asignar";
   }
 
+  // Si viene como correo ej: nnetf@practicante.com o nneft@anfeta.com
+  if (clean.includes("@")) {
+    clean = clean.split("@")[0].trim();
+  }
+
   for (const [canonical, aliases] of Object.entries(PERSON_ALIASES)) {
     if (canonical.toLowerCase() === clean) return canonical;
-    if (aliases.some((alias) => clean.includes(alias))) {
+    if (aliases.some((alias) => clean === alias || clean.includes(alias) || alias.includes(clean))) {
       return canonical;
     }
   }

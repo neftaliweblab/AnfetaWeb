@@ -1,4 +1,4 @@
-import { canEditActivity, isActivityLocked, isDirection } from './activityPermissions';
+import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
 import { workflowState } from './activityWorkflow';
@@ -37,25 +37,36 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
   const properties: Record<string, any> = {};
   const fields = Object.entries(page.properties || {}) as [string, Property][];
-  if (updates.person) {
-    if (!isDirection(actor)) throw new Error('Solo Dirección puede reasignar actividades.');
-    const person = normalizePerson(updates.person);
-    if (!PERSON_ALIASES[person]) throw new Error('Selecciona un responsable del equipo.');
+
+  // Reasignación o Envío a Revisión
+  if (updates.person || updates.reviewer) {
+    const target = updates.reviewer || updates.person;
+    const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'EN REVISIÓN';
+    if (!isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
+      throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
+    }
+    const person = normalizePerson(target);
+    if (!PERSON_ALIASES[person]) throw new Error('Selecciona un responsable válido del equipo.');
     const personField = fields.find(([name,p]) => /persona|responsable|asignad/i.test(name) && ['people','select','rich_text'].includes(p.type));
     if (personField) {
       const [name, prop] = personField;
       if (prop.type === 'people') {
         const ids = JSON.parse(process.env.NOTION_PERSON_IDS || '{}'); const id = ids[PERSON_ALIASES[person][0]] || ids[person];
-        if (!id) throw new Error(`Configura NOTION_PERSON_IDS para ${person}.`);
-        properties[name] = { people: [{ id }] };
+        if (id) properties[name] = { people: [{ id }] };
       } else properties[name] = prop.type === 'select' ? { select: { name: person } } : { rich_text: [{ text: { content: person } }] };
     }
     const titleField = fields.find(([,p]) => p.type === 'title');
     if (titleField) {
       const ownerToken = /\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i;
       const tag = PERSON_ALIASES[person][0];
-      properties[titleField[0]] = { title: [{ text: { content: ownerToken.test(title) ? title.replace(ownerToken, tag) : `${tag} ${title}` } }] };
-    } else if (!personField) throw new Error('No se encontró una propiedad de responsable editable.');
+      let nextTitle = ownerToken.test(title) ? title.replace(ownerToken, tag) : `${tag} ${title}`;
+      if (isSendingToReview) {
+        // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
+        nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        nextTitle = `rtuzREVISION ${nextTitle.trim()}`;
+      }
+      properties[titleField[0]] = { title: [{ text: { content: nextTitle } }] };
+    }
   }
   if (updates.start) {
     validateSchedule(updates.start, updates.end);
@@ -77,6 +88,18 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
       else if (status[1].type === 'status' && options.length) throw new Error('Ese estado no está disponible en la base de Notion.');
     }
     properties[status[0]] = { [status[1].type]: { name: desired } };
+
+    // En ANFETA original: actualizar el prefijo del título (rtuzREVISION o zREVISION)
+    const titleField = fields.find(([,p]) => p.type === 'title');
+    if (titleField && !properties[titleField[0]]) {
+      if (desired === 'rtuzREVISION' || updates.status === 'rtuzREVISION') {
+        const clean = title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        properties[titleField[0]] = { title: [{ text: { content: `rtuzREVISION ${clean.trim()}` } }] };
+      } else if (desired === 'zREVISION' || updates.status === 'zREVISION' || workflowState(desired) === 'completed') {
+        const clean = title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        properties[titleField[0]] = { title: [{ text: { content: `zREVISION ${clean.trim()}` } }] };
+      }
+    }
   }
   if (updates.isUrgent !== undefined) {
     const titleProp = fields.find(([,p]) => p.type === 'title');
