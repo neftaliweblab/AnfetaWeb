@@ -15,15 +15,25 @@ export function validateSchedule(start: string, end: string) {
   const am = Number(a[1])*60+Number(a[2]), bm = Number(b[1])*60+Number(b[2]);
   if (am < 480 || bm > 1320 || am % 15 || bm % 15) throw new Error('El horario debe usar bloques de 15 minutos entre 08:00 y 22:00.');
 }
+const requestPace = new Map<string, Promise<void>>();
+const nextRequestAt = new Map<string, number>();
+async function paceNotion(token:string) {
+  const prior=requestPace.get(token) || Promise.resolve();
+  const turn=prior.then(async()=>{const wait=Math.max(0,(nextRequestAt.get(token)||0)-Date.now());if(wait)await new Promise(resolve=>setTimeout(resolve,wait));nextRequestAt.set(token,Date.now()+350);});
+  requestPace.set(token,turn);await turn;if(requestPace.get(token)===turn)requestPace.delete(token);
+  if(nextRequestAt.size>128)nextRequestAt.delete(nextRequestAt.keys().next().value!);
+}
 export async function notionRequest(settings: Settings, endpoint: string, method = 'GET', body?: any, attempt = 0): Promise<any> {
   if (!settings.notionToken.trim()) throw new Error('Configura el token de Notion para guardar cambios.');
+  await paceNotion(settings.notionToken);
   const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': (endpoint.startsWith('data_sources/') || body?.parent?.data_source_id) ? '2026-03-11' : '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
   if (res.status === 429 && attempt < 3) {
     const wait = Math.min(10, Math.max(1, Number(res.headers.get('retry-after')) || 1));
+    nextRequestAt.set(settings.notionToken,Date.now()+wait*1000);
     await new Promise(resolve => setTimeout(resolve, wait * 1000));
     return notionRequest(settings, endpoint, method, body, attempt + 1);
   }
-  const data = await res.json(); if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); if(method === 'PATCH' || method === 'DELETE' || (method === 'POST' && endpoint === 'pages')) clearReadBlocksCache(settings); return data;
+  const text = await res.text(); let data:any; try {data=JSON.parse(text);} catch {throw new Error('Notion devolvió una respuesta no válida (HTTP ' + res.status + '). Intenta de nuevo en unos segundos.');} if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); if(method === 'PATCH' || method === 'DELETE' || (method === 'POST' && endpoint === 'pages')) clearReadBlocksCache(settings); return data;
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
 const mutationLocks = new Set<string>();

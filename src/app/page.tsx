@@ -1,4 +1,5 @@
 "use client";
+import {readApiJson} from '@/lib/readApiJson';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
@@ -104,12 +105,12 @@ export default function AnfetaApp() {
         }
 
         // Calendar dates and today's activities
-        const calUrl = `/api/data?type=calendar&date=${currentDate}${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
+        const calUrl = `/api/data?type=calendar&basic=1&date=${currentDate}${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
         const calRes = await fetch(calUrl, {
           headers: userToken ? { "x-notion-token": userToken } : {},
         });
         {
-          const calData = await calRes.json();
+          const calData = await readApiJson(calRes);
           if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(calData.warning || '');
           if (calData.activities) setCalendarActivities(calData.activities);
@@ -170,11 +171,11 @@ export default function AnfetaApp() {
           const idxData = await idxRes.json();
           if (idxData.items) setSearchIndex(idxData.items);
         }
-        const calRes = await fetch(`/api/data?type=calendar&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+        const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
         {
-          const calData = await calRes.json();
+          const calData = await readApiJson(calRes);
           if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(calData.warning || '');
           if (calData.activities) setCalendarActivities(calData.activities);
@@ -197,9 +198,9 @@ export default function AnfetaApp() {
     setCalendarActivities([]);
     async function fetchCalendarForDate() {
       try {
-        const res = await fetch(`/api/data?type=calendar&date=${currentDate}`, { signal: controller.signal });
+        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, { signal: controller.signal });
         {
-          const data = await res.json();
+          const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');
           if (data.activities) setCalendarActivities(data.activities);
@@ -627,7 +628,7 @@ export default function AnfetaApp() {
           }`}
         >
           {showAutomation && <CalendarAutomationModal currentUser={currentUser} date={currentDate} onClose={()=>setShowAutomation(false)} onComplete={report=>{setAutomationReport(report);try{localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}window.dispatchEvent(new Event('anfeta_data_refreshed'));}} />}
-          <CalendarHost
+          <CalendarHost active={activeView === "calendar"}
                 loadError={calendarLoadError}
             currentUser={currentUser}
             activities={calendarActivities}
@@ -643,9 +644,9 @@ export default function AnfetaApp() {
             onOpenDailyProgress={() => setActiveView("dailyProgress")}
             onRefresh={async () => {
               try {
-                const res = await fetch(`/api/data?type=calendar&date=${currentDate}`);
+                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`);
                 {
-                  const data = await res.json();
+                  const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');
                   if (data.activities) setCalendarActivities(data.activities);

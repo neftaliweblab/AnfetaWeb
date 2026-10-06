@@ -1,4 +1,6 @@
 "use client";
+import {CalendarFinanceColumn} from './CalendarFinanceColumn';
+import {readApiJson} from '@/lib/readApiJson';
 import {workflowState} from '@/services/activityWorkflow';
 import {CalendarBatchModal} from './CalendarBatchModal';
 import { CalendarReviewNotifications } from './CalendarReviewNotifications';
@@ -20,6 +22,7 @@ import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
 interface CalendarHostProps {
+  active?: boolean;
   currentUser: string;
   activities: NotionCalendarActivity[];
   currentDate: string;
@@ -50,7 +53,7 @@ const DEFAULT_COLLABORATORS = [
 ];
 
 export function CalendarHost({
-  activities: initialActivities, currentUser,
+  activities: initialActivities, currentUser, active = true,
   currentDate,
   onSelectDate,
   availableDates,
@@ -76,6 +79,9 @@ export function CalendarHost({
   const [showReport, setShowReport] = useState(false);
   const [phaseFilter,setPhaseFilter]=useState('');
   const [extraHours,setExtraHours]=useState(false);
+  const [financeItems,setFinanceItems]=useState<any[]>([]);
+  const [financeWarning,setFinanceWarning]=useState('');
+  const [financePosition,setFinancePosition]=useState<'before'|'after'>('after');
   const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
@@ -96,15 +102,15 @@ export function CalendarHost({
         if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);}catch{}
+    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours})); }
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition})); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -151,28 +157,42 @@ export function CalendarHost({
   }, [currentDate]);
 
   useEffect(() => {
-    let stopped = false, busy = false;
+    if(!active)return;
+    let stopped = false, busy = false, enrichOffset=0;
+    let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
     const controller = new AbortController();
     const refresh = async () => {
       if (stopped || busy || document.hidden || pending.current.size) return;
       busy = true;
       const version = mutationVersion.current;
       try {
-        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
-        const data = await response.json();
+        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + '&enrichOffset=' + enrichOffset, {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
+        const data = await readApiJson(response);
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
-        setActivitiesList(data.activities || []);
-        anfetaSync.broadcast({type:"CALENDAR_REFRESHED",date:currentDate,activities:data.activities || []});
+        setActivitiesList(prev=>{
+          const merged=(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
+          queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:merged}));return merged;
+        });
+        enrichOffset=data.nextEnrichOffset || 0;
+        if(enrichOffset)enrichmentTimer=setTimeout(refresh,100);
         setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
-        if (data.warning) setError(data.warning);
+        setError(data.warning || '');
       } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
       finally {busy = false;}
     };
-    const timer = setInterval(refresh, 20000);
+    void refresh();
+    const timer = setInterval(refresh, 60000);
     window.addEventListener('focus', refresh); window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
-    return () => {stopped = true; controller.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
-  }, [currentDate, currentUser]);
+    return () => {stopped = true; controller.abort(); clearInterval(timer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
+  }, [currentDate, currentUser, active]);
+
+  useEffect(()=>{
+    if(!active || (!filterCobros && !filterPagos))return;
+    const controller=new AbortController();setFinanceItems([]);
+    const load=async()=>{try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate,{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}};
+    void load();const timer=setInterval(load,60000);return()=>{controller.abort();clearInterval(timer);};
+  },[currentDate,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
@@ -200,7 +220,7 @@ export function CalendarHost({
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
       // Broadcast only the state confirmed by Notion.
       anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
-      if (data.warning) setError(data.warning);
+      setError(data.warning || '');
       window.dispatchEvent(new Event('anfeta_review_saved'));
       onRefresh?.();
       return true;
@@ -227,8 +247,6 @@ export function CalendarHost({
     return activitiesList.filter((act) => {
       if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
-      if (filterCobros && !text.includes("cobro") && !text.includes("cobrar")) return false;
-      if (filterPagos && !text.includes("pago") && !text.includes("pagar")) return false;
       if (searchFilterQuery && searchFilterQuery.trim()) {
         const terms = searchFilterQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
         const matchesAll = terms.every((t) => text.includes(t));
@@ -340,6 +358,8 @@ export function CalendarHost({
   const currentTimeTop = currentDateMinutes !== null && currentDateMinutes >= 0 && currentDateMinutes <= totalHours * 60
     ? (currentDateMinutes / 60) * pixelsPerHour
     : null;
+
+  const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} onMove={()=>setFinancePosition(p=>p==='before'?'after':'before')} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">
@@ -459,7 +479,7 @@ export function CalendarHost({
           </div>
 
           {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
-          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length) * columnWidth }}>
+          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos)) * columnWidth }}>
             {/* Global red line across all columns */}
             {currentTimeTop !== null && (
               <div
@@ -470,6 +490,7 @@ export function CalendarHost({
               </div>
             )}
 
+            {financePosition==='before' && financeColumns}
             {visiblePeople.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[#64748B]">
                 <p className="text-sm font-medium text-[#94A3B8]">No hay colaboradores visibles en el calendario</p>
@@ -558,6 +579,7 @@ export function CalendarHost({
                 );
               })
             )}
+            {financePosition==='after' && financeColumns}
           </div>
         </div>
 

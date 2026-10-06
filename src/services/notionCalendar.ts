@@ -23,6 +23,9 @@ export function assignedPerson(page: any, fallback = '') {
   return normalizePerson(value);
 }
 const flowCache = new Map<string, { edited: string; expires: number; flow: any }>();
+export function knownReviewFlow(settings:CalendarSettings,page:any) {
+  const cached=flowCache.get(settings.notionToken+':'+page.id);return cached && cached.edited===page.last_edited_time?cached.flow:undefined;
+}
 export async function cachedReviewFlow(settings: CalendarSettings, page: any) {
   const key = settings.notionToken + ':' + page.id;
   const cached = flowCache.get(key);
@@ -70,7 +73,15 @@ export async function resolveTeamPersonId(settings: CalendarSettings, person: st
   if (ids && ids.size > 1) throw new Error('Hay varias cuentas de Notion para ' + person + '; configura NOTION_PERSON_IDS para elegir la correcta.');
   return ids?.values().next().value;
 }
+const calendarQueries=new Map<string,{expires:number;promise:Promise<any[]>}>();
 export async function queryCalendarPages(settings: CalendarSettings, start: string, end: string) {
+  const key=settings.notionToken+':'+(process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '')+':'+start+':'+end;
+  const cached=calendarQueries.get(key);if(cached && cached.expires>Date.now())return cached.promise;
+  const promise=queryCalendarPagesUncached(settings,start,end).catch(error=>{calendarQueries.delete(key);throw error;});
+  if(calendarQueries.size>=128)calendarQueries.delete(calendarQueries.keys().next().value!);
+  calendarQueries.set(key,{expires:Date.now()+15000,promise});return promise;
+}
+async function queryCalendarPagesUncached(settings: CalendarSettings, start: string, end: string) {
   const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
   const schema = await notionRequest(settings, `data_sources/${source}`);
   const date = Object.entries(schema.properties || {}).find(([name,p]: any) => /^fecha por hacer$/i.test(name.trim()) && p.type === 'date');
@@ -89,12 +100,13 @@ export async function queryCalendarPages(settings: CalendarSettings, start: stri
   rememberPeople(settings,pages);
   return pages;
 }
+const sharedBlocks = new Map<string,{expires:number;promise:Promise<any[]>}>();
 const requestBlocks = new WeakMap<CalendarSettings,Map<string,Promise<any[]>>>();
-export function clearReadBlocksCache(settings:CalendarSettings) {requestBlocks.delete(settings);}
+export function clearReadBlocksCache(settings:CalendarSettings) {requestBlocks.delete(settings);for(const key of calendarQueries.keys())if(key.startsWith(settings.notionToken+':'))calendarQueries.delete(key);for(const key of sharedBlocks.keys())if(key.startsWith(settings.notionToken+':'))sharedBlocks.delete(key);}
 export function readBlocks(settings:CalendarSettings,id:string):Promise<any[]> {
   let cache=requestBlocks.get(settings);if(!cache){cache=new Map();requestBlocks.set(settings,cache);}
   const key=settings.notionToken+':'+id;
-  let result=cache.get(key);if(!result){result=readBlocksUncached(settings,id).catch(error=>{cache!.delete(key);throw error;});cache.set(key,result);}
+  let result=cache.get(key);if(!result){const shared=sharedBlocks.get(key);result=shared && shared.expires>Date.now()?shared.promise:readBlocksUncached(settings,id).catch(error=>{cache!.delete(key);sharedBlocks.delete(key);throw error;});if(!shared || shared.expires<=Date.now()){if(sharedBlocks.size>=1024)sharedBlocks.delete(sharedBlocks.keys().next().value!);sharedBlocks.set(key,{expires:Date.now()+60000,promise:result});}cache.set(key,result);}
   return result;
 }
 async function readBlocksUncached(settings: CalendarSettings, id: string) {
@@ -167,7 +179,7 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
   const completedChecks = cached.items.filter(item=>item.isChecked && item.editedAt && mexicoDate(item.editedAt) === day);
   return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length,completedChecks};
 }
-export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);}
+export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
 
 export async function queryProjectPages(settings:CalendarSettings, domain:string) {
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) throw new Error('Selecciona un dominio válido.');

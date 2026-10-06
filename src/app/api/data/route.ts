@@ -1,7 +1,8 @@
+import {financeRowsForDay} from '@/services/calendarFinance';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification } from '@/services/reviewNotifications';
-import { queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
+import { knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder } from '@/services/dropboxUpload';
@@ -491,6 +492,13 @@ export async function GET(req: NextRequest) {
   const scope = searchParams.get("scope") || "day";
 
   try {
+    if (type === 'calendar-finance') {
+      const day=searchParams.get('date') || mexicoDate();
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return NextResponse.json({error:'Fecha inválida.'},{status:400});
+      const rows=readLocalJson<any[]>('index_cache.json',[]).map(normalizeSearchRow).map(row=>{const live=liveNotionOverrides.get(cleanPageId(row.externalId || row.id));return live?{...row,name:live.title,scheduledDate:live.dateStart + (live.dateEnd ? ' - ' + live.dateEnd : ''),assignedPerson:live.person,externalUrl:live.url}:row;});
+      const items=financeRowsForDay(rows,day);
+      return NextResponse.json({date:day,items,origin:'index',warning:'Cobros y pagos proceden del índice sincronizado; pueden requerir sincronizar Notion para reflejar cambios externos.'});
+    }
     if (type === 'review-notifications') {
       try { const settings = getSettings(); return NextResponse.json({items:await listReviewNotifications(settings, searchParams.get('person') || settings.currentUser)}, {headers:{'Cache-Control':'no-store'}}); }
       catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.'},{status:502}); }
@@ -803,6 +811,9 @@ export async function GET(req: NextRequest) {
       const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
       const first = isWeek ? shift(date, -((weekday + 6) % 7)) : date;
       const days = Array.from({length:isWeek ? 7 : 1}, (_,i) => shift(first,i));
+      const enrichRaw=searchParams.get('enrichOffset');
+      const enrichOffset=enrichRaw===null?undefined:Math.max(0,Number(enrichRaw)||0);
+      let nextEnrichOffset:number|undefined;
       const snapshot = calendarSnapshot();
       const cached = Object.values(snapshot).flat().map(normalizeActivity);
       let activities: any[];
@@ -811,21 +822,23 @@ export async function GET(req: NextRequest) {
         try {
           const liveSettings = {...settings,notionToken:token};
           const pages = type === 'calendar-project' ? await queryProjectPages({...settings,notionToken:token},searchParams.get('domain') || '') : await queryCalendarPages({...settings, notionToken:token}, first, shift(first, days.length));
+          if(enrichOffset!==undefined)nextEnrichOffset=enrichOffset+6<pages.length?enrichOffset+6:0;
           const byId = new Map(cached.map(a => [cleanPageId(a.pageId), a]));
           activities = [];
           // Bound parallel metadata requests to avoid flooding Notion.
           for (let offset=0; offset<pages.length; offset+=3) {
-            const batch = await Promise.all(pages.slice(offset,offset+3).map(async page => {
+            const batch = await Promise.all(pages.slice(offset,offset+3).map(async (page,batchIndex) => {
               const live = extractNotionPageData(page);
               if (!live.dateStart || (type === 'calendar-project' && calendarDomain(live.title,live.domain) !== (searchParams.get('domain') || '').replace(/^www\./,'')) || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
               // A restricted nested/synced block must not hide every calendar page.
-              let reviewFlow: any;
+              let reviewFlow: any = knownReviewFlow(liveSettings,page);
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
-              try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
+              const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
+              if (!basic) try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
-              try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
+              if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
@@ -848,7 +861,7 @@ export async function GET(req: NextRequest) {
         pageId:'review-mirror-' + a.pageId, person:normalizePerson(a.reviewFlow.OriginalPerson), isReviewMirror:true,
         title:'[COPIA REVISIÓN] ' + a.title, shortTitle:a.title,
       }));
-      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, activities:[...unique,...mirrors], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
+      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, activities:[...unique,...mirrors], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
     }
 
     if (type === "calendar-dates") {

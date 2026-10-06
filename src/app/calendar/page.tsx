@@ -35,7 +35,7 @@ export default function StandaloneCalendarPage() {
   const loadCalendarData = useCallback(async (dateToLoad: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/data?type=calendar&date=${dateToLoad}`);
+      const res = await fetch(`/api/data?type=calendar&basic=1&date=${dateToLoad}`);
       {
         const data = await res.json();
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');

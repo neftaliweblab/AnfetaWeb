@@ -258,6 +258,18 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.equal(res.status,200);const data=await res.json();assert.equal(data.count,2);assert.match(data.warning,/checklists/);
     const activity=data.activities.find(a=>a.pageId.replace(/-/g,'')===pid.replace(/-/g,''));assert.equal(activity.checklistScanned,false);assert.equal(activity.todayChecklistCompleted,0);
   });
+  await test('Agenda ligera no solicita bloques antes de mostrar actividades',async()=>{
+    state.blockFailure=true;const res=await route.GET(new Request('http://localhost/api/data?type=calendar&basic=1&date=2026-10-05'));
+    const data=await res.json();assert.equal(res.status,200);assert.equal(data.count,2);assert.equal(state.calls.filter(c=>c.target.startsWith('blocks/')).length,0);
+  });
+  await test('Cobros/Pagos provienen de su fuente y fecha sin filtrar personas',async()=>{
+    const {financeRowsForDay}=require(root+'/src/services/calendarFinance.ts');
+    const rows=[{id:'c',source:'Notion',sourceName:'Cobrar y Pagar',name:'prtuzcobrar dominio.com',scheduledDate:'2026-10-06'},{id:'p',source:'Notion',sourceName:'Cobrar y Pagar',name:'zpagar Proveedor',scheduledDate:'2026-10-06T10:00:00-06:00'},{id:'wrong-source',source:'Notion',sourceName:'Revisiones',name:'cobrar',scheduledDate:'2026-10-06'},{id:'tomorrow',source:'Notion',sourceName:'Cobrar y Pagar',name:'cobrar',scheduledDate:'2026-10-07'}];
+    const items=financeRowsForDay(rows,'2026-10-06');assert.deepEqual(items.map(i=>i.kind),['cobro','pago']);assert.equal(items[0].start,'2026-10-06T14:00:00.000Z');assert.equal(items[0].end,'2026-10-06T15:00:00.000Z');
+  });
+  await test('Respuesta no JSON produce error comprensible',async()=>{
+    const {readApiJson}=require(root+'/src/lib/readApiJson.ts');await assert.rejects(readApiJson(new Response('An error occurred',{status:504})),/HTTP 504/);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
