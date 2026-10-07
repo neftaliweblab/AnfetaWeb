@@ -1,9 +1,11 @@
 "use client";
+import {loadSearchIndex} from '@/lib/loadSearchIndex';
+
 import {readApiJson} from '@/lib/readApiJson';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { TopBar } from "@/components/TopBar";
 import { ResultsViewHost } from "@/components/ResultsViewHost/ResultsViewHost";
 import { CalendarHost } from "@/components/CalendarHost/CalendarHost";
@@ -27,21 +29,13 @@ import { CalendarAutomationModal } from "@/components/CalendarHost/CalendarAutom
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 export default function AnfetaApp() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const auth = localStorage.getItem("anfeta_auth_session");
-      if (auth) {
-        const parsed = JSON.parse(auth);
-        return !!parsed.authenticated;
-      }
-    } catch {}
-    return false;
-  });
+  const [isAuthenticated,setIsAuthenticated]=useState(false);
+  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setIsAuthenticated(data.authenticated===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setIsAuthenticated(false));},[]);
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
     try {
+      if(new URLSearchParams(window.location.search).get('view')==='messages')return 'messages';
       const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
       if (savedView && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(savedView)) {
         return savedView;
@@ -72,37 +66,37 @@ export default function AnfetaApp() {
 
   // Data states
   const [searchIndex, setSearchIndex] = useState<SearchResultRow[]>([]);
+  const [calendarCacheMeta,setCalendarCacheMeta]=useState<any>(null);
   const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
+  const pendingRevision=useRef<number|undefined>(undefined),pendingItems=useRef<PendingTaskItem[]>([]),pendingQueue=useRef(Promise.resolve()),pendingOwner=useRef(currentUser);
+  pendingOwner.current=currentUser;
+  const [pendingError,setPendingError]=useState('');
   const [pendingTasks, setPendingTasks] = useState<PendingTaskItem[]>([]);
+  useEffect(()=>{pendingRevision.current=undefined;pendingItems.current=[];setPendingTasks([]);setPendingError('');},[currentUser,isAuthenticated]);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
   // Load local data from API route
   useEffect(() => {
+    if(!isAuthenticated)return;
+    let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexInterval:ReturnType<typeof setInterval>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
     let userToken = "";
     try {
       const savedSettings = localStorage.getItem("anfeta_settings");
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
-        if (parsed.currentUser) setCurrentUser(parsed.currentUser);
+
         if (parsed.notionToken) userToken = parsed.notionToken;
       }
     } catch {}
 
     async function loadInitialData() {
       try {
-        // Search index con token en vivo si está configurado
-        const idxUrl = `/api/data?type=search-index${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
-        const idxRes = await fetch(idxUrl, {
-          headers: userToken ? { "x-notion-token": userToken } : {},
-        });
-        if (idxRes.ok) {
-          const idxData = await idxRes.json();
-          if (idxData.items) setSearchIndex(idxData.items);
-        }
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:partial=>{if(!stopped)setSearchIndex(partial.items);}});indexVersion=data.indexVersion;if(stopped)return;if(data.items)setSearchIndex(data.items);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped)window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}finally{indexBusy=false;}};
+        void loadIndex();indexFocus=()=>void loadIndex();indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
 
         // Calendar dates and today's activities
         const calUrl = `/api/data?type=calendar&basic=1&date=${currentDate}${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
@@ -111,8 +105,9 @@ export default function AnfetaApp() {
         });
         {
           const calData = await readApiJson(calRes);
+          if(stopped)return;
           if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(calData.warning || '');
+          setCalendarLoadError(calData.warning || '');setCalendarCacheMeta(calData.cacheMeta||null);
           if (calData.activities) setCalendarActivities(calData.activities);
           if (calData.availableDates?.length) {
             setAvailableDates(calData.availableDates);
@@ -126,29 +121,14 @@ export default function AnfetaApp() {
           try {const local=JSON.parse(localStorage.getItem('anfeta-calendar-automation-report') || 'null');setAutomationReport(local && Date.parse(local.generatedAt)>Date.parse(repData.generatedAt || repData.GeneratedAt || '1970-01-01') ? local : repData);}catch{setAutomationReport(repData);}
         }
 
-        // Pending tasks (manuales del usuario)
-        try {
-          const localSaved = localStorage.getItem("anfeta_pending_tasks");
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setPendingTasks(parsed);
-            }
-          }
-        } catch {}
-
-        const penRes = await fetch("/api/data?type=pendientes");
-        if (penRes.ok) {
-          const penData = await penRes.json();
-          if (Array.isArray(penData.items) && penData.items.length > 0) {
-            setPendingTasks(penData.items);
-          }
-        }
+        pendingRevision.current=undefined;pendingItems.current=[];setPendingTasks([]);
+        try {const data=await readApiJson(await fetch('/api/data?type=pendientes',{cache:'no-store'}));if(stopped||pendingOwner.current!==currentUser)return;pendingRevision.current=data.revision;pendingItems.current=data.items||[];setPendingTasks(pendingItems.current);setPendingError('');}catch(e){setPendingError(e instanceof Error?e.message:'No se pudieron cargar los pendientes.');}
       } catch (err) {
         setCalendarLoadError(err instanceof Error ? err.message : "No se pudieron cargar los datos.");
       }
     }
     loadInitialData();
+    return()=>{stopped=true;initialController.abort();if(indexTimer)clearTimeout(indexTimer);if(indexInterval)clearInterval(indexInterval);if(indexFocus)window.removeEventListener('focus',indexFocus);};
 
     const handleSettingsChanged = (e: any) => {
       if (e.detail?.currentUser) {
@@ -164,20 +144,14 @@ export default function AnfetaApp() {
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
 
-        const idxRes = await fetch(`/api/data?type=search-index${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
-          headers: token ? { "x-notion-token": token } : {},
-        });
-        if (idxRes.ok) {
-          const idxData = await idxRes.json();
-          if (idxData.items) setSearchIndex(idxData.items);
-        }
+        const idxData=await loadSearchIndex();if(idxData.items)setSearchIndex(idxData.items);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
         const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
         {
           const calData = await readApiJson(calRes);
           if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(calData.warning || '');
+          setCalendarLoadError(calData.warning || '');setCalendarCacheMeta(calData.cacheMeta||null);
           if (calData.activities) setCalendarActivities(calData.activities);
         }
       } catch {}
@@ -190,10 +164,11 @@ export default function AnfetaApp() {
       window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
       window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
     };
-  }, [currentDate]);
+  }, [currentDate,isAuthenticated]);
 
   // Fetch activities when date changes
   useEffect(() => {
+    if(!isAuthenticated)return;
     const controller = new AbortController();
     setCalendarActivities([]);
     async function fetchCalendarForDate() {
@@ -202,7 +177,7 @@ export default function AnfetaApp() {
         {
           const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
           if (data.activities) setCalendarActivities(data.activities);
         }
       } catch (err) {
@@ -211,7 +186,7 @@ export default function AnfetaApp() {
     }
     fetchCalendarForDate();
     return () => controller.abort();
-  }, [currentDate]);
+  }, [currentDate, isAuthenticated]);
 
   useEffect(()=>{
     if(!currentUser || !isAuthenticated) return;
@@ -223,7 +198,7 @@ export default function AnfetaApp() {
       try {if(localStorage.getItem(key)) return;} catch{}
       running=true;lastAttempt=Date.now();
       try {
-        const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);});
+        const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);},true);
         if(!stopped){setAutomationReport(report);window.dispatchEvent(new Event('anfeta_data_refreshed'));}
         if(!report.failed)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
         if(report.failed&&!stopped)setCalendarLoadError(report.errors.join(' · '));
@@ -496,74 +471,25 @@ export default function AnfetaApp() {
   // Pending tasks handlers
   // Persistent Pending tasks handlers (manuales del usuario)
   const persistPendingTasks = useCallback((tasks: PendingTaskItem[]) => {
-    try {
-      localStorage.setItem("anfeta_pending_tasks", JSON.stringify(tasks));
-      fetch("/api/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save-pendientes", payload: tasks }),
-      }).catch((e) => console.warn("Error saving pendientes:", e));
-    } catch (e) {
-      console.warn("Error persisting pendientes:", e);
-    }
-  }, []);
+    if(pendingRevision.current===undefined){setPendingError('Espera a que se carguen los pendientes de tu cuenta.');return;}
+    const owner=currentUser;pendingItems.current=tasks;setPendingTasks(tasks);
+    pendingQueue.current=pendingQueue.current.then(async()=>{
+      if(pendingOwner.current!==owner||pendingRevision.current===undefined)return;
+      try{const data=await readApiJson(await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save-pendientes',payload:tasks,expectedRevision:pendingRevision.current})}));if(pendingOwner.current!==owner)return;pendingRevision.current=data.revision;setPendingError('');}
+      catch(e){if(pendingOwner.current!==owner)return;pendingRevision.current=undefined;setPendingError((e instanceof Error?e.message:'No se pudo guardar.')+' La lista se recuperará del servidor.');try{const data=await readApiJson(await fetch('/api/data?type=pendientes',{cache:'no-store'}));if(pendingOwner.current===owner){pendingItems.current=data.items||[];setPendingTasks(pendingItems.current);}}catch{} }
+    });
+  },[currentUser]);
+  const handleTogglePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.map(t=>t.id===id?{...t,isCompleted:!t.isCompleted}:t)),[persistPendingTasks]);
+  const handleAddPendingTask=useCallback((task:Omit<PendingTaskItem,'id'>)=>persistPendingTasks([{...task,id:crypto.randomUUID(),createdAt:new Date().toISOString()},...pendingItems.current]),[persistPendingTasks]);
+  const handleEditPendingTask=useCallback((id:string,data:Partial<PendingTaskItem>)=>persistPendingTasks(pendingItems.current.map(t=>t.id===id?{...t,...data}:t)),[persistPendingTasks]);
+  const handleDeletePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.filter(t=>t.id!==id)),[persistPendingTasks]);
+  const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
 
-  const handleTogglePendingTask = useCallback(
-    (id: string) => {
-      setPendingTasks((prev) => {
-        const updated = prev.map((t) => (t.id === id ? { ...t, isCompleted: !t.isCompleted } : t));
-        persistPendingTasks(updated);
-        return updated;
-      });
-    },
-    [persistPendingTasks]
-  );
-
-  const handleAddPendingTask = useCallback(
-    (newTask: Omit<PendingTaskItem, "id">) => {
-      const item: PendingTaskItem = {
-        ...newTask,
-        id: `task_${Date.now()}`,
-        createdAt: new Date().toISOString(),
-      };
-      setPendingTasks((prev) => {
-        const updated = [item, ...prev];
-        persistPendingTasks(updated);
-        return updated;
-      });
-    },
-    [persistPendingTasks]
-  );
-
-  const handleEditPendingTask = useCallback(
-    (id: string, updatedData: Partial<PendingTaskItem>) => {
-      setPendingTasks((prev) => {
-        const updated = prev.map((t) => (t.id === id ? { ...t, ...updatedData } : t));
-        persistPendingTasks(updated);
-        return updated;
-      });
-    },
-    [persistPendingTasks]
-  );
-
-  const handleDeletePendingTask = useCallback(
-    (id: string) => {
-      setPendingTasks((prev) => {
-        const updated = prev.filter((t) => t.id !== id);
-        persistPendingTasks(updated);
-        return updated;
-      });
-    },
-    [persistPendingTasks]
-  );
-
-  const handleDeleteAllPendingTasks = useCallback(() => {
-    setPendingTasks([]);
-    persistPendingTasks([]);
-  }, [persistPendingTasks]);
+  if (!isAuthenticated) return <LoginModal onSuccess={(userTag)=>{setCurrentUser(userTag);setIsAuthenticated(true);}} />;
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
+      {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
       {/* Top Bar with Navigation and Global Search */}
       <TopBar
         activeView={activeView}
@@ -573,11 +499,11 @@ export default function AnfetaApp() {
         onClearSearch={() => handleSearchChange("")}
         onOpenSettings={() => setIsSettingsOpen(true)}
         currentUser={currentUser}
-        onLogout={() => {
+        onLogout={async () => {
           try {
             localStorage.removeItem("anfeta_auth_session");
           } catch {}
-          setIsAuthenticated(false);
+          const response=await fetch('/api/auth',{method:'DELETE'});if(!response.ok){window.alert('No se pudo cerrar la sesión. Intenta de nuevo.');return;}setSearchIndex([]);setCalendarActivities([]);setIsAuthenticated(false);
         }}
         unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}
         searchIndex={searchIndex}
@@ -629,7 +555,7 @@ export default function AnfetaApp() {
         >
           {showAutomation && <CalendarAutomationModal currentUser={currentUser} date={currentDate} onClose={()=>setShowAutomation(false)} onComplete={report=>{setAutomationReport(report);try{localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}window.dispatchEvent(new Event('anfeta_data_refreshed'));}} />}
           <CalendarHost active={activeView === "calendar"}
-                loadError={calendarLoadError}
+                loadError={calendarLoadError} initialCacheMeta={calendarCacheMeta}
             currentUser={currentUser}
             activities={calendarActivities}
             currentDate={currentDate}
@@ -648,7 +574,7 @@ export default function AnfetaApp() {
                 {
                   const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
                   if (data.activities) setCalendarActivities(data.activities);
                 }
               } catch (e) {

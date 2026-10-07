@@ -6,7 +6,7 @@ import { normalizeActivity } from './dataNormalizers';
 import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 
-type Settings = { notionToken: string; currentUser: string; notionDatabaseId?: string; notionDataSourceId?: string };
+type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string };
 type Property = { type: string; [key: string]: any };
 export function validateSchedule(start: string, end: string) {
   const format = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):00-06:00$/;
@@ -26,7 +26,7 @@ async function paceNotion(token:string) {
 export async function notionRequest(settings: Settings, endpoint: string, method = 'GET', body?: any, attempt = 0): Promise<any> {
   if (!settings.notionToken.trim()) throw new Error('Configura el token de Notion para guardar cambios.');
   await paceNotion(settings.notionToken);
-  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': (endpoint.startsWith('data_sources/') || body?.parent?.data_source_id) ? '2026-03-11' : '2022-06-28', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
+  const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': settings.notionApiVersion || ((endpoint.startsWith('data_sources/') || body?.parent?.data_source_id) ? '2026-03-11' : '2022-06-28'), 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
   if (res.status === 429 && attempt < 3) {
     const wait = Math.min(10, Math.max(1, Number(res.headers.get('retry-after')) || 1));
     nextRequestAt.set(settings.notionToken,Date.now()+wait*1000);
@@ -52,6 +52,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
+  if ((updates.start || updates.end) && /(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || ''))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
   if (returned) updates = {...updates,status:'prtuzREVISION'};

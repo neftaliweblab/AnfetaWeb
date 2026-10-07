@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, ListTodo } from "lucide-react";
 import {
   PERSON_METADATA,
+  JOHN_SECONDARY_ACTIVITIES_URL,
   getPersonColor,
   getPersonInitials,
 } from "@/services/identityNormalizer";
@@ -34,8 +35,7 @@ export function CalendarColHeader({
 
   const handleOpenNotion = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = meta?.notionUrl || "https://notion.so/";
-    openNotionPage(url);
+    if (meta?.notionUrl) openNotionPage(meta.notionUrl);
   };
 
   return (
@@ -84,13 +84,14 @@ export function CalendarColHeader({
 
       {/* Action button: Notion */}
       <div className="flex items-center gap-1 shrink-0">
-        <button
+        {meta?.notionUrl && <button
           onClick={handleOpenNotion}
           className="p-1.5 text-[#94A3B8] hover:text-[#00A8FF] hover:bg-[#18212B] rounded transition-colors"
           title={`Abrir calendario Notion de ${personName}`}
         >
           <Calendar className="w-3.5 h-3.5" />
-        </button>
+        </button>}
+        {personName === "John" && <a href={JOHN_SECONDARY_ACTIVITIES_URL} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="p-1.5 text-[#94A3B8] hover:text-[#38BDF8] rounded" title="Actividades secundarias de John"><ListTodo className="w-3.5 h-3.5" /></a>}
       </div>
     </div>
   );

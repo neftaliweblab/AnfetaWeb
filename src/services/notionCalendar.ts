@@ -1,3 +1,4 @@
+import {checklistTiming} from './checklistHistory';
 import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
@@ -120,22 +121,28 @@ async function readBlocksUncached(settings: CalendarSettings, id: string) {
   } while (cursor);
   return blocks;
 }
+export function checklistCodeFormatted(block:any) {
+  const fragments=block[block.type]?.rich_text || [];let visible=0,code=0;
+  for(const part of fragments){const length=(part.plain_text || part.text?.content || '').replace(/\s/g,'').length;visible+=length;if(part.annotations?.code===true)code+=length;}
+  return visible>0 && code/visible>=0.8;
+}
 export async function readChecklist(settings: CalendarSettings, pageId: string) {
-  const items: { id: string; blockId: string; text: string; isChecked: boolean; editedAt: string }[] = [];
-  const visited = new Set<string>();
-  async function walk(id: string, depth: number) {
-    if (depth > 20) throw new Error('El checklist tiene demasiados niveles de anidación.');
-    if (visited.has(id)) return;
-    visited.add(id);
-    for (const block of await readBlocks(settings, id)) {
-      if (block.type === 'to_do') items.push({ id: block.id, blockId: block.id, text: (block.to_do.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('') || 'Tarea sin texto', isChecked: !!block.to_do.checked, editedAt:block.last_edited_time || '' });
-      if(block.type === 'toggle' && (block.toggle?.rich_text || []).map((t:any)=>t.plain_text || t.text?.content || '').join('') === 'Datos internos de ANFETA') continue;
-      const synced = block.synced_block?.synced_from?.block_id;
-      if (synced || block.has_children) await walk(synced || block.id, depth + 1);
+  const observedAt=new Date().toISOString();
+  const items: { id:string;blockId:string;text:string;isChecked:boolean;editedAt:string }[]=[];
+  const visited=new Set<string>();
+  async function walk(id:string,depth:number) {
+    if(depth>20)throw new Error('El checklist tiene demasiados niveles de anidación.');if(visited.has(id))return;visited.add(id);
+    for(const block of await readBlocks(settings,id)) {
+      if(['synced_block','template','child_page','child_database'].includes(block.type) || block.synced_block || block.template)continue;
+      const text=(block[block.type]?.rich_text || []).map((part:any)=>part.plain_text || part.text?.content || '').join('');
+      if(/\[ANFETA_|Datos internos de ANFETA/i.test(text))continue;
+      const code=checklistCodeFormatted(block);
+      if(block.type==='to_do' && !code)items.push({id:block.id,blockId:block.id,text:text || 'Tarea sin texto',isChecked:!!block.to_do.checked,editedAt:block.last_edited_time || ''});
+      if(code && ['toggle','heading_1','heading_2','heading_3','heading_4','callout','paragraph','bulleted_list_item','numbered_list_item'].includes(block.type))continue;
+      if(block.has_children)await walk(block.id,depth+1);
     }
   }
-  await walk(pageId, 0);
-  return items;
+  await walk(pageId,0);return checklistTiming(settings,pageId,items,observedAt);
 }
 export async function readReviewFlow(settings: CalendarSettings, pageId: string) {
   let latest: any;
@@ -164,6 +171,7 @@ export async function assertChecklistAccess(settings: CalendarSettings, actor: s
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1];
   const locked = page.archived || page.in_trash || Object.entries(page.properties || {}).some(([name,p]: any) => /lock|bloquead/i.test(name) && p.type === 'checkbox' && p.checkbox);
   if (!canEditActivity(actor, { title, person: assignedPerson(page, inferred), isLocked: !!locked })) throw new Error('No puedes modificar esta actividad o está bloqueada.');
+  return page;
 }
 
 const checklistCache = new Map<string,{edited:string;expires:number;items:Awaited<ReturnType<typeof readChecklist>>}>();
@@ -176,8 +184,8 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     if (checklistCache.size > 512) checklistCache.delete(checklistCache.keys().next().value!);
     checklistCache.set(key,cached);
   }
-  const completedChecks = cached.items.filter(item=>item.isChecked && item.editedAt && mexicoDate(item.editedAt) === day);
-  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length,completedChecks};
+  const completedChecks = cached.items.filter(item=>item.isChecked && (item.markingSource==='verified'?item.markedAt&&mexicoDate(item.markedAt)===day:item.markingSource==='estimated'&&item.editedAt&&mexicoDate(item.editedAt)===day));
+  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length,completedChecks,checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning};
 }
 export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
 

@@ -11,6 +11,8 @@ import { KpiCardsGrid } from "./KpiCardsGrid";
 import { ColaboratorBreakdown } from "./ColaboratorBreakdown";
 import { AutomationReportModal } from "./AutomationReportModal";
 import { Copy, Check, Sparkles } from "lucide-react";
+import {reportHtml,downloadProgressHtml,printProgressHtml} from '@/lib/progressReportExport';
+import {readApiJson} from '@/lib/readApiJson';
 import { playTickSound } from "@/utils/soundAndFx";
 
 interface DailyProgressPanelProps {
@@ -54,13 +56,13 @@ export function DailyProgressPanel({
     if (scope === "week") {
       let isMounted = true;
       fetch(`/api/data?type=calendar&scope=week&date=${currentDate}`)
-        .then((res) => res.json())
+        .then(readApiJson)
         .then((data) => {
           if (isMounted && data.activities) {
             setWeekActivities(data.activities);
           }
         })
-        .catch((err) => console.error("Error fetching week activities:", err));
+        .catch((err) => {if(isMounted)setSummaryError(err instanceof Error?err.message:"No se pudo cargar la semana.");});
       return () => {
         isMounted = false;
       };
@@ -76,8 +78,8 @@ export function DailyProgressPanel({
 
   // Compute KPIs
   const kpis = useMemo(() => {
-    return computeDailyKPIs(activeActivities, currentDate);
-  }, [activeActivities, currentDate]);
+    return computeDailyKPIs(selectedPerson?activeActivities.filter(a=>normalizePerson(a.person)===selectedPerson):activeActivities, currentDate);
+  }, [activeActivities, currentDate, selectedPerson]);
 
   // Filter activities by collaborator if selected
   const displayedActivities = useMemo(() => {
@@ -113,6 +115,7 @@ export function DailyProgressPanel({
 
         <div className="flex items-center gap-2 flex-wrap">
           <input aria-label="Fecha del avance diario" type="date" value={currentDate} onChange={e => onSelectDate(e.target.value)} className="rounded border border-slate-700 bg-slate-900 p-2 text-xs" />
+          <button className="rounded border border-slate-700 px-3 py-2 text-xs" onClick={()=>downloadProgressHtml(reportHtml(displayedActivities,currentDate,scope,selectedPerson),currentDate)}>Exportar HTML</button><button className="rounded border border-slate-700 px-3 py-2 text-xs" onClick={()=>{try{printProgressHtml(reportHtml(displayedActivities,currentDate,scope,selectedPerson));}catch(e){setSummaryError(e instanceof Error?e.message:'No se pudo abrir el reporte.');}}}>Imprimir / PDF</button>
           <button disabled={summarizing} className="rounded border border-cyan-500/40 px-3 py-2 text-xs text-cyan-300 disabled:opacity-50" onClick={async () => {
             const controller = new AbortController(); summaryAbort.current = controller;
             setSummarizing(true); setSummaryError('');
@@ -151,6 +154,7 @@ export function DailyProgressPanel({
         </div>
       </div>
 
+      {activeActivities.some(a=>a.checklistUnknownCompleted||a.checklistTimingWarning||a.checklistTimingEstimated)&&<p className="text-xs text-amber-200">Los checks externos sin fecha verificada no se atribuyen al avance del día. En el modo anterior sin Supabase, la fecha sigue estimada por última edición.</p>}
       {summaryError && <p role="alert" className="text-sm text-rose-300">{summaryError}</p>}
       {summary && <article className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-cyan-500/25 bg-slate-900 p-4 text-sm text-slate-200">{summary}</article>}
       {/* KPI Cards Grid */}

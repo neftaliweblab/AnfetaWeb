@@ -1,7 +1,17 @@
+import {mexicoDate} from './calendarPresentation';
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
 import { workflowState } from './activityWorkflow';
 import { normalizePerson } from "./identityNormalizer";
 
+export function isFtfActivity(title: string) { return /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ccale)(?![\p{L}\p{Nd}_])/iu.test(title || ''); }
+export function executiveActivities(activities: NotionCalendarActivity[], day: string) {
+  return activities.filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return !a.isReviewMirror&&!isFtfActivity(a.title)&&normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
+}
+export function currentActivityRatio(a: NotionCalendarActivity) {
+  if(a.checklistScanned&&a.checklistTotal>0)return Math.max(0,Math.min(1,a.checklistCompleted/a.checklistTotal));
+  if(a.estimatedWorkMinutes>0)return Math.max(0,Math.min(1,(a.workedMinutes||0)/a.estimatedWorkMinutes));
+  return ['review','completed'].includes(workflowState(a.status,a.title))?1:0;
+}
 export interface ActivityLagStatus {
   isLagging: boolean;
   isMissingChecklist: boolean;
@@ -50,9 +60,10 @@ export function computeDailyKPIs(
   dateStr: string,
   now: Date = new Date()
 ): DailyProgressKPIs {
-  activities = activities.filter(activity => !activity.isReviewMirror);
+  activities = executiveActivities(activities,dateStr);
   let scheduledMinutes = 0;
   let progressMinutes = 0;
+  let currentMinutes = 0;
   let laggingCount = 0;
   let reviewCount = 0;
   let completedCount = 0;
@@ -64,6 +75,7 @@ export function computeDailyKPIs(
     const durMin = endD > startD ? Math.round((endD - startD) / 60000) : 60;
 
     scheduledMinutes += durMin;
+    currentMinutes += durMin * currentActivityRatio(act);
 
     const lag = evaluateLagStatus(act, now);
     if (lag.isLagging) laggingCount++;
@@ -94,6 +106,7 @@ export function computeDailyKPIs(
   return {
     date: dateStr,
     coveragePercentage,
+    currentProgressPercentage: scheduledMinutes ? Math.round(currentMinutes / scheduledMinutes * 100) : 0,
     totalActivities: activities.length,
     laggingCount,
     reviewCount,
@@ -137,15 +150,18 @@ export function generateMarkdownReport(
   kpis: DailyProgressKPIs,
   activities: NotionCalendarActivity[]
 ): string {
+  activities = executiveActivities(activities,kpis.date);
   const lines: string[] = [
     `# 📊 Reporte Ejecutivo de Avance Diario ANFETA`,
     `**Fecha:** ${kpis.date}`,
     `**Cobertura Total Ponderada:** ${kpis.coveragePercentage}% (${kpis.progressMinutes} min / ${kpis.scheduledMinutes} min)`,
     `**Resumen:** ${kpis.totalActivities} actividades | 🚨 ${kpis.laggingCount} rezagos | 🔍 ${kpis.reviewCount} revisión | ✅ ${kpis.completedCount} finalizadas`,
     ``,
+    `Avance actual acumulado: ${kpis.currentProgressPercentage ?? 0}%. Ventana ejecutiva: 09:30–18:00; sin FTF ni suspendidas.`,
     `### Desglose de Actividades:`,
   ];
 
+  if(activities.some(act=>act.checklistUnknownCompleted||act.checklistTimingEstimated))lines.push('Nota: los marcados externos sin fecha verificada no se atribuyen al día; sin Supabase la fecha usa la última edición y es estimada.');
   for (const act of activities) {
     const person = normalizePerson(act.person);
     const domain = act.domain || "general";

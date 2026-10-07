@@ -97,6 +97,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     currentScheduledDate: raw.currentScheduledDate || (raw.Start || raw.start || "").slice(0,10),
     moveCount: raw.MoveCount ?? raw.moveCount ?? 0,
     routeDates: raw.RouteDates || raw.routeDates || [],
+    checklistUnknownCompleted:raw.checklistUnknownCompleted,checklistTimingEstimated:raw.checklistTimingEstimated,checklistTimingWarning:raw.checklistTimingWarning,
     checklistScanned: !!(raw.ChecklistScanned ?? raw.checklistScanned),
     checklistTotal: raw.ChecklistTotal ?? raw.checklistTotal ?? 0,
     checklistCompleted: raw.ChecklistCompleted ?? raw.checklistCompleted ?? 0,
@@ -112,6 +113,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     isLocked: !!(
       raw.IsAutomationLocked || raw.isLocked || /Bloqueada_ANFETA/i.test(title)
     ),
+    workedMinutes: raw.WorkedMinutes ?? raw.workedMinutes ?? 0,
     estimatedWorkMinutes: raw.EstimatedWorkMinutes ?? raw.estimatedWorkMinutes ?? 0,
   };
 }

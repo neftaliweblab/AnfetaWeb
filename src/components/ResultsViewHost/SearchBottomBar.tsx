@@ -1,5 +1,6 @@
 "use client";
 
+import {MeetQuickLinks} from './MeetQuickLinks';
 import React, { useState, useRef, useEffect } from "react";
 import { Info, MoreHorizontal, ExternalLink, FolderOpen, Copy, Trash2, Upload, Clipboard } from "lucide-react";
 
@@ -115,6 +116,7 @@ export function SearchBottomBar({
 
       {/* Derecha: Borrar seleccionados | Abrir | Ubicación | Copiar | ⋯ */}
       <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center">
+        <MeetQuickLinks />
         {selectedCount > 0 && onDeleteSelected && (
           <button
             type="button"

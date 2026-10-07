@@ -10,7 +10,8 @@ const pid='11111111-1111-1111-1111-111111111111', other='22222222-2222-2222-2222
 const settings={notionToken:'TEST_ONLY',currentUser:'nneft'};
 const load=Module._load;
 Module._load=function(name,parent,...rest){
-  if(name==='fs' && parent?.filename.replace(/\\/g,'/').endsWith('/src/app/api/data/route.ts')) return {...fs,
+  if(name==='@/services/serverAuth' && parent?.filename.replace(/\\/g,'/').endsWith('/src/app/api/data/route.ts'))return {requireActor:req=>req.headers.get('x-test-user') || 'nneft',assertSameOrigin:()=>{}};
+  if((name==='fs'||name==='node:fs') && ['/src/app/api/data/route.ts','/src/services/serverSettings.ts'].some(s=>parent?.filename.replace(/\\/g,'/').endsWith(s))) return {...fs,
     existsSync:p=>String(p).replace(/\\/g,'/')===root+'/settings.json',
     readFileSync:p=>{if(String(p).replace(/\\/g,'/')===root+'/settings.json')return JSON.stringify(settings);throw Error('Unexpected filesystem read in API test');},
     mkdirSync:()=>{},writeFileSync:()=>{},
@@ -41,7 +42,7 @@ global.fetch=async(url,options={})=>{
   if(target==='pages/'+other && method==='GET')return response(state.createdPage ? {...state.createdPage,archived:!!state.archivedAlert} : {id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
   if(target==='pages/'+other && method==='PATCH')return response({id:other});
   if(target.startsWith('blocks/'+other+'/children') && method==='GET')return response({results:[],has_more:false});
-  if(target==='blocks/'+other+'/children' && method==='PATCH')return response({results:body.children});
+  if((target==='blocks/'+other+'/children'||target.startsWith('blocks/copied-')) && method==='PATCH')return response({results:body.children.map((b,i)=>({...b,id:'copied-'+i}))});
   if(target==='pages/'+pid && method==='GET')return response(state.page);
   if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
@@ -65,6 +66,7 @@ global.fetch=async(url,options={})=>{
   }
   if(target.startsWith('blocks/'+pid+'/children')){
     if(state.blockFailure)return response({message:'Cannot read blocks'},403);
+    if(state.customBlocks)return response({results:state.customBlocks,has_more:false});
     const flow=state.flow?[{id:'flow-toggle',type:'toggle',has_children:true}]:[];
     if(target.includes('start_cursor='))return response({results:[{id:'todo-second',type:'to_do',to_do:{checked:true,rich_text:[{plain_text:'Segunda tarea'}]}}],has_more:false});
     return response({results:[...flow,{id:'todo-first',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Primera tarea'}]}},{id:'nested',type:'toggle',has_children:true}],has_more:!!state.paginatedBlocks,next_cursor:state.paginatedBlocks?'blocks-two':null});
@@ -76,7 +78,7 @@ global.fetch=async(url,options={})=>{
 };
 let passed=0;const lines=[];
 async function test(name,fn){reset();await fn();passed++;lines.push('OK '+name);console.log('OK '+name);}
-const request=(action,payload)=>new Request('http://localhost/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,payload})});
+const request=(action,payload)=>new Request('http://localhost/api/data',{method:'POST',headers:{'Content-Type':'application/json','x-test-user':payload?.currentUser || 'nneft'},body:JSON.stringify({action,payload})});
 (async()=>{
   await test('Fecha y hora de México, incluso después de medianoche UTC',()=>{assert.equal(presentation.mexicoDate('2026-10-06T00:39:00Z'),'2026-10-05');assert.equal(presentation.calendarTime('2026-10-05T14:00:00Z'),'08:00');});
   await test('Los ocho códigos oficiales muestran el tipo correcto',()=>{for(const [code,label] of [['aads','ADS'],['sseo','SEO'],['wwebs','WEBS'],['mmaps','MAPS'],['ddise','DISEÑO'],['aapli','APLICACIÓN'],['pprog','PROGRAMAS'],['rrede','REDES']])assert.equal(presentation.calendarType(code+' anfeta.com Trabajo'),label);});
@@ -148,7 +150,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Las copias visuales no duplican las métricas del día', () => {
     const {computeDailyKPIs}=require(root+'/src/services/progressKpis.ts');
     const {normalizeActivity}=require(root+'/src/services/dataNormalizers.ts');
-    const original=normalizeActivity({pageId:pid,title:'Revisar',status:'rtuzREVISION',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00'},0);
+    const original=normalizeActivity({pageId:pid,title:'Revisar',person:'Neftali',status:'rtuzREVISION',start:'2026-10-05T10:00:00-06:00',end:'2026-10-05T11:00:00-06:00'},0);
     const result=computeDailyKPIs([original,{...original,pageId:'review-mirror-' + pid,isReviewMirror:true}],'2026-10-05');
     assert.equal(result.totalActivities,1); assert.equal(result.reviewCount,1); assert.equal(result.scheduledMinutes,60);
   });
@@ -269,6 +271,33 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   });
   await test('Respuesta no JSON produce error comprensible',async()=>{
     const {readApiJson}=require(root+'/src/lib/readApiJson.ts');await assert.rejects(readApiJson(new Response('An error occurred',{status:504})),/HTTP 504/);
+  });
+  await test('Checklist excluye sincronizados, plantillas, Código y metadata sin leer sus hijos',async()=>{
+    const todo=(id,text,annotations={})=>({id,type:'to_do',to_do:{checked:true,rich_text:[{plain_text:text,annotations}]}});
+    state.customBlocks=[todo('normal','Trabajo real'),todo('tachado','Tachado',{strikethrough:true}),todo('codigo','Código',{code:true}),{id:'synced',type:'synced_block',has_children:true,synced_block:{synced_from:{block_id:'inaccessible'}}},{id:'template',type:'template',has_children:true,template:{}},{id:'metadata',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'DATOS INTERNOS DE ANFETA'}]}},{id:'code-toggle',type:'toggle',has_children:true,toggle:{rich_text:[{plain_text:'Notas',annotations:{code:true}}]}},{id:'child-page',type:'child_page',has_children:true}];
+    const items=await calendar.readChecklist(settings,pid);assert.deepEqual(items.map(i=>i.id),['normal','tachado']);assert.equal(state.calls.filter(c=>c.target.startsWith('blocks/')).length,1);
+  });
+  await test('Código usa umbral 80 por ciento y no excluye un fragmento pequeño',async()=>{
+    const block=(a,b)=>({type:'to_do',to_do:{rich_text:[{plain_text:a,annotations:{code:true}},{plain_text:b}]}});
+    assert.equal(calendar.checklistCodeFormatted(block('12345678','90')),true);assert.equal(calendar.checklistCodeFormatted(block('1234567','890')),false);
+  });
+  await test('El prefijo de fuente no convierte un pago en cobro',async()=>{
+    const {financeRowsForDay}=require(root+'/src/services/calendarFinance.ts');const items=financeRowsForDay([{id:'p',source:'Notion',sourceName:'Cobrar y pagar',name:'[Cobrar y pagar] zPAGAR Proveedor',scheduledDate:'2026-10-06'}],'2026-10-06');assert.equal(items[0].kind,'pago');
+  });
+  await test('Finanzas resuelve fuente real y pagina Notion en lugar de depender del índice',async()=>{
+    state.page.parent={data_source_id:'finance-source'};state.page.properties.Name.title=[{text:{content:'zPAGAR Proveedor'}}];state.queryCurrent=true;
+    const {loadLiveFinance}=require(root+'/src/services/notionFinance.ts');const items=await loadLiveFinance(settings,[{id:pid,externalId:pid,source:'Notion',sourceName:'Cobrar y pagar'}],'2026-10-05');assert.equal(items.length,1);assert.equal(items[0].kind,'pago');assert.equal(state.calls.filter(c=>c.target==='data_sources/finance-source/query').length,2);
+  });
+  await test('zREVISION conserva horario histórico incluso para dirección',async()=>{
+    state.page.properties.Name.title=[{text:{content:'zREVISION anfeta.com nneft Entregada'}}];
+    await assert.rejects(()=>mutations.mutateActivity(settings,'jjohn',pid,{start:'2026-10-07T10:00:00-06:00',end:'2026-10-07T11:00:00-06:00'}),/histórica/);
+    assert.equal(state.calls.some(c=>c.method==='PATCH'),false);
+  });
+  await test('KPIs separan día y acumulado y excluyen FTF suspendidas y fuera de ventana',async()=>{
+    const k=require(root+'/src/services/progressKpis.ts');const base={title:'Trabajo',person:'Neftali',status:'Por hacer',start:'2026-10-06T10:00:00-06:00',end:'2026-10-06T11:00:00-06:00',checklistScanned:true,checklistTotal:10,checklistCompleted:8,todayChecklistCompleted:2};
+    const result=k.computeDailyKPIs([base,{...base,title:'FFTF Calendario'},{...base,status:'Suspendida'},{...base,start:'2026-10-06T08:00:00-06:00',end:'2026-10-06T09:00:00-06:00'}],'2026-10-06');
+    assert.equal(result.totalActivities,1);assert.equal(result.coveragePercentage,20);assert.equal(result.currentProgressPercentage,80);assert.equal(k.isFtfActivity('miFFTFproyecto'),false);
+    assert.equal(k.currentActivityRatio({...base,checklistScanned:false,estimatedWorkMinutes:60,workedMinutes:30}),0.5);
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

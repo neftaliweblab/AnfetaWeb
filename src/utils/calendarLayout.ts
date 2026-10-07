@@ -1,8 +1,8 @@
 import { calendarInterval } from "@/services/calendarPresentation";
 import { NotionCalendarActivity } from "@/types/anfeta";
 
-export interface PositionedActivity {
-  activity: NotionCalendarActivity;
+export interface PositionedActivity<T = NotionCalendarActivity> {
+  activity: T;
   overlapIndex: number;
   overlapTotal: number;
 }
@@ -11,10 +11,10 @@ export interface PositionedActivity {
  * Algoritmo greedy de coloración de intervalos para calcular el índice y total
  * de solapamiento de actividades dentro de una misma columna del calendario.
  */
-export function computeActivityOverlaps(
-  activities: NotionCalendarActivity[],
+export function computeActivityOverlaps<T extends Pick<NotionCalendarActivity, "start" | "end">>(
+  activities: T[],
   day?: string
-): PositionedActivity[] {
+): PositionedActivity<T>[] {
   if (!activities || activities.length === 0) return [];
 
   const parsed = activities.map((act) => {
@@ -49,7 +49,7 @@ export function computeActivityOverlaps(
     clusters.push(currentCluster);
   }
 
-  const result: PositionedActivity[] = [];
+  const result: PositionedActivity<T>[] = [];
 
   for (const cluster of clusters) {
     const slots: number[] = [];

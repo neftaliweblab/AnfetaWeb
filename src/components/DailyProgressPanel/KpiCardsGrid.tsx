@@ -37,7 +37,7 @@ export function KpiCardsGrid({ kpis }: KpiCardsGridProps) {
           {kpis.totalActivities}
         </div>
         <span className="text-[10px] font-mono text-[#64748B]">
-          {kpis.scheduledMinutes} min programados
+          {kpis.scheduledMinutes} min programados · Actual: {kpis.currentProgressPercentage ?? 0}%
         </span>
       </div>
 

@@ -14,6 +14,8 @@ import {
   MessageSquare,
   Bell,
 } from "lucide-react";
+import {IndexSyncStatus} from './IndexSyncStatus';
+import {SavedSearches} from './SavedSearches';
 import { SearchPredictiveFlyout } from "./SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
 
@@ -151,16 +153,8 @@ export function SearchInputBar({
 
         {/* Botones de acción derecha */}
         <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0 select-none">
-          {/* Botón 💾 Guardar */}
-          <button
-            type="button"
-            onClick={onSaveSearch}
-            style={{ padding: `${Math.round(4 * scale)}px` }}
-            className="rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer"
-            title="Guardar búsqueda"
-          >
-            <Save style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-          </button>
+          <SavedSearches query={query} onSelect={onChangeQuery} />
+          <IndexSyncStatus />
 
           {/* Botón ⚡ Plantillas */}
           <button

@@ -68,6 +68,9 @@ export interface NotionCalendarActivity {
   checklistCompleted: number;
   completedChecks?: {id:string;blockId:string;text:string;editedAt:string;isChecked:boolean}[];
   todayChecklistCompleted: number;
+  checklistUnknownCompleted?:number;
+  checklistTimingEstimated?:boolean;
+  checklistTimingWarning?:string;
   isUrgent: boolean; // Tag '00'
   isCompletedForReview: boolean; // Tag 'rtuzREVISION'
   isFinalized: boolean; // Tag 'zREVISION'
@@ -76,11 +79,13 @@ export interface NotionCalendarActivity {
   isReviewMirror?: boolean;
   reviewFlow?: { OriginalPerson: string; ReviewAssignee: string; State: string; LeaveVisualCopy?: boolean; [key: string]: unknown };
   estimatedWorkMinutes: number;
+  workedMinutes?: number;
 }
 
 export interface DailyProgressKPIs {
   date: string;
   coveragePercentage: number;
+  currentProgressPercentage?: number;
   totalActivities: number;
   laggingCount: number;
   reviewCount: number;

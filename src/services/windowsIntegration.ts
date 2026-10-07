@@ -120,12 +120,16 @@ export async function sendWindowsNotification(title: string, body: string, icon 
 }
 
 export function openNotionPage(url: string) {
-  if (!url) return;
-  const notionAppUrl = url.replace("https://", "notion://");
-  const win = window.open(notionAppUrl, "_blank");
-  if (!win || win.closed) {
-    window.open(url, "_blank");
-  }
+  if (!url || typeof window === "undefined") return;
+  try {
+    const target = new URL(url);
+    if (!['https:', 'http:'].includes(target.protocol)) return;
+    const link = document.createElement('a');
+    link.href = target.href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.click();
+  } catch { /* Los enlaces inválidos no abren protocolos del sistema. */ }
 }
 
 export function openWindowsSoundSettings() {

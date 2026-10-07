@@ -1,4 +1,5 @@
 "use client";
+import {LoginModal} from '@/components/LoginModal/LoginModal';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
@@ -19,11 +20,9 @@ export default function StandaloneCalendarPage() {
   });
 
   const [currentUser, setCurrentUser] = useState('');
-  useEffect(() => {
-    const readUser = () => { try { setCurrentUser(JSON.parse(localStorage.getItem('anfeta_settings') || '{}').currentUser || 'nneft'); } catch { setCurrentUser('nneft'); } };
-    readUser(); window.addEventListener('storage', readUser); window.addEventListener('anfeta_settings_changed', readUser);
-    return () => { window.removeEventListener('storage', readUser); window.removeEventListener('anfeta_settings_changed', readUser); };
-  }, []);
+  const [authenticated,setAuthenticated]=useState(false);
+  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setAuthenticated(data.authenticated===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setAuthenticated(false));},[]);
+  const [calendarCacheMeta,setCalendarCacheMeta]=useState<any>(null);
   const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -39,7 +38,7 @@ export default function StandaloneCalendarPage() {
       {
         const data = await res.json();
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
         if (data.activities) setCalendarActivities(data.activities);
         if (data.availableDates) setAvailableDates(data.availableDates);
       }
@@ -51,8 +50,8 @@ export default function StandaloneCalendarPage() {
   }, []);
 
   useEffect(() => {
-    loadCalendarData(currentDate);
-  }, [currentDate, loadCalendarData]);
+    if(authenticated) loadCalendarData(currentDate);
+  }, [currentDate, loadCalendarData, authenticated]);
 
   // Suscribirse a mensajes del Buscador Principal en tiempo real
   useEffect(() => {
@@ -105,6 +104,7 @@ export default function StandaloneCalendarPage() {
     });
   };
 
+  if(!authenticated)return <LoginModal onSuccess={user=>{setCurrentUser(user);setAuthenticated(true);}} />;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {/* Barra superior de Ventana Independiente / Multi-Monitor */}
@@ -166,7 +166,7 @@ export default function StandaloneCalendarPage() {
       {/* Canvas del Calendario */}
       <main className="flex-1 relative overflow-hidden">
         <CalendarHost
-                loadError={calendarLoadError}
+                loadError={calendarLoadError} initialCacheMeta={calendarCacheMeta}
           currentUser={currentUser}
           activities={calendarActivities}
           currentDate={currentDate}

@@ -1,3 +1,4 @@
+import {drxFolder} from '@/lib/drxUploadPlan';
 export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder: string) {
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   if (!token) throw new Error('Configura DROPBOX_ACCESS_TOKEN para subir a Dropbox desde Vercel.');
@@ -20,12 +21,12 @@ export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder
   if (!response.ok) throw new Error(data.error_summary || 'Dropbox rechazó la subida.');
   return { success: true, path: data.path_display, filename: data.name, targetDir: destination, sizeBytes: data.size, modifiedDate: data.server_modified };
 }
-export function cloudFolder(domain: string | undefined, target: string | undefined, localRoot: string) {
-  if (domain) return `/DRX/${domain.replace(/[^a-z0-9.-]/gi, '')}.proyecto`;
+export function cloudFolder(domain: string | undefined, target: string | undefined, localRoot: string, root="proyecto", category="") {
+  if (domain) return drxFolder(domain,root,category);
   if (!target) return '/DRX';
   const normalized = target.replace(/\\/g, '/');
-  const root = localRoot.replace(/\\/g, '/').replace(/\/$/, '');
-  if (normalized.toLowerCase().startsWith(root.toLowerCase() + '/')) return normalized.slice(root.length);
+  const localBase = localRoot.replace(/\\/g, '/').replace(/\/$/, '');
+  if (normalized.toLowerCase().startsWith(localBase.toLowerCase() + '/')) return normalized.slice(localBase.length);
   if (normalized.startsWith('/') && !normalized.includes('..')) return normalized;
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }

@@ -12,7 +12,8 @@ export interface AnfetaSyncMessage {
     | "CALENDAR_STANDALONE_READY"
     | "ACTIVITY_UPDATED"
     | "ACTIVITY_CREATED"
-    | "CALENDAR_REFRESHED";
+    | "CALENDAR_REFRESHED"
+    | "REMINDERS_CHANGED";
   query?: string;
   date?: string;
   domain?: string;

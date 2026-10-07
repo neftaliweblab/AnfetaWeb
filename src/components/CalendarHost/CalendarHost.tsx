@@ -1,4 +1,5 @@
 "use client";
+import {CalendarRemindersColumn} from './CalendarRemindersColumn';
 import {CalendarFinanceColumn} from './CalendarFinanceColumn';
 import {readApiJson} from '@/lib/readApiJson';
 import {workflowState} from '@/services/activityWorkflow';
@@ -37,6 +38,7 @@ interface CalendarHostProps {
   onOpenDailyProgress?: () => void;
   onRefresh?: () => void;
   loadError?: string;
+  initialCacheMeta?:any;
 }
 
 const DEFAULT_COLLABORATORS = [
@@ -65,7 +67,7 @@ export function CalendarHost({
   onRunAutomation,
   onOpenDailyProgress,
   onRefresh,
-  loadError,
+  loadError,initialCacheMeta,
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
@@ -82,6 +84,9 @@ export function CalendarHost({
   const [financeItems,setFinanceItems]=useState<any[]>([]);
   const [financeWarning,setFinanceWarning]=useState('');
   const [financePosition,setFinancePosition]=useState<'before'|'after'>('after');
+  const [cacheMeta,setCacheMeta]=useState<any>(initialCacheMeta);
+  useEffect(()=>setCacheMeta(initialCacheMeta),[initialCacheMeta,currentDate]);
+  const [showReminders,setShowReminders]=useState(false);
   const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
@@ -102,15 +107,15 @@ export function CalendarHost({
         if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');}catch{}
+    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition})); }
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,reminders:showReminders})); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,showReminders]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -174,6 +179,7 @@ export function CalendarHost({
           const merged=(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
           queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:merged}));return merged;
         });
+        setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         enrichOffset=data.nextEnrichOffset || 0;
         if(enrichOffset)enrichmentTimer=setTimeout(refresh,100);
         setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
@@ -410,6 +416,7 @@ export function CalendarHost({
           }}
         />
       )}
+      {cacheMeta&&<div role="status" className="shrink-0 px-3 py-1 text-[10px] text-cyan-200/80">{cacheMeta.source==='supabase'?'Copia Supabase':'Lectura de Notion'}{cacheMeta.updatedAt?' · '+new Date(cacheMeta.updatedAt).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'}):''}{cacheMeta.syncing?' · actualizando…':''}{cacheMeta.stale&&!cacheMeta.syncing?' · actualización pendiente':''}</div>}
       <CalendarTopControls
         phaseFilter={phaseFilter}
         onPhaseFilter={setPhaseFilter}
@@ -444,6 +451,7 @@ export function CalendarHost({
         onOpenStandaloneWindow={onOpenStandaloneWindow}
       />
 
+      <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex overflow-auto scrollbar-thin relative select-none">
           {/* Sticky Left Time Rail */}
@@ -479,7 +487,7 @@ export function CalendarHost({
           </div>
 
           {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
-          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos)) * columnWidth }}>
+          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos)+Number(showReminders)) * columnWidth }}>
             {/* Global red line across all columns */}
             {currentTimeTop !== null && (
               <div
@@ -579,7 +587,7 @@ export function CalendarHost({
                 );
               })
             )}
-            {financePosition==='after' && financeColumns}
+            {financePosition==='after' && financeColumns}{showReminders&&<CalendarRemindersColumn date={currentDate} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} onClose={()=>setShowReminders(false)}/>}
           </div>
         </div>
 

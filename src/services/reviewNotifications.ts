@@ -1,3 +1,4 @@
+import {sendPwaPush} from './pwaPush';
 import { notionRequest } from './notionMutations';
 import { CalendarSettings, readBlocks } from './notionCalendar';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
@@ -25,6 +26,7 @@ export async function sendReviewNotification(settings: CalendarSettings, page: a
       if (!name) throw new Error('El hilo de revisión no tiene título editable.');
       await notionRequest(settings,'pages/' + existing.id,'PATCH',{properties:{[name]:{title:rich(alertTitle.slice(0,2000))}}});
       await notionRequest(settings,'blocks/' + existing.id + '/children','PATCH',{children});
+      await sendPwaPush(settings,recipient,{title:'ANFETA · Revisión',body:message,tag:'review:'+page.id}).catch(()=>console.warn('Aviso PWA no entregado; el aviso permanece en Notion.'));
       return {PageId:existing.id,PageUrl:existing.url || flow.AlertPageUrl};
     }
   }
@@ -36,6 +38,7 @@ export async function sendReviewNotification(settings: CalendarSettings, page: a
     parent:{type:'data_source_id',data_source_id:source},properties:{[name]:{title:rich(alertTitle)}},
     children:[hidden('[ANFETA_REVIEW_SOURCE_V1]',{PageId:page.id,PageUrl:page.url || '',Title:title}),...children],
   });
+  await sendPwaPush(settings,recipient,{title:'ANFETA · Revisión',body:message,tag:'review:'+page.id}).catch(()=>console.warn('Aviso PWA no entregado; el aviso permanece en Notion.'));
   return {PageId:created.id,PageUrl:created.url};
 }
 export async function listReviewNotifications(settings: CalendarSettings, person: string) {

@@ -347,7 +347,7 @@ export function ResultsVirtualTable({
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
     const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
-    const isFav = favorites.has(item.id) || !!item.isBookmarked;
+    const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
     const displayPath = item.sourceName || (targetPath ? targetPath.replace(/\\/g, "/").split("/").slice(-2, -1)[0] : "—");
 
@@ -593,7 +593,7 @@ export function ResultsVirtualTable({
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
     const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
-    const isFav = favorites.has(item.id) || !!item.isBookmarked;
+    const isFav = favorites.has(String(item.externalId || item.path || item.id));
     return (
       <div
         key={item.id}
@@ -973,7 +973,7 @@ export function ResultsVirtualTable({
             const parsed = parseVisualParts(item.name, item.updateStatus, item.contentSnippet);
             const domain = parsed.domain || item.sourceName || "";
             const chatCode = `${domain} · ${parsed.workflow || "Activo"}`;
-            const isFav = favorites.has(item.id) || !!item.isBookmarked;
+            const isFav = favorites.has(String(item.externalId || item.path || item.id));
 
             return (
               <>

@@ -1,8 +1,11 @@
 "use client";
+import {loadSearchIndex} from '@/lib/loadSearchIndex';
 
-import React, { useState, useMemo, useEffect } from "react";
+
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
+import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import { ScopePillsRow } from "./ScopePillsRow";
 import { SearchConfigRow } from "./SearchConfigRow";
@@ -14,6 +17,7 @@ import { SearchBottomBar } from "./SearchBottomBar";
 import { SearchFloatingAiButton } from "./SearchFloatingAiButton";
 import { PendingTaskModal } from "./PendingTaskModal";
 import { NotionTemplatesModal } from "./NotionTemplatesModal";
+import {detectUpload} from '@/lib/drxUploadPlan';
 import { DropboxUploadModal } from "./DropboxUploadModal";
 import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import { filterByNotionBase } from "@/lib/notionFilters";
@@ -142,10 +146,6 @@ export function ResultsViewHost({
       const savedBg = localStorage.getItem("anfeta_theme_bg");
       if (savedBg) setThemeBg(savedBg);
 
-      const savedFavs = localStorage.getItem("anfeta_favorites");
-      if (savedFavs) {
-        setFavorites(new Set(JSON.parse(savedFavs)));
-      }
     } catch (e) {
       console.warn("Error leyendo preferencias de localStorage:", e);
     }
@@ -158,22 +158,10 @@ export function ResultsViewHost({
     }
   };
 
-  const handleToggleBookmark = (item: any) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      const isFav = next.has(item.id) || item.isBookmarked;
-      if (isFav) {
-        next.delete(item.id);
-      } else {
-        next.add(item.id);
-      }
-      if (typeof window !== "undefined") {
-        localStorage.setItem("anfeta_favorites", JSON.stringify(Array.from(next)));
-      }
-      return next;
-    });
-    playCheckChime();
-  };
+  const favoriteBusy=useRef(false);
+  const favoriteKey=(item:any)=>String(item.externalId||item.path||item.id);
+  useEffect(()=>{let stopped=false,loading=false;const refresh=async()=>{if(loading||favoriteBusy.current||!isActive||document.hidden)return;loading=true;try{const state=await loadAccountPreferences();if(!stopped)setFavorites(new Set((state.values?.favorites||[]).filter((id:any)=>typeof id==='string')));}catch(error){if(!stopped)setStatusError(error instanceof Error?error.message:'No se pudieron cargar los favoritos.');}finally{loading=false}};void refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);window.addEventListener('anfeta_preferences_changed',refresh);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('anfeta_preferences_changed',refresh)}},[isActive,currentUser]);
+  const handleToggleBookmark=async(item:any)=>{if(favoriteBusy.current)return;favoriteBusy.current=true;try{const state=await loadAccountPreferences();const next=new Set<string>((state.values?.favorites||[]).filter((id:any)=>typeof id==='string'));const key=favoriteKey(item);if(next.has(key))next.delete(key);else next.add(key);const saved=await saveAccountPreferences({favorites:Array.from(next)},state.revision);setFavorites(new Set(saved.values.favorites));setStatusError('');playCheckChime();}catch(error){setStatusError(error instanceof Error?error.message:'No se pudo guardar el favorito.');}finally{favoriteBusy.current=false}};
 
   // Action Dialogs state
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -434,7 +422,7 @@ export function ResultsViewHost({
   React.useEffect(() => {
     if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isGlobalPasteOpen) return;
+      if (isGlobalPasteOpen || isDropboxModalOpen) return;
       const activeTag = document.activeElement?.tagName.toLowerCase();
       const isInput = activeTag === "input" || activeTag === "textarea";
 
@@ -459,7 +447,7 @@ export function ResultsViewHost({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, selectedItem, items, isActive, isGlobalPasteOpen]);
+  }, [selectedIds, selectedItem, items, isActive, isGlobalPasteOpen, isDropboxModalOpen]);
 
   const handleOpenDropboxUpload = (targetDir?: string) => {
     if (targetDir) {
@@ -590,17 +578,9 @@ export function ResultsViewHost({
         }).catch(() => {});
       }
 
-      const res = await fetch(`/api/data?type=search-index${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
-        headers: token ? { "x-notion-token": token } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.items) {
-          setItems(data.items);
-          window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: data }));
-          sendWindowsNotification("ANFETA Sincronizado", `${data.items.length.toLocaleString()} páginas cargadas con Notion en vivo.`);
-        }
-      }
+      const data=await loadSearchIndex({fresh:true,onPartial:partial=>setItems(partial.items)});
+      window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));
+      if(data.items){setItems(data.items);window.dispatchEvent(new CustomEvent('anfeta_data_refreshed',{detail:data}));sendWindowsNotification('ANFETA',data.warning?'Resultados disponibles; actualización pendiente.':'Índice actualizado.');}
     } catch {
       alert("Error al sincronizar con Notion.");
     } finally {
@@ -767,7 +747,7 @@ export function ResultsViewHost({
           return false;
         }
       }
-      if (filterFavorites && !favorites.has(item.id) && !item.isBookmarked) return false;
+      if (filterFavorites && !favorites.has(favoriteKey(item))) return false;
       return true;
     });
 
@@ -860,7 +840,6 @@ export function ResultsViewHost({
         query={query}
         onChangeQuery={handleQueryChange}
         searchIndex={items}
-        onSaveSearch={() => alert(`Búsqueda "${query}" guardada en accesos rápidos.`)}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
         onOpenHelp={() => setIsHelpOpen(true)}
@@ -1157,6 +1136,8 @@ export function ResultsViewHost({
       <DropboxUploadModal
         isOpen={isDropboxModalOpen}
         onClose={() => setIsDropboxModalOpen(false)}
+        currentUser={currentUser}
+        defaultDomain={detectUpload([selectedItem?.name,dropboxTargetDir,query].filter(Boolean).join(' ')).domain}
         defaultTargetDir={dropboxTargetDir}
         onUploadSuccess={(newRow) => {
           setItems((prev) => [newRow, ...prev]);

@@ -27,38 +27,9 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    // Validar contraseña de acceso de equipo
-    // Acepta la clave oficial de ANFETA ("anfeta", "anfeta2026", "anfeta2025" o el tag del usuario)
-    const normalizedPass = password.trim().toLowerCase();
-    const validKeys = ["anfeta", "anfeta2026", "anfeta2025", "admin", selectedUser.toLowerCase()];
-
-    if (!normalizedPass) {
-      setError("Ingresa la clave de acceso");
-      return;
-    }
-
-    if (!validKeys.includes(normalizedPass)) {
-      setError("Clave de acceso incorrecta");
-      return;
-    }
-
-    setLoading(true);
-    setTimeout(() => {
-      // Guardar sesión autenticada en localStorage
-      try {
-        localStorage.setItem("anfeta_auth_session", JSON.stringify({
-          authenticated: true,
-          user: selectedUser,
-          loginAt: new Date().toISOString(),
-        }));
-      } catch {}
-
-      onSuccess(selectedUser);
-    }, 250);
+  const handleSubmit = async (e:React.FormEvent) => {
+    e.preventDefault();setError('');setLoading(true);
+    try{const response=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:selectedUser,password})});const data=await response.json();if(!response.ok)throw new Error(data.error);localStorage.removeItem('anfeta_auth_session');onSuccess(data.user);}catch(error){setError(error instanceof Error?error.message:'No se pudo iniciar sesión.');}finally{setLoading(false);}
   };
 
   return (
@@ -122,7 +93,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
               className="w-full bg-[#080B0F] border border-[#26323E] text-slate-100 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8] transition-colors"
             />
             <p className="text-[10px] text-slate-500 italic">
-              Clave por defecto: <span className="font-mono text-slate-400">anfeta</span> o tu usuario
+              Usa la contraseña de tu cuenta del equipo.
             </p>
           </div>
 

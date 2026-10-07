@@ -31,9 +31,8 @@ yarn-error.log*
 .pnpm-debug.log*
 *.log
 
-# env files (local secrets)
+# Variables reales y copias: nunca versionar.
 .env*
-!.env.example
 
 # Local application data & credentials
 settings.json

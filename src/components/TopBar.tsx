@@ -13,6 +13,7 @@ import {
   Sparkles,
   LogOut,
 } from "lucide-react";
+import {TeamPresence} from './TeamPresence';
 import { ActiveHostView } from "@/types/anfeta";
 import { SearchPredictiveFlyout } from "./ResultsViewHost/SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
@@ -79,6 +80,7 @@ export function TopBar({
 
   return (
     <header className="h-14 bg-[#0F141A] border-b border-[#26323E] px-4 flex items-center justify-between gap-4 select-none flex-shrink-0 z-50">
+      <TeamPresence/>
       {/* Brand logo */}
       <div className="flex items-center gap-3">
         <div

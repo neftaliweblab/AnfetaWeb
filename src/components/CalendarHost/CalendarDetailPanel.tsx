@@ -142,15 +142,15 @@ export function CalendarDetailPanel({
     setItems(prev => prev.map(i => i.id === item.id ? {...i,isUpdating:true} : i));
     try {
       const response = await fetch('/api/data', { method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
-        body:JSON.stringify({action:'toggle-checklist',payload:{pageId,blockId:item.blockId || item.id,checked:!item.isChecked,currentUser}}) });
+        body:JSON.stringify({action:'toggle-checklist',payload:{pageId,blockId:item.blockId || item.id,checked:!item.isChecked,expectedChecked:item.isChecked,currentUser}}) });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Notion no confirmó el cambio.');
       if (activePage.current !== pageId) return;
       const updated = items.map(i => i.id === item.id ? {...i,isChecked:data.checked,isUpdating:false} : i);
       setItems(updated);
       const completed = updated.filter(i => i.isChecked).length;
-      onChecklistUpdated?.({checklistTotal:updated.length,checklistCompleted:completed,checklistScanned:true});
-      setStatusMessage('Checklist guardado en Notion.');
+      onChecklistUpdated?.({checklistTotal:updated.length,checklistCompleted:completed,checklistScanned:true,...data.stats});
+      setStatusMessage(data.warning||'Checklist guardado en Notion.');
     } catch (error) { if (activePage.current === pageId) setChecklistError(error instanceof Error ? error.message : 'No se pudo guardar el checklist.'); }
     finally { updating.current = false; if (activePage.current === pageId) setItems(prev => prev.map(i => ({...i,isUpdating:false}))); }
   };

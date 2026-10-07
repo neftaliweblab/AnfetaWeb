@@ -4,7 +4,8 @@ export function financeRowsForDay(rows:SearchResultRow[],day:string) {
   return rows.flatMap(row=>{
     if(row.source!=='Notion' || !/cobrar|pagar|cobro|pago/i.test(row.externalSourceName || row.sourceName || ''))return [];
     const title=row.displayName || row.name;
-    const kind=/(?:^|[^\p{L}])(?:a?prtuz|sprtuz|rtuz|z)?cobr(?:ar|o|os)?(?!\p{L})/iu.test(title)?'cobro':/(?:^|[^\p{L}])(?:a?prtuz|sprtuz|rtuz|z)?pag(?:ar|o|os)?(?!\p{L})/iu.test(title)?'pago':undefined;
+    const classification=title.replace(/^\s*\[[^\]]*\]\s*/, '');
+    const kind=/(?:^|[^\p{L}])(?:a?prtuz|sprtuz|rtuz|z)?cobr(?:ar|o|os)?(?!\p{L})/iu.test(classification)?'cobro':/(?:^|[^\p{L}])(?:a?prtuz|sprtuz|rtuz|z)?pag(?:ar|o|os)?(?!\p{L})/iu.test(title)?'pago':undefined;
     if(!kind || !row.scheduledDate)return [];
     const [rawStart,rawEnd]=row.scheduledDate.split(' - ');
     const parse=(raw:string)=>Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw+'T08:00:00-06:00':/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)?raw:raw.replace(' ','T')+'-06:00');
