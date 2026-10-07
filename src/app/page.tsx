@@ -1,4 +1,5 @@
 "use client";
+import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 
 import {readApiJson} from '@/lib/readApiJson';
@@ -97,7 +98,7 @@ export default function AnfetaApp() {
 
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:partial=>{if(!stopped)setSearchIndex(partial.items);}});indexVersion=data.indexVersion;if(stopped)return;if(data.items)setSearchIndex(data.items);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped)window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}finally{indexBusy=false;}};
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion});indexVersion=data.indexVersion;if(stopped)return;if(data.items)setSearchIndex(previous=>retainSearchResults(previous,data));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped)window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}finally{indexBusy=false;}};
         void loadIndex();indexFocus=()=>void loadIndex();indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
 
         // Calendar dates and today's activities
@@ -146,7 +147,7 @@ export default function AnfetaApp() {
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
 
-        const idxData=await loadSearchIndex();if(idxData.items)setSearchIndex(idxData.items);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
+        const idxData=await loadSearchIndex();if(idxData.items)setSearchIndex(previous=>retainSearchResults(previous,idxData));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
         const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
