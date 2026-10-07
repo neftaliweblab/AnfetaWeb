@@ -310,6 +310,7 @@ export function ActivityCard({
         {/* Título de la actividad limpio y legible */}
         <div className="my-auto py-0.5 min-w-0">
           <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
+            {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con el revisor; esta copia no se puede mover ni editar.">COPIA REVISIÓN</span>}
             {cleanTitle}
           </h5>
         </div>

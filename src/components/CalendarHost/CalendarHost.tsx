@@ -177,7 +177,7 @@ export function CalendarHost({
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         setActivitiesList(prev=>{
           const merged=(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
-          queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:merged}));return merged;
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:a.reviewFlow||prev.find(old=>old.pageId===a.pageId)?.reviewFlow}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         enrichOffset=data.nextEnrichOffset || 0;
@@ -188,9 +188,9 @@ export function CalendarHost({
       finally {busy = false;}
     };
     void refresh();
-    const timer = setInterval(refresh, 60000);
-    window.addEventListener('focus', refresh); window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
-    return () => {stopped = true; controller.abort(); clearInterval(timer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus', refresh); window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
+    return () => {stopped = true; controller.abort(); clearInterval(timer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
