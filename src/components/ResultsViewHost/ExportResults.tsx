@@ -1,0 +1,4 @@
+'use client';
+import {resultsCsv} from '@/lib/resultsCsv';
+import {mexicoDate} from '@/services/calendarPresentation';
+export function ExportResults({rows}:{rows:any[]}){return <div className="flex justify-end border-b border-slate-800 px-2 py-1"><button disabled={!rows.length} onClick={()=>{const url=URL.createObjectURL(new Blob([resultsCsv(rows)],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='anfeta-resultados-'+mexicoDate()+'.csv';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}} title="Exporta todos los resultados de los filtros actuales, incluyendo las otras páginas" className="rounded border border-slate-700 px-2 py-1 text-xs text-cyan-200 disabled:opacity-40">Exportar CSV · {rows.length}</button></div>;}

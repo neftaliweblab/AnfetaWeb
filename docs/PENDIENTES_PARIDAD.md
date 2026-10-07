@@ -1,55 +1,49 @@
-# Estado real de la web ANFETA
+# ANFETA WEB — estado y pendientes
+Actualizado: 2026-10-07. Implementado significa presente en el código; no implica validación completa en producción.
 
-## Implementado en el código
+## IMPLEMENTADO EN EL CÓDIGO
+- BUSCADOR: consultas avanzadas, filtros, índice paginado, incremental y guardado por lotes; seis bases del escritorio, clasificación, deduplicación por ID, recordatorios completados excluidos y orden por modificación descendente. Exportación CSV de todos los resultados filtrados.
+- FAVORITOS: favoritos y búsquedas guardadas por cuenta; eventos entre pestañas, foco y consulta periódica entre dispositivos.
+- EXPLORADOR: carpetas y acciones API/enlaces; archivos Windows limitados al servidor local configurado.
+- DETALLES: contenido Notion, checklist, imágenes, copiar, lectura y ampliar. Fijar/desfijar detalle al navegar otras filas.
+- CALENDARIO: columnas iguales; tamaños, orden y personas; guardar/recuperar vista en cuenta. Cobros/Pagos y recordatorios como columnas independientes. Refresco automático y eventos de cambios.
+- REVISIONES: John/Isaías/Genaro, asignación real, copia visual identificada y protegida, aprobación, devolución, reasignación, hilos y avisos.
+- CHECKLIST: exclusión por Código significativo al 80 %, ramas de contenedores, metadatos y páginas hijas; tachados incluidos; historial comprobado de cambios web.
+- SESIONES/HISTORIAL: temporizador, registros y movimientos web.
+- ROBOT: corrida con web abierta y endpoint para programador externo, lotes y exclusión de corridas duplicadas web.
+- AVANCE DIARIO: KPIs, filtros por persona, HTML e impresión PDF; advertencias de historial sin fecha comprobada.
+- MENSAJES: revisiones y conversaciones generales, hilos, respuestas, paginación, lectura, atención y archivo por cuenta.
+- RECORDATORIOS: persistencia, asignación, prioridad, completar, conflictos y refresco. Posponer 15 minutos/1 hora/24 horas (SQL 12). Filtros Todos/Pendientes/Completados/Vencidos y etiqueta de vencimiento.
+- SUBIDAS: modal único, tres destinos, DRX, Ctrl+V, múltiples archivos, páginas separadas, numeración, sobrescritura cloud y actividad tras respaldo.
+- PLANTILLAS: catálogo y copia de bloques comunes/subtareas con errores visibles para tipos no compatibles.
+- NOTIFICACIONES: avisos de revisión, lectura por cuenta, refresco y soporte de suscripción push PWA.
+- CUENTAS/AJUSTES: acceso compartido y persona libre autorizados; permisos sobre identidad de sesión; preferencias y presencia.
+- PWA: instalación y soporte de push.
+- MEET: accesos rápidos disponibles.
 
-- Buscador: índice persistente paginado, sincronización incremental, consultas y accesos rápidos de Meet.
-- Favoritos: favoritos, búsquedas guardadas y preferencias por cuenta en Supabase.
-- Calendario: columnas uniformes y configurables, tarjetas limpias, tipos, Cobros/Pagos independientes, columna de recordatorios y enlaces del escritorio por persona, incluido John secundario.
-- Revisiones: John/Isaías/Genaro, asignación, copia visual, devolución, aprobación y avisos.
-- Checklist: exclusiones de Código al 80 %, contenedores, metadatos, sincronizados y páginas hijas; tachados incluidos. Historial de cambios hechos desde la web con fecha comprobada y protección frente a lecturas antiguas.
-- Robot: ejecución web y endpoint protegido para programador externo, lotes y bloqueo persistente por día entre instalaciones.
-- Avance: indicadores, HTML y PDF desde impresión, advertencias para checks sin fecha comprobada.
-- Mensajes: revisiones y conversaciones generales, nuevos hilos, respuestas, paginación, lectura, atención y archivo por cuenta; avisos PWA.
-- Recordatorios: datos persistentes, asignación, prioridad, calendario y conflictos entre dispositivos.
-- Subidas: modal único, tres destinos, DRX sin carpeta duplicada, persona, varios archivos, páginas separadas, numeración, sobrescritura Dropbox y actividad temporal tras respaldo.
-- Plantillas: copia validada de bloques comunes y subtareas; errores visibles para formatos no compatibles.
-- Cuentas: sesión e identidad verificadas, perfiles activos, preferencias y presencia.
-- PWA: instalación y suscripción voluntaria a avisos push.
+## LO QUE FALTA POR MÓDULO
+- BUSCADOR: importar CSV, vigilancia con web cerrada y administración segura de páginas huérfanas. Conciliar el número de páginas con escritorio usando mismas bases, permisos y momento de lectura.
+- FAVORITOS: validar sincronización/conflictos entre dispositivos reales; recuperar datos antiguos por propietario cuando proceda.
+- EXPLORADOR: puente Windows autorizado y renombrado inteligente por lote.
+- DETALLES: editor completo de bloques, más formatos y panel flotante independiente. Panel fijado ya implementado.
+- CALENDARIO: validar Cobros/Pagos con datos reales del escritorio, móvil y actividades secundarias; integración de reuniones sin Google Calendar. Validar recuperación cloud de vistas.
+- REVISIONES: nomenclatura avanzada restante y pruebas cruzadas reales de envío, devolución, aprobación, copias, reasignación y notificaciones.
+- CHECKLIST/SESIONES: importar y conciliar historial del escritorio. No inferir fecha de marcado a partir de la última edición de texto de Notion. Verificación integrada de reglas y métricas con páginas reales.
+- ROBOT: configurar programador externo, verificar ejecución con web cerrada y coordinación de bloqueos con escritorio.
+- AVANCE DIARIO: historial equivalente y MiaoVision (aplazado junto con IA).
+- MENSAJES: adjuntos y audio; validar estados y privacidad entre cuentas reales.
+- RECORDATORIOS: importación desde escritorio, recurrencia y alarmas push por vencimiento con PWA cerrada.
+- SUBIDAS: archivos grandes/directos y recuperación persistente de lotes parcialmente subidos; validación real Notion/Dropbox.
+- PLANTILLAS/PROYECTOS: medios, columnas y tipos complejos; preproyectos.
+- NOTIFICACIONES: configurar y validar VAPID, permisos y entregas con PWA cerrada; verificar lectura entre dispositivos.
+- CUENTAS/AJUSTES: validación real de cambios de persona, aislamiento, preferencias y presencia. Selección libre no verifica la identidad humana, conforme al modelo autorizado.
+- PWA: offline, cola de cambios, resolución de conflictos y sincronización al reconectar.
+- IA/VOZ: asistente contextual, comandos y ejecución por voz — AL FINAL por petición del usuario.
+- GOOGLE CALENDAR: FUERA DEL ALCANCE por petición del usuario.
 
-## Configuración que falta para utilizarlas en producción
-
-- Aplicar las ocho migraciones, crear los perfiles y configurar Supabase según SUPABASE_SETUP.md.
-- Configurar Notion, Dropbox y VAPID. Registrar el endpoint del robot en un programador con CRON_SECRET y un usuario activo autorizado.
-- Publicar los cambios y probar con cuentas reales. Las pruebas locales no prueban permisos, contenidos o avisos del entorno publicado.
-
-## Funciones pendientes
-
-- Buscador: CSV, vigilancia autónoma con web cerrada y administración segura de páginas huérfanas.
-- Explorador: puente Windows autorizado y renombrado inteligente por lote.
-- Detalles: editor completo de bloques y paneles fijados/flotantes.
-- Calendario: reuniones, comprobación visual móvil y conciliación de Cobros/Pagos con datos reales del escritorio.
-- Revisiones: nomenclatura avanzada restante y pruebas cruzadas reales.
-- Checklist y sesiones: importar/conciliar historial del escritorio. La última edición de Notion no permite deducir cuándo se marcó un check antiguo.
-- Robot: configurar el programador externo; el endpoint por sí solo no ejecuta horarios.
-- Avance: MiaoVision e historial equivalente al original.
-- Mensajes: adjuntos y audio; actualización actual mediante sondeo, foco y acciones.
-- Recordatorios: importación desde escritorio y alarmas push por vencimiento con web cerrada.
-- Subidas: transferencia directa de archivos grandes; el modal limita el lote a 2.5 MB. Recuperación persistente de lotes parcialmente subidos.
-- Plantillas/proyectos: medios, columnas, tipos complejos y preproyectos.
-- IA/voz: asistente contextual y ejecución autorizada de comandos.
-- Notificaciones: lectura compartida de avisos de revisión entre dispositivos.
-- PWA: trabajo offline y cola de cambios con resolución de conflictos.
-- Google Calendar: excluido por petición del usuario; accesos rápidos de Meet disponibles.
-
-No se afirma paridad total ni despliegue de esta entrega.
-
-## Correcciones de la auditoría (2026-10-06)
-- Protección de servidor para la fecha histórica de zREVISION.
-- KPIs ejecutivos sin FTF ni suspendidas, ventana 09:30–18:00 y avance actual separado del avance del día.
-- Resumen IA obtiene actividades y checks de Notion; no usa el JSON local como fuente.
-- Pendientes de resultados privados por cuenta, con revisión y errores visibles; requiere migración 8. Los datos globales antiguos necesitan importación por propietario.
-- Siguen pendientes la sincronización cloud de distribución del calendario/lectura de avisos y la conciliación del historial desktop.
-
-- Lectura de avisos de revisión compartida por cuenta; actualización por sondeo/foco.
-- Filtro de persona coherente con los KPIs. Apertura de archivos remotos devuelve error visible; acceso Windows local usa argumentos y carpeta configurada.
-- La distribución del calendario todavía requiere sincronización cloud. El historial y las marcas antiguas del escritorio aún no están conciliados. No hay paridad total ni despliegue en esta entrega.
+## PUBLICACIÓN Y VERIFICACIÓN
+- Publicar el código local y comprobar los flujos con usuarios/dispositivos reales.
+- Migraciones del proyecto: hasta SQL 12; no repetir la instalación completa sobre un proyecto existente. Aplicar solo actualizaciones que falten. Posponer requiere RECORDATORIOS_POSPONER.sql.
+- Detalles fijados y filtros de recordatorios no requieren SQL nuevo.
+- Quedan avisos de compilación existentes sobre acceso al disco Dropbox; no son errores de TypeScript.
+- No se afirma paridad total ni que estos cambios estén desplegados.

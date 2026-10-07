@@ -1,0 +1,2 @@
+export function reminderOverdue(item:any,now=Date.now()){const due=Date.parse(item.due_date+'T'+item.due_time.slice(0,8)+'-06:00');return !item.completed&&Number.isFinite(due)&&due<now;}
+export function filterReminders(items:any[],scope:string,now=Date.now()){return items.filter(item=>scope==='pending'?!item.completed:scope==='completed'?item.completed:scope==='overdue'?reminderOverdue(item,now):true);}

@@ -1,4 +1,5 @@
 "use client";
+import {ExportResults} from './ExportResults';
 import {newestFirst} from '@/lib/searchResultOrder';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -184,6 +185,8 @@ export function ResultsViewHost({
 
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(initialItems);
+  const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
+  useEffect(()=>{setPinnedDetail(old=>old?items.find(row=>row.id===old.id)||null:null);},[items]);
   const [selectedItem, setSelectedItem] = useState<SearchResultRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -973,7 +976,7 @@ export function ResultsViewHost({
         )}
 
         {/* Col 2: RESULTADOS (Central) */}
-        <ResultsVirtualTable
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden"><ExportResults rows={filteredItems}/><ResultsVirtualTable
           currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}
@@ -1039,12 +1042,14 @@ export function ResultsViewHost({
           viewZoom={viewZoom}
           textScale={textScale}
           groupBy={groupBy}
-        />
+        /></div>
 
         {/* Col 4: DETALLES (320px) */}
         {isDetailsOpen && (
           <DetailsPane
-            item={selectedItem}
+            item={pinnedDetail||selectedItem}
+            isPinned={!!pinnedDetail}
+            onTogglePin={()=>setPinnedDetail(old=>old?null:selectedItem)}
             onOpen={handleOpenItem}
             onOpenLocation={handleOpenLocation}
             onSearchDomain={(domain) => handleQueryChange(domain)}

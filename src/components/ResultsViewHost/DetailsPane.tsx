@@ -25,6 +25,8 @@ import { ImageLightbox, LightboxImage } from "./ImageLightbox";
 
 interface DetailsPaneProps {
   item: any | null;
+  isPinned?: boolean;
+  onTogglePin?:()=>void;
   onOpen: (item: any) => void;
   onOpenLocation: (item: any) => void;
   onSearchDomain?: (domain: string) => void;
@@ -60,6 +62,8 @@ function isImageFile(pathOrName: string): boolean {
 
 export function DetailsPane({
   item,
+  isPinned=false,
+  onTogglePin,
   onOpen,
   onOpenLocation,
   onSearchDomain,
@@ -512,6 +516,7 @@ export function DetailsPane({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onTogglePin&&<button type="button" aria-pressed={isPinned} onClick={onTogglePin} title={isPinned?'Seguir la selección de la tabla':'Mantener este detalle mientras seleccionas otras filas'} className="rounded border border-slate-700 px-1.5 py-0.5 text-[9.5px] text-cyan-300">{isPinned?'Desfijar':'Fijar'}</button>}
           {/* Botón de alternar ancho / expandir */}
           <button
             type="button"

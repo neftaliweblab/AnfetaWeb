@@ -1,4 +1,6 @@
 "use client";
+import {CalendarLayoutCloud} from './CalendarLayoutCloud';
+import {calendarLayoutPreference} from '@/lib/calendarLayoutPreferences';
 import {CalendarRemindersColumn} from './CalendarRemindersColumn';
 import {CalendarFinanceColumn} from './CalendarFinanceColumn';
 import {readApiJson} from '@/lib/readApiJson';
@@ -416,6 +418,7 @@ export function CalendarHost({
           }}
         />
       )}
+      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setShowReminders(saved.reminders);}}/>}
       {cacheMeta&&<div role="status" className="shrink-0 px-3 py-1 text-[10px] text-cyan-200/80">{cacheMeta.source==='supabase'?'Copia Supabase':'Lectura de Notion'}{cacheMeta.updatedAt?' · '+new Date(cacheMeta.updatedAt).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'}):''}{cacheMeta.syncing?' · actualizando…':''}{cacheMeta.stale&&!cacheMeta.syncing?' · actualización pendiente':''}</div>}
       <CalendarTopControls
         phaseFilter={phaseFilter}
