@@ -26,6 +26,7 @@ interface TopBarProps {
   onClearSearch: () => void;
   onOpenSettings: () => void;
   onLogout?: () => void;
+  onChangePerson?: () => void;
   currentUser?: string;
   unreadCount?: number;
   onTriggerAutomation?: () => void;
@@ -40,6 +41,7 @@ export function TopBar({
   onClearSearch,
   onOpenSettings,
   onLogout,
+  onChangePerson,
   currentUser,
   unreadCount = 0,
   onTriggerAutomation,
@@ -81,6 +83,7 @@ export function TopBar({
   return (
     <header className="h-14 bg-[#0F141A] border-b border-[#26323E] px-4 flex items-center justify-between gap-4 select-none flex-shrink-0 z-50">
       <TeamPresence/>
+      {onChangePerson&&<button onClick={onChangePerson} className="shrink-0 rounded border border-cyan-900 bg-slate-900 px-2 py-1 text-xs text-cyan-200" title="Cambiar persona activa">{currentUser||'Elegir persona'} ▾</button>}
       {/* Brand logo */}
       <div className="flex items-center gap-3">
         <div

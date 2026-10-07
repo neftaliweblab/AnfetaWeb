@@ -13,6 +13,7 @@ import { DailyProgressPanel } from "@/components/DailyProgressPanel/DailyProgres
 import { MessagesHost } from "@/components/MessagesHost/MessagesHost";
 import { RemindersCalendarHost } from "@/components/RemindersCalendarHost/RemindersCalendarHost";
 import { SettingsModal } from "@/components/SettingsModal/SettingsModal";
+import {PersonSelector} from '@/components/LoginModal/PersonSelector';
 import { LoginModal } from "@/components/LoginModal/LoginModal";
 import { StatusBar } from "@/components/StatusBar";
 import {
@@ -29,8 +30,9 @@ import { CalendarAutomationModal } from "@/components/CalendarHost/CalendarAutom
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 export default function AnfetaApp() {
+  const [sharedMode,setSharedMode]=useState(false),[personPickerOpen,setPersonPickerOpen]=useState(false);
   const [isAuthenticated,setIsAuthenticated]=useState(false);
-  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setIsAuthenticated(data.authenticated===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setIsAuthenticated(false));},[]);
+  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');}).catch(()=>setIsAuthenticated(false));},[]);
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
@@ -81,7 +83,7 @@ export default function AnfetaApp() {
 
   // Load local data from API route
   useEffect(() => {
-    if(!isAuthenticated)return;
+    if(!isAuthenticated||!currentUser)return;
     let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexInterval:ReturnType<typeof setInterval>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
     let userToken = "";
     try {
@@ -132,7 +134,7 @@ export default function AnfetaApp() {
 
     const handleSettingsChanged = (e: any) => {
       if (e.detail?.currentUser) {
-        setCurrentUser(e.detail.currentUser);
+        if(sharedMode) setPersonPickerOpen(true);
       }
     };
 
@@ -164,11 +166,13 @@ export default function AnfetaApp() {
       window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
       window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
     };
-  }, [currentDate,isAuthenticated]);
+  }, [currentDate,isAuthenticated,currentUser]);
+
+  useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='anfeta_person_changed')window.location.reload();};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[]);
 
   // Fetch activities when date changes
   useEffect(() => {
-    if(!isAuthenticated)return;
+    if(!isAuthenticated||!currentUser)return;
     const controller = new AbortController();
     setCalendarActivities([]);
     async function fetchCalendarForDate() {
@@ -186,7 +190,7 @@ export default function AnfetaApp() {
     }
     fetchCalendarForDate();
     return () => controller.abort();
-  }, [currentDate, isAuthenticated]);
+  }, [currentDate, isAuthenticated,currentUser]);
 
   useEffect(()=>{
     if(!currentUser || !isAuthenticated) return;
@@ -485,11 +489,13 @@ export default function AnfetaApp() {
   const handleDeletePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.filter(t=>t.id!==id)),[persistPendingTasks]);
   const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
 
-  if (!isAuthenticated) return <LoginModal onSuccess={(userTag)=>{setCurrentUser(userTag);setIsAuthenticated(true);}} />;
+  if (!isAuthenticated) return <LoginModal onSuccess={(userTag,options)=>{setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setIsAuthenticated(true);}} />;
 
+  if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
+      {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}
       {/* Top Bar with Navigation and Global Search */}
       <TopBar
         activeView={activeView}
@@ -498,6 +504,7 @@ export default function AnfetaApp() {
         onSearchChange={handleSearchChange}
         onClearSearch={() => handleSearchChange("")}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onChangePerson={sharedMode?()=>setPersonPickerOpen(true):undefined}
         currentUser={currentUser}
         onLogout={async () => {
           try {
@@ -543,7 +550,7 @@ export default function AnfetaApp() {
             isRemindersActive={activeView === "reminders"}
             remindersCount={0}
             currentUser={currentUser}
-            onChangeCurrentUser={setCurrentUser}
+            onChangeCurrentUser={()=>setPersonPickerOpen(true)}
           />
         </div>
 
@@ -630,7 +637,7 @@ export default function AnfetaApp() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentUser={currentUser}
-        onSaveCurrentUser={setCurrentUser}
+        onSaveCurrentUser={()=>setPersonPickerOpen(true)}
       />
 
       {/* Login Corporativo Modal */}

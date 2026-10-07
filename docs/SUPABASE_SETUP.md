@@ -1,8 +1,8 @@
 # Activar Supabase en ANFETA
 
-Esta entrega conecta cuentas y preferencias (favoritos, búsquedas guardadas y suscripciones PWA). Notion sigue siendo fuente de actividades. No incluye todavía caché de calendario, Realtime, robot cerrado ni offline.
+La integración incluye cuentas, preferencias, caché Notion, recordatorios, presencia, conversaciones, coordinación del robot, historial de checks y pendientes privados. Notion sigue siendo fuente de actividades. El robot necesita un programador externo; Realtime y offline todavía no están implementados.
 
-1. Crea el proyecto Supabase y ejecuta completo en SQL Editor: supabase/migrations/202610060001_accounts_preferences.sql. Se ejecuta una sola vez.
+1. Para un proyecto nuevo sin migraciones ANFETA, ejecuta una sola vez en SQL Editor `supabase/ANFETA_NEW_PROJECT.sql`, que reúne las ocho migraciones. No ejecutes luego las migraciones individuales otra vez. Si ya aplicaste algunas, ejecuta solamente las restantes en orden.
 2. En Authentication desactiva registro público y crea las cuentas del equipo con correo y contraseña. No hay contraseñas predeterminadas.
 3. En .env.local y en Vercel configura NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY y SUPABASE_SECRET_KEY. La clave secreta nunca debe tener prefijo NEXT_PUBLIC_.
 4. Asigna cada usuario Auth a su perfil. Desde SQL Editor: INSERT INTO public.profiles (id,login_email,person_tag) VALUES ('UUID_DE_AUTH','CORREO_REAL','nneft'); Usa UUID/correo reales. Tags: jjohn, nneft, kkarl, iisai, ssote, aacal, aandr, bbria, ggena, eemma. También puedes usar scripts/supabase-profile.cjs con --env-file=.env.local; verifica que UUID y correo coincidan.

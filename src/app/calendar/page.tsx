@@ -1,4 +1,5 @@
 "use client";
+import {PersonSelector} from '@/components/LoginModal/PersonSelector';
 import {LoginModal} from '@/components/LoginModal/LoginModal';
 import { mexicoDate } from "@/services/calendarPresentation";
 
@@ -21,7 +22,10 @@ export default function StandaloneCalendarPage() {
 
   const [currentUser, setCurrentUser] = useState('');
   const [authenticated,setAuthenticated]=useState(false);
-  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setAuthenticated(data.authenticated===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setAuthenticated(false));},[]);
+  const [sharedMode,setSharedMode]=useState(false);
+  const [personPickerOpen,setPersonPickerOpen]=useState(false);
+  useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='anfeta_person_changed')window.location.reload();};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[]);
+  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setAuthenticated(false));},[]);
   const [calendarCacheMeta,setCalendarCacheMeta]=useState<any>(null);
   const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
@@ -50,8 +54,8 @@ export default function StandaloneCalendarPage() {
   }, []);
 
   useEffect(() => {
-    if(authenticated) loadCalendarData(currentDate);
-  }, [currentDate, loadCalendarData, authenticated]);
+    if(authenticated&&currentUser) loadCalendarData(currentDate);
+  }, [currentDate, loadCalendarData, authenticated,currentUser]);
 
   // Suscribirse a mensajes del Buscador Principal en tiempo real
   useEffect(() => {
@@ -104,9 +108,11 @@ export default function StandaloneCalendarPage() {
     });
   };
 
-  if(!authenticated)return <LoginModal onSuccess={user=>{setCurrentUser(user);setAuthenticated(true);}} />;
+  if(!authenticated)return <LoginModal onSuccess={(user,options)=>{setCurrentUser(user);setSharedMode(options?.sharedMode===true);setAuthenticated(true);}} />;
+  if(sharedMode&&!currentUser)return <PersonSelector />;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
+      {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)} />}
       {/* Barra superior de Ventana Independiente / Multi-Monitor */}
       <header className="h-12 bg-[#0F141A] border-b border-[#26323E] px-3 flex items-center justify-between gap-3 flex-shrink-0 z-50">
         <div className="flex items-center gap-2.5">
@@ -146,6 +152,7 @@ export default function StandaloneCalendarPage() {
           )}
         </div>
 
+        {sharedMode&&<button onClick={()=>setPersonPickerOpen(true)} className="text-xs text-cyan-300">{currentUser} · Cambiar persona</button>}
         {/* Estado de Enlace / Sincronización */}
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#10201C] border border-[#166534]/50 text-[#86EFAC] text-[10px] font-mono">
