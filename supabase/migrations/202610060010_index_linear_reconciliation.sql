@@ -26,7 +26,7 @@ begin
   returning page_id
   )
   delete from public.notion_pages n where n.user_id=p_user_id and n.source_key=p_source_key
-  and not exists(select 1 from entries e where e.page_id=n.page_id);
+  and n.page_id not in(select e.page_id from entries e);
  else
   for entry in select jsonb_array_elements(coalesce(p_payload->'activities','[]'::jsonb)) loop
    pid:=entry->>'pageId';ids:=array_append(ids,pid);
