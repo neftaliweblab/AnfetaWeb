@@ -582,8 +582,8 @@ export function ResultsViewHost({
       const data=await loadSearchIndex({fresh:true});
       window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));
       if(data.items){setItems(previous=>retainSearchResults(previous,data));window.dispatchEvent(new CustomEvent('anfeta_data_refreshed',{detail:data}));sendWindowsNotification('ANFETA',data.warning?'Resultados disponibles; actualización pendiente.':'Índice actualizado.');}
-    } catch {
-      alert("Error al sincronizar con Notion.");
+    } catch(error) {
+      setStatusError(error instanceof Error?error.message:"Error al sincronizar con Notion.");
     } finally {
       setIsSyncingNotion(false);
     }

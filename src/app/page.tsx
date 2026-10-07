@@ -48,6 +48,8 @@ export default function AnfetaApp() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [indexSyncLabel,setIndexSyncLabel]=useState('Esperando índice');
+  useEffect(()=>{const update=(event:Event)=>{const data=(event as CustomEvent).detail||{};setIndexSyncLabel(data.warning||data.cacheMeta?.lastError?'Error de sincronización':data.cacheMeta?.syncing?'Actualizando índice':data.cacheMeta?.source==='supabase'?'Copia guardada':'Datos disponibles; copia pendiente');};window.addEventListener('anfeta_index_status',update);return()=>window.removeEventListener('anfeta_index_status',update);},[]);
   const [currentUser, setCurrentUser] = useState(() => {
     if (typeof window === "undefined") return "nneft";
     try {
@@ -630,7 +632,7 @@ export default function AnfetaApp() {
       <StatusBar
         indexedCount={searchIndex.length}
         currentUser={currentUser}
-        lastSyncTime="En línea (0ms)"
+        lastSyncTime={indexSyncLabel}
       />
 
       {/* Settings Dialog */}
