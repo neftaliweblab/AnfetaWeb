@@ -758,7 +758,7 @@ export function ResultsVirtualTable({
       {/* Subheader de Ruta y Estadísticas */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#121822] border-b border-[#1E2836] text-[10.5px]">
         <span className="text-[#64748B] font-mono truncate">
-          Ruta / Base: {items[0]?.sourceName || "Revisiones"}
+          Ruta / Base: {items[0]?.sourceName || "Sin resultados"}
         </span>
         <div className="flex items-center gap-2">
           <span className="text-[#94A3B8] font-mono">{items.length} páginas</span>

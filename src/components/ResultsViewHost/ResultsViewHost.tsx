@@ -89,7 +89,7 @@ export function ResultsViewHost({
 }: ResultsViewHostProps) {
   // Tabs state
   const [tabs, setTabs] = useState<SearchTab[]>([
-    { id: "tab_1", query: externalQuery || "nneft", canClose: false },
+    { id: "tab_1", query: externalQuery ?? "", canClose: false },
   ]);
   const [activeTabId, setActiveTabId] = useState("tab_1");
 
@@ -816,6 +816,8 @@ export function ResultsViewHost({
     return res;
   }, [items, query, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, currentUser]);
 
+  useEffect(()=>{setCurrentPage(1);},[query,selectedScope,currentUser,pageSize]);
+
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
@@ -1057,7 +1059,7 @@ export function ResultsViewHost({
         currentPage={currentPage}
         pageSize={pageSize}
         onChangePageSize={setPageSize}
-        statusText={`Listo · ${filteredItems.length.toLocaleString()} elementos encontrados`}
+        statusText={`Índice: ${items.length} · Notion: ${filterByNotionBase(items as any, 'Notion').length} · Visibles: ${filteredItems.length}`} 
         selectedItem={selectedItem}
         selectedCount={selectedIds.size}
         onDeleteSelected={handleDeleteSelected}
