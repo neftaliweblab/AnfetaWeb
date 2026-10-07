@@ -1,3 +1,4 @@
+import {queryAnfetaIndex,uniqueIndex} from '@/services/notionIndexParity';
 import {executiveActivities} from '@/services/progressKpis';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 import {readUserState,updateUserState} from '@/services/userState';
@@ -109,6 +110,7 @@ interface LiveNotionPage {
   domain: string;
   lastEdited: string;
   isLocked: boolean;
+  sourceName?:string;
 }
 
 const liveNotionOverrides = new Map<string, LiveNotionPage>();
@@ -191,7 +193,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
   status = statusProp?.[statusProp.type]?.name || '';
-  return { id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
+  return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
 const STRUCTURAL_CONTAINERS = new Set([
@@ -562,11 +564,11 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       let syncWarning:string|undefined;let syncFailed=false;let fullIds:Set<string>|undefined;
       const syncStarted=new Date().toISOString();let observedEdited:string|undefined;
-      const fullSync=!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
+      const fullSync=previous?.syncMeta?.indexScope!=='desktop-six-bases-v1'||!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
       // Cached index is shown immediately; background refresh uses an overlap for recent edits.
       if (token&&!bootstrap) {
         try {
-          const pages=await searchNotionPages({...getSettings(),notionToken:token},supabaseConfigured()||Boolean(previous),fullSync?undefined:previous?.syncMeta?.dataAsOf);
+          const pages=await queryAnfetaIndex({...getSettings(),notionToken:token},fullSync?undefined:previous?.syncMeta?.dataAsOf);
           observedEdited=pages.map(page=>page.last_edited_time).filter((value:any)=>Number.isFinite(Date.parse(value))).sort().at(-1);
           if(supabaseConfigured()&&fullSync)fullIds=new Set(pages.map(page=>cleanPageId(page.id)));
           for(const item of pages){const pageData=extractNotionPageData(item);if(pageData.id){liveNotionOverrides.set(pageData.id,pageData);calendarMemoryUpdates.delete(pageData.id);}}
@@ -606,6 +608,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         // 1. Prioridad 1: Actualizaciones en vivo desde la API de Notion
         const live = liveNotionOverrides.get(pid);
         if (live) {
+          if(live.sourceName){row.sourceName=live.sourceName;row.externalSourceName=live.sourceName;}
           if (live.title) {
             const baseMatch = row.name.match(/^\[[^\]]+\]\s*/);
             row.name = `${baseMatch ? baseMatch[0] : ""}${live.title.trim()}`;
@@ -644,7 +647,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         seen.add(pid);
         items.unshift({
           id: live.id,
-          name: `[Revisiones] ${live.title || "Nueva actividad Notion"}`,
+          name: `[${live.sourceName||"Notion"}] ${live.title || "Nueva actividad Notion"}`,
           path: "",
           folder: "",
           extension: "",
@@ -652,8 +655,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           modifiedLocalDate: (live.dateStart || live.lastEdited).slice(0, 10),
           serverModified: live.lastEdited,
           source: "Notion",
-          sourceName: "Revisiones",
-          externalSourceName: "Revisiones",
+          sourceName: live.sourceName||"Notion",
+          externalSourceName: live.sourceName||"Notion",
           externalId: live.id,
           externalUrl: live.url,
           scheduledDate: live.dateStart,
@@ -699,8 +702,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         injected++;
       }
 
-      const visibleItems=items.filter(item=>!/^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(item.name.replace(/^\[(?!ANFETA_)[^\]]+\]\s*/,''))&&(!fullIds||item.source!=='Notion'||fullIds.has(cleanPageId(item.externalId||item.id))));
-      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
+      const visibleItems=uniqueIndex(items.filter(item=>!/^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(item.name.replace(/^\[(?!ANFETA_)[^\]]+\]\s*/,''))&&(!fullIds||item.source!=='Notion'||fullIds.has(cleanPageId(item.externalId||item.id)))));
+      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-v1',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
     }
 
     if (type === "project-view-url") {
