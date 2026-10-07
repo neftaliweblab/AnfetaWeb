@@ -1,0 +1,9 @@
+import {ImportedSearch} from './savedSearchCsv';
+export function searchBackup(text:string):ImportedSearch[]{
+ if(text.length>2097152)throw new Error('El respaldo supera 2 MB.');
+ let value:any;try{value=JSON.parse(text.replace(/^\uFEFF/,''));}catch{throw new Error('El respaldo no contiene JSON válido.');}
+ if(value?.format!=='anfeta-saved-searches'||value.version!==1||!Array.isArray(value.searches)||value.searches.length>100)throw new Error('El archivo no es un respaldo de búsquedas compatible.');
+ const unique=new Map<string,ImportedSearch>();for(const item of value.searches){if(typeof item?.query!=='string'||!item.query.trim()||item.query.length>4000||(item.title!==undefined&&(typeof item.title!=='string'||item.title.length>200)))throw new Error('El respaldo contiene una búsqueda inválida.');if(!unique.has(item.query))unique.set(item.query,{query:item.query,title:item.title||item.query.slice(0,200)});}if(!unique.size)throw new Error('El respaldo no contiene búsquedas.');return [...unique.values()];
+}
+export function serializeSearchBackup(items:{query:string;title?:string}[]){return JSON.stringify({format:'anfeta-saved-searches',version:1,searches:items.map(({query,title})=>({query,...(title?{title}:{})}))},null,2);}
+export function renameSavedSearch<T extends {id:string;query:string;title?:string}>(items:T[],original:T,title:string,now:string){const cleaned=title.trim();if(!cleaned||cleaned.length>200)throw new Error('Escribe un nombre de hasta 200 caracteres.');const current=items.find(s=>s.id===original.id);if(!current)throw new Error('La búsqueda ya fue eliminada. Recupera los datos actuales.');if(current.query!==original.query||(current.title||'')!==(original.title||''))throw new Error('La búsqueda cambió en otro dispositivo. Recupera los datos actuales antes de renombrarla.');return items.map(s=>s.id===original.id?{...s,title:cleaned,updatedAt:now}:s);}

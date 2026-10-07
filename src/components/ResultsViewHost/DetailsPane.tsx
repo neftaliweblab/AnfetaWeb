@@ -1,4 +1,5 @@
 "use client";
+import {mediaUrl} from '@/lib/mediaUrl';
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
@@ -310,6 +311,8 @@ export function DetailsPane({
       return null;
     }
 
+    const media=mediaUrl(block.url);
+    if(['audio','video','pdf','file','bookmark','embed','link_preview'].includes(k)&&media){const directVideo=k==='video'&&/\.(?:mp4|webm|ogg)(?:[?#]|$)/i.test(media);return <div key={block.id||index} className="my-2 rounded border border-slate-700 bg-slate-950 p-2 space-y-2">{k==='audio'&&<audio controls preload="none" src={media} className="w-full"/>}{directVideo&&<video controls preload="none" src={media} className="max-h-64 w-full"/>}<a href={media} target="_blank" rel="noopener noreferrer" className="block break-words text-xs text-cyan-300 underline">{block.text||block.caption||(k==='pdf'?'Abrir PDF':k==='video'?'Abrir video':k==='audio'?'Abrir audio':k==='file'?'Abrir archivo':'Abrir enlace')}</a>{block.caption&&block.caption!==block.text&&<p className="text-xs text-slate-400">{block.caption}</p>}</div>;}
     if (k === "heading_1" || k === "h1") {
       return (
         <div

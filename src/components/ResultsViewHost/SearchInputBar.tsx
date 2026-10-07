@@ -15,6 +15,7 @@ import {
   Bell,
 } from "lucide-react";
 import {IndexSyncStatus} from './IndexSyncStatus';
+import {FavoritesBackup} from './FavoritesBackup';
 import {SavedSearches} from './SavedSearches';
 import { SearchPredictiveFlyout } from "./SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
@@ -153,7 +154,7 @@ export function SearchInputBar({
 
         {/* Botones de acción derecha */}
         <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0 select-none">
-          <SavedSearches query={query} onSelect={onChangeQuery} />
+          <SavedSearches query={query} onSelect={onChangeQuery} /><FavoritesBackup />
           <IndexSyncStatus />
 
           {/* Botón ⚡ Plantillas */}

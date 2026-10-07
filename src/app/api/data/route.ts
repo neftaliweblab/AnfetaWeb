@@ -441,6 +441,8 @@ async function fetchNotionBlocksRecursive(
       else if (payload.external && payload.external.url) url = payload.external.url;
       else if (payload.url) url = payload.url;
 
+      if(bType==='equation')text=payload.expression||text;
+      if(bType==='table_row')text=(payload.cells||[]).map((cell:any[])=>cell.map(part=>part.plain_text||part.text?.content||'').join('')).join(' | ');
       const isStructural = STRUCTURAL_CONTAINERS.has(bType);
 
       if (!isStructural && (text || url || bType === "divider")) {
@@ -451,6 +453,7 @@ async function fetchNotionBlocksRecursive(
           isStrikethrough,
           isChecked: !!payload.checked,
           language: payload.language || "",
+          caption: (payload.caption||[]).map((part:any)=>part.plain_text||part.text?.content||'').join(''),
           url,
           depth,
           lastEditedTime: b.last_edited_time,
@@ -484,11 +487,12 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     if (type === 'calendar-finance') {
       const day=searchParams.get('date') || mexicoDate();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return NextResponse.json({error:'Fecha inválida.'},{status:400});
-      const rows=readLocalJson<any[]>('index_cache.json',[]).map(normalizeSearchRow).map(row=>{const live=liveNotionOverrides.get(cleanPageId(row.externalId || row.id));return live?{...row,name:live.title,scheduledDate:live.dateStart + (live.dateEnd ? ' - ' + live.dateEnd : ''),assignedPerson:live.person,externalUrl:live.url}:row;});
+      let rows=readLocalJson<any[]>('index_cache.json',[]).map(normalizeSearchRow).map(row=>{const live=liveNotionOverrides.get(cleanPageId(row.externalId || row.id));return live?{...row,name:live.title,scheduledDate:live.dateStart + (live.dateEnd ? ' - ' + live.dateEnd : ''),assignedPerson:live.person,externalUrl:live.url}:row;});
       const settings=getSettings();const token=(req.headers.get('x-notion-token') || settings.notionToken || '').trim();
-      if(token)try {const items=await loadLiveFinance({...settings,notionToken:token},rows,day);return NextResponse.json({date:day,items,origin:'notion',warning:''});}
-      catch(error){return NextResponse.json({date:day,items:financeRowsForDay(rows,day),origin:'index',warning:'No se pudo actualizar Cobros/Pagos; se muestra el índice guardado. '+(error instanceof Error?error.message:'')});}
-      return NextResponse.json({date:day,items:financeRowsForDay(rows,day),origin:'index',warning:'Cobros/Pagos en caché: configura el acceso a Notion.'});
+      const fallback=async(message:string)=>{let cacheError='';if(supabaseConfigured())try{const snapshot=await readSnapshot(await snapshotContext(actor,{...settings,notionToken:token},'search-index'));if(snapshot?.has_payload&&Array.isArray(snapshot.payload?.items))rows=snapshot.payload.items.map(normalizeSearchRow);}catch(e){cacheError=' No se pudo leer el índice Supabase: '+(e instanceof Error?e.message:'error');}return NextResponse.json({date:day,items:financeRowsForDay(rows,day),origin:'index',warning:message+cacheError},{headers:{'Cache-Control':'no-store'}});};
+      if(token)try {const items=await loadLiveFinance({...settings,notionToken:token},rows,day);return NextResponse.json({date:day,items,origin:'notion',warning:''},{headers:{'Cache-Control':'no-store'}});}
+      catch(error){return fallback('No se pudo actualizar Cobros/Pagos; se muestra el índice guardado. '+(error instanceof Error?error.message:''));}
+      return fallback('Cobros/Pagos en caché: configura el acceso a Notion.');
     }
     if (type === 'review-notifications') {
       try { const settings = getSettings(); return NextResponse.json({items:await listReviewNotifications(settings, actor)}, {headers:{'Cache-Control':'no-store'}}); }

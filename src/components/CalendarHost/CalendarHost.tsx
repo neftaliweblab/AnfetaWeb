@@ -1,9 +1,11 @@
 "use client";
+import {reviewTitle} from '@/services/reviewTitle';
 import {CalendarLayoutCloud} from './CalendarLayoutCloud';
 import {calendarLayoutPreference} from '@/lib/calendarLayoutPreferences';
 import {CalendarRemindersColumn} from './CalendarRemindersColumn';
 import {CalendarFinanceColumn} from './CalendarFinanceColumn';
 import {readApiJson} from '@/lib/readApiJson';
+import {mexicoDate} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
 import {CalendarBatchModal} from './CalendarBatchModal';
 import { CalendarReviewNotifications } from './CalendarReviewNotifications';
@@ -77,6 +79,11 @@ export function CalendarHost({
   const [showCreate, setShowCreate] = useState(false);
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
+  const recentSaves=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
+  const protectSaved=(incoming:NotionCalendarActivity[])=>{
+    const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}if(a.title===saved.activity.title&&a.person===saved.activity.person&&a.reviewFlow?.State===saved.activity.reviewFlow?.State){recentSaves.current.delete(a.pageId);return a;}return saved.activity;});
+    const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors];
+  };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -89,7 +96,7 @@ export function CalendarHost({
   const [cacheMeta,setCacheMeta]=useState<any>(initialCacheMeta);
   useEffect(()=>setCacheMeta(initialCacheMeta),[initialCacheMeta,currentDate]);
   const [showReminders,setShowReminders]=useState(false);
-  const [filterCobros, setFilterCobros] = useState(false);
+  const [financeLoading,setFinanceLoading]=useState(false);const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
   const [peopleOrder, setPeopleOrder] = useState<string[]>(DEFAULT_COLLABORATORS);
@@ -128,7 +135,7 @@ export function CalendarHost({
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
-    setActivitiesList(initialActivities);
+    setActivitiesList(prev=>pending.current.size?[...initialActivities.filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:protectSaved(initialActivities));
     setSelectedActivity(prev => prev ? initialActivities.find(a => a.pageId === prev.pageId) || null : null);
   }, [initialActivities]);
   useEffect(() => { if (loadError) setError(loadError); }, [loadError]);
@@ -137,7 +144,7 @@ export function CalendarHost({
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
-        setActivitiesList(msg.activities);
+        if(!pending.current.size)setActivitiesList(protectSaved(msg.activities));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         setActivitiesList((prev) =>
           (() => {
@@ -178,7 +185,7 @@ export function CalendarHost({
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         setActivitiesList(prev=>{
-          const merged=(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
+          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
           const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:a.reviewFlow||prev.find(old=>old.pageId===a.pageId)?.reviewFlow}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
@@ -197,28 +204,36 @@ export function CalendarHost({
 
   useEffect(()=>{
     if(!active || (!filterCobros && !filterPagos))return;
-    const controller=new AbortController();setFinanceItems([]);
-    const load=async()=>{try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate,{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}};
-    void load();const timer=setInterval(load,60000);return()=>{controller.abort();clearInterval(timer);};
-  },[currentDate,filterCobros,filterPagos,active]);
+    const controller=new AbortController();let running=false;setFinanceItems([]);setFinanceWarning('');setFinanceLoading(true);
+    const load=async()=>{if(running||controller.signal.aborted)return;running=true;try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate,{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}finally{running=false;if(!controller.signal.aborted)setFinanceLoading(false);}};
+    const refresh=()=>{if(!document.hidden)void load();};void load();const timer=setInterval(refresh,60000);window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);return()=>{controller.abort();clearInterval(timer);window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);};
+  },[currentDate,currentUser,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
 
-  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; leaveVisualCopy?: boolean }) => {
+  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
     pending.current.add(pageId); mutationVersion.current++; setError('');
+    const originalMirror=activitiesList.find(a=>a.pageId==='review-mirror-'+pageId);
+    if(updates.reviewer){
+      try{const person=normalizePerson(updates.reviewer),owner=original.reviewFlow?.OriginalPerson||original.person;
+        const optimistic={...original,person,status:'rtuzREVISION',title:reviewTitle(original.title,owner,person,'pending'),isCompletedForReview:true,isFinalized:false,isSuspended:false,reviewFlow:{...original.reviewFlow,OriginalPerson:owner,ReviewAssignee:person,State:'pending',LeaveVisualCopy:updates.leaveVisualCopy!==false}};
+        setActivitiesList(prev=>{const next=prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId);next.push(optimistic);if(updates.leaveVisualCopy!==false&&normalizePerson(owner)!==person)next.push({...optimistic,pageId:'review-mirror-'+pageId,person:normalizePerson(owner),isReviewMirror:true,title:'[COPIA REVISIÓN] '+optimistic.title});return next;});
+      }catch(e){pending.current.delete(pageId);setError(e instanceof Error?e.message:'No se pudo preparar la revisión.');return false;}
+    }
     try {
       const response = await fetch('/api/data', {
         method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
-        body:JSON.stringify({ action:updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates,...(updates.start?{expectedStart:original.start}:{})} }),
+        body:JSON.stringify({ action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} }),
       });
       const data = await response.json();
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
       const saved: NotionCalendarActivity = data.activity;
+      recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
       setActivitiesList(prev => {
         const next = prev.filter(a => a.pageId !== pageId && a.pageId !== 'review-mirror-' + pageId);
         next.push(saved);
@@ -230,9 +245,11 @@ export function CalendarHost({
       anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
       setError(data.warning || '');
       window.dispatchEvent(new Event('anfeta_review_saved'));
+      if(updates.start&&saved.start){const date=mexicoDate(saved.start);if(date!==currentDate)onSelectDate(date);}
       onRefresh?.();
       return true;
     } catch (error) {
+      if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
     } finally { pending.current.delete(pageId); }
@@ -367,7 +384,7 @@ export function CalendarHost({
     ? (currentDateMinutes / 60) * pixelsPerHour
     : null;
 
-  const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} onMove={()=>setFinancePosition(p=>p==='before'?'after':'before')} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
+  const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} loading={financeLoading} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} onMove={()=>setFinancePosition(p=>p==='before'?'after':'before')} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">

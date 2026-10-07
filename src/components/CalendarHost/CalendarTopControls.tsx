@@ -15,7 +15,7 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X,
+  X, Plus, CalendarRange, Banknote, CreditCard,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 
@@ -82,17 +82,10 @@ export function CalendarTopControls({
   const zoomPercent = Math.round((pixelsPerHour / 72) * 100);
 
   return (
-    <div className="h-11 bg-[#0F141A] border-b border-[#26323E] px-3 flex items-center justify-between gap-2 text-xs select-none flex-shrink-0 overflow-x-auto scrollbar-none">
-      <button onClick={onCreateActivity} className="shrink-0 rounded border border-cyan-400/40 bg-cyan-500/15 px-3 py-1 text-cyan-300">+ Nueva Actividad</button>
+    <div className="min-h-11 h-auto min-w-0 max-w-full bg-[#0F141A] border-b border-[#26323E] px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px] select-none flex-shrink-0">
+      <button onClick={onCreateActivity} title="Nueva actividad" aria-label="Nueva actividad" className="shrink-0 flex items-center gap-1 rounded border border-cyan-400/40 bg-cyan-500/15 px-2 py-1 text-cyan-300"><Plus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Nueva</span></button>
       {/* 1. Date Navigation: Ayer, Hoy, Mañana, ‹ ›, Título largo con Badge */}
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <button
-          onClick={() => shiftDay(-1)}
-          className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#94A3B8] hover:text-[#F1F5F9] border border-[#223848] text-[11px] cursor-pointer"
-          title="Día anterior"
-        >
-          Ayer
-        </button>
+      <div className="flex flex-wrap items-center gap-1 min-w-0 max-w-full">
         <button
           onClick={() => onSelectDate(getTodayDateString())}
           className={`px-2 py-1 rounded border text-[11px] font-semibold cursor-pointer transition-colors ${
@@ -104,14 +97,6 @@ export function CalendarTopControls({
         >
           Hoy
         </button>
-        <button
-          onClick={() => shiftDay(1)}
-          className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#94A3B8] hover:text-[#F1F5F9] border border-[#223848] text-[11px] cursor-pointer"
-          title="Día siguiente"
-        >
-          Mañana
-        </button>
-
         <div className="flex items-center bg-[#131A22] border border-[#223848] rounded">
           <button
             onClick={() => shiftDay(-1)}
@@ -124,8 +109,8 @@ export function CalendarTopControls({
             type="date"
             value={currentDate}
             onChange={(e) => e.target.value && onSelectDate(e.target.value)}
-            className="bg-transparent text-xs font-mono font-semibold text-[#F1F5F9] border-none px-1 py-0.5 focus:outline-none cursor-pointer [color-scheme:dark]"
-            title="Seleccionar fecha"
+            className="w-[112px] min-w-0 bg-transparent text-[11px] font-mono font-semibold text-[#F1F5F9] border-none px-1 py-0.5 focus:outline-none cursor-pointer [color-scheme:dark]"
+            aria-label="Seleccionar fecha" title={calendarHeader.fullText}
           />
           <button
             onClick={() => shiftDay(1)}
@@ -136,31 +121,12 @@ export function CalendarTopControls({
           </button>
         </div>
 
-        {/* Título largo formateado en español (dddd, d de MMMM de yyyy) */}
-        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-[#131A22] border border-[#223848] rounded">
-          <Calendar className="w-3 h-3 text-[#38BDF8]" />
-          <span className="font-semibold text-[11px] text-[#F1F5F9]">
-            {calendarHeader.fullText}
-          </span>
-          {calendarHeader.relativeBadge && (
-            <span
-              className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold font-mono ${
-                calendarHeader.relativeBadge === "Hoy"
-                  ? "bg-[#0369A1]/30 text-[#38BDF8] border border-[#0284C7]/50"
-                  : "bg-[#1E293B] text-[#94A3B8] border border-[#334155]"
-              }`}
-            >
-              {calendarHeader.relativeBadge}
-            </span>
-          )}
-        </div>
-
         {availableDates.length > 0 && (
           <select
             value={currentDate}
             onChange={(e) => onSelectDate(e.target.value)}
-            className="bg-[#131A22] text-[#94A3B8] border border-[#223848] rounded px-1.5 py-1 text-[11px] focus:outline-none focus:border-[#00A8FF] cursor-pointer"
-            title="Fechas con actividades en Notion"
+            className="bg-[#131A22] text-[#94A3B8] border border-[#223848] rounded max-w-[112px] px-1 py-1 text-[10px] focus:outline-none focus:border-[#00A8FF] cursor-pointer"
+            aria-label="Fechas con actividades" title="Fechas con actividades en Notion"
           >
             {availableDates.map((d) => (
               <option key={d} value={d}>
@@ -170,8 +136,8 @@ export function CalendarTopControls({
           </select>
         )}
 
-        <span className="text-[10px] font-mono text-[#64748B] px-1 hidden md:inline">
-          {totalActivitiesCount} {totalActivitiesCount === 1 ? "actividad" : "actividades"}
+        <span className="text-[10px] font-mono text-[#64748B] px-1 hidden xl:inline">
+          {totalActivitiesCount} act.
         </span>
 
         {/* Badge de filtro activo de búsqueda sincronizada */}
@@ -221,7 +187,7 @@ export function CalendarTopControls({
         </button>
       </div>
 
-      {onOpenBatch && <button onClick={onOpenBatch} className="shrink-0 rounded border border-cyan-900 px-2 py-1 text-cyan-200">Reprogramar / Planificar</button>}
+      {onOpenBatch && <button onClick={onOpenBatch} title="Reprogramar / planificar" aria-label="Reprogramar / planificar" className="flex items-center gap-1 shrink-0 rounded border border-cyan-900 px-2 py-1 text-cyan-200"><CalendarRange className="w-3.5 h-3.5"/><span className="hidden xl:inline">Planificar</span></button>}
       {reviewNotifications}
       {/* 3. Action Toggles and Buttons */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -233,9 +199,9 @@ export function CalendarTopControls({
               ? "bg-[#18212B] text-[#4ADE80] border-[#4ADE80]/50 shadow-[0_0_8px_rgba(74,222,128,0.2)]"
               : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#E2E8F0]"
           }`}
-          title="Filtrar actividades de cobro"
+          aria-label="Mostrar columna de cobros" aria-pressed={filterCobros} title="Mostrar columna de cobros"
         >
-          💰 Cobros
+          <Banknote className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Cobros</span>
         </button>
 
         {/* Toggle Pagos */}
@@ -246,9 +212,9 @@ export function CalendarTopControls({
               ? "bg-[#18212B] text-[#FB923C] border-[#FB923C]/50 shadow-[0_0_8px_rgba(251,146,60,0.2)]"
               : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#E2E8F0]"
           }`}
-          title="Filtrar pagos programados"
+          aria-label="Mostrar columna de pagos" aria-pressed={filterPagos} title="Mostrar columna de pagos"
         >
-          💳 Pagos
+          <CreditCard className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Pagos</span>
         </button>
 
         {/* Botón Plantillas */}
@@ -258,7 +224,7 @@ export function CalendarTopControls({
           title="Plantillas rápidas en Notion"
         >
           <Zap className="w-3 h-3 text-[#FBBF24]" />
-          <span>Plantillas</span>
+          <span className="hidden xl:inline">Plantillas</span>
         </button>
 
         {/* Botón Reporte 05:00 */}
@@ -268,14 +234,14 @@ export function CalendarTopControls({
           title="Reporte diario de la corrida de las 05:00 AM"
         >
           <FileText className="w-3 h-3 text-[#38BDF8]" />
-          <span>▤ Reporte</span>
+          <span className="hidden xl:inline">Reporte</span>
         </button>
 
         {/* Botón ⏩ Robot 05:00 */}
         {onRunAutomation && (
           <button
             onClick={onRunAutomation}
-            className="p-1.5 rounded bg-[#131A22] hover:bg-[#18212B] text-[#38BDF8] border border-[#223848] text-xs font-bold cursor-pointer"
+            className="p-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#38BDF8] border border-[#223848] text-xs font-bold cursor-pointer"
             title="⏩ Mover pendientes de ayer a hoy y registrar reporte"
           >
             ⏩
@@ -293,7 +259,7 @@ export function CalendarTopControls({
           </button>
         )}
 
-        <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1 text-xs text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
+        <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="min-w-0 max-w-[112px] rounded border border-slate-700 bg-slate-900 p-1 text-[10px] text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
         <button onClick={onExtraHours} aria-pressed={!!extraHours} className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Mostrar tramo extra de 21:00 a 22:00">{extraHours?'08–22h':'08–21h'}</button>
 
         {/* People Picker */}

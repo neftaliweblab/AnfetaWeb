@@ -1,3 +1,5 @@
+import {editActivityDescription} from './activityTitleEdit';
+import {reviewTitle} from './reviewTitle';
 import { sendReviewNotification } from './reviewNotifications';
 import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
@@ -67,6 +69,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
   if ((completed || returned) && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
   let reviewFlow: any;
+  if(updates.expectedTitle!==undefined&&updates.expectedTitle!==title)throw new Error('El nombre cambió desde que abriste el editor. Actualiza la actividad antes de guardar.');
+  if(updates.titleDescription!==undefined)updates={...updates,title:editActivityDescription(title,String(updates.titleDescription))};
   let nextTitle = title;
   const properties: Record<string, any> = {};
   const fields = Object.entries(page.properties || {}) as [string, Property][];
@@ -131,7 +135,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     validateSchedule(updates.start, updates.end);
     const date = fields.find(([name,p]) => p.type === 'date' && /^fecha por hacer$/i.test(name.trim()));
     if (!date) throw new Error('La página no tiene una propiedad de fecha editable.');
-    if(updates.expectedStart && date[1].date?.start !== updates.expectedStart) throw new Error('El horario cambió desde que se preparó la propuesta; actualiza antes de moverla.');
+    if((updates.expectedStart && date[1].date?.start !== updates.expectedStart)||(updates.expectedEnd && date[1].date?.end !== updates.expectedEnd)) throw new Error('El horario cambió desde que se preparó la propuesta; actualiza antes de moverla.');
     properties[date[0]] = { date: { start: updates.start, end: updates.end } };
   }
   if (updates.status) {
@@ -163,6 +167,14 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
         const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
         properties[titleField[0]] = { title: [{ text: { content: `zREVISION ${clean.trim()}` } }] };
       }
+    }
+  }
+  if (updates.reviewer || ((completed || returned) && previousFlow)) {
+    const field=fields.find(([,p])=>p.type==='title');
+    if(field){
+      // Compose from the original title: generic reassignment must not remove author/suffix tags.
+      const source=updates.title!==undefined?String(updates.title):title;
+      properties[field[0]]={title:[{text:{content:reviewTitle(source,previousFlow?.OriginalPerson||activity.person,updates.reviewer||previousFlow.ReviewAssignee,returned?'returned':completed?'approved':'pending')}}]};
     }
   }
   if (updates.isUrgent !== undefined) {
