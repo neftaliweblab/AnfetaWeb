@@ -1,4 +1,5 @@
 "use client";
+import {newestFirst} from '@/lib/searchResultOrder';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 
@@ -804,6 +805,7 @@ export function ResultsViewHost({
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
 
+    res=[...res].sort(newestFirst);
     if (groupBy === "domain") {
       return [...res].sort((a, b) => (a.domainChip || "").localeCompare(b.domainChip || ""));
     }

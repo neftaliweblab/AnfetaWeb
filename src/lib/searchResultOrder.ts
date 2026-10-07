@@ -1,0 +1,1 @@
+export function newestFirst(a:any,b:any){const time=(row:any)=>{for(const value of [row.serverModified,row.modifiedLocalDate]){const t=Date.parse(value||'');if(Number.isFinite(t))return t;}return 0;};return time(b)-time(a);}
