@@ -285,6 +285,15 @@ export function evaluateQueryAST(
 
 /**
  * Motor de búsqueda flexible por tokens y comillas (Paridad 1:1 con MatchesFlexibleOrQuotedQuery de ANFETA WinUI 3).
+ */
+export interface SearchMatchOptions {
+  matchCase?: boolean;
+  matchWholeWord?: boolean;
+  matchRegex?: boolean;
+}
+
+/**
+ * Motor de búsqueda flexible por tokens y comillas (Paridad 1:1 con MatchesFlexibleOrQuotedQuery de ANFETA WinUI 3).
  * Soporta:
  * - Tokens AND en cualquier orden (ej: "sseo mes SSEPT SEO Optimización Técnica seo. bria ggena")
  * - Búsqueda por ID directo / UUID de Notion
@@ -292,13 +301,40 @@ export function evaluateQueryAST(
  * - Normalización de caracteres conectores (. - _ /)
  * - Filtros rápidos: ext:pdf, folder:dropbox, type:folder, type:file, -negacion
  * - Frases exactas entre comillas: "frase exacta"
+ * - Opciones avanzadas del escritorio: matchCase, matchWholeWord, matchRegex
  */
 export function matchesFlexibleOrQuotedQuery(
   item: SearchResultRow,
-  query: string
+  query: string,
+  options?: SearchMatchOptions
 ): boolean {
   const q = (query || "").trim();
   if (!q) return true;
+
+  const matchCase = !!options?.matchCase;
+  const matchWholeWord = !!options?.matchWholeWord;
+  const matchRegex = !!options?.matchRegex;
+
+  // 0. Modo Regex si está habilitado
+  if (matchRegex) {
+    try {
+      const rx = new RegExp(q, matchCase ? "" : "i");
+      const target = [
+        item.name,
+        item.displayName,
+        item.path,
+        item.description,
+        item.searchText,
+        (item as any).pageContent,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return rx.test(target);
+    } catch {
+      // Regex malformado: no coincide
+      return false;
+    }
+  }
 
   // Normalización inteligente de queries compuestos en español / ANFETA (ej. "z programas" -> "zprogramas")
   let normalizedQ = q
@@ -314,7 +350,7 @@ export function matchesFlexibleOrQuotedQuery(
   }
 
   // 2. Construcción de searchable concatenando todos los metadatos relevantes
-  const searchable = [
+  const rawSearchable = [
     item.name,
     item.displayName,
     item.domainChip,
@@ -337,9 +373,9 @@ export function matchesFlexibleOrQuotedQuery(
     ...(item.assignmentKeys || []),
   ]
     .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+    .join(" ");
 
+  const searchable = matchCase ? rawSearchable : rawSearchable.toLowerCase();
   const searchableWithSpaces = searchable.replace(/[.\-_/]/g, " ");
   // Versión compacta: "Pre proyecto" ≈ "PreProyecto", "26-[09SEP]" ≈ "2609SEP"
   const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
@@ -366,6 +402,7 @@ export function matchesFlexibleOrQuotedQuery(
   if (tokens.length === 0) return true;
 
   return tokens.every((token) => {
+    const tokenVal = matchCase ? token.value : token.value.toLowerCase();
     const valLow = token.value.toLowerCase();
 
     // Filtro por extensión (ej. ext:pdf, ext:img)
@@ -407,7 +444,9 @@ export function matchesFlexibleOrQuotedQuery(
 
     // Frase exacta entre comillas
     if (token.isExact) {
-      const hasExact = searchable.includes(valLow);
+      const hasExact = matchWholeWord
+        ? new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
+        : searchable.includes(tokenVal);
       return token.isNegated ? !hasExact : hasExact;
     }
 
@@ -415,7 +454,7 @@ export function matchesFlexibleOrQuotedQuery(
     const pfxMatch = valLow.match(
       /^(tzp|tzs|ads|aads|seo|sseo|webs?|wwebs|maps?|mmaps|app|apli|aapli|software|prog|pprog|coti|cotizacion|cotización|redes|rrede|disen[oó]|diseñ[oó]|ddise)\.(.+)$/i
     );
-    const subParts = pfxMatch ? [pfxMatch[1], pfxMatch[2]] : [valLow];
+    const subParts = pfxMatch ? [pfxMatch[1], pfxMatch[2]] : [tokenVal];
 
     for (const sp of subParts) {
       const cleanSp = sp.replace(/^\.+|\.+$/g, "");
@@ -427,11 +466,12 @@ export function matchesFlexibleOrQuotedQuery(
         (item.source || "")
       ).toLowerCase();
 
-      let has =
-        searchable.includes(cleanSp) ||
-        searchableWithSpaces.includes(cleanSp) ||
-        (cleanSp.length >= 4 &&
-          searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, "")));
+      let has = matchWholeWord
+        ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
+        : (searchable.includes(cleanSp) ||
+           searchableWithSpaces.includes(cleanSp) ||
+           (cleanSp.length >= 4 &&
+             searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, ""))));
 
       if (!has) {
         // Alias y equivalencias automáticas de ANFETA

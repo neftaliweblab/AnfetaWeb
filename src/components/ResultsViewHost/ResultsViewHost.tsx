@@ -107,6 +107,22 @@ export function ResultsViewHost({
   const [groupBy, setGroupBy] = useState("none");
   const [selectedMonth, setSelectedMonth] = useState("Todos");
   const [viewZoom, setViewZoom] = useState<"list" | "small" | "medium" | "large">("list");
+  const [searchOptions, setSearchOptions] = useState<{
+    matchCase: boolean;
+    matchWholeWord: boolean;
+    matchRegex: boolean;
+  }>({
+    matchCase: false,
+    matchWholeWord: false,
+    matchRegex: false,
+  });
+
+  const handleToggleSearchOption = (key: "matchCase" | "matchWholeWord" | "matchRegex") => {
+    setSearchOptions((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   // Panel toggles & task editing
   const [isPendientesOpen, setIsPendientesOpen] = useState(true);
@@ -748,7 +764,7 @@ export function ResultsViewHost({
   const filteredItems = useMemo(() => {
     let res = items.filter((item) => {
       if (query.trim()) {
-        if (!matchesFlexibleOrQuotedQuery(item, query)) {
+        if (!matchesFlexibleOrQuotedQuery(item, query, searchOptions)) {
           return false;
         }
       }
@@ -819,7 +835,7 @@ export function ResultsViewHost({
       return [...res].sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
     }
     return res;
-  }, [items, query, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, currentUser]);
+  }, [items, query, searchOptions, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, currentUser]);
 
   useEffect(()=>{setCurrentPage(1);},[query,selectedScope,currentUser,pageSize]);
 
@@ -847,6 +863,8 @@ export function ResultsViewHost({
       <SearchInputBar
         query={query}
         onChangeQuery={handleQueryChange}
+        searchOptions={searchOptions}
+        onToggleSearchOption={handleToggleSearchOption}
         searchIndex={items}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}

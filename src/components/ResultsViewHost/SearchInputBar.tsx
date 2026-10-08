@@ -19,10 +19,13 @@ import {FavoritesBackup} from './FavoritesBackup';
 import {SavedSearches} from './SavedSearches';
 import { SearchPredictiveFlyout } from "./SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
+import { SearchMatchOptions } from "@/services/advancedQuery";
 
 interface SearchInputBarProps {
   query: string;
   onChangeQuery: (q: string) => void;
+  searchOptions?: SearchMatchOptions;
+  onToggleSearchOption?: (key: keyof SearchMatchOptions) => void;
   onSaveSearch?: () => void;
   onOpenTemplates?: () => void;
   onRefreshIndex?: () => void;
@@ -45,6 +48,8 @@ interface SearchInputBarProps {
 export function SearchInputBar({
   query,
   onChangeQuery,
+  searchOptions,
+  onToggleSearchOption,
   onSaveSearch,
   onOpenTemplates,
   onRefreshIndex,
@@ -151,6 +156,60 @@ export function SearchInputBar({
           style={{ fontSize: `${(12.5 * scale).toFixed(1)}px` }}
           className="flex-1 bg-transparent text-[#F8FAFC] placeholder-[#64748B] focus:outline-none"
         />
+
+        {/* Opciones avanzadas de coincidencia (Mayúsculas, Palabra completa, Regex) */}
+        {onToggleSearchOption && (
+          <div style={{ gap: `${Math.round(3 * scale)}px` }} className="flex items-center shrink-0">
+            <button
+              type="button"
+              onClick={() => onToggleSearchOption("matchCase")}
+              style={{
+                fontSize: `${(10 * scale).toFixed(1)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+              }}
+              className={`rounded font-mono font-bold transition-all border ${
+                searchOptions?.matchCase
+                  ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
+                  : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
+              }`}
+              title="Coincidir mayúsculas y minúsculas (Match Case)"
+            >
+              Aa
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleSearchOption("matchWholeWord")}
+              style={{
+                fontSize: `${(10 * scale).toFixed(1)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+              }}
+              className={`rounded font-mono font-bold transition-all border ${
+                searchOptions?.matchWholeWord
+                  ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
+                  : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
+              }`}
+              title="Palabra completa (Whole Word)"
+            >
+              "w"
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleSearchOption("matchRegex")}
+              style={{
+                fontSize: `${(10 * scale).toFixed(1)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+              }}
+              className={`rounded font-mono font-bold transition-all border ${
+                searchOptions?.matchRegex
+                  ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
+                  : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
+              }`}
+              title="Expresión Regular (Regex: .*)"
+            >
+              .*
+            </button>
+          </div>
+        )}
 
         {/* Botones de acción derecha */}
         <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0 select-none">
