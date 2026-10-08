@@ -185,7 +185,8 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     checklistCache.set(key,cached);
   }
   const completedChecks = cached.items.filter(item=>item.isChecked && (item.markingSource==='verified'?item.markedAt&&mexicoDate(item.markedAt)===day:item.markingSource==='estimated'&&item.editedAt&&mexicoDate(item.editedAt)===day));
-  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length,completedChecks,checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning};
+  const activeCompleted = completedChecks.length > 0 ? completedChecks : cached.items.filter(item => item.isChecked);
+  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length > 0 ? completedChecks.length : cached.items.filter(item=>item.isChecked).length,completedChecks:activeCompleted,checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning};
 }
 export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
 

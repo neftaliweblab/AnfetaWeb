@@ -28,14 +28,37 @@ interface ColaboratorBreakdownProps {
 export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) {
   // Estado para expandir/colapsar el detalle de checklists por actividad
   const [expandedActIds, setExpandedActIds] = useState<Set<string>>(new Set());
+  // Cache de checks leídos bajo demanda
+  const [liveChecks, setLiveChecks] = useState<Record<string, any[]>>({});
+  const [loadingChecks, setLoadingChecks] = useState<Record<string, boolean>>({});
 
-  const toggleExpand = (pageId: string) => {
+  const toggleExpand = async (pageId: string) => {
+    const isExpanding = !expandedActIds.has(pageId);
     setExpandedActIds((prev) => {
       const next = new Set(prev);
       if (next.has(pageId)) next.delete(pageId);
       else next.add(pageId);
       return next;
     });
+
+    if (isExpanding && !liveChecks[pageId]) {
+      setLoadingChecks((prev) => ({ ...prev, [pageId]: true }));
+      try {
+        const res = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get-checklist', payload: { pageId } }),
+        });
+        const data = await res.json();
+        if (data.items && Array.isArray(data.items)) {
+          setLiveChecks((prev) => ({ ...prev, [pageId]: data.items }));
+        }
+      } catch {
+        // Ignorar error de red
+      } finally {
+        setLoadingChecks((prev) => ({ ...prev, [pageId]: false }));
+      }
+    }
   };
 
   const getForecastBadge = (forecast: string) => {
@@ -183,9 +206,14 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                   <span>{act.todayChecklistCompleted} de {act.checklistTotal} completados hoy</span>
                 </div>
 
-                {hasCheckDetails ? (
+                {loadingChecks[act.pageId] ? (
+                  <div className="p-4 text-center text-xs text-[#38BDF8] flex items-center justify-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-[#38BDF8] border-t-transparent rounded-full animate-spin"></span>
+                    <span>Consultando items de checklist en Notion...</span>
+                  </div>
+                ) : (liveChecks[act.pageId] && liveChecks[act.pageId].length > 0) || hasCheckDetails ? (
                   <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-thin">
-                    {act.completedChecks!.map((check, idx) => (
+                    {(liveChecks[act.pageId] || act.completedChecks!).map((check, idx) => (
                       <div
                         key={check.id || check.blockId || idx}
                         className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs transition-colors ${
@@ -207,7 +235,7 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                           </p>
                           {check.editedAt && (
                             <span className="text-[10px] font-mono text-[#64748B] block mt-0.5">
-                              Última edición: {check.editedAt.slice(11, 16)} hrs
+                              {check.editedAt.slice(11, 16)} hrs
                             </span>
                           )}
                         </div>
