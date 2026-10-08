@@ -1,3 +1,4 @@
+import {financeDateField,financeStatus} from '@/services/financeRules';
 import {queryAnfetaIndex,uniqueIndex} from '@/services/notionIndexParity';
 import {executiveActivities} from '@/services/progressKpis';
 import type {NotionCalendarActivity} from '@/types/anfeta';
@@ -11,6 +12,7 @@ import {supabaseConfigured} from '@/services/supabaseServer';
 import {readIndexSlice,snapshotRequestKey,snapshotContext,readSnapshot,claimSnapshot,finishSnapshot,invalidateSnapshots} from '@/services/notionSnapshotCache';
 import {getSettings,saveSettings} from '@/services/serverSettings';
 import {searchNotionPages} from '@/services/searchIndexSync';
+import {readEditableBlock,saveEditableBlock,appendEditableBlock} from '@/services/notionBlockEditor';
 import {requireActor,assertSameOrigin} from '@/services/serverAuth';
 import {isReviewer} from '@/services/activityPermissions';
 import {loadLiveFinance} from '@/services/notionFinance';
@@ -150,7 +152,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
 
       // Date
       if (type === "date" && propVal.date?.start) {
-        const priority = /^fecha por hacer$/i.test(lowerName.trim()) ? 3 : 0;
+        const priority = page._anfetaBase==='Cobrar y pagar' ? (financeDateField(page.properties)?.[0]===propName ? 3 : 0) : /^fecha por hacer$/i.test(lowerName.trim()) ? 3 : 0;
         if (priority === 3 && priority > datePriority) {
           datePriority = priority;
           dateStart = propVal.date.start;
@@ -192,7 +194,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
 
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
-  status = statusProp?.[statusProp.type]?.name || '';
+  status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):statusProp?.[statusProp.type]?.name || '';
   return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
@@ -456,6 +458,7 @@ async function fetchNotionBlocksRecursive(
           caption: (payload.caption||[]).map((part:any)=>part.plain_text||part.text?.content||'').join(''),
           url,
           depth,
+          cells: bType === "table_row" ? (payload.cells || []).map((cell:any[])=>cell.map(part=>part.plain_text||part.text?.content||"" ).join("")) : undefined,
           lastEditedTime: b.last_edited_time,
         });
       }
@@ -490,7 +493,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       let rows=readLocalJson<any[]>('index_cache.json',[]).map(normalizeSearchRow).map(row=>{const live=liveNotionOverrides.get(cleanPageId(row.externalId || row.id));return live?{...row,name:live.title,scheduledDate:live.dateStart + (live.dateEnd ? ' - ' + live.dateEnd : ''),assignedPerson:live.person,externalUrl:live.url}:row;});
       const settings=getSettings();const token=(req.headers.get('x-notion-token') || settings.notionToken || '').trim();
       const fallback=async(message:string)=>{let cacheError='';if(supabaseConfigured())try{const snapshot=await readSnapshot(await snapshotContext(actor,{...settings,notionToken:token},'search-index'));if(snapshot?.has_payload&&Array.isArray(snapshot.payload?.items))rows=snapshot.payload.items.map(normalizeSearchRow);}catch(e){cacheError=' No se pudo leer el índice Supabase: '+(e instanceof Error?e.message:'error');}return NextResponse.json({date:day,items:financeRowsForDay(rows,day),origin:'index',warning:message+cacheError},{headers:{'Cache-Control':'no-store'}});};
-      if(token)try {const items=await loadLiveFinance({...settings,notionToken:token},rows,day);return NextResponse.json({date:day,items,origin:'notion',warning:''},{headers:{'Cache-Control':'no-store'}});}
+      if(token)try {const items=await loadLiveFinance({...settings,notionToken:token},rows,day,searchParams.get('fresh')==='1');return NextResponse.json({date:day,items,origin:'notion',warning:''},{headers:{'Cache-Control':'no-store'}});}
       catch(error){return fallback('No se pudo actualizar Cobros/Pagos; se muestra el índice guardado. '+(error instanceof Error?error.message:''));}
       return fallback('Cobros/Pagos en caché: configura el acceso a Notion.');
     }
@@ -568,7 +571,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       let syncWarning:string|undefined;let syncFailed=false;let fullIds:Set<string>|undefined;
       const syncStarted=new Date().toISOString();let observedEdited:string|undefined;
-      const fullSync=previous?.syncMeta?.indexScope!=='desktop-six-bases-v1'||!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
+      const fullSync=previous?.syncMeta?.indexScope!=='desktop-six-bases-finance-due-v2'||!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
       // Cached index is shown immediately; background refresh uses an overlap for recent edits.
       if (token&&!bootstrap) {
         try {
@@ -621,7 +624,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
             row.updateStatus = live.status;
             row.projectUpdateStatus = live.status;
           }
-          if (live.dateStart) row.scheduledDate = live.dateStart;
+          if (live.dateStart||live.sourceName==='Cobrar y pagar') row.scheduledDate = live.dateStart+(live.dateEnd?' - '+live.dateEnd:'');
           if (live.lastEdited) row.serverModified = live.lastEdited;
           if(live.person)row.assignedPerson=live.person;
           row.searchText = [row.contentSnippet, row.description, row.name, live.title, live.person, live.domain].filter(Boolean).join(" ");
@@ -663,7 +666,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           externalSourceName: live.sourceName||"Notion",
           externalId: live.id,
           externalUrl: live.url,
-          scheduledDate: live.dateStart,
+          scheduledDate: live.dateStart+(live.dateEnd?' - '+live.dateEnd:''),
           updateStatus: live.status || "prtuzREVISION",
           projectUpdateStatus: live.status || "prtuzREVISION",
           searchText: `${live.title} ${live.person} ${live.domain}`,
@@ -707,7 +710,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       }
 
       const visibleItems=uniqueIndex(items.filter(item=>!/^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(item.name.replace(/^\[(?!ANFETA_)[^\]]+\]\s*/,''))&&(!fullIds||item.source!=='Notion'||fullIds.has(cleanPageId(item.externalId||item.id)))));
-      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-v1',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
+      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-finance-due-v2',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
     }
 
     if (type === "project-view-url") {
@@ -1460,6 +1463,7 @@ async function POSTLive(req: NextRequest) {
       }
       return NextResponse.json({success:results.every(result=>result.success),results});
     }
+    if(action==='get-notion-block-editor'||action==='edit-notion-block-text'||action==='append-notion-block'){try{const settings=getSettings();const block=action==='append-notion-block'?await appendEditableBlock(settings,actor,payload):action==='get-notion-block-editor'?await readEditableBlock(settings,actor,payload.pageId,payload.blockId):await saveEditableBlock(settings,actor,payload);if(action!=='get-notion-block-editor')previewMemoryCache.clear();return NextResponse.json({success:true,block},{headers:{'Cache-Control':'no-store'}});}catch(error){if(action==='append-notion-block')previewMemoryCache.clear();const message=error instanceof Error?error.message:'No se pudo editar el bloque.';return NextResponse.json({error:message},{status:message.includes('otro dispositivo')?409:400});}}
     if (action === 'get-checklist' || action === 'toggle-checklist') {
       const input = payload || body;
       const settings = getSettings();

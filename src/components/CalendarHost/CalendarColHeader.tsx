@@ -11,6 +11,7 @@ import {
 import { openNotionPage } from "@/services/windowsIntegration";
 
 interface CalendarColHeaderProps {
+  onAction?:(action:string)=>void;
   personName: string;
   activityCount: number;
   checklistPercent?: number;
@@ -27,7 +28,7 @@ export function CalendarColHeader({
   totalChecklistItems = 0,
   completedChecklistItems = 0,
   coverageHours = 0,
-  onSelectPerson,
+  onSelectPerson,onAction,
 }: CalendarColHeaderProps) {
   const color = getPersonColor(personName);
   const initials = getPersonInitials(personName);
@@ -82,6 +83,7 @@ export function CalendarColHeader({
         </div>
       </div>
 
+      <details onClick={e=>e.stopPropagation()} className="relative ml-auto" onContextMenu={e=>e.stopPropagation()}><summary aria-label={'Opciones de '+personName} title={'Opciones de '+personName} className="list-none cursor-pointer rounded px-2 py-1 text-slate-300 hover:bg-slate-800">⋯</summary><div className="absolute right-0 top-full z-[100] max-h-[70dvh] w-64 overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">{[['activities','Ver actividades'],['summary','Resumen de '+personName],['team','Resumen general del día'],['return','Devolver actividades al día anterior…'],['progress','Avance diario rápido'],['left','Mover a la izquierda'],['right','Mover a la derecha'],['first','Mover al inicio'],['last','Mover al final'],['small','Ancho pequeño'],['normal','Ancho normal'],['large','Ancho grande'],['reset','Restablecer ancho'],['hide','Ocultar columna']].map(([action,label])=><button key={action} className="block w-full rounded px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800" onClick={e=>{const details=e.currentTarget.closest('details');if(details)details.open=false;onAction?.(action);}}>{label}</button>)}</div></details>
       {/* Action button: Notion */}
       <div className="flex items-center gap-1 shrink-0">
         {meta?.notionUrl && <button

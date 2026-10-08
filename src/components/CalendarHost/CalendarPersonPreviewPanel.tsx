@@ -11,6 +11,7 @@ import { openNotionPage } from "@/services/windowsIntegration";
 import { formatLongCalendarDate } from "@/lib/dateUtils";
 
 interface CalendarPersonPreviewPanelProps {
+  initialTab?:"checks"|"activities";
   personName: string;
   activities: NotionCalendarActivity[];
   currentDate: string;
@@ -21,9 +22,9 @@ export function CalendarPersonPreviewPanel({
   personName,
   activities,
   currentDate,
-  onClose,
+  onClose,initialTab="checks",
 }: CalendarPersonPreviewPanelProps) {
-  const [activeTab, setActiveTab] = useState<"checks" | "activities">("checks");
+  const [activeTab, setActiveTab] = useState<"checks" | "activities">(initialTab);
 
   const meta = PERSON_METADATA[personName];
   const color = getPersonColor(personName);

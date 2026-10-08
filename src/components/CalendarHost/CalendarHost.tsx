@@ -1,4 +1,6 @@
 "use client";
+import {CalendarSummaryModal} from './CalendarSummaryModal';
+import {financeSlot} from '@/lib/financeColumnOptions';
 import {reviewTitle} from '@/services/reviewTitle';
 import {CalendarLayoutCloud} from './CalendarLayoutCloud';
 import {calendarLayoutPreference} from '@/lib/calendarLayoutPreferences';
@@ -75,7 +77,7 @@ export function CalendarHost({
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
-  const [showBatch,setShowBatch]=useState(false);
+  const [headerSummary,setHeaderSummary]=useState<{person:string|null}|null>(null),[previewTab,setPreviewTab]=useState<'checks'|'activities'>('checks'),[batchDefaults,setBatchDefaults]=useState<{person:string;day:string}|null>(null);const [showBatch,setShowBatch]=useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
@@ -92,7 +94,7 @@ export function CalendarHost({
   const [extraHours,setExtraHours]=useState(false);
   const [financeItems,setFinanceItems]=useState<any[]>([]);
   const [financeWarning,setFinanceWarning]=useState('');
-  const [financePosition,setFinancePosition]=useState<'before'|'after'>('after');
+  const [financeSlots,setFinanceSlots]=useState({cobro:DEFAULT_COLLABORATORS.length,pago:DEFAULT_COLLABORATORS.length});const [financePosition,setFinancePosition]=useState<'before'|'after'>('after');
   const [cacheMeta,setCacheMeta]=useState<any>(initialCacheMeta);
   useEffect(()=>setCacheMeta(initialCacheMeta),[initialCacheMeta,currentDate]);
   const [showReminders,setShowReminders]=useState(false);
@@ -116,15 +118,15 @@ export function CalendarHost({
         if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');}catch{}
+    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,reminders:showReminders})); }
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders})); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,showReminders]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,financeSlots,showReminders]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -205,8 +207,8 @@ export function CalendarHost({
   useEffect(()=>{
     if(!active || (!filterCobros && !filterPagos))return;
     const controller=new AbortController();let running=false;setFinanceItems([]);setFinanceWarning('');setFinanceLoading(true);
-    const load=async()=>{if(running||controller.signal.aborted)return;running=true;try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate,{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}finally{running=false;if(!controller.signal.aborted)setFinanceLoading(false);}};
-    const refresh=()=>{if(!document.hidden)void load();};void load();const timer=setInterval(refresh,60000);window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);return()=>{controller.abort();clearInterval(timer);window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);};
+    const load=async(force=false)=>{if(running||controller.signal.aborted)return;running=true;try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate+(force?'&fresh=1':''),{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}finally{running=false;if(!controller.signal.aborted)setFinanceLoading(false);}};
+    const refresh=(event?:Event)=>{if(!document.hidden)void load(event?.type==='anfeta_finance_refresh'||event?.type==='anfeta_data_refreshed');};void load();const timer=setInterval(refresh,60000);window.addEventListener('anfeta_finance_refresh',refresh);window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);return()=>{controller.abort();clearInterval(timer);window.removeEventListener('anfeta_finance_refresh',refresh);window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);};
   },[currentDate,currentUser,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
@@ -384,7 +386,9 @@ export function CalendarHost({
     ? (currentDateMinutes / 60) * pixelsPerHour
     : null;
 
-  const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} loading={financeLoading} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} onMove={()=>setFinancePosition(p=>p==='before'?'after':'before')} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
+  const displayedPeople=peopleOrder.filter(person=>visiblePeople.includes(person));
+  const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} loading={financeLoading} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} order={financeSlot(financeSlots[kind],displayedPeople.length)*3+(kind==='cobro'?0:1)} slot={financeSlot(financeSlots[kind],displayedPeople.length)} people={displayedPeople} onPosition={slot=>setFinanceSlots(prev=>({...prev,[kind]:slot}))} onWidth={setColumnWidth} onRefresh={()=>window.dispatchEvent(new Event('anfeta_finance_refresh'))} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
+
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">
@@ -411,7 +415,8 @@ export function CalendarHost({
           </button>
         </div>
       )}
-      {showBatch && <CalendarBatchModal activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>setShowBatch(false)} onSaved={items=>{items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
+      {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
+      {showBatch && <CalendarBatchModal initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);}} onSaved={items=>{items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}
@@ -435,14 +440,14 @@ export function CalendarHost({
           }}
         />
       )}
-      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setShowReminders(saved.reminders);}}/>}
+      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);}}/>}
       {cacheMeta&&<div role="status" className="shrink-0 px-3 py-1 text-[10px] text-cyan-200/80">{cacheMeta.source==='supabase'?'Copia Supabase':'Lectura de Notion'}{cacheMeta.updatedAt?' · '+new Date(cacheMeta.updatedAt).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'}):''}{cacheMeta.syncing?' · actualizando…':''}{cacheMeta.stale&&!cacheMeta.syncing?' · actualización pendiente':''}</div>}
       <CalendarTopControls
         phaseFilter={phaseFilter}
         onPhaseFilter={setPhaseFilter}
         extraHours={extraHours}
         onExtraHours={()=>setExtraHours(prev=>!prev)}
-        onOpenBatch={()=>setShowBatch(true)}
+        onOpenBatch={()=>{setBatchDefaults(null);setShowBatch(true);}}
         reviewNotifications={<CalendarReviewNotifications currentUser={currentUser} />}
         onCreateActivity={() => {
           setCreateSlotSeed(null);
@@ -518,7 +523,7 @@ export function CalendarHost({
               </div>
             )}
 
-            {financePosition==='before' && financeColumns}
+            {financeColumns}
             {visiblePeople.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[#64748B]">
                 <p className="text-sm font-medium text-[#94A3B8]">No hay colaboradores visibles en el calendario</p>
@@ -531,7 +536,7 @@ export function CalendarHost({
                 </button>
               </div>
             ) : (
-              peopleOrder.filter(person => visiblePeople.includes(person)).map((person) => {
+              displayedPeople.map((person,columnIndex) => {
                 const personActivities = activitiesByPerson[person] || [];
                 const positioned = computeActivityOverlaps(personActivities, currentDate);
 
@@ -561,16 +566,17 @@ export function CalendarHost({
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnColumn(e, person)}
                     className="min-w-0 border-r border-[#202832] flex flex-col"
-                    style={{ height: `${canvasHeight + 56}px`, flex: `1 0 ${columnWidth}px`, width: columnWidth }}
+                    style={{ order:columnIndex*3+2,height: `${canvasHeight + 56}px`, flex: `1 0 ${columnWidth}px`, width: columnWidth }}
                   >
                     <CalendarColHeader
                       personName={person}
+                      onAction={action=>{if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
                       activityCount={personActivities.length}
                       checklistPercent={checklistPercent}
                       totalChecklistItems={totalChecks}
                       completedChecklistItems={doneChecks}
                       coverageHours={totalCoverageHours}
-                      onSelectPerson={(p) => setSelectedPersonPreview(p)}
+                      onSelectPerson={(p) => {setPreviewTab('activities');setSelectedPersonPreview(p);}}
                     />
                     <div
                       onClick={(e) => handleColumnCanvasClick(e, person)}
@@ -607,7 +613,7 @@ export function CalendarHost({
                 );
               })
             )}
-            {financePosition==='after' && financeColumns}{showReminders&&<CalendarRemindersColumn date={currentDate} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} onClose={()=>setShowReminders(false)}/>}
+            {showReminders&&<div style={{order:999}} className="flex"><CalendarRemindersColumn date={currentDate} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} onClose={()=>setShowReminders(false)}/></div>}
           </div>
         </div>
 
@@ -647,7 +653,7 @@ export function CalendarHost({
       )}
 
       {selectedPersonPreview && (
-        <CalendarPersonPreviewPanel
+        <CalendarPersonPreviewPanel key={selectedPersonPreview+previewTab} initialTab={previewTab}
           personName={selectedPersonPreview}
           activities={activitiesByPerson[selectedPersonPreview] || []}
           currentDate={currentDate}

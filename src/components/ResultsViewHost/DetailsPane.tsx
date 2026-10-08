@@ -1,5 +1,9 @@
 "use client";
+import {NotionNewBlock} from './NotionNewBlock';
+import {NotionBlockTextEditor} from './NotionBlockTextEditor';
+import {EDITABLE_NOTION_TEXT_TYPES} from '@/lib/notionBlockText';
 import {mediaUrl} from '@/lib/mediaUrl';
+import {readApiJson} from '@/lib/readApiJson';
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
@@ -47,6 +51,7 @@ interface PreviewBlock {
   url?: string;
   caption?: string;
   lastEditedTime?: string;
+  cells?: string[];
 }
 
 import { formatSmartDate } from "@/lib/dateUtils";
@@ -73,6 +78,8 @@ export function DetailsPane({
   onDelete,
   textScale = "100%",
 }: DetailsPaneProps) {
+  const [addingBlock,setAddingBlock]=useState(false);
+  const [editingBlock,setEditingBlock]=useState<string|null>(null);
   const [copiedContent, setCopiedContent] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -164,6 +171,8 @@ export function DetailsPane({
   const activePageIdRef = useRef<string>("");
 
   useEffect(() => {
+    setEditingBlock(null);
+    setAddingBlock(false);
     if (!item) {
       setPreviewBlocks([]);
       setPreviewContent("");
@@ -190,6 +199,8 @@ export function DetailsPane({
       : null;
 
     if (!fetchUrl) {
+      activePageIdRef.current = "";
+      setIsLoadingPreview(false);
       setPreviewBlocks([]);
       setPreviewContent(item.contentSnippet || item.description || "");
       setPreviewStatus("Vista previa de información indexada.");
@@ -198,16 +209,18 @@ export function DetailsPane({
 
     const currentKey = isLocalFile ? targetPath : targetId;
     activePageIdRef.current = currentKey;
+    setPreviewBlocks([]);
+    setPreviewContent("");
     setIsLoadingPreview(true);
     setPreviewStatus(isLocalFile ? "Cargando archivo de texto..." : "Cargando contenido de Notion...");
 
     fetch(fetchUrl)
-      .then((res) => res.json())
+      .then(readApiJson)
       .then((data) => {
         if (activePageIdRef.current !== currentKey) return;
 
         const validBlocks = (data.blocks || []).filter(
-          (b: any) => (b.text && b.text.trim()) || b.url || b.kind === "divider"
+          (b: any) => (b.text && b.text.trim()) || b.cells?.length || b.url || b.kind === "divider"
         );
 
         if (validBlocks.length > 0) {
@@ -228,14 +241,14 @@ export function DetailsPane({
           setPreviewStatus(data.message || "No hay contenido disponible para previsualizar.");
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (activePageIdRef.current === currentKey) {
           if (item.contentSnippet || item.description) {
             setPreviewBlocks([]);
             setPreviewContent(item.contentSnippet || item.description);
-            setPreviewStatus("Vista previa de información indexada (offline).");
+            setPreviewStatus((error instanceof Error ? error.message : "No se pudo cargar el contenido completo.")+" Mostrando información indexada.");
           } else {
-            setPreviewStatus("No se pudo cargar el contenido completo.");
+            setPreviewStatus(error instanceof Error ? error.message : "No se pudo cargar el contenido completo.");
           }
         }
       })
@@ -307,10 +320,11 @@ export function DetailsPane({
 
   const renderBlock = (block: PreviewBlock, index: number) => {
     const k = block.kind?.toLowerCase();
-    if (!block.text?.trim() && !block.url && k !== "divider") {
+    if (!block.text?.trim() && !block.cells?.length && !block.url && k !== "divider") {
       return null;
     }
 
+    if(k === "table_row" && block.cells?.length) return <div key={block.id||index} role="table" aria-label="Fila de tabla de Notion" className="my-1 overflow-x-auto rounded border border-slate-700"><div role="row" className="grid min-w-max" style={{gridTemplateColumns:`repeat(${block.cells.length}, minmax(110px, 1fr))`}}>{block.cells.map((cell,i)=><div role="cell" key={i} className="max-w-80 whitespace-pre-wrap break-words border-r border-slate-700 bg-slate-900/60 p-2 text-xs last:border-r-0">{cell || "\u00a0"}</div>)}</div></div>;
     const media=mediaUrl(block.url);
     if(['audio','video','pdf','file','bookmark','embed','link_preview'].includes(k)&&media){const directVideo=k==='video'&&/\.(?:mp4|webm|ogg)(?:[?#]|$)/i.test(media);return <div key={block.id||index} className="my-2 rounded border border-slate-700 bg-slate-950 p-2 space-y-2">{k==='audio'&&<audio controls preload="none" src={media} className="w-full"/>}{directVideo&&<video controls preload="none" src={media} className="max-h-64 w-full"/>}<a href={media} target="_blank" rel="noopener noreferrer" className="block break-words text-xs text-cyan-300 underline">{block.text||block.caption||(k==='pdf'?'Abrir PDF':k==='video'?'Abrir video':k==='audio'?'Abrir audio':k==='file'?'Abrir archivo':'Abrir enlace')}</a>{block.caption&&block.caption!==block.text&&<p className="text-xs text-slate-400">{block.caption}</p>}</div>;}
     if (k === "heading_1" || k === "h1") {
@@ -668,10 +682,12 @@ export function DetailsPane({
           </div>
         )}
 
+        {addingBlock&&<NotionNewBlock pageId={activePageIdRef.current} onClose={()=>setAddingBlock(false)} onSaved={saved=>{const next=[...previewBlocks,saved];setPreviewBlocks(next);setPreviewContent(next.map(block=>block.text).filter(Boolean).join("\n"));setPreviewStatus("Bloque agregado al final de la página en Notion.");}}/>}
+        {editingBlock&&<NotionBlockTextEditor key={editingBlock} pageId={activePageIdRef.current} blockId={editingBlock} onClose={()=>setEditingBlock(null)} onSaved={saved=>{const next=previewBlocks.map(block=>block.id===saved.id?{...block,text:saved.text,lastEditedTime:saved.lastEditedTime}:block);setPreviewBlocks(next);setPreviewContent(next.map(block=>block.text).filter(Boolean).join("\n"));setPreviewStatus("Texto guardado en Notion.");}}/>}
         {/* Tarjeta VISTA PREVIA DE CONTENIDO / NOTION */}
         <div className="bg-[#141B26] border border-[#1E2836] rounded-lg p-2.5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-[#64748B]">VISTA PREVIA</span>
+            <span className="text-[10px] font-semibold text-[#64748B]">VISTA PREVIA</span>{isNotion&&!isLoadingPreview&&/^[a-f0-9-]{32,36}$/i.test(activePageIdRef.current)&&<button type="button" onClick={()=>setAddingBlock(true)} className="rounded border border-slate-700 px-2 py-0.5 text-[9px] text-cyan-200">+ Bloque</button>}
             <div className="flex items-center gap-1">
               {isSpeaking ? (
                 <button
@@ -724,7 +740,7 @@ export function DetailsPane({
                 >
                   CONTENIDO DE LA PÁGINA
                 </div>
-                {previewBlocks.map((b, idx) => renderBlock(b, idx))}
+                {previewBlocks.map((b, idx) => <div key={b.id||idx}>{renderBlock(b,idx)}{isNotion&&EDITABLE_NOTION_TEXT_TYPES.includes(b.kind)&&/^[a-f0-9-]{32,36}$/i.test(b.id)&&<button type="button" onClick={()=>setEditingBlock(b.id)} className="mb-1 rounded border border-slate-700 px-2 py-0.5 text-[9px] text-slate-400 hover:text-cyan-200" aria-label={"Editar texto del bloque "+(idx+1)}>Editar texto</button>}</div>)}
               </>
             ) : previewContent ? (
               <div

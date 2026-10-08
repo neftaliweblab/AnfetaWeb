@@ -1,0 +1,2 @@
+import {validAgendaDate} from './reminderAgenda';
+export function validReminderInput(input:any){return typeof input?.title==='string'&&input.title.trim().length>0&&input.title.trim().length<=500&&typeof input.date==='string'&&validAgendaDate(input.date)&&typeof input.time==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)&&['low','medium','high','urgent'].includes(input.priority)&&['none','daily','weekly','monthly'].includes(input.recurrence??'none');}
