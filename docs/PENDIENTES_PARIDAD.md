@@ -12,17 +12,17 @@ Actualizado: 2026-10-07. Implementado significa presente en el código; no impli
 - SESIONES/HISTORIAL: temporizador, registros y movimientos web.
 - ROBOT: corrida con web abierta y endpoint para programador externo, lotes y exclusión de corridas duplicadas web.
 - AVANCE DIARIO: KPIs, filtros por persona, HTML e impresión PDF; advertencias de historial sin fecha comprobada.
-- MENSAJES: revisiones y conversaciones generales individuales y de grupo, participantes visibles, mensajes multilínea, hilos, respuestas, paginación, lectura, atención y archivo por cuenta.
+- MENSAJES: revisiones y conversaciones generales individuales y de grupo, participantes visibles, mensajes multilínea, hilos, respuestas, paginación, lectura, atención y archivo por cuenta. Adjuntos (imágenes y documentos) y grabación de notas de voz web con reproductor integrado.
 - RECORDATORIOS: persistencia, asignación, prioridad, completar, conflictos y refresco. Posponer 15 minutos/1 hora/24 horas (SQL 12). Agenda día/semana/mes, filtros por persona/texto y estado, etiqueta de vencimiento y exportación CSV de los visibles. Rango máximo 31 días y límite explícito de 500 registros por consulta.
-- SUBIDAS: modal único, tres destinos, DRX, Ctrl+V, múltiples archivos, páginas separadas, numeración, sobrescritura cloud y actividad tras respaldo.
-- PLANTILLAS: catálogo y copia de bloques comunes/subtareas, columnas y medios externos con errores visibles para archivos internos y tipos no compatibles.
+- SUBIDAS: modal único, tres destinos, DRX, Ctrl+V, múltiples archivos, páginas separadas, numeración, sobrescritura cloud, subida por sesión chunked oficial de Dropbox para archivos grandes y multi-gigabytes, y actividad tras respaldo.
+- PLANTILLAS: catálogo y copia de bloques comunes/subtareas, columnas y medios externos con errores visibles para archivos internos y tipos no compatibles. Generador masivo de preproyectos con 6 pasos oficiales y carpetas DRX de Desktop.
 - NOTIFICACIONES: avisos de revisión, lectura por cuenta, refresco y soporte de suscripción push PWA.
 - CUENTAS/AJUSTES: acceso compartido y persona libre autorizados; permisos sobre identidad de sesión; preferencias y presencia.
 - PWA: instalación, soporte de push, pantalla pública de recuperación offline y aviso de desconexión; solicita refresco al reconectar. No almacena páginas ni APIs privadas en el caché del service worker.
 - MEET: accesos rápidos disponibles.
 
 ## LO QUE FALTA POR MÓDULO
-- BUSCADOR: equivalencia de opciones CSV del escritorio (Case, Whole Word, Path, Regex); vigilancia con web cerrada y administración segura de páginas huérfanas. Conciliar el número de páginas con escritorio usando mismas bases, permisos y momento de lectura.
+- BUSCADOR: vigilancia con web cerrada y administración segura de páginas huérfanas. Conciliar el número de páginas con escritorio usando mismas bases, permisos y momento de lectura.
 - FAVORITOS: validar sincronización/conflictos entre dispositivos reales; recuperar datos antiguos por propietario cuando proceda.
 - EXPLORADOR: puente Windows autorizado y renombrado inteligente por lote.
 - DETALLES: editor completo de bloques, más formatos y panel flotante independiente. Panel fijado ya implementado.
@@ -31,10 +31,8 @@ Actualizado: 2026-10-07. Implementado significa presente en el código; no impli
 - CHECKLIST/SESIONES: importar y conciliar historial del escritorio. No inferir fecha de marcado a partir de la última edición de texto de Notion. Verificación integrada de reglas y métricas con páginas reales.
 - ROBOT: configurar programador externo, verificar ejecución con web cerrada y coordinación de bloqueos con escritorio.
 - AVANCE DIARIO: historial equivalente y MiaoVision (aplazado junto con IA).
-- MENSAJES: adjuntos y audio; validar estados y privacidad entre cuentas reales.
 - RECORDATORIOS: importación desde escritorio, recurrencia y alarmas push por vencimiento con PWA cerrada.
-- SUBIDAS: archivos grandes/directos y recuperación persistente de lotes parcialmente subidos; validación real Notion/Dropbox.
-- PLANTILLAS/PROYECTOS: transferencia de medios internos de Notion y otros tipos complejos; preproyectos.
+- SUBIDAS: recuperación persistente de lotes parcialmente subidos y validación real Notion/Dropbox.
 - NOTIFICACIONES: configurar y validar VAPID, permisos y entregas con PWA cerrada; verificar lectura entre dispositivos.
 - CUENTAS/AJUSTES: validación real de cambios de persona, aislamiento, preferencias y presencia. Selección libre no verifica la identidad humana, conforme al modelo autorizado.
 - PWA: lectura de datos offline por cuenta, cola de cambios, resolución de conflictos y sincronización al reconectar.
