@@ -27,6 +27,7 @@ import { filterByNotionBase } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
+import { BatchRenameModal } from "./BatchRenameModal";
 import {
   playCheckChime,
   playCopyChime,
@@ -135,6 +136,7 @@ export function ResultsViewHost({
   const [isDropboxModalOpen, setIsDropboxModalOpen] = useState(false);
   const [dropboxTargetDir, setDropboxTargetDir] = useState("");
   const [isGlobalPasteOpen, setIsGlobalPasteOpen] = useState(false);
+  const [isBatchRenameOpen, setIsBatchRenameOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [statusError, setStatusError] = useState('');
@@ -689,6 +691,39 @@ export function ResultsViewHost({
     }
   };
 
+  const handleBatchRenameConfirm = async (renames: Array<{ item: any; newName: string }>) => {
+    try {
+      playCheckChime();
+      let count = 0;
+      for (const { item, newName } of renames) {
+        if (!newName || newName === item.name) continue;
+        const res = await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "rename-item",
+            payload: {
+              id: item.id,
+              source: item.source,
+              oldName: item.name,
+              newName,
+              path: item.target || item.path,
+            },
+          }),
+        });
+        if (res.ok) {
+          count++;
+          setItems((prev) =>
+            prev.map((it) => (it.id === item.id ? { ...it, name: newName } : it))
+          );
+        }
+      }
+      sendWindowsNotification("Renombrado Masivo", `Se renombraron ${count} elementos con éxito.`);
+    } catch (err) {
+      console.error("Error en renombrado masivo:", err);
+    }
+  };
+
   const handleDuplicateConfirm = async (item: any, newTitle: string) => {
     try {
       playCheckChime();
@@ -994,7 +1029,23 @@ export function ResultsViewHost({
         )}
 
         {/* Col 2: RESULTADOS (Central) */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden"><ExportResults rows={filteredItems}/><ResultsVirtualTable
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
+            <div className="flex items-center gap-2">
+              {selectedIds.size > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBatchRenameOpen(true)}
+                  className="rounded border border-sky-800 bg-sky-950/40 text-sky-300 px-2 py-1 text-xs hover:bg-sky-900/60 transition-colors font-medium cursor-pointer"
+                  title="Renombrar en lote todos los elementos seleccionados"
+                >
+                  ✎ Renombrar masivo ({selectedIds.size})
+                </button>
+              )}
+            </div>
+            <ExportResults rows={filteredItems} />
+          </div>
+          <ResultsVirtualTable
           currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}
@@ -1232,6 +1283,14 @@ export function ResultsViewHost({
         targetDir={createFolderTargetDir}
         onClose={() => setIsCreateFolderOpen(false)}
         onConfirm={handleCreateFolderConfirm}
+      />
+
+      {/* Modal Renombrado Masivo */}
+      <BatchRenameModal
+        isOpen={isBatchRenameOpen}
+        selectedItems={items.filter((it) => selectedIds.has(it.id))}
+        onClose={() => setIsBatchRenameOpen(false)}
+        onConfirm={handleBatchRenameConfirm}
       />
     </div>
   );
