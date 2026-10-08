@@ -39,6 +39,8 @@ interface CalendarTemplatesModalProps {
   onClose: () => void;
   currentUser?: string;
   currentDate?: string;
+  initialPerson?: string;
+  initialTime?: string;
   onApplyTemplate?: (templateTitle: string) => void;
   onActivitiesCreated?: (createdActivities: any[]) => void;
 }
@@ -70,7 +72,10 @@ const REVIEWERS = [
 export function CalendarTemplatesModal({
   isOpen,
   onClose,
-  currentDate = mexicoDate(), currentUser,
+  currentDate = mexicoDate(),
+  currentUser,
+  initialPerson,
+  initialTime = "10:00",
   onApplyTemplate,
   onActivitiesCreated,
 }: CalendarTemplatesModalProps) {
@@ -86,11 +91,11 @@ export function CalendarTemplatesModal({
 
   // Estado del paso de configuración (Paso 2)
   const [isConfigStep, setIsConfigStep] = useState(false);
-  const [configPerson, setConfigPerson] = useState("");
+  const [configPerson, setConfigPerson] = useState(initialPerson || "");
   const [configReviewer, setConfigReviewer] = useState("");
   const [configDomain, setConfigDomain] = useState("");
   const [configDate, setConfigDate] = useState(currentDate);
-  const [configTime, setConfigTime] = useState("10:00");
+  const [configTime, setConfigTime] = useState(initialTime);
   const [configDuration, setConfigDuration] = useState(60);
   const [configSequential, setConfigSequential] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,9 +121,11 @@ export function CalendarTemplatesModal({
     if (isOpen) {
       setIsConfigStep(false);
       setConfigDate(currentDate);
+      if (initialPerson) setConfigPerson(initialPerson);
+      if (initialTime) setConfigTime(initialTime);
       loadTemplates();
     }
-  }, [isOpen, currentDate]);
+  }, [isOpen, currentDate, initialPerson, initialTime]);
 
   // Lista filtrada según categoría y texto de búsqueda
   const filteredTemplates = useMemo(() => {

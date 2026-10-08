@@ -424,6 +424,10 @@ export function CalendarHost({
           initialPerson={createSlotSeed?.person}
           initialStart={createSlotSeed?.start}
           initialEnd={createSlotSeed?.end}
+          onOpenTemplates={() => {
+            setShowCreate(false);
+            setShowTemplates(true);
+          }}
           onClose={() => {
             setShowCreate(false);
             setCreateSlotSeed(null);
@@ -665,8 +669,13 @@ export function CalendarHost({
         <CalendarTemplatesModal
           currentUser={currentUser}
           isOpen={showTemplates}
-          onClose={() => setShowTemplates(false)}
+          onClose={() => {
+            setShowTemplates(false);
+            setCreateSlotSeed(null);
+          }}
           currentDate={currentDate}
+          initialPerson={createSlotSeed?.person}
+          initialTime={createSlotSeed?.start || "10:00"}
           onActivitiesCreated={(created) => {
             setActivitiesList((prev) => [...prev, ...created]);
             created.forEach(activity=>anfetaSync.broadcast({type:"ACTIVITY_CREATED",activity}));
