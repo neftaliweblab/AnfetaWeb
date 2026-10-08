@@ -135,3 +135,23 @@ export function openNotionPage(url: string) {
 export function openWindowsSoundSettings() {
   window.open("ms-settings:sound", "_self");
 }
+
+/** Abrir carpeta o archivo en Explorador de Windows mediante bridge local o protocolo anfeta:// */
+export function openWindowsPath(localPath: string) {
+  if (!localPath || typeof window === "undefined") return;
+  try {
+    // 1. Intentar comunicar con bridge local de ANFETA si está activo en 127.0.0.1:4821
+    fetch("http://127.0.0.1:4821/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: localPath }),
+    }).catch(() => {
+      // 2. Si no responde el servidor HTTP local, intentar protocolo registrado anfeta://
+      const customUri = `anfeta://open?path=${encodeURIComponent(localPath)}`;
+      window.location.href = customUri;
+    });
+  } catch {
+    console.warn("No se pudo invocar el bridge de Windows para:", localPath);
+  }
+}
+
