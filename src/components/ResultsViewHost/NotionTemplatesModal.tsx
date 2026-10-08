@@ -31,6 +31,7 @@ import {
   filterTemplatesByCategory,
 } from "@/lib/templateCatalog";
 import { openNotionPage } from "@/services/windowsIntegration";
+import { PreProjectGeneratorService } from "@/services/preProjectGenerator";
 
 interface NotionTemplate {
   PageId: string;
@@ -96,6 +97,12 @@ export function NotionTemplatesModal({
   const [configSequential, setConfigSequential] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creationSuccessMsg, setCreationSuccessMsg] = useState<string | null>(null);
+
+  // Modo Preproyectos (Paridad 1:1 con PreProjectGeneratorService de Desktop)
+  const [isPreProjectTab, setIsPreProjectTab] = useState(false);
+  const [preProjectDomain, setPreProjectDomain] = useState("");
+  const [preProjectPlan, setPreProjectPlan] = useState<any | null>(null);
+  const [preProjectCopiedMsg, setPreProjectCopiedMsg] = useState(false);
 
   const loadTemplates = () => {
     setLoading(true);
@@ -294,6 +301,31 @@ export function NotionTemplatesModal({
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#0C4A6E] text-[#38BDF8] border border-[#38BDF8]/40">
                   {templates.length} disponibles
                 </span>
+                <div className="flex items-center ml-2 border border-[#26354A] rounded p-0.5 bg-[#0A0E15]">
+                  <button
+                    type="button"
+                    onClick={() => setIsPreProjectTab(false)}
+                    className={`px-2 py-0.5 text-[10px] rounded font-medium cursor-pointer transition-colors ${
+                      !isPreProjectTab ? "bg-[#0284C7] text-white" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Fase 1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPreProjectTab(true);
+                      if (!preProjectPlan) {
+                        setPreProjectPlan(PreProjectGeneratorService.generatePlan(preProjectDomain || "midominio.com"));
+                      }
+                    }}
+                    className={`px-2 py-0.5 text-[10px] rounded font-medium cursor-pointer transition-colors ${
+                      isPreProjectTab ? "bg-[#0284C7] text-white" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    🚀 Pre-Proyectos
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -516,6 +548,93 @@ export function NotionTemplatesModal({
                 })}
             </div>
 
+            {/* VISTA DE PRE-PROYECTOS EN 1-CLIC */}
+            {isPreProjectTab ? (
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#090D13]">
+                <div className="bg-[#111722] border border-[#1E2836] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1E2836] pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                        <span>🚀 Generador Masivo de Pre-Proyectos</span>
+                      </h4>
+                      <p className="text-xs text-[#94A3B8]">
+                        Crea el plan de 6 pasos, carpetas DRX y mensaje de WhatsApp en un solo clic.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={preProjectDomain}
+                        onChange={(e) => {
+                          setPreProjectDomain(e.target.value);
+                          setPreProjectPlan(PreProjectGeneratorService.generatePlan(e.target.value));
+                        }}
+                        placeholder="dominio.com"
+                        className="bg-[#16202C] border border-[#26354A] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#38BDF8]"
+                      />
+                    </div>
+                  </div>
+
+                  {preProjectPlan && (
+                    <div className="space-y-4">
+                      {/* Pasos */}
+                      <div>
+                        <h5 className="text-xs font-bold text-[#38BDF8] uppercase tracking-wider mb-2">
+                          1. Pasos de Inducción / Notion:
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {preProjectPlan.steps.map((st: any, idx: number) => (
+                            <div key={idx} className="p-2.5 rounded bg-[#16202C] border border-[#26354A] text-xs">
+                              <span className="font-bold text-white block mb-0.5">{st.title}</span>
+                              <span className="text-[11px] text-slate-400">{st.description}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Carpetas DRX */}
+                      <div>
+                        <h5 className="text-xs font-bold text-[#38BDF8] uppercase tracking-wider mb-2">
+                          2. Carpetas a generar en Dropbox DRX:
+                        </h5>
+                        <div className="flex flex-wrap gap-2">
+                          {preProjectPlan.requiredDropboxFolders.map((f: string, idx: number) => (
+                            <span key={idx} className="px-2.5 py-1 rounded bg-[#0A1628] border border-[#0284C7]/40 text-[#38BDF8] text-xs font-mono">
+                              📁 {f}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* WhatsApp */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-xs font-bold text-[#22C55E] uppercase tracking-wider">
+                            3. Mensaje de bienvenida para WhatsApp:
+                          </h5>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(preProjectPlan.initialWhatsAppMessage);
+                              setPreProjectCopiedMsg(true);
+                              setTimeout(() => setPreProjectCopiedMsg(false), 2000);
+                            }}
+                            className="px-2.5 py-1 rounded bg-[#14532D] text-green-200 text-[11px] font-bold hover:bg-[#166534] transition-colors cursor-pointer flex items-center gap-1"
+                          >
+                            {preProjectCopiedMsg ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{preProjectCopiedMsg ? "Copiado" : "Copiar mensaje"}</span>
+                          </button>
+                        </div>
+                        <pre className="p-3 rounded bg-[#061C14] border border-[#14532D] text-green-300 text-xs font-sans whitespace-pre-wrap">
+                          {preProjectPlan.initialWhatsAppMessage}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             {/* Footer con Acción Masiva */}
             <div className="h-12 px-4 bg-[#0A0E15] border-t border-[#1E2836] flex items-center justify-between shrink-0">
               <button
@@ -529,20 +648,22 @@ export function NotionTemplatesModal({
               </button>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleOpenConfigSelected}
-                  disabled={selectedIds.size === 0}
-                  className="px-3 py-1.5 rounded bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
-                >
-                  <Zap className="w-3.5 h-3.5 fill-white" />
-                  <span>
-                    {selectedIds.size === 0
-                      ? "Selecciona para instanciar"
-                      : `Usar ${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}`}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                {!isPreProjectTab && (
+                  <button
+                    type="button"
+                    onClick={handleOpenConfigSelected}
+                    disabled={selectedIds.size === 0}
+                    className="px-3 py-1.5 rounded bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-white" />
+                    <span>
+                      {selectedIds.size === 0
+                        ? "Selecciona para instanciar"
+                        : `Usar ${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}`}
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
 
                 <button
                   type="button"
