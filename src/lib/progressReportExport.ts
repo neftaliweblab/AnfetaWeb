@@ -1,5 +1,5 @@
 import { NotionCalendarActivity } from '@/types/anfeta';
-import { computeDailyKPIs, evaluateLagStatus, getForecastStatus } from '@/services/progressKpis';
+import { computeDailyKPIs, evaluateLagStatus, getForecastStatus, isFtfActivity } from '@/services/progressKpis';
 import { normalizePerson, getPersonColor } from '@/services/identityNormalizer';
 import { workflowState } from '@/services/activityWorkflow';
 
@@ -12,9 +12,18 @@ export function reportHtml(
   const escape = (s: string) =>
     (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
+  const cleanList = activities.filter(
+    (a) =>
+      a &&
+      !a.isReviewMirror &&
+      !isFtfActivity(a.title) &&
+      !isFtfActivity(a.shortTitle) &&
+      !a.isSuspended
+  );
+
   const filtered = selectedPerson
-    ? activities.filter((a) => normalizePerson(a.person) === selectedPerson)
-    : activities;
+    ? cleanList.filter((a) => normalizePerson(a.person) === selectedPerson)
+    : cleanList;
 
   const kpis = computeDailyKPIs(filtered, date);
 
@@ -61,7 +70,7 @@ export function reportHtml(
           <div class="checks-list">
             ${act.completedChecks
               .map(
-                (c) =>
+                (c: { isChecked?: boolean; text: string; editedAt?: string }) =>
                   `<div class="check-item ${c.isChecked ? 'check-done' : ''}">
                     <span class="check-box">${c.isChecked ? '☑' : '☐'}</span>
                     <span class="check-text">${escape(c.text)}</span>

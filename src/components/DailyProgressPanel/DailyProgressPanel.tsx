@@ -5,6 +5,7 @@ import { NotionCalendarActivity } from "@/types/anfeta";
 import {
   computeDailyKPIs,
   generateMarkdownReport,
+  isFtfActivity,
 } from "@/services/progressKpis";
 import { normalizePerson } from "@/services/identityNormalizer";
 import { KpiCardsGrid } from "./KpiCardsGrid";
@@ -70,15 +71,25 @@ export function DailyProgressPanel({
   }, [scope, currentDate]);
 
   const activeActivities = useMemo(() => {
-    if (scope === "week") {
-      return weekActivities;
-    }
-    return activities;
+    const raw = scope === "week" ? weekActivities : activities;
+    return raw.filter(
+      (a) =>
+        a &&
+        !a.isReviewMirror &&
+        !isFtfActivity(a.title) &&
+        !isFtfActivity(a.shortTitle) &&
+        !a.isSuspended
+    );
   }, [scope, weekActivities, activities]);
 
   // Compute KPIs
   const kpis = useMemo(() => {
-    return computeDailyKPIs(selectedPerson?activeActivities.filter(a=>normalizePerson(a.person)===selectedPerson):activeActivities, currentDate);
+    return computeDailyKPIs(
+      selectedPerson
+        ? activeActivities.filter((a) => normalizePerson(a.person) === selectedPerson)
+        : activeActivities,
+      currentDate
+    );
   }, [activeActivities, currentDate, selectedPerson]);
 
   // Filter activities by collaborator if selected
