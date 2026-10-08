@@ -57,6 +57,7 @@ export function SettingsModal({
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingDropbox, setIsSyncingDropbox] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -290,17 +291,97 @@ export function SettingsModal({
               )}
             </div>
 
-            <div className="space-y-1 pt-1">
-              <label className="text-[10.5px] text-[#94A3B8] flex items-center gap-1">
-                <Folder className="w-3 h-3 text-[#F59E0B]" />
-                Ruta Local de Dropbox:
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Folder className="w-3 h-3 text-[#F59E0B]" />
+                  Ruta Local de Dropbox (Windows):
+                </span>
+                <span className="text-[10px] text-[#64748B]">
+                  Compatible con Explorador y Selector Nativo
+                </span>
               </label>
-              <input
-                type="text"
-                value={dropboxPath}
-                onChange={(e) => setDropboxPath(e.target.value)}
-                className="w-full h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px]"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={dropboxPath}
+                  onChange={(e) => setDropboxPath(e.target.value)}
+                  placeholder="C:\Users\...\Dropbox"
+                  className="flex-1 h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#F59E0B]"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
+                        const dirHandle = await (window as any).showDirectoryPicker();
+                        if (dirHandle?.name) {
+                          // En navegadores con File System Access API podemos sugerir o confirmar la ruta
+                          const guessed = `C:\\Users\\nanoc\\Dropbox\\${dirHandle.name}`;
+                          setDropboxPath(guessed);
+                        }
+                      } else {
+                        // Fallback con input file webkitdirectory
+                        const input = document.createElement("input");
+                        input.type = "file";
+                        input.setAttribute("webkitdirectory", "true");
+                        input.setAttribute("directory", "true");
+                        input.onchange = (e: any) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const relPath = file.webkitRelativePath || "";
+                            const rootName = relPath.split("/")[0] || "";
+                            if (rootName) setDropboxPath(`C:\\Users\\nanoc\\Dropbox\\${rootName}`);
+                          }
+                        };
+                        input.click();
+                      }
+                    } catch (err: any) {
+                      if (err?.name !== "AbortError") {
+                        console.warn("Selector de carpeta cancelado o no soportado:", err);
+                      }
+                    }
+                  }}
+                  className="px-2.5 h-8 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#F59E0B] text-[11px] font-semibold rounded shrink-0 flex items-center gap-1 transition-colors"
+                  title="Abrir selector de carpetas de Windows"
+                >
+                  <Folder className="w-3 h-3" />
+                  <span>Examinar...</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSyncingDropbox(true);
+                    try {
+                      const res = await fetch("/api/data", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "sync-dropbox",
+                          payload: { dropboxPath: dropboxPath.trim() },
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: data }));
+                        alert(data.message || `Indexados ${data.count} elementos.`);
+                      } else {
+                        alert(`Error al indexar Dropbox: ${data.error}`);
+                      }
+                    } catch (e: any) {
+                      alert(`Error: ${e.message}`);
+                    } finally {
+                      setIsSyncingDropbox(false);
+                    }
+                  }}
+                  disabled={isSyncingDropbox}
+                  className="px-2.5 h-8 bg-[#854D0E]/60 hover:bg-[#A16207] border border-[#F59E0B] text-amber-200 text-[11px] font-semibold rounded shrink-0 flex items-center gap-1 transition-colors"
+                  title="Escanear y actualizar índice de archivos locales de Dropbox"
+                >
+                  <RotateCw className={`w-3 h-3 ${isSyncingDropbox ? "animate-spin" : ""}`} />
+                  <span>Indexar</span>
+                </button>
+              </div>
             </div>
           </div>
 

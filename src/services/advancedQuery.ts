@@ -65,7 +65,7 @@ export class AdvancedQueryV3 {
       } else if (lower.startsWith('type:file')) {
         plan.onlyFolders = false;
       } else if (lower.startsWith('folder:')) {
-        plan.folderContains = token.slice(7);
+        plan.folderContains = token.slice(7).replace(/^"|"$/g, "");
       } else {
         filterTokens.push(token);
       }
@@ -77,18 +77,21 @@ export class AdvancedQueryV3 {
 
   private static tokenize(input: string): string[] {
     const tokens: string[] = [];
-    const regex = /"([^"]+)"|(\([^)]+\))|(\S+)/g;
+    const regex = /([a-zA-Z]+:"[^"]+")|"([^"]+)"|(\([^)]+\))|(\S+)/g;
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(input)) !== null) {
       if (match[1]) {
-        // Quoted phrase
-        tokens.push(`"${match[1]}"`);
+        // Special prefixed token with quotes (e.g. folder:"my folder")
+        tokens.push(match[1]);
       } else if (match[2]) {
-        // Parenthesized
-        tokens.push(match[2]);
+        // Quoted phrase
+        tokens.push(`"${match[2]}"`);
       } else if (match[3]) {
+        // Parenthesized
         tokens.push(match[3]);
+      } else if (match[4]) {
+        tokens.push(match[4]);
       }
     }
     return tokens;
@@ -195,8 +198,16 @@ export class AdvancedQueryV3 {
     if (plan.onlyFolders === false && item.extension === 'FOLDER') return false;
 
     if (plan.folderContains) {
-      const folderLower = (item.folder || '').toLowerCase();
-      if (!folderLower.includes(plan.folderContains.toLowerCase())) return false;
+      const folderVal = (
+        ((item as any).folder || "") +
+        " " +
+        (item.target || "") +
+        " " +
+        (item.path || "") +
+        " " +
+        (item.name || "")
+      ).toLowerCase();
+      if (!folderVal.includes(plan.folderContains.toLowerCase())) return false;
     }
 
     // 2. Evaluate AST Expression
@@ -380,16 +391,19 @@ export function matchesFlexibleOrQuotedQuery(
   // Versión compacta: "Pre proyecto" ≈ "PreProyecto", "26-[09SEP]" ≈ "2609SEP"
   const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
 
-  // 3. Tokenización flexible respetando comillas y signos de negación
+  // 3. Tokenización flexible respetando filtros especiales tipo folder:"...", ext:..., comillas y signos de negación
   const tokens: Array<{ value: string; isExact: boolean; isNegated: boolean }> = [];
-  const regex = /"([^"]+)"|(\S+)/g;
+  const regex = /([a-zA-Z]+:"[^"]+")|"([^"]+)"|(\S+)/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(normalizedQ)) !== null) {
     if (match[1]) {
-      tokens.push({ value: match[1], isExact: true, isNegated: false });
+      // Token especial con comillas (ej. folder:"aaa Carperizacion.programa")
+      tokens.push({ value: match[1], isExact: false, isNegated: false });
     } else if (match[2]) {
-      let val = match[2];
+      tokens.push({ value: match[2], isExact: true, isNegated: false });
+    } else if (match[3]) {
+      let val = match[3];
       let isNegated = false;
       if ((val.startsWith("-") || val.startsWith("!")) && val.length > 1) {
         isNegated = true;
@@ -407,7 +421,7 @@ export function matchesFlexibleOrQuotedQuery(
 
     // Filtro por extensión (ej. ext:pdf, ext:img)
     if (valLow.startsWith("ext:") && !token.isExact) {
-      const extWant = valLow.slice(4).replace(/^\./, "");
+      const extWant = valLow.slice(4).replace(/^"|"$/g, "").replace(/^\./, "");
       const itemExt = (item.extension || "").toLowerCase().replace(/^\./, "");
       const extMatch =
         extWant === "img"
@@ -416,9 +430,9 @@ export function matchesFlexibleOrQuotedQuery(
       return token.isNegated ? !extMatch : extMatch;
     }
 
-    // Filtro por carpeta (ej. folder:dropbox, folder:agape)
+    // Filtro por carpeta (ej. folder:dropbox, folder:"aaa Carperizacion.programa")
     if (valLow.startsWith("folder:") && !token.isExact) {
-      const fWant = valLow.slice(7).toLowerCase().trim();
+      const fWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
       const folderVal = (
         ((item as any).folder || "") +
         " " +

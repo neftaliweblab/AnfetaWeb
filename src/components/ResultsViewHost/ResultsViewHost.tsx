@@ -8,6 +8,7 @@ import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
+import { FolderOpen, ChevronRight, ArrowUpLeft } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import { ScopePillsRow } from "./ScopePillsRow";
@@ -545,8 +546,9 @@ export function ResultsViewHost({
   const handleOpenItem = (item: any) => {
     if (!item) return;
     if (item.isFolder || item.type === "FOLDER") {
-      const folderName = item.name || item.target || item.path;
-      handleQueryChange(`folder:${folderName}`);
+      const folderName = (item.name || item.target || item.path || "").trim();
+      const queryValue = folderName.includes(" ") ? `folder:"${folderName}"` : `folder:${folderName}`;
+      handleQueryChange(queryValue);
       return;
     }
     if (item.externalUrl) {
@@ -1032,6 +1034,27 @@ export function ResultsViewHost({
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
             <div className="flex items-center gap-2">
+              {query.includes("folder:") && (
+                <div className="flex items-center gap-1.5 text-xs bg-[#161F2C] border border-[#223848] px-2 py-0.5 rounded text-amber-300">
+                  <FolderOpen className="w-3.5 h-3.5 text-[#F59E0B]" />
+                  <span className="font-mono text-[11px] truncate max-w-[280px]">
+                    {query.match(/folder:(?:"([^"]+)"|(\S+))/)?.[1] || query.match(/folder:(?:"([^"]+)"|(\S+))/)?.[2] || "Carpeta"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Subir de nivel o quitar filtro de carpeta
+                      const cleanQ = query.replace(/folder:(?:"[^"]+"|"[^"]*|\S+)/g, "").trim();
+                      handleQueryChange(cleanQ);
+                    }}
+                    className="ml-1 text-[10px] text-sky-400 hover:text-sky-200 flex items-center gap-0.5 underline cursor-pointer"
+                    title="Subir de nivel / Salir de la carpeta"
+                  >
+                    <ArrowUpLeft className="w-3 h-3" />
+                    <span>Subir nivel</span>
+                  </button>
+                </div>
+              )}
               {selectedIds.size > 1 && (
                 <button
                   type="button"

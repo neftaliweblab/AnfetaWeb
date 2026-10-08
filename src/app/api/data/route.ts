@@ -1136,7 +1136,7 @@ async function POSTLive(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const payload={...(body.payload || {}),currentUser:actor};
-    if(['save-settings','test-notion-token','sync-notion'].includes(action) && !isReviewer(actor))return NextResponse.json({error:'Esta configuración requiere permisos de administración.'},{status:403});
+    if(['save-settings','test-notion-token','sync-notion','sync-dropbox'].includes(action) && !isReviewer(actor))return NextResponse.json({error:'Esta configuración requiere permisos de administración.'},{status:403});
 
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
@@ -1371,6 +1371,87 @@ async function POSTLive(req: NextRequest) {
         });
       } catch (err: any) {
         return NextResponse.json({ success: false, error: err.message }, { status: /Inicia sesión/.test(err?.message || '')?401:500 });
+      }
+    }
+
+    if (action === "sync-dropbox") {
+      const settings = getSettings();
+      const baseDropbox = (payload?.dropboxPath || settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
+      const drxPath = path.join(baseDropbox, "DRX");
+      const targetScanDir = fs.existsSync(drxPath) ? drxPath : baseDropbox;
+
+      if (!fs.existsSync(targetScanDir)) {
+        return NextResponse.json({
+          success: false,
+          error: `No se encontró la carpeta en disco: ${targetScanDir}. Verifica la ruta en Configuración.`,
+        }, { status: 404 });
+      }
+
+      try {
+        const scanResults: any[] = [];
+        const scanDirRecursive = (dir: string, depth: number = 0) => {
+          if (depth > 5) return;
+          try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const ent of entries) {
+              if (ent.name.startsWith(".") || ent.name === "node_modules" || ent.name.endsWith(".tmp")) continue;
+              const fullPath = path.join(dir, ent.name);
+              let stat: fs.Stats | null = null;
+              try { stat = fs.statSync(fullPath); } catch {}
+              const isDir = ent.isDirectory();
+              const ext = isDir ? "" : path.extname(ent.name).replace(".", "").toLowerCase();
+              const modDate = stat?.mtime ? stat.mtime.toISOString().replace("T", " ").slice(0, 16) : "";
+
+              scanResults.push({
+                Name: ent.name,
+                Target: fullPath,
+                FullPath: fullPath,
+                Type: isDir ? "FOLDER" : "FILE",
+                Size: stat?.size || 0,
+                ServerModified: modDate,
+                Source: 1, // Dropbox
+                IsFolder: isDir,
+                TargetNorm: fullPath,
+                IsBookmarked: false,
+                StarGlyph: "☆",
+                ExternalSourceName: "Dropbox",
+                Folder: dir,
+              });
+
+              if (isDir) {
+                scanDirRecursive(fullPath, depth + 1);
+              }
+            }
+          } catch {}
+        };
+
+        // Escaneo de carpetas DRX / Dropbox
+        scanDirRecursive(targetScanDir, 0);
+
+        // Actualizar index_cache.json preservando elementos que no sean de Dropbox (Notion, etc.)
+        const currentCache = readLocalJson<any[]>("index_cache.json", []);
+        const nonDropboxItems = currentCache.filter((x: any) => {
+          const s = x.Source;
+          const srcName = x.ExternalSourceName || x.sourceName;
+          return s !== 1 && srcName !== "Dropbox";
+        });
+
+        const mergedCache = [...nonDropboxItems, ...scanResults];
+        const cacheFile = path.join(PROJECT_DATA_DIR, "index_cache.json");
+        try {
+          fs.writeFileSync(cacheFile, JSON.stringify(mergedCache, null, 2), "utf8");
+        } catch (writeErr) {
+          console.warn("No se pudo escribir index_cache.json en data/:", writeErr);
+        }
+
+        return NextResponse.json({
+          success: true,
+          count: scanResults.length,
+          folder: targetScanDir,
+          message: `Sincronizados e indexados ${scanResults.length} archivos y carpetas de Dropbox en ${targetScanDir}.`,
+        });
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: err.message }, { status: 500 });
       }
     }
 
