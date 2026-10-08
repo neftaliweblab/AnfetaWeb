@@ -217,6 +217,22 @@ export function ResultsViewHost({
     setItems(initialItems);
   }, [initialItems]);
 
+  // Recarga en vivo al indexar Dropbox o refrescar datos
+  useEffect(() => {
+    const handleDataRefreshed = async () => {
+      try {
+        const fresh = await loadSearchIndex({ fresh: true });
+        if (fresh?.items) {
+          setItems((prev) => retainSearchResults(prev, fresh));
+        }
+      } catch {}
+    };
+    window.addEventListener("anfeta_data_refreshed", handleDataRefreshed);
+    return () => {
+      window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (externalQuery !== undefined && externalQuery !== query) {
       setQuery(externalQuery);
