@@ -554,6 +554,57 @@ export function DetailsPane({
             )}
           </button>
 
+          {/* Botón de ventana flotante independiente (Multi-Monitor) */}
+          <button
+            type="button"
+            onClick={() => {
+              const popup = window.open(
+                "",
+                "_blank",
+                "width=650,height=800,menubar=no,toolbar=no,location=no,status=no"
+              );
+              if (popup) {
+                popup.document.write(`
+                  <!DOCTYPE html>
+                  <html>
+                    <head>
+                      <title>${parsed.title || "Detalle"} - ANFETA</title>
+                      <meta charset="utf-8" />
+                      <meta name="viewport" content="width=device-width, initial-scale=1" />
+                      <style>
+                        body { background: #080B0F; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; line-height: 1.5; }
+                        h1 { font-size: 16px; color: #38BDF8; margin-top: 0; }
+                        .path { font-family: monospace; font-size: 11px; color: #64748B; margin-bottom: 16px; word-break: break-all; }
+                        .meta { background: #111822; border: 1px solid #1E2836; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 12px; }
+                        .meta div { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1E2836; }
+                        .meta div:last-child { border-bottom: none; }
+                        .content { background: #0C1118; border: 1px solid #1E2836; border-radius: 8px; padding: 16px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+                        .btn { display: inline-block; background: #0284C7; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold; margin-bottom: 16px; }
+                      </style>
+                    </head>
+                    <body>
+                      <h1>${parsed.title}</h1>
+                      <div class="path">${displayLocation}</div>
+                      ${item.pageUrl || item.externalUrl ? `<a class="btn" href="${item.pageUrl || item.externalUrl}" target="_blank">Abrir en Notion ↗</a>` : ""}
+                      <div class="meta">
+                        <div><span style="color:#64748B">Tipo:</span><span>${item.source || item.type || "Notion"}</span></div>
+                        <div><span style="color:#64748B">Base:</span><span>${item.sourceName || item.externalSourceName || "Notion"}</span></div>
+                        <div><span style="color:#64748B">Responsable:</span><span>${item.assignedPerson || "(Sin asignar)"}</span></div>
+                        <div><span style="color:#64748B">Estado:</span><span>${updateStatus || "(Sin estado)"}</span></div>
+                      </div>
+                      <div class="content">${contentSnippet || "Sin contenido adicional."}</div>
+                    </body>
+                  </html>
+                `);
+                popup.document.close();
+              }
+            }}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] bg-[#161F2C] border border-[#26354A] text-[#94A3B8] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer"
+            title="Abrir este detalle en una ventana independiente flotante (Multi-monitor)"
+          >
+            <span>⧉ Flotante</span>
+          </button>
+
           {isNotion && (
             <button
               type="button"
