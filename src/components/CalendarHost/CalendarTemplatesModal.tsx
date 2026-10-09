@@ -88,6 +88,7 @@ export function CalendarTemplatesModal({
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
 
   // Estado del paso de configuración (Paso 2)
   const [isConfigStep, setIsConfigStep] = useState(false);
@@ -287,7 +288,9 @@ export function CalendarTemplatesModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl bg-[#0B0F15] border border-[#223848] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-in fade-in zoom-in-95 duration-150"
+        className={`w-full bg-[#0B0F15] border border-[#223848] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-in fade-in zoom-in-95 duration-150 transition-all ${
+          modalSize === "small" ? "max-w-2xl" : modalSize === "large" ? "max-w-6xl" : "max-w-4xl"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera modal */}
@@ -308,17 +311,32 @@ export function CalendarTemplatesModal({
           </div>
 
           <div className="flex items-center gap-2">
+            <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
+              {(["small", "medium", "large"] as const).map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => setModalSize(sz)}
+                  title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : "Normal"}`}
+                  className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                    modalSize === sz ? "bg-[#0C4A6E] text-[#38BDF8] font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+                </button>
+              ))}
+            </div>
             <button
               onClick={loadTemplates}
               disabled={loading}
-              className="p-1.5 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#131A22] rounded transition-colors"
+              className="p-1.5 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#131A22] rounded transition-colors cursor-pointer"
               title="Recargar catálogo desde Notion"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#38BDF8]" : ""}`} />
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-[#1E293B] rounded transition-colors"
+              className="p-1.5 text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-[#1E293B] rounded transition-colors cursor-pointer"
               title="Cerrar modal"
             >
               <X className="w-4 h-4" />

@@ -224,6 +224,7 @@ export function CalendarHost({
     if(updates.reviewer){
       try{const person=normalizePerson(updates.reviewer),owner=original.reviewFlow?.OriginalPerson||original.person;
         const optimistic={...original,person,status:'rtuzREVISION',title:reviewTitle(original.title,owner,person,'pending'),isCompletedForReview:true,isFinalized:false,isSuspended:false,reviewFlow:{...original.reviewFlow,OriginalPerson:owner,ReviewAssignee:person,State:'pending',LeaveVisualCopy:updates.leaveVisualCopy!==false}};
+        recentSaves.current.set(pageId, { activity: optimistic, until: Date.now() + 120000 });
         setActivitiesList(prev=>{const next=prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId);next.push(optimistic);if(updates.leaveVisualCopy!==false&&normalizePerson(owner)!==person)next.push({...optimistic,pageId:'review-mirror-'+pageId,person:normalizePerson(owner),isReviewMirror:true,title:'[COPIA REVISIÓN] '+optimistic.title});return next;});
       }catch(e){pending.current.delete(pageId);setError(e instanceof Error?e.message:'No se pudo preparar la revisión.');return false;}
     }
@@ -586,7 +587,6 @@ export function CalendarHost({
                       onClick={(e) => handleColumnCanvasClick(e, person)}
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px` }}
-                      title={`Haz clic en un hueco vacío para crear actividad para ${person}`}
                     >
                       {hoursList.map((_, idx) => (
                         <div

@@ -46,6 +46,7 @@ export function SettingsModal({
   currentUser,
   onSaveCurrentUser,
 }: SettingsModalProps) {
+  const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
   const [userTag, setUserTag] = useState(currentUser);
   const [devices, setDevices] = useState<WindowsAudioDevice[]>([]);
   const [volume, setVolume] = useState(80);
@@ -204,7 +205,9 @@ export function SettingsModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl bg-[#0F141A] border border-[#26323E] rounded-xl shadow-2xl overflow-hidden"
+        className={`w-full bg-[#0F141A] border border-[#26323E] rounded-xl shadow-2xl overflow-hidden transition-all ${
+          modalSize === "small" ? "max-w-md" : modalSize === "large" ? "max-w-3xl" : "max-w-xl"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -215,9 +218,26 @@ export function SettingsModal({
               Configuración e Integraciones Windows
             </h3>
           </div>
-          <button onClick={onClose} className="text-[#94A3B8] hover:text-[#F1F5F9] p-1">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
+              {(["small", "medium", "large"] as const).map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => setModalSize(sz)}
+                  title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : "Normal"}`}
+                  className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                    modalSize === sz ? "bg-[#0C4A6E] text-[#38BDF8] font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="text-[#94A3B8] hover:text-[#F1F5F9] p-1 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}

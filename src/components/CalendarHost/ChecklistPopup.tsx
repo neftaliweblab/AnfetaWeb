@@ -12,6 +12,7 @@ interface ChecklistPopupProps {
 }
 
 export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
+  const [size, setSize] = React.useState<"small" | "medium" | "large">("medium");
   const total = activity?.checklistTotal ?? 0;
   const completed = activity?.checklistCompleted ?? 0;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -20,24 +21,42 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
 
   return (
     <div
-      className="absolute z-50 w-72 bg-[#111822] border border-[#253549] rounded-lg shadow-2xl p-3 text-xs text-[#E2E8F0] space-y-2.5 animate-in fade-in zoom-in-95 duration-100"
+      className={`absolute z-50 bg-[#111822] border border-[#253549] rounded-xl shadow-2xl p-3.5 text-xs text-[#E2E8F0] space-y-2.5 animate-in fade-in zoom-in-95 duration-100 transition-all ${
+        size === "small" ? "w-72 max-w-[90vw]" : size === "large" ? "w-[440px] max-w-[95vw]" : "w-80 max-w-[92vw]"
+      }`}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start justify-between gap-2 border-b border-[#253549] pb-2">
-        <div>
-          <span className="text-[10px] font-mono text-[#38BDF8] uppercase">
+        <div className="min-w-0 flex-1">
+          <span className="text-[10px] font-mono text-[#38BDF8] uppercase truncate block">
             {domain}
           </span>
           <h4 className="font-semibold text-[#F1F5F9] line-clamp-2">
             {title}
           </h4>
         </div>
-        <button
-          onClick={onClose}
-          className="text-[#64748B] hover:text-[#F1F5F9] text-xs font-mono p-0.5"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center rounded border border-[#253549] bg-[#0E1520] p-0.5 text-[9px] font-mono">
+            {(["small", "medium", "large"] as const).map((sz) => (
+              <button
+                key={sz}
+                type="button"
+                onClick={() => setSize(sz)}
+                className={`px-1 py-0.5 rounded cursor-pointer ${
+                  size === sz ? "bg-[#0C4A6E] text-[#38BDF8] font-bold" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-[#64748B] hover:text-[#F1F5F9] text-xs font-mono p-1 rounded hover:bg-[#1A2634] cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Checklist Stats */}

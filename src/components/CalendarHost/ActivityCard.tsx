@@ -41,6 +41,15 @@ export function ActivityCard({
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [popoverSize, setPopoverSize] = useState<"small" | "medium" | "large">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_preview_size");
+        if (saved === "small" || saved === "medium" || saved === "large") return saved;
+      } catch {}
+    }
+    return "medium";
+  });
 
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -149,29 +158,39 @@ export function ActivityCard({
   const completedChecklist = activity.checklistCompleted ?? 0;
   const pct = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
 
-  // Hover handlers with 150ms gentle delay
+  // Hover handlers with gentle delay and bridge support so the user can mouse over the modal without it disappearing
   const handleMouseEnter = () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (cardRef.current) {
         const rect = cardRef.current.getBoundingClientRect();
         const left =
-          rect.right + 12 + 360 > window.innerWidth
-            ? Math.max(10, rect.left - 370)
+          rect.right + 12 + 384 > window.innerWidth
+            ? Math.max(10, rect.left - 394)
             : rect.right + 12;
         const top = Math.min(window.innerHeight - 340, Math.max(12, rect.top));
         setHoverPos({ x: left, y: top });
         setShowHover(true);
       }
-    }, 150);
+    }, 120);
   };
 
   const handleMouseLeave = () => {
-    if (hoverTimer.current) {
-      clearTimeout(hoverTimer.current);
-      hoverTimer.current = null;
-    }
-    setShowHover(false);
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      setShowHover(false);
+    }, 280);
+  };
+
+  const handlePopoverMouseEnter = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+  };
+
+  const handlePopoverMouseLeave = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      setShowHover(false);
+    }, 200);
   };
 
   // Context Menu Handler
@@ -323,8 +342,16 @@ export function ActivityCard({
       {/* Hover Preview Popover */}
       {showHover && hoverPos && !isSelected && (
         <div
+          onMouseEnter={handlePopoverMouseEnter}
+          onMouseLeave={handlePopoverMouseLeave}
           style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
-          className="fixed z-[100] w-96 rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-3.5 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-none transition-opacity duration-150 animate-in fade-in zoom-in-95"
+          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-3.5 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 ${
+            popoverSize === "small"
+              ? "w-80 max-w-[92vw]"
+              : popoverSize === "large"
+              ? "w-[460px] max-w-[95vw]"
+              : "w-96 max-w-[94vw]"
+          }`}
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
@@ -339,7 +366,30 @@ export function ActivityCard({
                 {domain}
               </span>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Selector de tamaño S/M/L */}
+              <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
+                {(["small", "medium", "large"] as const).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPopoverSize(sz);
+                      try { localStorage.setItem("anfeta_preview_size", sz); } catch {}
+                    }}
+                    title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : "Mediano"}`}
+                    className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                      popoverSize === sz
+                        ? "bg-[#0C4A6E] text-[#38BDF8] font-bold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+                  </button>
+                ))}
+              </div>
+
               {!editable && (
                 <span title="Actividad bloqueada" className="text-amber-400 text-xs">
                   🔒

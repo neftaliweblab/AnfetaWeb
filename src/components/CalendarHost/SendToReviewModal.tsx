@@ -25,6 +25,7 @@ export function SendToReviewModal({
   onClose,
   onConfirm,
 }: SendToReviewModalProps) {
+  const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [selectedReviewer, setSelectedReviewer] = useState<string>("John");
@@ -50,7 +51,9 @@ export function SendToReviewModal({
       <div
         role="dialog" aria-modal="true" aria-labelledby="review-modal-heading"
         onKeyDown={e => { if (e.key === "Escape" && !sending) onClose(); }}
-        className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-[#2B3B4E] bg-[#0E1520] p-5 shadow-2xl text-slate-200 space-y-4 select-none animate-in zoom-in-95 duration-150"
+        className={`w-full max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-[#2B3B4E] bg-[#0E1520] p-5 shadow-2xl text-slate-200 space-y-4 select-none animate-in zoom-in-95 duration-150 transition-all ${
+          modalSize === "small" ? "max-w-sm" : modalSize === "large" ? "max-w-xl" : "max-w-md"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -64,12 +67,29 @@ export function SendToReviewModal({
               <p className="text-[11px] text-slate-400">Selecciona quién revisará la actividad</p>
             </div>
           </div>
-          <button
-            onClick={() => { if (!sending) onClose(); }}
-            className="rounded p-1 text-slate-400 hover:bg-[#1E293B] hover:text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
+              {(["small", "medium", "large"] as const).map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => setModalSize(sz)}
+                  title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : "Normal"}`}
+                  className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                    modalSize === sz ? "bg-[#0C4A6E] text-[#38BDF8] font-bold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => { if (!sending) onClose(); }}
+              className="rounded p-1 text-slate-400 hover:bg-[#1E293B] hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Resumen de la Actividad */}
