@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import {useEffect,useState,useRef} from 'react';
 import {readApiJson} from '@/lib/readApiJson';
 
@@ -86,7 +86,7 @@ export function TeamPresence(){
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-md z-50 text-slate-100">
+        <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-72 max-w-[92vw] rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-md z-50 text-slate-100">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] font-semibold tracking-wider text-slate-300 uppercase">
             <span>Equipo ANFETA</span>
             <span className="text-emerald-400 text-[10px] lowercase font-normal">{onlineCount} en línea</span>

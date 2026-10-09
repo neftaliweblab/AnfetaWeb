@@ -1,8 +1,8 @@
 "use client";
 
-import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime } from "@/services/calendarPresentation";
+import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
-import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
+import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3 } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
@@ -51,6 +51,12 @@ export function ActivityCard({
     return "medium";
   });
   const [showAllChecks, setShowAllChecks] = useState(false);
+  const [showEditDateModal, setShowEditDateModal] = useState(false);
+  const [editDay, setEditDay] = useState(() => mexicoDate(activity.start || new Date()));
+  const [editStart, setEditStart] = useState(() => calendarTime(activity.start || '08:00'));
+  const [editEnd, setEditEnd] = useState(() => calendarTime(activity.end || '09:00'));
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -159,19 +165,19 @@ export function ActivityCard({
   const completedChecklist = activity.checklistCompleted ?? 0;
   const pct = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
 
-  // Hover handlers with gentle delay and bridge support so the user can mouse over the modal without it disappearing
+  // Hover handlers con protección mejorada de zoom y colisiones en pantalla
   const handleMouseEnter = () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (cardRef.current) {
         const rect = cardRef.current.getBoundingClientRect();
-        const expectedWidth = popoverSize === "small" ? 340 : popoverSize === "large" ? 520 : popoverSize === "xl" ? 640 : 420;
+        const expectedWidth = popoverSize === "small" ? 360 : popoverSize === "large" ? 640 : popoverSize === "xl" ? 820 : 480;
         const fitsRight = rect.right + 14 + expectedWidth <= window.innerWidth;
         const left = fitsRight
-          ? rect.right + 12
+          ? Math.min(window.innerWidth - expectedWidth - 14, rect.right + 12)
           : Math.max(12, rect.left - expectedWidth - 12);
-        const top = Math.min(Math.max(12, window.innerHeight - 440), Math.max(12, rect.top - 20));
-        setHoverPos({ x: left, y: top });
+        const top = Math.min(Math.max(12, window.innerHeight - 560), Math.max(12, rect.top - 20));
+        setHoverPos({ x: Math.max(12, left), y: Math.max(12, top) });
         setShowHover(true);
       }
     }, 120);
@@ -347,14 +353,14 @@ export function ActivityCard({
           onMouseEnter={handlePopoverMouseEnter}
           onMouseLeave={handlePopoverMouseLeave}
           style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
-          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-4 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[85vh] overflow-y-auto scrollbar-thin ${
+          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-4 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[88vh] overflow-y-auto scrollbar-thin ${
             popoverSize === "small"
               ? "w-80 max-w-[92vw]"
               : popoverSize === "large"
-              ? "w-[480px] max-w-[94vw]"
+              ? "w-[560px] max-w-[95vw]"
               : popoverSize === "xl"
-              ? "w-[620px] max-w-[96vw]"
-              : "w-96 max-w-[93vw]"
+              ? "w-[760px] max-w-[96vw]"
+              : "w-[440px] max-w-[94vw]"
           }`}
         >
           {/* Header */}
@@ -422,10 +428,26 @@ export function ActivityCard({
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400">Horario programado:</span>
-              <span className="font-mono text-cyan-300 font-semibold">
-                {calendarTime(startStr)}
-                {endStr ? ` – ${calendarTime(endStr)}` : ""} ({durationFormatted})
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-cyan-300 font-semibold">
+                  {calendarTime(startStr)}
+                  {endStr ? ` – ${calendarTime(endStr)}` : ""} ({durationFormatted})
+                </span>
+                {editable && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowHover(false);
+                      setShowEditDateModal(true);
+                    }}
+                    className="p-1 rounded hover:bg-[#1E2E42] text-cyan-400 hover:text-cyan-200 transition-colors cursor-pointer"
+                    title="Editar fecha y hora"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Resumen de Checks e Historial Hoy (Anfeta Original Parity) */}
@@ -618,6 +640,22 @@ export function ActivityCard({
             <Tag className="w-3.5 h-3.5" />
             <span>Finalizar Actividad (zREVISION)</span>
           </button>
+          {editable && (
+            <button
+              onClick={() => {
+                closeContextMenu();
+                setEditDay(mexicoDate(activity.start || new Date()));
+                setEditStart(calendarTime(activity.start || '08:00'));
+                setEditEnd(calendarTime(activity.end || '09:00'));
+                setEditError('');
+                setShowEditDateModal(true);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-[#FDE047] flex items-center gap-2"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Editar fecha y horario...</span>
+            </button>
+          )}
           <button
             onClick={() => {
               openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl);
@@ -647,6 +685,134 @@ export function ActivityCard({
             setShowReviewModal(false);
           }}
         />
+      )}
+
+      {/* Modal interactivo: Editar fecha y hora */}
+      {showEditDateModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl border border-[#1E2E40] bg-[#0A0E15] text-[#CBD5E1] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1E2836] bg-[#0E1520]">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-wide">Editar Fecha y Hora</h3>
+                  <p className="text-[10.5px] text-[#64748B] truncate max-w-[260px]">{cleanTitle}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditDateModal(false)}
+                disabled={editSaving}
+                className="p-1 rounded-md text-[#94A3B8] hover:text-white hover:bg-[#192433] transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              className="p-5 space-y-4 text-xs"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (editSaving) return;
+                if (!editDay || !editStart || !editEnd || editEnd <= editStart) {
+                  setEditError('Por favor especifica una fecha y horario de fin posterior al inicio.');
+                  return;
+                }
+                setEditSaving(true);
+                setEditError('');
+                try {
+                  const newStart = `${editDay}T${editStart}:00-06:00`;
+                  const newEnd = `${editDay}T${editEnd}:00-06:00`;
+                  const saved = await onUpdateActivity?.(activity.pageId, {
+                    start: newStart,
+                    end: newEnd,
+                  });
+                  if (saved === false) {
+                    setEditError('No se pudo guardar el horario en Notion.');
+                  } else {
+                    setShowEditDateModal(false);
+                  }
+                } catch (err) {
+                  setEditError(err instanceof Error ? err.message : 'Error al guardar horario');
+                } finally {
+                  setEditSaving(false);
+                }
+              }}
+            >
+              {editError && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-950/40 p-2.5 text-xs text-rose-300">
+                  {editError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-[#94A3B8] mb-1">
+                  Fecha
+                </label>
+                <input
+                  type="date"
+                  value={editDay}
+                  onChange={(e) => setEditDay(e.target.value)}
+                  className="w-full bg-[#121A26] border border-[#22354A] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#94A3B8] mb-1">
+                    Hora Inicio
+                  </label>
+                  <input
+                    type="time"
+                    min="08:00"
+                    max="22:00"
+                    step={900}
+                    value={editStart}
+                    onChange={(e) => setEditStart(e.target.value)}
+                    className="w-full bg-[#121A26] border border-[#22354A] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#94A3B8] mb-1">
+                    Hora Fin
+                  </label>
+                  <input
+                    type="time"
+                    min="08:00"
+                    max="22:00"
+                    step={900}
+                    value={editEnd}
+                    onChange={(e) => setEditEnd(e.target.value)}
+                    className="w-full bg-[#121A26] border border-[#22354A] rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1C2838]">
+                <button
+                  type="button"
+                  onClick={() => setShowEditDateModal(false)}
+                  disabled={editSaving}
+                  className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#15202E] transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-4 py-1.5 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {editSaving ? 'Guardando...' : 'Guardar Horario'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </>
   );
