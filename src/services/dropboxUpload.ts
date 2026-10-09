@@ -137,6 +137,49 @@ export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder
     modifiedDate: finishData.server_modified,
   };
 }
+export async function listDropboxFoldersCloud(folderPath = '', tokenOverride?: string) {
+  const token = await getDropboxAccessToken(tokenOverride);
+  const path = folderPath && folderPath !== '/' ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '';
+  const response = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      path,
+      recursive: false,
+      include_media_info: false,
+      include_deleted: false,
+      include_has_explicit_shared_members: false,
+      include_mounted_folders: true,
+      limit: 100,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error_summary || 'No se pudieron listar las carpetas de Dropbox.');
+  }
+
+  const entries: any[] = data.entries || [];
+  const folders = entries
+    .filter((e) => e['.tag'] === 'folder')
+    .map((e) => ({
+      name: e.name,
+      path: e.path_display || e.path_lower,
+      id: e.id,
+    }));
+
+  return {
+    path,
+    folders,
+    hasMore: data.has_more,
+    cursor: data.cursor,
+  };
+}
+
 export function cloudFolder(domain: string | undefined, target: string | undefined, localRoot: string, root="proyecto", category="") {
   if (domain) return drxFolder(domain,root,category);
   if (!target) return '/DRX';

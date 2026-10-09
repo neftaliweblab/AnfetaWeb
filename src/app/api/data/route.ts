@@ -23,7 +23,7 @@ import { listReviewNotifications, readNotificationThread, replyNotification } fr
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
-import { uploadDropboxCloud, cloudFolder } from '@/services/dropboxUpload';
+import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
@@ -501,6 +501,19 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       try { const settings = getSettings(); return NextResponse.json({items:await listReviewNotifications(settings, actor)}, {headers:{'Cache-Control':'no-store'}}); }
       catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.'},{status:502}); }
     }
+    if (type === "dropbox-folders") {
+      try {
+        const folder = searchParams.get("path") || "";
+        const data = await listDropboxFoldersCloud(folder);
+        return NextResponse.json({ success: true, ...data });
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Error listando carpetas de Dropbox" },
+          { status: 502 }
+        );
+      }
+    }
+
     if (type === "settings") {
       const {notionToken,...publicSettings}=getSettings();return NextResponse.json({...publicSettings,currentUser:actor,notionConfigured:!!notionToken});
     }
@@ -1145,7 +1158,18 @@ async function POSTLive(req: NextRequest) {
       const receipts:any[]=[],warnings:string[]=[];const invoke=async(action:string,value:any)=>{const response=await POSTLive(new NextRequest(req.url,{method:'POST',headers:req.headers,body:JSON.stringify({action,payload:value})}));const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'No se confirmó la operación.');return data;};
       const batch=files.length?files:[{filename:(input.title||'Contenido')+'.txt',base64:Buffer.from(String(input.body),'utf8').toString('base64'),contentType:'text/plain'}];
       try{
-        if(mode!=='notion')for(const [index,file] of batch.entries()){const filename=uploadFilename(input.title||'',file.filename,index,batch.length);const data=await invoke('upload-to-dropbox',{domain:input.domain,root:input.root,category:input.category,filename,base64:file.base64});receipts.push({kind:'dropbox',...data});}
+        if(mode!=='notion')for(const [index,file] of batch.entries()){
+          const filename=uploadFilename(input.title||'',file.filename,index,batch.length);
+          const data=await invoke('upload-to-dropbox',{
+            domain:input.domain,
+            root:input.root,
+            category:input.category,
+            targetDir:input.customFolder || undefined,
+            filename,
+            base64:file.base64
+          });
+          receipts.push({kind:'dropbox',...data});
+        }
         if(mode!=='dropbox'){
           const groups=input.separatePages?batch.map((file:any)=>[file]):[batch];for(const [index,group] of groups.entries()){
             const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
@@ -1169,7 +1193,12 @@ async function POSTLive(req: NextRequest) {
       const settings = getSettings();
       const baseDropbox = settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox";
       const dbxToken = payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN;
-      if (dbxToken || process.env.VERCEL) return NextResponse.json(await uploadDropboxCloud(filename, Buffer.from(base64, 'base64'), cloudFolder(payload?.domain, targetDir, baseDropbox,payload?.root,payload?.category), dbxToken));
+      if (dbxToken || process.env.VERCEL || process.env.DROPBOX_REFRESH_TOKEN) {
+        const dest = payload?.targetDir && String(payload.targetDir).trim()
+          ? String(payload.targetDir).trim()
+          : cloudFolder(payload?.domain, targetDir, baseDropbox, payload?.root, payload?.category);
+        return NextResponse.json(await uploadDropboxCloud(filename, Buffer.from(base64, 'base64'), dest, dbxToken));
+      }
       let destDir = payload?.domain ? path.join(baseDropbox,...drxFolder(String(payload.domain),payload?.root,payload?.category).split("/").filter(Boolean)) : targetDir;
       if (!destDir || !destDir.trim()) {
         destDir = path.join(baseDropbox, "DRX");
