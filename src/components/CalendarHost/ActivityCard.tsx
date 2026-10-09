@@ -2,7 +2,7 @@
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
-import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo } from "lucide-react";
+import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
@@ -41,15 +41,16 @@ export function ActivityCard({
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [popoverSize, setPopoverSize] = useState<"small" | "medium" | "large">(() => {
+  const [popoverSize, setPopoverSize] = useState<"small" | "medium" | "large" | "xl">(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("anfeta_preview_size");
-        if (saved === "small" || saved === "medium" || saved === "large") return saved;
+        if (saved === "small" || saved === "medium" || saved === "large" || saved === "xl") return saved as any;
       } catch {}
     }
     return "medium";
   });
+  const [showAllChecks, setShowAllChecks] = useState(false);
 
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -164,11 +165,12 @@ export function ActivityCard({
     hoverTimer.current = setTimeout(() => {
       if (cardRef.current) {
         const rect = cardRef.current.getBoundingClientRect();
-        const left =
-          rect.right + 12 + 384 > window.innerWidth
-            ? Math.max(10, rect.left - 394)
-            : rect.right + 12;
-        const top = Math.min(window.innerHeight - 340, Math.max(12, rect.top));
+        const expectedWidth = popoverSize === "small" ? 340 : popoverSize === "large" ? 520 : popoverSize === "xl" ? 640 : 420;
+        const fitsRight = rect.right + 14 + expectedWidth <= window.innerWidth;
+        const left = fitsRight
+          ? rect.right + 12
+          : Math.max(12, rect.left - expectedWidth - 12);
+        const top = Math.min(Math.max(12, window.innerHeight - 440), Math.max(12, rect.top - 20));
         setHoverPos({ x: left, y: top });
         setShowHover(true);
       }
@@ -345,12 +347,14 @@ export function ActivityCard({
           onMouseEnter={handlePopoverMouseEnter}
           onMouseLeave={handlePopoverMouseLeave}
           style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
-          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-3.5 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 ${
+          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-4 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[85vh] overflow-y-auto scrollbar-thin ${
             popoverSize === "small"
               ? "w-80 max-w-[92vw]"
               : popoverSize === "large"
-              ? "w-[460px] max-w-[95vw]"
-              : "w-96 max-w-[94vw]"
+              ? "w-[480px] max-w-[94vw]"
+              : popoverSize === "xl"
+              ? "w-[620px] max-w-[96vw]"
+              : "w-96 max-w-[93vw]"
           }`}
         >
           {/* Header */}
@@ -367,9 +371,9 @@ export function ActivityCard({
               </span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Selector de tamaño S/M/L */}
+              {/* Selector de tamaño S/M/L/XL */}
               <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
-                {(["small", "medium", "large"] as const).map((sz) => (
+                {(["small", "medium", "large", "xl"] as const).map((sz) => (
                   <button
                     key={sz}
                     type="button"
@@ -378,14 +382,14 @@ export function ActivityCard({
                       setPopoverSize(sz);
                       try { localStorage.setItem("anfeta_preview_size", sz); } catch {}
                     }}
-                    title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : "Mediano"}`}
+                    title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : sz === "xl" ? "Extra Grande" : "Normal"}`}
                     className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
                       popoverSize === sz
                         ? "bg-[#0C4A6E] text-[#38BDF8] font-bold"
                         : "text-slate-400 hover:text-slate-200"
                     }`}
                   >
-                    {sz === "small" ? "S" : sz === "large" ? "L" : "M"}
+                    {sz === "small" ? "S" : sz === "large" ? "L" : sz === "xl" ? "XL" : "M"}
                   </button>
                 ))}
               </div>
@@ -409,7 +413,7 @@ export function ActivityCard({
           </h4>
 
           {/* Metadata Base */}
-          <div className="rounded-lg bg-[#141E2B] p-2 space-y-1.5 text-[11px] border border-[#1E2E40]">
+          <div className="rounded-lg bg-[#141E2B] p-2.5 space-y-1.5 text-[11px] border border-[#1E2E40]">
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400">Responsable:</span>
               <span className="font-medium text-slate-100">
@@ -453,8 +457,10 @@ export function ActivityCard({
 
                 {/* Desglose rápido de Checks con fecha de agregado y completado */}
                 {((activity.checklistItems && activity.checklistItems.length > 0) || (activity.completedChecks && activity.completedChecks.length > 0)) && (
-                  <div className="mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 max-h-36 overflow-y-auto pr-0.5 scrollbar-thin">
-                    {(activity.checklistItems || activity.completedChecks || []).slice(0, 6).map((chk: any, idx: number) => {
+                  <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
+                    showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
+                  }`}>
+                    {(activity.checklistItems || activity.completedChecks || []).slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
                       const isDone = Boolean(chk.isChecked);
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
                       const doneDate = chk.markedAt || chk.editedAt ? formatSmartDate(chk.markedAt || chk.editedAt) : null;
@@ -462,22 +468,22 @@ export function ActivityCard({
                       return (
                         <div
                           key={chk.id || chk.blockId || idx}
-                          className="flex items-start justify-between gap-2 p-1 rounded bg-[#0D1520]/60 border border-[#1E2A38]/50 text-[10px]"
+                          className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#0D1520]/70 border border-[#1E2A38]/60 text-[10.5px]"
                         >
                           <div className="flex items-start gap-1.5 min-w-0 flex-1">
                             {isDone ? (
-                              <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                             ) : (
-                              <ListTodo className="w-3 h-3 text-slate-500 shrink-0 mt-0.5" />
+                              <ListTodo className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
                             )}
-                            <span className={`leading-tight truncate ${isDone ? "text-slate-300 line-through opacity-80" : "text-slate-200"}`}>
+                            <span className={`leading-tight ${isDone ? "text-slate-300 line-through opacity-80" : "text-slate-100"}`}>
                               {chk.text || "Tarea sin título"}
                             </span>
                           </div>
 
-                          <div className="shrink-0 text-right font-mono text-[9px]">
+                          <div className="shrink-0 text-right font-mono text-[9px] pl-2">
                             {isDone && doneDate ? (
-                              <span className="text-emerald-400/90 block font-medium" title={`Completado: ${doneDate}`}>
+                              <span className="text-emerald-400 block font-medium" title={`Completado: ${doneDate}`}>
                                 ✓ {doneDate}
                               </span>
                             ) : addedDate ? (
@@ -495,8 +501,27 @@ export function ActivityCard({
                     })}
 
                     {totalChecklist > 6 && (
-                      <div className="text-[9.5px] text-slate-400 text-center font-mono pt-0.5">
-                        ... y {totalChecklist - 6} tareas más (clic para ver todas)
+                      <div className="pt-1.5 flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowAllChecks(prev => !prev);
+                          }}
+                          className="w-full py-1 px-2 text-[10px] text-cyan-300 hover:text-cyan-100 bg-[#122132]/80 hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
+                        >
+                          {showAllChecks ? (
+                            <>
+                              <ChevronUp className="w-3 h-3" />
+                              <span>Mostrar menos</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-3 h-3" />
+                              <span>Ver las {totalChecklist - 6} tareas restantes (desglosar todas)</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -507,8 +532,27 @@ export function ActivityCard({
 
           {/* Footer Tips */}
           <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-0.5">
-            <span>💡 Clic para ver tareas</span>
-            <span className="text-sky-400 font-medium">↗ Doble clic Notion</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowHover(false);
+                setShowPopup(true);
+              }}
+              className="text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>💡 Clic para abrir ventana modal fija</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl);
+              }}
+              className="text-sky-400 hover:underline font-medium cursor-pointer"
+            >
+              ↗ Abrir en Notion
+            </button>
           </div>
         </div>
       )}

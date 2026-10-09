@@ -118,11 +118,34 @@ export function CreateActivityModal({
     setShowTemplatePicker(false);
   };
 
+  // Tamaño de modal responsivo con persistencia
+  const [modalSize, setModalSize] = useState<'normal' | 'large' | 'xl'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('anfeta_modal_create_size');
+      if (saved === 'normal' || saved === 'large' || saved === 'xl') return saved;
+    }
+    return 'normal';
+  });
+
+  const handleSetModalSize = (s: 'normal' | 'large' | 'xl') => {
+    setModalSize(s);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('anfeta_modal_create_size', s);
+    }
+  };
+
+  const modalWidthClass =
+    modalSize === 'xl'
+      ? 'w-full max-w-4xl'
+      : modalSize === 'large'
+      ? 'w-full max-w-2xl'
+      : 'w-full max-w-xl';
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-xl flex flex-col max-h-[92vh] rounded-2xl border border-[#1E2E40] bg-[#0A0E15] text-[#CBD5E1] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className={`${modalWidthClass} flex flex-col max-h-[92vh] max-w-[96vw] rounded-2xl border border-[#1E2E40] bg-[#0A0E15] text-[#CBD5E1] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
         {/* Header con botón para el asistente completo de plantillas */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1E2836] bg-[#0E1520]">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-[#1E2836] bg-[#0E1520]">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#0284C7]/20 border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
               <Sparkles className="w-4 h-4" />
@@ -134,6 +157,34 @@ export function CreateActivityModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Selector de tamaño de modal */}
+            <div className="flex items-center bg-[#131E2D] p-0.5 rounded-md border border-[#1E2E40] text-[10px]">
+              <button
+                type="button"
+                onClick={() => handleSetModalSize('normal')}
+                className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${modalSize === 'normal' ? 'bg-[#0284C7] text-white font-bold' : 'text-[#64748B] hover:text-[#CBD5E1]'}`}
+                title="Tamaño normal"
+              >
+                M
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetModalSize('large')}
+                className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${modalSize === 'large' ? 'bg-[#0284C7] text-white font-bold' : 'text-[#64748B] hover:text-[#CBD5E1]'}`}
+                title="Tamaño grande"
+              >
+                L
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetModalSize('xl')}
+                className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${modalSize === 'xl' ? 'bg-[#0284C7] text-white font-bold' : 'text-[#64748B] hover:text-[#CBD5E1]'}`}
+                title="Tamaño extra grande (ancho completo)"
+              >
+                XL
+              </button>
+            </div>
+
             {onOpenTemplates && (
               <button
                 type="button"
