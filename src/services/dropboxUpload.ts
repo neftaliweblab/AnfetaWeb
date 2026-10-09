@@ -1,8 +1,56 @@
 import {drxFolder} from '@/lib/drxUploadPlan';
 import {getSettings} from '@/services/serverSettings';
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
+async function getDropboxAccessToken(tokenOverride?: string): Promise<string> {
+  if (tokenOverride) return tokenOverride;
+
+  const refreshToken = process.env.DROPBOX_REFRESH_TOKEN;
+  const appKey = process.env.DROPBOX_APP_KEY;
+  const appSecret = process.env.DROPBOX_APP_SECRET;
+
+  // Si tenemos refresh token + app key + app secret, auto-renovamos de por vida
+  if (refreshToken && appKey && appSecret) {
+    if (cachedToken && cachedToken.expiresAt > Date.now() + 60000) {
+      return cachedToken.token;
+    }
+    try {
+      const basic = Buffer.from(`${appKey}:${appSecret}`).toString('base64');
+      const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${basic}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.access_token) {
+        const expiresInMs = (data.expires_in || 14400) * 1000;
+        cachedToken = {
+          token: data.access_token,
+          expiresAt: Date.now() + expiresInMs,
+        };
+        return data.access_token;
+      }
+    } catch (e) {
+      console.error('Error auto-renovando Dropbox access token con refresh token:', e);
+    }
+  }
+
+  // Fallback a variable simple DROPBOX_ACCESS_TOKEN o ajustes
+  const fallback = process.env.DROPBOX_ACCESS_TOKEN || getSettings().dropboxToken;
+  if (!fallback) {
+    throw new Error('Configura DROPBOX_ACCESS_TOKEN o (DROPBOX_REFRESH_TOKEN + DROPBOX_APP_KEY + DROPBOX_APP_SECRET) en Vercel.');
+  }
+  return fallback;
+}
+
 export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder: string, tokenOverride?: string) {
-  const token = tokenOverride || process.env.DROPBOX_ACCESS_TOKEN || getSettings().dropboxToken;
-  if (!token) throw new Error('Configura DROPBOX_ACCESS_TOKEN para subir a Dropbox desde Vercel o en Configuración.');
+  const token = await getDropboxAccessToken(tokenOverride);
   const safeName = filename.replace(/.*[\\/]/, '').replace(/[\x00-\x1f]/g, '').trim();
   if (!safeName || safeName === '.' || safeName === '..') throw new Error('Nombre de archivo inválido.');
   const segments = folder.replace(/\\/g, '/').split('/').filter(Boolean);
