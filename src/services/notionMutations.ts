@@ -1,7 +1,7 @@
 import {editActivityDescription} from './activityTitleEdit';
 import {reviewTitle} from './reviewTitle';
 import { sendReviewNotification } from './reviewNotifications';
-import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow } from './notionCalendar';
+import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow, cacheReviewFlowMemory } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
@@ -209,6 +209,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
   }
   if (reviewFlow) {
+    cacheReviewFlowMemory(settings, id, reviewFlow, page.last_edited_time);
     try { await saveReviewFlow(settings, id, reviewFlow); }
     catch (error) {
       // Notion has no transaction across a page and its blocks. Restore the page if metadata fails.
@@ -227,7 +228,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       try {
         const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed || returned);
         reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
-        await saveReviewFlow(settings, id, reviewFlow);
+        cacheReviewFlowMemory(settings, id, reviewFlow);
+        void saveReviewFlow(settings, id, reviewFlow).catch(() => {});
       } catch (error) {
         updated.__notificationWarning = 'La actividad se guardó, pero no se confirmó el aviso de revisión. ' + (error instanceof Error ? error.message : '');
       }

@@ -24,16 +24,23 @@ export function assignedPerson(page: any, fallback = '') {
   return normalizePerson(value);
 }
 const flowCache = new Map<string, { edited: string; expires: number; flow: any }>();
+export function cacheReviewFlowMemory(settings: CalendarSettings, pageId: string, flow: any, edited?: string) {
+  const key = settings.notionToken + ':' + pageId;
+  flowCache.set(key, { edited: edited || '', expires: Date.now() + 120000, flow });
+}
 export function knownReviewFlow(settings:CalendarSettings,page:any) {
-  const cached=flowCache.get(settings.notionToken+':'+page.id);return cached && cached.edited===page.last_edited_time?cached.flow:undefined;
+  const cached=flowCache.get(settings.notionToken+':'+page.id);
+  if (!cached) return undefined;
+  if (!cached.edited || cached.edited === page.last_edited_time || cached.expires > Date.now()) return cached.flow;
+  return undefined;
 }
 export async function cachedReviewFlow(settings: CalendarSettings, page: any) {
   const key = settings.notionToken + ':' + page.id;
   const cached = flowCache.get(key);
-  if (cached && cached.edited === page.last_edited_time && cached.expires > Date.now()) return cached.flow;
+  if (cached && (cached.edited === page.last_edited_time || !cached.edited) && cached.expires > Date.now()) return cached.flow;
   const flow = await readReviewFlow(settings, page.id);
   if (flowCache.size >= 512) flowCache.delete(flowCache.keys().next().value!);
-  flowCache.set(key,{edited:page.last_edited_time,expires:Date.now()+30000,flow});
+  flowCache.set(key,{edited:page.last_edited_time,expires:Date.now()+60000,flow});
   return flow;
 }
 const teamIds = new Map<string, Map<string, Set<string>>>();

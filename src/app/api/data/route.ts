@@ -819,16 +819,16 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
               // A restricted nested/synced block must not hide every calendar page.
-              let reviewFlow: any = knownReviewFlow(liveSettings,page);
+              let reviewFlow: any = knownReviewFlow(liveSettings,page) || old?.reviewFlow;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
-              if (!basic) try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
+              if (!basic && !reviewFlow) try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
-                reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,
+                reviewFlow: reviewFlow || old?.reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
                 isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
@@ -1136,7 +1136,7 @@ async function POSTLive(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const payload={...(body.payload || {}),currentUser:actor};
-    if(['save-settings','test-notion-token','sync-notion','sync-dropbox'].includes(action) && !isReviewer(actor))return NextResponse.json({error:'Esta configuración requiere permisos de administración.'},{status:403});
+    if(['sync-dropbox'].includes(action) && !isReviewer(actor))return NextResponse.json({error:'Esta configuración requiere permisos de administración.'},{status:403});
 
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
