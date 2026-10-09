@@ -88,7 +88,7 @@ export function CalendarPersonPreviewPanel({
     }> = [];
 
     activities.filter(act=>!act.isReviewMirror).forEach(act => {
-      for (const item of act.completedChecks || []) list.push({id:item.id,domain:act.domain || 'general',activityTitle:calendarDisplayTitle(act.title,act.domain),text:item.text,timeStr:calendarTime(item.editedAt),url:act.pageUrl});
+      for (const item of act.completedChecks || []) list.push({id:item.id,domain:act.domain || 'general',activityTitle:calendarDisplayTitle(act.title,act.domain),text:item.text,timeStr:calendarTime(item.markedAt || item.editedAt || ''),url:act.pageUrl});
     });
 
     return list;

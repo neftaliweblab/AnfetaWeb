@@ -135,7 +135,7 @@ export function checklistCodeFormatted(block:any) {
 }
 export async function readChecklist(settings: CalendarSettings, pageId: string) {
   const observedAt=new Date().toISOString();
-  const items: { id:string;blockId:string;text:string;isChecked:boolean;editedAt:string }[]=[];
+  const items: { id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt:string }[]=[];
   const visited=new Set<string>();
   async function walk(id:string,depth:number) {
     if(depth>20)throw new Error('El checklist tiene demasiados niveles de anidación.');if(visited.has(id))return;visited.add(id);
@@ -144,7 +144,7 @@ export async function readChecklist(settings: CalendarSettings, pageId: string) 
       const text=(block[block.type]?.rich_text || []).map((part:any)=>part.plain_text || part.text?.content || '').join('');
       if(/\[ANFETA_|Datos internos de ANFETA/i.test(text))continue;
       const code=checklistCodeFormatted(block);
-      if(block.type==='to_do' && !code)items.push({id:block.id,blockId:block.id,text:text || 'Tarea sin texto',isChecked:!!block.to_do.checked,editedAt:block.last_edited_time || ''});
+      if(block.type==='to_do' && !code)items.push({id:block.id,blockId:block.id,text:text || 'Tarea sin texto',isChecked:!!block.to_do.checked,createdAt:block.created_time || '',editedAt:block.last_edited_time || ''});
       if(code && ['toggle','heading_1','heading_2','heading_3','heading_4','callout','paragraph','bulleted_list_item','numbered_list_item'].includes(block.type))continue;
       if(block.has_children)await walk(block.id,depth+1);
     }
@@ -193,7 +193,17 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
   }
   const completedChecks = cached.items.filter(item=>item.isChecked && (item.markingSource==='verified'?item.markedAt&&mexicoDate(item.markedAt)===day:item.markingSource==='estimated'&&item.editedAt&&mexicoDate(item.editedAt)===day));
   const activeCompleted = completedChecks.length > 0 ? completedChecks : cached.items.filter(item => item.isChecked);
-  return {checklistScanned:true,checklistTotal:cached.items.length,checklistCompleted:cached.items.filter(item=>item.isChecked).length,todayChecklistCompleted:completedChecks.length > 0 ? completedChecks.length : cached.items.filter(item=>item.isChecked).length,completedChecks:activeCompleted,checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning};
+  return {
+    checklistScanned:true,
+    checklistTotal:cached.items.length,
+    checklistCompleted:cached.items.filter(item=>item.isChecked).length,
+    todayChecklistCompleted:completedChecks.length > 0 ? completedChecks.length : cached.items.filter(item=>item.isChecked).length,
+    completedChecks:activeCompleted,
+    checklistItems:cached.items,
+    checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,
+    checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),
+    checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning
+  };
 }
 export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
 

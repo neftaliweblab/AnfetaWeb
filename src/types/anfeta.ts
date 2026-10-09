@@ -66,7 +66,8 @@ export interface NotionCalendarActivity {
   checklistScanned: boolean;
   checklistTotal: number;
   checklistCompleted: number;
-  completedChecks?: {id:string;blockId:string;text:string;editedAt:string;isChecked:boolean}[];
+  completedChecks?: {id:string;blockId:string;text:string;editedAt?:string;createdAt?:string;markedAt?:string;isChecked:boolean}[];
+  checklistItems?: {id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt?:string;markedAt?:string;markingSource?:string}[];
   todayChecklistCompleted: number;
   checklistUnknownCompleted?:number;
   checklistTimingEstimated?:boolean;
