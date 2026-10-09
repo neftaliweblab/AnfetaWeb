@@ -4,6 +4,7 @@ const WIN_SETTINGS_DIR=path.join(process.env.LOCALAPPDATA || 'C:/Users/nanoc/App
 export function getSettings() {
   let settings = {
     notionToken: process.env.NOTION_TOKEN || "",
+    dropboxToken: process.env.DROPBOX_ACCESS_TOKEN || "",
     dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
     currentUser: "nneft",
     notionDataSourceId: process.env.NOTION_CALENDAR_DATA_SOURCE_ID || "2eeabd7d-91b7-8193-a131-000b08cd54e2",
@@ -21,6 +22,7 @@ export function getSettings() {
     console.error("Error reading settings:", e);
   }
   if (process.env.NOTION_TOKEN) settings.notionToken = process.env.NOTION_TOKEN;
+  if (process.env.DROPBOX_ACCESS_TOKEN) settings.dropboxToken = process.env.DROPBOX_ACCESS_TOKEN;
   return settings;
 }
 

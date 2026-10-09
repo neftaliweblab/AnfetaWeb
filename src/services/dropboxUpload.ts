@@ -1,7 +1,8 @@
 import {drxFolder} from '@/lib/drxUploadPlan';
-export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder: string) {
-  const token = process.env.DROPBOX_ACCESS_TOKEN;
-  if (!token) throw new Error('Configura DROPBOX_ACCESS_TOKEN para subir a Dropbox desde Vercel.');
+import {getSettings} from '@/services/serverSettings';
+export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder: string, tokenOverride?: string) {
+  const token = tokenOverride || process.env.DROPBOX_ACCESS_TOKEN || getSettings().dropboxToken;
+  if (!token) throw new Error('Configura DROPBOX_ACCESS_TOKEN para subir a Dropbox desde Vercel o en Configuración.');
   const safeName = filename.replace(/.*[\\/]/, '').replace(/[\x00-\x1f]/g, '').trim();
   if (!safeName || safeName === '.' || safeName === '..') throw new Error('Nombre de archivo inválido.');
   const segments = folder.replace(/\\/g, '/').split('/').filter(Boolean);

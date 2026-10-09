@@ -1168,7 +1168,8 @@ async function POSTLive(req: NextRequest) {
 
       const settings = getSettings();
       const baseDropbox = settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox";
-      if (process.env.DROPBOX_ACCESS_TOKEN || process.env.VERCEL) return NextResponse.json(await uploadDropboxCloud(filename, Buffer.from(base64, 'base64'), cloudFolder(payload?.domain, targetDir, baseDropbox,payload?.root,payload?.category)));
+      const dbxToken = payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN;
+      if (dbxToken || process.env.VERCEL) return NextResponse.json(await uploadDropboxCloud(filename, Buffer.from(base64, 'base64'), cloudFolder(payload?.domain, targetDir, baseDropbox,payload?.root,payload?.category), dbxToken));
       let destDir = payload?.domain ? path.join(baseDropbox,...drxFolder(String(payload.domain),payload?.root,payload?.category).split("/").filter(Boolean)) : targetDir;
       if (!destDir || !destDir.trim()) {
         destDir = path.join(baseDropbox, "DRX");
@@ -1376,6 +1377,150 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "sync-dropbox") {
       const settings = getSettings();
+      const dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
+
+      // Si hay Token de Dropbox (Cloud / Web) indexamos vía API de Dropbox
+      if (dbxToken) {
+        try {
+          const scanResults: any[] = [];
+          let hasMore = true;
+          let cursor: string | undefined;
+
+          // Primer lote de archivos en /DRX o raíz
+          const targetPath = (payload?.folder || '/DRX').replace(/\\/g, '/');
+          const initialRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${dbxToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              path: targetPath === '/' ? '' : targetPath,
+              recursive: true,
+              include_media_info: false,
+              include_deleted: false,
+              limit: 2000,
+            }),
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (!initialRes.ok) {
+            const errJson = await initialRes.json();
+            // Si la carpeta /DRX no existe aún, intentamos en la raíz
+            if (targetPath !== '') {
+              const rootRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${dbxToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: '', recursive: true, limit: 2000 }),
+                signal: AbortSignal.timeout(30000),
+              });
+              if (!rootRes.ok) {
+                const rootErr = await rootRes.json();
+                throw new Error(rootErr.error_summary || 'Error al conectar con API de Dropbox.');
+              }
+              const rootData = await rootRes.json();
+              cursor = rootData.cursor;
+              hasMore = rootData.has_more;
+              for (const entry of rootData.entries || []) {
+                const isDir = entry['.tag'] === 'folder';
+                const modDate = entry.server_modified ? entry.server_modified.replace('T', ' ').slice(0, 16) : '';
+                scanResults.push({
+                  Name: entry.name,
+                  Target: entry.path_display || entry.path_lower,
+                  FullPath: entry.path_display || entry.path_lower,
+                  Type: isDir ? 'FOLDER' : 'FILE',
+                  Size: entry.size || 0,
+                  ServerModified: modDate,
+                  Source: 1,
+                  IsFolder: isDir,
+                  TargetNorm: entry.path_display || entry.path_lower,
+                  IsBookmarked: false,
+                  StarGlyph: '☆',
+                  ExternalSourceName: 'Dropbox',
+                  Folder: (entry.path_display || '').split('/').slice(0, -1).join('/') || '/',
+                });
+              }
+            } else {
+              throw new Error(errJson.error_summary || 'Error al conectar con API de Dropbox.');
+            }
+          } else {
+            const data = await initialRes.json();
+            cursor = data.cursor;
+            hasMore = data.has_more;
+            for (const entry of data.entries || []) {
+              const isDir = entry['.tag'] === 'folder';
+              const modDate = entry.server_modified ? entry.server_modified.replace('T', ' ').slice(0, 16) : '';
+              scanResults.push({
+                Name: entry.name,
+                Target: entry.path_display || entry.path_lower,
+                FullPath: entry.path_display || entry.path_lower,
+                Type: isDir ? 'FOLDER' : 'FILE',
+                Size: entry.size || 0,
+                ServerModified: modDate,
+                Source: 1,
+                IsFolder: isDir,
+                TargetNorm: entry.path_display || entry.path_lower,
+                IsBookmarked: false,
+                StarGlyph: '☆',
+                ExternalSourceName: 'Dropbox',
+                Folder: (entry.path_display || '').split('/').slice(0, -1).join('/') || '/',
+              });
+            }
+          }
+
+          // Paginación continua si hay más de 2000 archivos
+          let iterations = 0;
+          while (hasMore && cursor && iterations < 5) {
+            iterations++;
+            const continueRes = await fetch('https://api.dropboxapi.com/2/files/list_folder/continue', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${dbxToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cursor }),
+              signal: AbortSignal.timeout(30000),
+            });
+            if (!continueRes.ok) break;
+            const contData = await continueRes.json();
+            cursor = contData.cursor;
+            hasMore = contData.has_more;
+            for (const entry of contData.entries || []) {
+              const isDir = entry['.tag'] === 'folder';
+              const modDate = entry.server_modified ? entry.server_modified.replace('T', ' ').slice(0, 16) : '';
+              scanResults.push({
+                Name: entry.name,
+                Target: entry.path_display || entry.path_lower,
+                FullPath: entry.path_display || entry.path_lower,
+                Type: isDir ? 'FOLDER' : 'FILE',
+                Size: entry.size || 0,
+                ServerModified: modDate,
+                Source: 1,
+                IsFolder: isDir,
+                TargetNorm: entry.path_display || entry.path_lower,
+                IsBookmarked: false,
+                StarGlyph: '☆',
+                ExternalSourceName: 'Dropbox',
+                Folder: (entry.path_display || '').split('/').slice(0, -1).join('/') || '/',
+              });
+            }
+          }
+
+          const currentCache = readLocalJson<any[]>('index_cache.json', []);
+          const nonDropboxItems = currentCache.filter((x: any) => x.Source !== 1 && x.ExternalSourceName !== 'Dropbox');
+          const mergedCache = [...nonDropboxItems, ...scanResults];
+          const cacheFile = path.join(PROJECT_DATA_DIR, 'index_cache.json');
+          try { fs.writeFileSync(cacheFile, JSON.stringify(mergedCache, null, 2), 'utf8'); } catch {}
+
+          return NextResponse.json({
+            success: true,
+            count: scanResults.length,
+            folder: 'Dropbox Cloud (API)',
+            message: `Sincronizados e indexados ${scanResults.length} elementos vía API oficial de Dropbox.`,
+          });
+        } catch (apiErr: any) {
+          return NextResponse.json({ success: false, error: apiErr.message || 'Error en sincronización con Dropbox API.' }, { status: 502 });
+        }
+      }
+
+      // Si no hay Token API, escanear carpeta local de disco (Modo Desktop / Windows)
       const baseDropbox = (payload?.dropboxPath || settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
       const drxPath = path.join(baseDropbox, "DRX");
       const targetScanDir = fs.existsSync(drxPath) ? drxPath : baseDropbox;
@@ -1383,7 +1528,7 @@ async function POSTLive(req: NextRequest) {
       if (!fs.existsSync(targetScanDir)) {
         return NextResponse.json({
           success: false,
-          error: `No se encontró la carpeta en disco: ${targetScanDir}. Verifica la ruta en Configuración.`,
+          error: `No se encontró la carpeta en disco: ${targetScanDir}. Si estás en la web, configura el Token de Dropbox API en Configuración.`,
         }, { status: 404 });
       }
 

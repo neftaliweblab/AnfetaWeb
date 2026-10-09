@@ -196,13 +196,6 @@ export function ActivityCard({
       <div
         ref={cardRef}
         draggable={editable}
-        title={
-          editable
-            ? undefined
-            : isActivityLocked(activity)
-            ? "Actividad bloqueada"
-            : "Solo el responsable asignado puede mover esta actividad"
-        }
         onDragStart={(e) => {
           if (!editable) {
             e.preventDefault();

@@ -53,6 +53,7 @@ export function SettingsModal({
   const [micTesting, setMicTesting] = useState(false);
   const [vuLevel, setVuLevel] = useState(0);
   const [dropboxPath, setDropboxPath] = useState("C:\\Users\\nanoc\\Dropbox");
+  const [dropboxToken, setDropboxToken] = useState("");
   const [notionToken, setNotionToken] = useState("");
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -69,6 +70,7 @@ export function SettingsModal({
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.notionToken) setNotionToken(parsed.notionToken);
+          if (parsed.dropboxToken) setDropboxToken(parsed.dropboxToken);
           if (parsed.dropboxPath) setDropboxPath(parsed.dropboxPath);
           if (parsed.currentUser) setUserTag(parsed.currentUser);
         }
@@ -84,10 +86,12 @@ export function SettingsModal({
             const stored = localStorage.getItem("anfeta_settings");
             const parsed = stored ? JSON.parse(stored) : {};
             if (!parsed.notionToken && data.notionToken) setNotionToken(data.notionToken);
+            if (!parsed.dropboxToken && data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (!parsed.dropboxPath && data.dropboxPath) setDropboxPath(data.dropboxPath);
             if (!parsed.currentUser && data.currentUser) setUserTag(data.currentUser);
           } catch {
             if (data.notionToken) setNotionToken(data.notionToken);
+            if (data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (data.dropboxPath) setDropboxPath(data.dropboxPath);
             if (data.currentUser) setUserTag(data.currentUser);
           }
@@ -163,6 +167,7 @@ export function SettingsModal({
   const handleSave = async () => {
     const savedConfig = {
       notionToken: notionToken.trim(),
+      dropboxToken: dropboxToken.trim(),
       dropboxPath: dropboxPath.trim(),
       currentUser: userTag,
     };
@@ -358,7 +363,7 @@ export function SettingsModal({
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           action: "sync-dropbox",
-                          payload: { dropboxPath: dropboxPath.trim() },
+                          payload: { dropboxPath: dropboxPath.trim(), dropboxToken: dropboxToken.trim() },
                         }),
                       });
                       const data = await res.json();
@@ -382,6 +387,26 @@ export function SettingsModal({
                   <span>Indexar</span>
                 </button>
               </div>
+            </div>
+
+            {/* Token Secreto de Dropbox Cloud API */}
+            <div className="space-y-1 pt-1">
+              <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Key className="w-3 h-3 text-[#38BDF8]" />
+                  Token de Dropbox API (Cloud / Web):
+                </span>
+                <span className="text-[10px] text-[#64748B]">
+                  Opcional si usas DROPBOX_ACCESS_TOKEN en .env
+                </span>
+              </label>
+              <input
+                type="password"
+                value={dropboxToken}
+                onChange={(e) => setDropboxToken(e.target.value)}
+                placeholder="sl.u.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                className="w-full h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8]"
+              />
             </div>
           </div>
 
