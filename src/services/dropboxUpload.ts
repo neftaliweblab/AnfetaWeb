@@ -25,8 +25,6 @@ export async function getDropboxAccessToken(tokenOverride?: string): Promise<str
         body: new URLSearchParams({
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
-          client_id: appKey,
-          client_secret: appSecret,
         }),
       });
       const data = await res.json();
