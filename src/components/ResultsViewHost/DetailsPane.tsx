@@ -687,9 +687,17 @@ export function DetailsPane({
                 <button
                   type="button"
                   onClick={() => {
+                    let clientToken = "";
+                    if (typeof window !== "undefined") {
+                      try {
+                        const savedSettings = localStorage.getItem("anfeta_settings");
+                        if (savedSettings) clientToken = JSON.parse(savedSettings).dropboxToken || "";
+                      } catch {}
+                    }
+                    const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
                     const imgSrc = targetPath.startsWith("http")
                       ? targetPath
-                      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}`;
+                      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
                     setLightboxImages([{ src: imgSrc, caption: item.name }]);
                     setLightboxIndex(0);
                   }}
@@ -701,35 +709,51 @@ export function DetailsPane({
                 </button>
               </div>
             </div>
-            <div
-              className="h-48 bg-[#0A0F16] border border-[#1E293B] rounded flex items-center justify-center overflow-hidden cursor-zoom-in group/cardimg relative"
-              onClick={() => {
-                const imgSrc = targetPath.startsWith("http")
-                  ? targetPath
-                  : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}`;
-                setLightboxImages([{ src: imgSrc, caption: item.name }]);
-                setLightboxIndex(0);
-              }}
-              title="Clic para ver en pantalla completa y ampliar"
-            >
-              <img
-                src={
-                  targetPath.startsWith("http")
-                    ? targetPath
-                    : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}`
-                }
-                alt={item.name}
-                className="max-h-full max-w-full object-contain transition-transform group-hover/cardimg:scale-[1.02]"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = "none";
-                }}
-              />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cardimg:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                <span className="px-2 py-1 rounded bg-[#0F172A]/90 border border-[#38BDF8]/50 text-[#38BDF8] text-[10px] font-semibold flex items-center gap-1">
-                  <ZoomIn className="w-3 h-3" /> Ver en grande
-                </span>
-              </div>
-            </div>
+            {(() => {
+              let clientToken = "";
+              if (typeof window !== "undefined") {
+                try {
+                  const savedSettings = localStorage.getItem("anfeta_settings");
+                  if (savedSettings) clientToken = JSON.parse(savedSettings).dropboxToken || "";
+                } catch {}
+              }
+              const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+              const previewSrc = targetPath.startsWith("http")
+                ? targetPath
+                : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
+              return (
+                <div
+                  className="h-48 bg-[#0A0F16] border border-[#1E293B] rounded flex items-center justify-center overflow-hidden cursor-zoom-in group/cardimg relative"
+                  onClick={() => {
+                    setLightboxImages([{ src: previewSrc, caption: item.name }]);
+                    setLightboxIndex(0);
+                  }}
+                  title="Clic para ver en pantalla completa y ampliar"
+                >
+                  <img
+                    src={previewSrc}
+                    alt={item.name}
+                    className="max-h-full max-w-full object-contain transition-transform group-hover/cardimg:scale-[1.02]"
+                    onError={(e) => {
+                      const imgEl = e.currentTarget as HTMLElement;
+                      imgEl.style.display = "none";
+                      const fallback = imgEl.parentElement?.querySelector(".img-fallback") as HTMLElement | null;
+                      if (fallback) fallback.style.display = "flex";
+                    }}
+                  />
+                  <div className="img-fallback hidden flex-col items-center justify-center p-3 text-center text-[#64748B] w-full h-full">
+                    <ImageIcon className="w-10 h-10 text-[#38BDF8]/40 mb-1.5 animate-pulse" />
+                    <span className="text-[11px] text-[#94A3B8] font-medium truncate max-w-[90%]">{item.name}</span>
+                    <span className="text-[9px] text-[#475569] mt-0.5">Vista previa no disponible</span>
+                  </div>
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cardimg:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                    <span className="px-2 py-1 rounded bg-[#0F172A]/90 border border-[#38BDF8]/50 text-[#38BDF8] text-[10px] font-semibold flex items-center gap-1">
+                      <ZoomIn className="w-3 h-3" /> Ver en grande
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 

@@ -544,7 +544,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }
 
         // 2. Si es archivo en Dropbox Cloud (ruta remota /DRX/...)
-        const { buffer, contentType } = await getDropboxFileContent(filePath);
+        const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
+        const { buffer, contentType } = await getDropboxFileContent(filePath, tokenOverride);
         return new NextResponse(buffer, {
           headers: {
             "Content-Type": contentType,

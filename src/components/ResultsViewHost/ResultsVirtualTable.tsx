@@ -613,9 +613,20 @@ export function ResultsVirtualTable({
     const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
     const ext = (item.extension || (item.name || "").split(".").pop() || "").toUpperCase();
     const textSnippet = (item.contentSnippet || item.description || "").trim();
+    let clientToken = "";
+    if (typeof window !== "undefined") {
+      try {
+        const savedSettings = localStorage.getItem("anfeta_settings");
+        if (savedSettings) {
+          const parsedSettings = JSON.parse(savedSettings);
+          clientToken = parsedSettings.dropboxToken || "";
+        }
+      } catch {}
+    }
+    const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
     const imgSrc = targetPath.startsWith("http")
       ? targetPath
-      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath || item.name)}`;
+      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath || item.name)}${tokenQuery}`;
     return (
       <div
         key={item.id}
@@ -712,7 +723,7 @@ export function ResultsVirtualTable({
           </div>
         </div>
 
-        {/* Si es imagen, mostrar vista previa en el cuadro */}
+        {/* Si es imagen, mostrar vista previa en el cuadro con fallback estético */}
         {isImg ? (
           <div className="w-full h-28 my-1.5 rounded-md bg-[#0A0F16] border border-[#1E293B] overflow-hidden flex items-center justify-center relative group/img">
             <img
@@ -721,9 +732,17 @@ export function ResultsVirtualTable({
               loading="lazy"
               className="max-h-full max-w-full object-contain transition-transform group-hover/img:scale-105"
               onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = "none";
+                const imgEl = e.currentTarget as HTMLElement;
+                imgEl.style.display = "none";
+                const fallback = imgEl.parentElement?.querySelector(".img-fallback") as HTMLElement | null;
+                if (fallback) fallback.style.display = "flex";
               }}
             />
+            <div className="img-fallback hidden flex-col items-center justify-center p-2 text-center text-[#64748B] w-full h-full">
+              <ImageIcon className="w-8 h-8 text-[#38BDF8]/40 mb-1 animate-pulse" />
+              <span className="text-[10px] text-[#94A3B8] font-medium truncate max-w-[90%]">{item.name}</span>
+              <span className="text-[8.5px] text-[#475569]">Sin vista previa</span>
+            </div>
           </div>
         ) : (isDoc || isCode || ext) && ext !== item.name.toUpperCase() ? (
           <div className="w-full h-24 my-1.5 rounded-md bg-[#070A0F] border border-[#1E293B] p-2 flex flex-col justify-between overflow-hidden relative group/doc">
