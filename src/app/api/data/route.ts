@@ -23,7 +23,7 @@ import { listReviewNotifications, readNotificationThread, replyNotification } fr
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
-import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken } from '@/services/dropboxUpload';
+import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
@@ -511,6 +511,50 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         return NextResponse.json(
           { error: error instanceof Error ? error.message : "Error listando carpetas de Dropbox" },
           { status: 502 }
+        );
+      }
+    }
+
+    if (type === "file-preview") {
+      try {
+        const filePath = (searchParams.get("path") || searchParams.get("filePath") || "").trim();
+        if (!filePath) return NextResponse.json({ error: "Ruta de archivo no especificada" }, { status: 400 });
+
+        // 1. Si es archivo local existente en disco Windows
+        if (filePath.includes(":\\") && fs.existsSync(filePath)) {
+          const buffer = fs.readFileSync(filePath);
+          const ext = path.extname(filePath).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".txt": "text/plain",
+            ".pdf": "application/pdf",
+          };
+          const contentType = mimeTypes[ext] || "application/octet-stream";
+          return new NextResponse(buffer, {
+            headers: {
+              "Content-Type": contentType,
+              "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+            },
+          });
+        }
+
+        // 2. Si es archivo en Dropbox Cloud (ruta remota /DRX/...)
+        const { buffer, contentType } = await getDropboxFileContent(filePath);
+        return new NextResponse(buffer, {
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+          },
+        });
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "No se pudo obtener la vista previa del archivo" },
+          { status: 404 }
         );
       }
     }

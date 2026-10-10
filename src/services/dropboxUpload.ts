@@ -197,3 +197,55 @@ export function cloudFolder(domain: string | undefined, target: string | undefin
   if (normalized.startsWith('/') && !normalized.includes('..')) return normalized;
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }
+
+export async function getDropboxFileContent(filePath: string, tokenOverride?: string) {
+  const token = await getDropboxAccessToken(tokenOverride);
+  let cleanPath = filePath.replace(/\\/g, '/').trim();
+  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+
+  const arg = JSON.stringify({ path: cleanPath }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  
+  // Si es imagen, intentamos pedir thumbnail para rapidez, o descarga directa
+  const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanPath);
+  const endpoint = isImg
+    ? 'https://content.dropboxapi.com/2/files/get_thumbnail_v2'
+    : 'https://content.dropboxapi.com/2/files/download';
+
+  const bodyArg = isImg
+    ? JSON.stringify({ resource: { '.tag': 'path', path: cleanPath }, format: 'jpeg', size: 'w640h480', mode: 'strict' }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
+    : arg;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Dropbox-API-Arg': bodyArg,
+    },
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    // Si falló thumbnail, intentar descarga directa
+    if (isImg) {
+      const fallbackRes = await fetch('https://content.dropboxapi.com/2/files/download', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Dropbox-API-Arg': arg,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (fallbackRes.ok) {
+        const buffer = Buffer.from(await fallbackRes.arrayBuffer());
+        const contentType = fallbackRes.headers.get('content-type') || 'image/jpeg';
+        return { buffer, contentType };
+      }
+    }
+    const errText = await response.text();
+    throw new Error(`Error descargando de Dropbox (${response.status}): ${errText}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
+  return { buffer, contentType };
+}

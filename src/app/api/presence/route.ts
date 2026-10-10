@@ -1,4 +1,4 @@
-﻿import {NextResponse} from 'next/server';
+import {NextResponse} from 'next/server';
 import {assertSameOrigin,requireActor} from '@/services/serverAuth';
 import {supabaseConfigured,supabaseIdentity,supabaseAdmin} from '@/services/supabaseServer';
 import {normalizePerson} from '@/services/identityNormalizer';
@@ -14,17 +14,34 @@ function formatLastSeen(lastSeen: string | null, isOnline: boolean): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) {
     const d = new Date(lastSeen);
-    const timeStr = d.toLocaleTimeString('es-MX', {hour: '2-digit', minute: '2-digit', hour12: true});
+    const timeStr = d.toLocaleTimeString('es-MX', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/Mexico_City',
+    });
     return 'Hoy ' + timeStr;
   }
   const days = Math.floor(hours / 24);
   if (days === 1) {
     const d = new Date(lastSeen);
-    const timeStr = d.toLocaleTimeString('es-MX', {hour: '2-digit', minute: '2-digit', hour12: true});
+    const timeStr = d.toLocaleTimeString('es-MX', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/Mexico_City',
+    });
     return 'Ayer ' + timeStr;
   }
   const d = new Date(lastSeen);
-  return d.toLocaleDateString('es-MX', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true});
+  return d.toLocaleDateString('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Mexico_City',
+  });
 }
 
 async function getTeamPresenceList() {
