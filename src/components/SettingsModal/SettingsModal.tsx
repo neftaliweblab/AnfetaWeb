@@ -91,18 +91,18 @@ export function SettingsModal({
         console.warn("Error leyendo localStorage anfeta_settings:", err);
       }
 
-      // 2. Complementar con datos del backend si faltan
+      // 2. Complementar con datos del backend solo si no existen en localStorage
       fetch("/api/data?type=settings")
         .then((res) => res.json())
         .then((data) => {
           try {
             const stored = localStorage.getItem("anfeta_settings");
-            const parsed = stored ? JSON.parse(stored) : {};
-            if (!parsed.notionToken && data.notionToken) setNotionToken(data.notionToken);
-            if (!parsed.dropboxToken && data.dropboxToken) setDropboxToken(data.dropboxToken);
-            if (!parsed.cloudFolder && data.cloudFolder) setCloudFolder(data.cloudFolder);
-            if (!parsed.dropboxPath && data.dropboxPath) setDropboxPath(data.dropboxPath);
-            if (!parsed.currentUser && data.currentUser) setUserTag(data.currentUser);
+            if (stored) return; // Si el usuario ya tiene configuración guardada en su cliente, respetarla
+            if (data.notionToken) setNotionToken(data.notionToken);
+            if (data.dropboxToken) setDropboxToken(data.dropboxToken);
+            if (data.cloudFolder) setCloudFolder(data.cloudFolder);
+            if (data.dropboxPath) setDropboxPath(data.dropboxPath);
+            if (data.currentUser) setUserTag(data.currentUser);
           } catch {
             if (data.notionToken) setNotionToken(data.notionToken);
             if (data.dropboxToken) setDropboxToken(data.dropboxToken);
@@ -546,19 +546,31 @@ export function SettingsModal({
                 <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <Key className="w-3 h-3 text-[#38BDF8]" />
-                    Token Manual de Dropbox API:
+                    Token Manual de Dropbox API (opcional):
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
                     ✓ Renovación perpetua activa en Vercel
                   </span>
                 </label>
-                <input
-                  type="password"
-                  value={dropboxToken}
-                  onChange={(e) => setDropboxToken(e.target.value)}
-                  placeholder="Automático vía DROPBOX_REFRESH_TOKEN en Vercel / .env"
-                  className="w-full h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8]"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={dropboxToken}
+                    onChange={(e) => setDropboxToken(e.target.value)}
+                    placeholder="Automático vía DROPBOX_REFRESH_TOKEN en Vercel"
+                    className="flex-1 h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8]"
+                  />
+                  {dropboxToken && (
+                    <button
+                      type="button"
+                      onClick={() => setDropboxToken("")}
+                      className="px-2.5 h-8 bg-[#2A1519] hover:bg-[#3D1D23] border border-[#FB7185]/40 text-[#FB7185] text-[10.5px] rounded shrink-0 transition-colors cursor-pointer"
+                      title="Limpiar token y usar auto-renovación de Vercel"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Modo de escritorio opcional (colapsable) */}
