@@ -25,6 +25,8 @@ export async function getDropboxAccessToken(tokenOverride?: string): Promise<str
         body: new URLSearchParams({
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
+          client_id: appKey,
+          client_secret: appSecret,
         }),
       });
       const data = await res.json();
@@ -36,8 +38,14 @@ export async function getDropboxAccessToken(tokenOverride?: string): Promise<str
         };
         return data.access_token;
       }
-    } catch (e) {
+      const errDetail = data.error_description || data.error || JSON.stringify(data);
+      console.error('Dropbox OAuth token error:', errDetail);
+      throw new Error(`Dropbox OAuth error: ${errDetail}`);
+    } catch (e: any) {
       console.error('Error auto-renovando Dropbox access token con refresh token:', e);
+      if (e?.message?.includes('Dropbox OAuth error')) {
+        throw e;
+      }
     }
   }
 
