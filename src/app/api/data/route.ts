@@ -520,20 +520,30 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const filePath = (searchParams.get("path") || searchParams.get("filePath") || "").trim();
         if (!filePath) return NextResponse.json({ error: "Ruta de archivo no especificada" }, { status: 400 });
 
+        const ext = path.extname(filePath).toLowerCase();
+        const mimeTypes: Record<string, string> = {
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".png": "image/png",
+          ".gif": "image/gif",
+          ".webp": "image/webp",
+          ".bmp": "image/bmp",
+          ".svg": "image/svg+xml",
+          ".txt": "text/plain; charset=utf-8",
+          ".md": "text/plain; charset=utf-8",
+          ".log": "text/plain; charset=utf-8",
+          ".csv": "text/csv; charset=utf-8",
+          ".pdf": "application/pdf",
+          ".doc": "application/msword",
+          ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          ".xls": "application/vnd.ms-excel",
+          ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ".json": "application/json; charset=utf-8",
+        };
+
         // 1. Si es archivo local existente en disco Windows
         if (filePath.includes(":\\") && fs.existsSync(filePath)) {
           const buffer = fs.readFileSync(filePath);
-          const ext = path.extname(filePath).toLowerCase();
-          const mimeTypes: Record<string, string> = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-            ".bmp": "image/bmp",
-            ".txt": "text/plain",
-            ".pdf": "application/pdf",
-          };
           const contentType = mimeTypes[ext] || "application/octet-stream";
           return new NextResponse(buffer, {
             headers: {
@@ -545,7 +555,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
         // 2. Si es archivo en Dropbox Cloud (ruta remota /DRX/...)
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
-        const { buffer, contentType } = await getDropboxFileContent(filePath, tokenOverride);
+        const { buffer, contentType: rawContentType } = await getDropboxFileContent(filePath, tokenOverride);
+        const contentType = mimeTypes[ext] || rawContentType || "application/octet-stream";
         return new NextResponse(buffer, {
           headers: {
             "Content-Type": contentType,
@@ -1004,7 +1015,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         try {
           if (fs.existsSync(filePath)) {
             const stat = fs.statSync(filePath);
-            if (stat.isFile() && stat.size <= 5 * 1024 * 1024) {
+            const isText = /\.(txt|md|log|json|csv|js|ts|jsx|tsx|py|html|css|php|sql|sh|bat|ps1|xml|yaml|yml)$/i.test(filePath);
+            if (stat.isFile() && isText && stat.size <= 5 * 1024 * 1024) {
               const rawContent = fs.readFileSync(filePath, "utf-8");
               const lines = rawContent.split("\n").map((l: string) => l.trim()).filter(Boolean);
               const blocks = lines.map((line: string, idx: number) => {
@@ -1048,10 +1060,85 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
                 blocks,
                 count: blocks.length,
               });
+            } else if (stat.isFile()) {
+              return NextResponse.json({
+                filePath,
+                source: "local-file",
+                isBinary: true,
+                sizeBytes: stat.size,
+                content: "",
+                blocks: [],
+                count: 0,
+              });
+            }
+          }
+
+          // Si no es local o es ruta de Dropbox Cloud (/DRX/...)
+          const isDropboxCloud = filePath.startsWith("/") || !filePath.includes(":\\");
+          if (isDropboxCloud) {
+            const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
+            const { buffer, contentType } = await getDropboxFileContent(filePath, tokenOverride);
+            const isText = /\.(txt|md|log|json|csv|js|ts|jsx|tsx|py|html|css|php|sql|sh|bat|ps1|xml|yaml|yml)$/i.test(filePath) || contentType.startsWith("text/");
+
+            if (isText && buffer.length <= 5 * 1024 * 1024) {
+              const rawContent = buffer.toString("utf-8");
+              const lines = rawContent.split("\n").map((l: string) => l.trim()).filter(Boolean);
+              const blocks = lines.map((line: string, idx: number) => {
+                let kind = "paragraph";
+                let isChecked = false;
+                let text = line;
+                if (line.startsWith("# ")) {
+                  kind = "heading_1";
+                  text = line.replace("# ", "");
+                } else if (line.startsWith("## ")) {
+                  kind = "heading_2";
+                  text = line.replace("## ", "");
+                } else if (line.startsWith("### ")) {
+                  kind = "heading_3";
+                  text = line.replace("### ", "");
+                } else if (/^(\[x\]|✓)\s*/i.test(line)) {
+                  kind = "to_do";
+                  isChecked = true;
+                  text = line.replace(/^(\[x\]|✓)\s*/i, "");
+                } else if (/^\[ \]\s*/.test(line)) {
+                  kind = "to_do";
+                  isChecked = false;
+                  text = line.replace(/^\[ \]\s*/, "");
+                } else if (/^[-•]\s*/.test(line)) {
+                  kind = "bulleted_list_item";
+                  text = line.replace(/^[-•]\s*/, "");
+                }
+                return {
+                  id: `dbxline-${idx}`,
+                  kind,
+                  text,
+                  isChecked,
+                  isStrikethrough: isChecked,
+                };
+              });
+
+              return NextResponse.json({
+                filePath,
+                source: "dropbox-file",
+                content: rawContent,
+                blocks,
+                count: blocks.length,
+              });
+            } else {
+              return NextResponse.json({
+                filePath,
+                source: "dropbox-file",
+                isBinary: true,
+                contentType,
+                sizeBytes: buffer.length,
+                content: "",
+                blocks: [],
+                count: 0,
+              });
             }
           }
         } catch (fErr) {
-          console.warn("Error reading local file preview:", fErr);
+          console.warn("Error reading file preview:", fErr);
         }
       }
 

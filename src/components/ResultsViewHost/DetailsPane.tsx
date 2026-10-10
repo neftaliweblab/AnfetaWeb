@@ -24,6 +24,9 @@ import {
   Maximize2,
   Minimize2,
   ZoomIn,
+  FileText,
+  FileSpreadsheet,
+  Download,
 } from "lucide-react";
 import { playCopyChime } from "@/services/windowsIntegration";
 import { ImageLightbox, LightboxImage } from "./ImageLightbox";
@@ -184,16 +187,29 @@ export function DetailsPane({
     let targetId = (item.externalId || item.id || "").trim();
     const targetPath = (item.target || item.path || item.fullPath || "").trim();
     const isLocalFile = Boolean(targetPath && targetPath.includes(":\\") && !targetPath.startsWith("http"));
+    const isDropboxFile = Boolean(
+      (item.source === "Dropbox" || item.sourceName === "Dropbox" || item.externalSourceName === "Dropbox" || item.type === "FILE" || targetPath.startsWith("/")) &&
+      !targetPath.startsWith("http")
+    );
 
-    if (!isLocalFile && (!targetId || targetId.startsWith("idx-") || targetId.startsWith("Item-"))) {
+    let clientToken = "";
+    if (typeof window !== "undefined") {
+      try {
+        const savedSettings = localStorage.getItem("anfeta_settings");
+        if (savedSettings) clientToken = JSON.parse(savedSettings).dropboxToken || "";
+      } catch {}
+    }
+    const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+
+    if (!isLocalFile && !isDropboxFile && (!targetId || targetId.startsWith("idx-") || targetId.startsWith("Item-"))) {
       const match = (item.target || item.externalUrl || "").match(/[a-f0-9]{32}/i);
       if (match) {
         targetId = match[0];
       }
     }
 
-    const fetchUrl = isLocalFile
-      ? `/api/data?type=page-preview&filePath=${encodeURIComponent(targetPath)}`
+    const fetchUrl = (isLocalFile || isDropboxFile) && targetPath
+      ? `/api/data?type=page-preview&filePath=${encodeURIComponent(targetPath)}${tokenQuery}`
       : targetId && !targetId.startsWith("idx-") && !targetId.startsWith("Item-")
       ? `/api/data?type=page-preview&pageId=${encodeURIComponent(targetId)}`
       : null;
@@ -207,12 +223,12 @@ export function DetailsPane({
       return;
     }
 
-    const currentKey = isLocalFile ? targetPath : targetId;
+    const currentKey = (isLocalFile || isDropboxFile) ? targetPath : targetId;
     activePageIdRef.current = currentKey;
     setPreviewBlocks([]);
     setPreviewContent("");
     setIsLoadingPreview(true);
-    setPreviewStatus(isLocalFile ? "Cargando archivo de texto..." : "Cargando contenido de Notion...");
+    setPreviewStatus((isLocalFile || isDropboxFile) ? "Cargando archivo..." : "Cargando contenido de Notion...");
 
     fetch(fetchUrl)
       .then(readApiJson)
@@ -298,6 +314,23 @@ export function DetailsPane({
   const isNotion = !isDropbox || item.source === "Notion" || item.type === "PAGE";
   const displayLocation = item.displayLocation || (targetPath ? targetPath.replace(/\\/g, "/") : "Notion");
   const isImage = isImageFile(targetPath) || isImageFile(item.name);
+  const isPdf = /\.pdf$/i.test(targetPath) || /\.pdf$/i.test(item.name);
+  const isDoc = /\.(docx?|odt|rtf)$/i.test(targetPath) || /\.(docx?|odt|rtf)$/i.test(item.name);
+  const isSheet = /\.(xlsx?|ods|csv)$/i.test(targetPath) || /\.(xlsx?|ods|csv)$/i.test(item.name);
+  const isText = /\.(txt|md|log|json|xml|yaml|yml|js|ts|py|html|css|sql|sh|bat)$/i.test(targetPath) || /\.(txt|md|log|json)$/i.test(item.name);
+
+  const getFilePreviewSrc = (filePath: string) => {
+    if (filePath.startsWith("http")) return filePath;
+    let clientToken = "";
+    if (typeof window !== "undefined") {
+      try {
+        const savedSettings = localStorage.getItem("anfeta_settings");
+        if (savedSettings) clientToken = JSON.parse(savedSettings).dropboxToken || "";
+      } catch {}
+    }
+    const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+    return `/api/data?type=file-preview&path=${encodeURIComponent(filePath)}${tokenQuery}`;
+  };
 
   const handleCopyContent = () => {
     navigator.clipboard.writeText(contentSnippet || item.name);
@@ -717,17 +750,7 @@ export function DetailsPane({
               </div>
             </div>
             {(() => {
-              let clientToken = "";
-              if (typeof window !== "undefined") {
-                try {
-                  const savedSettings = localStorage.getItem("anfeta_settings");
-                  if (savedSettings) clientToken = JSON.parse(savedSettings).dropboxToken || "";
-                } catch {}
-              }
-              const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
-              const previewSrc = targetPath.startsWith("http")
-                ? targetPath
-                : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
+              const previewSrc = getFilePreviewSrc(targetPath);
               return (
                 <div
                   className="h-48 bg-[#0A0F16] border border-[#1E293B] rounded flex items-center justify-center overflow-hidden cursor-zoom-in group/cardimg relative"
@@ -764,12 +787,118 @@ export function DetailsPane({
           </div>
         )}
 
+        {/* 2.3 Visor de Documento PDF */}
+        {isPdf && targetPath && (
+          <div className="bg-[#141B26] border border-[#1E2836] rounded-lg p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#EF4444]/20 border border-[#EF4444]/40 text-[#FCA5A5] uppercase tracking-wide">
+                  PDF
+                </span>
+                <span className="text-[10px] font-semibold text-[#94A3B8] truncate max-w-[170px]" title={item.name}>
+                  {item.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <a
+                  href={getFilePreviewSrc(targetPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-0.5 rounded text-[9.5px] bg-[#161F2C] border border-[#26354A] hover:border-[#38BDF8] text-[#38BDF8] flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Abrir PDF en pestaña completa"
+                >
+                  <ExternalLink className="w-2.5 h-2.5" /> Ampliar
+                </a>
+                <a
+                  href={getFilePreviewSrc(targetPath)}
+                  download={item.name || "documento.pdf"}
+                  className="px-2 py-0.5 rounded text-[9.5px] bg-[#161F2C] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Descargar PDF"
+                >
+                  <Download className="w-2.5 h-2.5" /> Descargar
+                </a>
+              </div>
+            </div>
+            <div className="w-full h-72 rounded-md overflow-hidden bg-[#0A0F16] border border-[#1E293B] relative flex flex-col items-center justify-center">
+              <iframe
+                src={`${getFilePreviewSrc(targetPath)}#toolbar=0&navpanes=0`}
+                title={item.name || "Vista previa PDF"}
+                className="w-full h-full border-0 rounded-md"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 2.4 Documento Office (Word / Excel / Hoja de Cálculo) */}
+        {(isDoc || isSheet) && targetPath && (
+          <div className="bg-[#141B26] border border-[#1E2836] rounded-lg p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wide ${
+                    isDoc
+                      ? "bg-[#2563EB]/20 border-[#2563EB]/40 text-[#93C5FD]"
+                      : "bg-[#16A34A]/20 border-[#16A34A]/40 text-[#86EFAC]"
+                  }`}
+                >
+                  {isDoc ? "Word DOCX" : "Excel XLSX"}
+                </span>
+                <span className="text-[10px] font-semibold text-[#94A3B8] truncate max-w-[170px]" title={item.name}>
+                  {item.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <a
+                  href={getFilePreviewSrc(targetPath)}
+                  download={item.name}
+                  className="px-2 py-0.5 rounded text-[9.5px] bg-[#161F2C] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Descargar documento"
+                >
+                  <Download className="w-2.5 h-2.5" /> Descargar
+                </a>
+              </div>
+            </div>
+            <div className="p-3 bg-[#0A0F16] border border-[#1E293B] rounded-md flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded flex items-center justify-center shrink-0 ${
+                  isDoc ? "bg-[#2563EB]/15 text-[#60A5FA]" : "bg-[#16A34A]/15 text-[#4ADE80]"
+                }`}
+              >
+                {isDoc ? <FileText className="w-5 h-5" /> : <FileSpreadsheet className="w-5 h-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-[#E2E8F0] truncate">{item.name}</p>
+                <p className="text-[9.5px] text-[#64748B] truncate mt-0.5">{displayLocation}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpen(item)}
+                className="px-2.5 py-1 rounded bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#38BDF8] text-[10px] font-medium shrink-0 flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <ExternalLink className="w-3 h-3" /> Abrir
+              </button>
+            </div>
+          </div>
+        )}
+
         {addingBlock&&<NotionNewBlock pageId={activePageIdRef.current} onClose={()=>setAddingBlock(false)} onSaved={saved=>{const next=[...previewBlocks,saved];setPreviewBlocks(next);setPreviewContent(next.map(block=>block.text).filter(Boolean).join("\n"));setPreviewStatus("Bloque agregado al final de la página en Notion.");}}/>}
         {editingBlock&&<NotionBlockTextEditor key={editingBlock} pageId={activePageIdRef.current} blockId={editingBlock} onClose={()=>setEditingBlock(null)} onSaved={saved=>{const next=previewBlocks.map(block=>block.id===saved.id?{...block,text:saved.text,lastEditedTime:saved.lastEditedTime}:block);setPreviewBlocks(next);setPreviewContent(next.map(block=>block.text).filter(Boolean).join("\n"));setPreviewStatus("Texto guardado en Notion.");}}/>}
-        {/* Tarjeta VISTA PREVIA DE CONTENIDO / NOTION */}
+        {/* Tarjeta VISTA PREVIA DE CONTENIDO / NOTION / TEXTO */}
         <div className="bg-[#141B26] border border-[#1E2836] rounded-lg p-2.5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-[#64748B]">VISTA PREVIA</span>{isNotion&&!isLoadingPreview&&/^[a-f0-9-]{32,36}$/i.test(activePageIdRef.current)&&<button type="button" onClick={()=>setAddingBlock(true)} className="rounded border border-slate-700 px-2 py-0.5 text-[9px] text-cyan-200">+ Bloque</button>}
+            <span className="text-[10px] font-semibold text-[#64748B]">
+              {isText
+                ? "VISTA PREVIA DE TEXTO"
+                : isDoc
+                ? "CONTENIDO DEL DOCUMENTO"
+                : isSheet
+                ? "CONTENIDO DE HOJA DE CÁLCULO"
+                : isPdf
+                ? "DETALLES DEL DOCUMENTO PDF"
+                : isNotion
+                ? "VISTA PREVIA DE NOTION"
+                : "VISTA PREVIA"}
+            </span>{isNotion&&!isLoadingPreview&&/^[a-f0-9-]{32,36}$/i.test(activePageIdRef.current)&&<button type="button" onClick={()=>setAddingBlock(true)} className="rounded border border-slate-700 px-2 py-0.5 text-[9px] text-cyan-200">+ Bloque</button>}
             <div className="flex items-center gap-1">
               {isSpeaking ? (
                 <button
@@ -812,7 +941,9 @@ export function DetailsPane({
           {/* Contenedor de Bloques / Texto */}
           <div
             style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }}
-            className="bg-[#0A0F16] p-2.5 rounded border border-[#1E293B] max-h-[320px] overflow-y-auto space-y-1.5 select-text font-sans scrollbar-thin"
+            className={`bg-[#0A0F16] p-2.5 rounded border border-[#1E293B] max-h-[320px] overflow-y-auto space-y-1.5 select-text scrollbar-thin ${
+              isText ? "font-mono text-[#E2E8F0] leading-5" : "font-sans"
+            }`}
           >
             {previewBlocks.length > 0 ? (
               <>
@@ -820,22 +951,55 @@ export function DetailsPane({
                   style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
                   className="font-bold text-[#64C8FF] tracking-wider mb-2"
                 >
-                  CONTENIDO DE LA PÁGINA
+                  {isText ? "CONTENIDO DEL ARCHIVO" : "CONTENIDO DE LA PÁGINA"}
                 </div>
-                {previewBlocks.map((b, idx) => <div key={b.id||idx}>{renderBlock(b,idx)}{isNotion&&EDITABLE_NOTION_TEXT_TYPES.includes(b.kind)&&/^[a-f0-9-]{32,36}$/i.test(b.id)&&<button type="button" onClick={()=>setEditingBlock(b.id)} className="mb-1 rounded border border-slate-700 px-2 py-0.5 text-[9px] text-slate-400 hover:text-cyan-200" aria-label={"Editar texto del bloque "+(idx+1)}>Editar texto</button>}</div>)}
+                {isText ? (
+                  <div className="font-mono text-[11px] leading-relaxed text-[#CBD5E1] whitespace-pre-wrap select-text">
+                    {previewBlocks.map((b) => b.text).join("\n")}
+                  </div>
+                ) : (
+                  previewBlocks.map((b, idx) => (
+                    <div key={b.id || idx}>
+                      {renderBlock(b, idx)}
+                      {isNotion && EDITABLE_NOTION_TEXT_TYPES.includes(b.kind) && /^[a-f0-9-]{32,36}$/i.test(b.id) && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingBlock(b.id)}
+                          className="mb-1 rounded border border-slate-700 px-2 py-0.5 text-[9px] text-slate-400 hover:text-cyan-200"
+                          aria-label={"Editar texto del bloque " + (idx + 1)}
+                        >
+                          Editar texto
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
               </>
             ) : previewContent ? (
               <div
                 style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }}
-                className="whitespace-pre-wrap leading-relaxed text-[#CBD5E1]"
+                className={`whitespace-pre-wrap leading-relaxed text-[#CBD5E1] ${
+                  isText ? "font-mono text-[11px]" : ""
+                }`}
               >
                 {previewContent}
               </div>
             ) : (
               <div className="text-center py-6 text-[#64748B] space-y-1">
-                <p className="text-[11px]">No hay bloques cargados.</p>
+                <p className="text-[11px]">
+                  {isPdf
+                    ? "Documento PDF listo."
+                    : isDoc || isSheet
+                    ? "Documento de Microsoft Office listo."
+                    : "No hay bloques cargados."}
+                </p>
                 <p className="text-[9.5px] text-[#475569]">
-                  {previewStatus || "Configura el token de Notion en Configuración para descargar los bloques en tiempo real."}
+                  {previewStatus ||
+                    (isPdf
+                      ? "Puedes visualizar el documento arriba, ampliarlo o descargarlo."
+                      : isDoc || isSheet
+                      ? "Usa los botones superiores para descargar o abrir el archivo."
+                      : "Configura el token de Notion en Configuración para descargar los bloques en tiempo real.")}
                 </p>
               </div>
             )}
