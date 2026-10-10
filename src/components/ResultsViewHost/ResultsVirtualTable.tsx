@@ -609,6 +609,10 @@ export function ResultsVirtualTable({
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
     const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(item.name || targetPath);
+    const isDoc = /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?)$/i.test(item.name || targetPath);
+    const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
+    const ext = (item.extension || (item.name || "").split(".").pop() || "").toUpperCase();
+    const textSnippet = (item.contentSnippet || item.description || "").trim();
     const imgSrc = targetPath.startsWith("http")
       ? targetPath
       : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath || item.name)}`;
@@ -720,6 +724,44 @@ export function ResultsVirtualTable({
                 (e.currentTarget as HTMLElement).style.display = "none";
               }}
             />
+          </div>
+        ) : (isDoc || isCode || ext) && ext !== item.name.toUpperCase() ? (
+          <div className="w-full h-24 my-1.5 rounded-md bg-[#070A0F] border border-[#1E293B] p-2 flex flex-col justify-between overflow-hidden relative group/doc">
+            <div className="flex items-center justify-between z-10">
+              <span
+                className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold tracking-wider uppercase border ${
+                  ext === "PDF"
+                    ? "bg-[#EF4444]/15 border-[#EF4444]/40 text-[#FCA5A5]"
+                    : ext === "TXT" || ext === "MD" || ext === "LOG"
+                    ? "bg-[#38BDF8]/15 border-[#38BDF8]/40 text-[#7DD3FC]"
+                    : ext === "XLS" || ext === "XLSX" || ext === "CSV"
+                    ? "bg-[#10B981]/15 border-[#10B981]/40 text-[#6EE7B7]"
+                    : isCode
+                    ? "bg-[#8B5CF6]/15 border-[#8B5CF6]/40 text-[#C4B5FD]"
+                    : "bg-[#64748B]/15 border-[#64748B]/40 text-[#94A3B8]"
+                }`}
+              >
+                {ext || "FILE"}
+              </span>
+              <span className="text-[#64748B] text-[8.5px] font-mono">
+                {item.size ? (item.size > 1048576 ? `${(item.size / 1048576).toFixed(1)} MB` : `${Math.round(item.size / 1024)} KB`) : ""}
+              </span>
+            </div>
+            <div className="my-auto py-1">
+              {textSnippet ? (
+                <p className="text-[#94A3B8] text-[9.5px] font-mono leading-relaxed line-clamp-3 break-all select-none opacity-85">
+                  {textSnippet}
+                </p>
+              ) : (
+                <div className="flex items-center gap-1.5 text-[#475569] text-[9px] font-mono">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#38BDF8]/50 animate-pulse"></span>
+                  <span className="truncate max-w-[140px]">{targetPath || item.name}</span>
+                </div>
+              )}
+            </div>
+            <div className="text-[8px] text-[#475569] truncate font-mono text-right">
+              {item.sourceName || "Archivo"}
+            </div>
           </div>
         ) : null}
 
