@@ -86,43 +86,50 @@ export function TeamPresence(){
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-700/80 bg-[#0F172A]/95 p-3 shadow-2xl backdrop-blur-md z-[100] text-slate-100">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] font-semibold tracking-wider text-slate-300 uppercase">
-            <span>Equipo ANFETA</span>
-            <span className="text-emerald-400 text-[10px] lowercase font-normal">{onlineCount} en línea</span>
+        <div className="absolute left-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-[#223848] bg-[#0C121B]/95 p-3.5 shadow-2xl backdrop-blur-md z-[100] text-slate-100 ring-1 ring-cyan-500/20">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1E293B] text-[11px] font-semibold tracking-wider text-slate-300 uppercase">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>Equipo ANFETA</span>
+            </span>
+            <span className="text-emerald-400 text-[10.5px] font-mono lowercase">{onlineCount} en línea</span>
           </div>
 
-          <div className="mt-2 space-y-1.5 max-h-80 overflow-y-auto pr-1">
+          <div className="mt-2.5 space-y-1.5 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
             {people.length===0 ? (
-              <div className="text-[11px] text-slate-400 py-2 text-center">
+              <div className="text-[11px] text-slate-400 py-3 text-center">
                 {error || 'No se han registrado conexiones todavía.'}
               </div>
             ) : (
               people.map(person=>(
                 <div
                   key={person.name}
-                  className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-slate-800/60 transition-colors text-xs"
+                  className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg hover:bg-[#162335]/70 transition-colors text-xs border border-transparent hover:border-slate-800"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className={'w-2 h-2 rounded-full flex-shrink-0 '+(person.isOnline?'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]':'bg-slate-600')} />
-                    <span className={'font-medium '+(person.isOnline?'text-slate-100':'text-slate-400')}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={'w-2 h-2 rounded-full shrink-0 '+(person.isOnline?'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.85)] animate-pulse':'bg-slate-600')} />
+                    <span className={'font-medium truncate '+(person.isOnline?'text-slate-100 font-semibold':'text-slate-400')}>
                       {person.name}
                     </span>
                   </div>
-                  <span className={'text-[10.5px] '+(person.isOnline?'text-emerald-400 font-semibold':'text-slate-400')}>
-                    {person.lastSeenLabel || (person.isOnline ? 'En línea' : 'Desconectado')}
+                  <span className={'text-[10px] shrink-0 font-mono px-1.5 py-0.5 rounded '+(
+                    person.isOnline
+                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 font-semibold'
+                      : 'text-slate-500'
+                  )}>
+                    {person.lastSeenLabel || (person.isOnline ? 'En línea' : 'Sin conexión')}
                   </span>
                 </div>
               ))
             )}
           </div>
 
-          <div className="mt-2.5 pt-2 border-t border-slate-800/80 text-[10px] text-slate-400 flex items-center justify-between">
-            <span>Sincronizado con Supabase</span>
+          <div className="mt-3 pt-2 border-t border-[#1E293B] text-[10px] text-slate-400 flex items-center justify-between">
+            <span className="text-slate-500">Sincronizado vía Supabase</span>
             <button
               type="button"
               onClick={()=>setOpen(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              className="text-cyan-400 hover:text-cyan-200 transition-colors cursor-pointer font-medium"
             >
               Cerrar
             </button>
