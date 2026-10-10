@@ -68,6 +68,8 @@ export function SettingsModal({
   const [notionToken, setNotionToken] = useState("");
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isTestingDropbox, setIsTestingDropbox] = useState(false);
+  const [dropboxTestStatus, setDropboxTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingDropbox, setIsSyncingDropbox] = useState(false);
   const [showAdvancedLocal, setShowAdvancedLocal] = useState(false);
@@ -173,6 +175,28 @@ export function SettingsModal({
       setTestStatus({ ok: false, msg: `✕ ${e.message}` });
     } finally {
       setIsTestingToken(false);
+    }
+  };
+
+  const handleTestDropbox = async () => {
+    setIsTestingDropbox(true);
+    setDropboxTestStatus(null);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test-dropbox-token", payload: { token: dropboxToken.trim() } }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDropboxTestStatus({ ok: true, msg: `✓ Conectado a Dropbox: ${data.account || data.email}` });
+      } else {
+        setDropboxTestStatus({ ok: false, msg: `✕ ${data.error}` });
+      }
+    } catch (e: any) {
+      setDropboxTestStatus({ ok: false, msg: `✕ ${e.message}` });
+    } finally {
+      setIsTestingDropbox(false);
     }
   };
 
@@ -542,11 +566,11 @@ export function SettingsModal({
               )}
 
               {/* Token opcional de Dropbox API */}
-              <div className="space-y-1 pt-1">
+              <div className="space-y-1.5 pt-1">
                 <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <Key className="w-3 h-3 text-[#38BDF8]" />
-                    Token Manual de Dropbox API (opcional):
+                    Token de Dropbox (Opcional - Vercel auto-renueva):
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
                     ✓ Renovación perpetua activa en Vercel
@@ -560,6 +584,14 @@ export function SettingsModal({
                     placeholder="Automático vía DROPBOX_REFRESH_TOKEN en Vercel"
                     className="flex-1 h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8]"
                   />
+                  <button
+                    type="button"
+                    onClick={handleTestDropbox}
+                    disabled={isTestingDropbox}
+                    className="px-3 h-8 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#38BDF8] text-[11px] font-semibold rounded shrink-0 transition-colors cursor-pointer"
+                  >
+                    {isTestingDropbox ? "Probando..." : "Probar"}
+                  </button>
                   {dropboxToken && (
                     <button
                       type="button"
@@ -571,6 +603,31 @@ export function SettingsModal({
                     </button>
                   )}
                 </div>
+
+                {dropboxTestStatus && (
+                  <div
+                    className={`p-2 rounded text-[11px] font-medium ${
+                      dropboxTestStatus.ok
+                        ? "bg-[#10251B] border border-[#4ADE80]/40 text-[#4ADE80]"
+                        : "bg-[#2B1419] border border-[#FB7185]/40 text-[#FB7185]"
+                    }`}
+                  >
+                    {dropboxTestStatus.msg}
+                  </div>
+                )}
+
+                {dropboxToken.startsWith("sl.") && (
+                  <div className="flex items-center justify-between p-2 rounded bg-amber-950/40 border border-amber-600/40 text-amber-300 text-[10px]">
+                    <span>⚠️ Tienes guardado un token temporal (expira en 4h). Haz clic en Limpiar para usar la auto-renovación de Vercel.</span>
+                    <button
+                      type="button"
+                      onClick={() => setDropboxToken("")}
+                      className="ml-2 px-2 py-0.5 rounded bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 font-semibold cursor-pointer shrink-0"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Modo de escritorio opcional (colapsable) */}

@@ -1508,6 +1508,33 @@ async function POSTLive(req: NextRequest) {
       }
     }
 
+    if (action === "test-dropbox-token") {
+      const tokenOverride = (payload?.token || "").trim() || undefined;
+      try {
+        const token = await getDropboxAccessToken(tokenOverride);
+        const res = await fetch("https://api.dropboxapi.com/2/users/get_current_account", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          return NextResponse.json({
+            success: true,
+            account: data.name?.display_name || data.email || "Cuenta de Dropbox vinculada",
+            email: data.email,
+          });
+        }
+        return NextResponse.json(
+          { success: false, error: data.error_summary || `HTTP ${res.status}` },
+          { status: 400 }
+        );
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+      }
+    }
+
     if (action === "sync-notion") {
       const token = payload?.token || getSettings().notionToken;
       if (!token || !token.trim()) {
