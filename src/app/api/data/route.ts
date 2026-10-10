@@ -1149,7 +1149,6 @@ async function POSTLive(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     const payload={...(body.payload || {}),currentUser:actor};
-    if(['sync-dropbox'].includes(action) && !isReviewer(actor))return NextResponse.json({error:'Esta configuración requiere permisos de administración.'},{status:403});
 
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
