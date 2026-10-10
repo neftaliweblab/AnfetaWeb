@@ -131,6 +131,7 @@ export function ResultsViewHost({
   const [editingTask, setEditingTask] = useState<PendingTaskItem | null>(null);
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
   const [isSyncingNotion, setIsSyncingNotion] = useState(false);
+  const [isSyncingDropbox, setIsSyncingDropbox] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
@@ -629,6 +630,47 @@ export function ResultsViewHost({
     }
   };
 
+  const handleSyncDropbox = async () => {
+    setIsSyncingDropbox(true);
+    setStatusError("");
+    try {
+      let cloudFolder = "/DRX";
+      let dropboxToken = "";
+      try {
+        const saved = localStorage.getItem("anfeta_settings");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.cloudFolder) cloudFolder = parsed.cloudFolder;
+          if (parsed.dropboxToken) dropboxToken = parsed.dropboxToken;
+        }
+      } catch {}
+
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sync-dropbox",
+          payload: { folder: cloudFolder, dropboxToken },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const fresh = await loadSearchIndex({ fresh: true });
+        if (fresh?.items) {
+          setItems((prev) => retainSearchResults(prev, fresh));
+          window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: fresh }));
+        }
+        sendWindowsNotification("ANFETA Dropbox", data.message || `Indexados ${data.count} elementos.`);
+      } else {
+        setStatusError(`Error al sincronizar Dropbox: ${data.error}`);
+      }
+    } catch (e: any) {
+      setStatusError(e.message || "Error al conectar con Dropbox Cloud API");
+    } finally {
+      setIsSyncingDropbox(false);
+    }
+  };
+
   const handleUpdateStatus = async (item: any, newStatus: string) => {
     try {
       playCheckChime();
@@ -971,6 +1013,8 @@ export function ResultsViewHost({
         }}
         onSyncNotion={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
+        onSyncDropbox={handleSyncDropbox}
+        isSyncingDropbox={isSyncingDropbox}
         selectedTag={selectedTag}
         onChangeTag={handleTagChange}
         customTag={customTag}

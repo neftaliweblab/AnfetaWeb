@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Check, Columns, RefreshCw, User, Loader2 } from "lucide-react";
+import { Check, Columns, RefreshCw, User, Loader2, Cloud } from "lucide-react";
 
 export interface UserOption {
   code: string;
@@ -14,6 +14,8 @@ interface SearchConfigRowProps {
   onChangeCurrentUser?: (user: string) => void;
   onSyncNotion?: () => Promise<void> | void;
   isSyncingNotion?: boolean;
+  onSyncDropbox?: () => Promise<void> | void;
+  isSyncingDropbox?: boolean;
   selectedTag: string;
   onChangeTag: (tag: string) => void;
   customTag?: string;
@@ -76,6 +78,8 @@ export function SearchConfigRow({
   onChangeCurrentUser,
   onSyncNotion,
   isSyncingNotion = false,
+  onSyncDropbox,
+  isSyncingDropbox = false,
   selectedTag,
   onChangeTag,
   customTag,
@@ -221,6 +225,40 @@ export function SearchConfigRow({
               />
             )}
             <span>{isSyncingNotion ? "Sincronizando Notion..." : "Sync Notion"}</span>
+          </button>
+        )}
+
+        {/* Botón Sincronizar Dropbox Cloud en Vivo */}
+        {onSyncDropbox && (
+          <button
+            type="button"
+            onClick={() => onSyncDropbox()}
+            disabled={isSyncingDropbox}
+            style={{
+              gap: `${Math.round(4 * scale)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+            }}
+            className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
+              isSyncingDropbox
+                ? "bg-[#0C4A6E] border-[#38BDF8] text-[#38BDF8] opacity-80"
+                : "bg-[#0F1E30] border-[#1E3A5F] hover:border-[#38BDF8] text-cyan-200 hover:bg-[#132A45]"
+            }`}
+            title="Sincronizar e indexar archivos desde Dropbox Cloud (API)"
+          >
+            {isSyncingDropbox ? (
+              <Loader2
+                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                className="animate-spin text-cyan-300"
+              />
+            ) : (
+              <Cloud
+                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                className="text-cyan-400"
+              />
+            )}
+            <span>{isSyncingDropbox ? "Indexando Dropbox..." : "Sync Dropbox"}</span>
           </button>
         )}
 
