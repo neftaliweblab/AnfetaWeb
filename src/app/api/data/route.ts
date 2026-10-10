@@ -1458,13 +1458,19 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "sync-dropbox") {
       const settings = getSettings();
-      let dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
-      if (!dbxToken) {
-        try {
+      let dbxToken = "";
+      try {
+        // Si tenemos refresh token en env, getDropboxAccessToken() renovará automáticamente el token fresco
+        if (process.env.DROPBOX_REFRESH_TOKEN && process.env.DROPBOX_APP_KEY && process.env.DROPBOX_APP_SECRET) {
           dbxToken = await getDropboxAccessToken();
-        } catch {
-          dbxToken = "";
+        } else {
+          dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
+          if (!dbxToken) {
+            dbxToken = await getDropboxAccessToken();
+          }
         }
+      } catch (e: any) {
+        dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
       }
 
       // Si hay Token de Dropbox (Cloud / Web) indexamos vía API de Dropbox
