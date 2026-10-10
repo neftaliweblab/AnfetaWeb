@@ -24,8 +24,11 @@ import {
   FolderPlus,
   CopyPlus,
   ChevronRight,
+  Eye,
+  Download,
 } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
+import { playCopyChime } from "@/services/windowsIntegration";
 
 export interface ResultItem {
   id: string;
@@ -45,6 +48,7 @@ interface ResultsTableProps {
   selectedIds: Set<string>;
   searchQuery?: string;
   favorites?: Set<string>;
+  selectedScope?: string;
   onSelect: (item: any) => void;
   onToggleCheck: (id: string) => void;
   onToggleBookmark?: (item: any) => void;
@@ -145,6 +149,7 @@ export function ResultsVirtualTable({
   selectedIds,
   searchQuery = "",
   favorites = new Set(),
+  selectedScope = "Todo",
   onSelect,
   onToggleCheck,
   onToggleBookmark,
@@ -1069,9 +1074,254 @@ export function ResultsVirtualTable({
             const chatCode = `${domain} · ${parsed.workflow || "Activo"}`;
             const isFav = favorites.has(String(item.externalId || item.path || item.id));
 
-            return (
+            const isDropbox =
+              selectedScope === "Dropbox" ||
+              selectedScope === "Carpetas" ||
+              item.source === "Dropbox" ||
+              item.sourceName === "Dropbox" ||
+              item.externalSourceName === "Dropbox" ||
+              item.type === "FILE" ||
+              item.type === "FOLDER" ||
+              (item.target && (item.target.startsWith("/") || item.target.includes(":\\")));
+
+            const getPreviewUrl = () => {
+              const targetPath = (item.target || item.path || item.name || "").trim();
+              if (targetPath.startsWith("http")) return targetPath;
+              let clientToken = "";
+              if (typeof window !== "undefined") {
+                try {
+                  const saved = localStorage.getItem("anfeta_settings");
+                  if (saved) clientToken = JSON.parse(saved).dropboxToken || "";
+                } catch {}
+              }
+              const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+              return `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
+            };
+
+            return isDropbox ? (
+              /* ======================================================== */
+              /*                 MENÚ DEDICADO DE DROPBOX                 */
+              /* ======================================================== */
               <>
-                {/* 1. Cambiar estado (Submenú) */}
+                {/* 1. Abrir / Ver vista previa */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDoubleClick(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-[#00C8FF]" />
+                  <span>{item.isFolder || item.type === "FOLDER" ? "Abrir carpeta" : "Abrir / Ver vista previa"}</span>
+                </button>
+
+                {/* 2. Ubicación / Explorar carpeta */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenLocation?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-[#FFB900]" />
+                  <span>{item.isFolder || item.type === "FOLDER" ? "Explorar esta carpeta" : "Ir a la carpeta contenedora"}</span>
+                </button>
+
+                {/* 3. Descargar archivo */}
+                {!(item.isFolder || item.type === "FOLDER") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const downloadUrl = getPreviewUrl();
+                      const a = document.createElement("a");
+                      a.href = downloadUrl;
+                      a.download = item.name || "archivo";
+                      a.target = "_blank";
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#34D399] text-[11px] flex items-center gap-2 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#34D399]" />
+                    <span>Descargar archivo</span>
+                  </button>
+                )}
+
+                <div className="h-px bg-[#26354A] my-1" />
+
+                {/* 4. Subir archivo a esta carpeta */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = item.isFolder || item.type === "FOLDER" ? (item.target || item.path) : item.folder;
+                    onOpenUploadDropbox?.(target);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#60A5FA] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-[#60A5FA]" />
+                  <span>Subir archivo aquí…</span>
+                </button>
+
+                {/* 5. Crear carpeta aquí... */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = item.isFolder || item.type === "FOLDER" ? (item.target || item.path) : item.folder;
+                    onCreateFolder?.(target);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#00C8FF] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-[#00C8FF]" />
+                  <span>Crear carpeta aquí…</span>
+                </button>
+
+                <div className="h-px bg-[#26354A] my-1" />
+
+                {/* 6. Renombrar archivo / carpeta */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRename?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-[#A78BFA]" />
+                  <span>Renombrar…</span>
+                </button>
+
+                {/* 7. Duplicar archivo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDuplicate?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <CopyPlus className="w-3.5 h-3.5 text-[#818CF8]" />
+                  <span>Duplicar…</span>
+                </button>
+
+                <div className="h-px bg-[#26354A] my-1" />
+
+                {/* 8. Copiar nombre */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopyName?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />
+                  <span>Copiar nombre</span>
+                </button>
+
+                {/* 9. Copiar ruta de archivo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopyPath?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Link className="w-3.5 h-3.5 text-[#38BDF8]" />
+                  <span>Copiar ruta de archivo</span>
+                </button>
+
+                {/* 10. Copiar enlace de vista previa */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const preview = typeof window !== "undefined" ? `${window.location.origin}${getPreviewUrl()}` : getPreviewUrl();
+                    navigator.clipboard.writeText(preview);
+                    playCopyChime?.();
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-[#00B4FF]" />
+                  <span>Copiar enlace de vista previa</span>
+                </button>
+
+                {/* 11. Copiar contenido extraído (si tiene) */}
+                {item.contentSnippet && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onCopyContent?.(item);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#CBD5E1]" />
+                    <span>Copiar texto extraído</span>
+                  </button>
+                )}
+
+                <div className="h-px bg-[#26354A] my-1" />
+
+                {/* 12. Agregar / Quitar de Favoritos */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleBookmark?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#FBBF24] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Star className={`w-3.5 h-3.5 ${isFav ? "fill-[#FBBF24] text-[#FBBF24]" : "text-[#FBBF24]"}`} />
+                  <span>{isFav ? "Quitar de Favoritos" : "Agregar a Favoritos"}</span>
+                </button>
+
+                {/* 13. Eliminar archivo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedIds.has(item.id) && selectedIds.size > 1 && onDeleteSelected) {
+                      onDeleteSelected();
+                    } else {
+                      onDelete(item);
+                    }
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#EF4444]/20 text-[#EF4444] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-[#F87171]" />
+                  <span>
+                    {selectedIds.has(item.id) && selectedIds.size > 1
+                      ? `Eliminar seleccionados (${selectedIds.size})`
+                      : "Eliminar archivo"}
+                  </span>
+                </button>
+              </>
+            ) : (
+              /* ======================================================== */
+              /*                  MENÚ DEDICADO DE NOTION                 */
+              /* ======================================================== */
+              <>
+                {/* 1. Abrir en Notion */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDoubleClick(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-[#00C8FF]" />
+                  <span>Abrir en Notion ↗</span>
+                </button>
+
+                {/* 2. Cambiar estado (Submenú) */}
                 <div
                   className="relative"
                   onMouseEnter={() => setActiveSubmenu("status")}
@@ -1116,35 +1366,9 @@ export function ResultsVirtualTable({
                   )}
                 </div>
 
-                {/* 2. Abrir */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDoubleClick(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-[#00C8FF]" />
-                  <span>Abrir</span>
-                </button>
-
-                {/* 3. Abrir en Explorador */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenLocation?.(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-[#FFB900]" />
-                  <span>Abrir en Explorador</span>
-                </button>
-
                 <div className="h-px bg-[#26354A] my-1" />
 
-                {/* 4. Renombrar… */}
+                {/* 3. Renombrar página… */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1154,12 +1378,38 @@ export function ResultsVirtualTable({
                   className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
                 >
                   <Edit2 className="w-3.5 h-3.5 text-[#A78BFA]" />
-                  <span>Renombrar…</span>
+                  <span>Renombrar página…</span>
+                </button>
+
+                {/* 4. Duplicar página… */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDuplicate?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <CopyPlus className="w-3.5 h-3.5 text-[#818CF8]" />
+                  <span>Duplicar en Notion…</span>
                 </button>
 
                 <div className="h-px bg-[#26354A] my-1" />
 
-                {/* 5. Copiar nombre */}
+                {/* 5. Copiar enlace de Notion */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopyLink?.(item);
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                >
+                  <Link className="w-3.5 h-3.5 text-[#00B4FF]" />
+                  <span>Copiar enlace de Notion</span>
+                </button>
+
+                {/* 6. Copiar nombre */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1172,59 +1422,46 @@ export function ResultsVirtualTable({
                   <span>Copiar nombre</span>
                 </button>
 
-                {/* 6. Copiar ruta */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCopyPath?.(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <Link className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>Copiar ruta</span>
-                </button>
+                {/* 7. Copiar dominio (si existe) */}
+                {domain && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCopyDomain?.(domain);
+                        setContextMenu(null);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-[#34D399]" />
+                      <span>Copiar dominio ({domain})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCopyDomainType?.(chatCode);
+                        setContextMenu(null);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-[#22C55E]" />
+                      <span>Copiar dominio y tipo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenDomain?.(domain);
+                        setContextMenu(null);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-[#38BDF8]" />
+                      <span>Ir al dominio web</span>
+                    </button>
+                  </>
+                )}
 
-                {/* 7. Copiar link */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCopyLink?.(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <Link className="w-3.5 h-3.5 text-[#00B4FF]" />
-                  <span>Copiar link</span>
-                </button>
-
-                {/* 8. Copiar dominio */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCopyDomain?.(domain);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <Globe className="w-3.5 h-3.5 text-[#34D399]" />
-                  <span>Copiar dominio</span>
-                </button>
-
-                {/* 9. Copiar dominio y tipo */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCopyDomainType?.(chatCode);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <FileCode className="w-3.5 h-3.5 text-[#22C55E]" />
-                  <span>Copiar dominio y tipo</span>
-                </button>
-
-                {/* 10. Copiar contenido */}
+                {/* 8. Copiar contenido */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1234,111 +1471,25 @@ export function ResultsVirtualTable({
                   className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
                 >
                   <FileText className="w-3.5 h-3.5 text-[#CBD5E1]" />
-                  <span>Copiar contenido</span>
-                </button>
-
-                {/* 11. Ir al dominio */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenDomain?.(domain);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <Globe className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>Ir al dominio</span>
+                  <span>Copiar contenido / notas</span>
                 </button>
 
                 <div className="h-px bg-[#26354A] my-1" />
 
-                {/* 12. Crear carpeta aquí... */}
+                {/* 9. Agregar / Quitar de Favoritos */}
                 <button
                   type="button"
                   onClick={() => {
-                    const target = item.target || item.path;
-                    onCreateFolder?.(target);
+                    onToggleBookmark?.(item);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#00C8FF] text-[11px] flex items-center gap-2 cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#FBBF24] text-[11px] flex items-center gap-2 cursor-pointer"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 text-[#00C8FF]" />
-                  <span>Crear carpeta aquí...</span>
+                  <Star className={`w-3.5 h-3.5 ${isFav ? "fill-[#FBBF24] text-[#FBBF24]" : "text-[#FBBF24]"}`} />
+                  <span>{isFav ? "Quitar de Favoritos" : "Agregar a Favoritos"}</span>
                 </button>
 
-                {/* 13. Subir archivo (Submenú) */}
-                <div
-                  className="relative"
-                  onMouseEnter={() => setActiveSubmenu("upload")}
-                  onMouseLeave={() => setActiveSubmenu(null)}
-                >
-                  <button
-                    type="button"
-                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#60A5FA] text-[11px] flex items-center justify-between cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Upload className="w-3.5 h-3.5 text-[#60A5FA]" />
-                      <span>Subir archivo</span>
-                    </div>
-                    <ChevronRight className="w-3 h-3 text-[#64748B]" />
-                  </button>
-
-                  {activeSubmenu === "upload" && (
-                    <div className="absolute left-full top-0 ml-1 bg-[#0D1522] border border-[#00C8FF]/40 rounded-lg shadow-2xl p-1 w-56 z-50">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onOpenUploadDropbox?.();
-                          setContextMenu(null);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-[#00E5FF]" />
-                        <span>A Dropbox (DRX Inteligente)...</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = item.target || item.path;
-                          onOpenUploadDropbox?.(target);
-                          setContextMenu(null);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                      >
-                        <Folder className="w-3.5 h-3.5 text-[#38BDF8]" />
-                        <span>A esta carpeta en Dropbox...</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onOpenUploadDropbox?.();
-                          setContextMenu(null);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                      >
-                        <Globe className="w-3.5 h-3.5 text-[#A78BFA]" />
-                        <span>A Notion — Revisiones...</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="h-px bg-[#26354A] my-1" />
-
-                {/* 14. Duplicar… */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDuplicate?.(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <CopyPlus className="w-3.5 h-3.5 text-[#818CF8]" />
-                  <span>Duplicar…</span>
-                </button>
-
-                {/* 15. Eliminar */}
+                {/* 10. Eliminar */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1355,23 +1506,8 @@ export function ResultsVirtualTable({
                   <span>
                     {selectedIds.has(item.id) && selectedIds.size > 1
                       ? `Eliminar seleccionadas (${selectedIds.size})`
-                      : "Eliminar"}
+                      : "Eliminar página"}
                   </span>
-                </button>
-
-                <div className="h-px bg-[#26354A] my-1" />
-
-                {/* 16. Agregar a Favoritos / Quitar de Favoritos */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleBookmark?.(item);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#FBBF24] text-[11px] flex items-center gap-2 cursor-pointer"
-                >
-                  <Star className={`w-3.5 h-3.5 ${isFav ? "fill-[#FBBF24] text-[#FBBF24]" : "text-[#FBBF24]"}`} />
-                  <span>{isFav ? "Quitar de Favoritos" : "Agregar a Favoritos"}</span>
                 </button>
               </>
             );

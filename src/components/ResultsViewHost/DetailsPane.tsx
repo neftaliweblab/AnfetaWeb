@@ -288,7 +288,14 @@ export function DetailsPane({
   const contentSnippet = previewContent || item.contentSnippet || item.pageContent || item.description;
   const parsed = parseVisualParts(item.name, updateStatus, contentSnippet);
   const targetPath = item.target || item.path || "";
-  const isNotion = item.source === "Notion" || item.type === "NOTION_PAGE" || !targetPath.includes(":\\");
+  const isDropbox =
+    item.source === "Dropbox" ||
+    item.sourceName === "Dropbox" ||
+    item.externalSourceName === "Dropbox" ||
+    item.type === "FILE" ||
+    item.type === "FOLDER" ||
+    (targetPath && (targetPath.startsWith("/") || targetPath.includes(":\\")));
+  const isNotion = !isDropbox || item.source === "Notion" || item.type === "PAGE";
   const displayLocation = item.displayLocation || (targetPath ? targetPath.replace(/\\/g, "/") : "Notion");
   const isImage = isImageFile(targetPath) || isImageFile(item.name);
 

@@ -562,32 +562,114 @@ export function ResultsViewHost({
 
   const handleOpenItem = (item: any) => {
     if (!item) return;
+
+    const isDropbox =
+      selectedScope === "Dropbox" ||
+      selectedScope === "Carpetas" ||
+      item.source === "Dropbox" ||
+      item.sourceName === "Dropbox" ||
+      item.externalSourceName === "Dropbox" ||
+      item.type === "FILE" ||
+      item.type === "FOLDER" ||
+      (item.target && (item.target.startsWith("/") || item.target.includes(":\\")));
+
+    // 1. Si es Notion: abrir en Notion
+    if (!isDropbox || item.source === "Notion") {
+      const notionUrl =
+        item.externalUrl ||
+        item.pageUrl ||
+        item.url ||
+        (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
+      if (notionUrl) {
+        window.open(notionUrl, "_blank");
+        return;
+      }
+    }
+
+    // 2. Si es carpeta de Dropbox: entrar en la carpeta
     if (item.isFolder || item.type === "FOLDER") {
-      const folderName = (item.name || item.target || item.path || "").trim();
+      const folderTarget = (item.target || item.path || item.name || "").trim();
+      const folderName = folderTarget.replace(/\\/g, "/").split("/").filter(Boolean).pop() || item.name || "";
       const queryValue = folderName.includes(" ") ? `folder:"${folderName}"` : `folder:${folderName}`;
       handleQueryChange(queryValue);
       return;
     }
-    if (item.externalUrl) {
-      window.open(item.externalUrl, "_blank");
-    } else if (item.target || item.path) {
+
+    // 3. Si es archivo de Dropbox:
+    const targetPath = (item.target || item.path || item.name || "").trim();
+    if (targetPath.startsWith("http")) {
+      window.open(targetPath, "_blank");
+      return;
+    }
+
+    let clientToken = "";
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_settings");
+        if (saved) clientToken = JSON.parse(saved).dropboxToken || "";
+      } catch {}
+    }
+    const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+
+    // Si tiene ruta local con letra de disco Windows, intentar abrir en app nativa de Windows
+    if (targetPath.includes(":\\")) {
       fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "open-file", payload: { path: item.target || item.path } }),
-      });
+        body: JSON.stringify({ action: "open-file", payload: { path: targetPath } }),
+      }).catch(() => {});
     }
+
+    // Abrir vista previa / visor web en nueva pestaña
+    const previewUrl = `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
+    window.open(previewUrl, "_blank");
   };
 
   const handleOpenLocation = (item: any) => {
     if (!item) return;
-    const path = item.target || item.path;
-    if (path) {
+
+    const isDropbox =
+      selectedScope === "Dropbox" ||
+      selectedScope === "Carpetas" ||
+      item.source === "Dropbox" ||
+      item.sourceName === "Dropbox" ||
+      item.externalSourceName === "Dropbox" ||
+      item.type === "FILE" ||
+      item.type === "FOLDER" ||
+      (item.target && (item.target.startsWith("/") || item.target.includes(":\\")));
+
+    // 1. Si es Notion: abrir la página en Notion
+    if (!isDropbox || item.source === "Notion") {
+      const notionUrl =
+        item.externalUrl ||
+        item.pageUrl ||
+        item.url ||
+        (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
+      if (notionUrl) {
+        window.open(notionUrl, "_blank");
+        return;
+      }
+    }
+
+    // 2. Si es Dropbox: navegar a la carpeta en Anfeta o abrir en explorador Windows
+    const targetPath = (item.target || item.path || "").trim();
+    if (item.isFolder || item.type === "FOLDER") {
+      const folderName = (item.name || targetPath).replace(/\\/g, "/").split("/").filter(Boolean).pop() || item.name;
+      handleQueryChange(`folder:"${folderName}"`);
+    } else {
+      const folder = item.folder || (targetPath.includes("/") ? targetPath.split("/").slice(0, -1).join("/") : "");
+      const folderName = folder.replace(/\\/g, "/").split("/").filter(Boolean).pop();
+      if (folderName) {
+        handleQueryChange(`folder:"${folderName}"`);
+      }
+    }
+
+    if (targetPath && targetPath.includes(":\\")) {
       fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "open-explorer", payload: { path } }),
-      });
+        body: JSON.stringify({ action: "open-explorer", payload: { path: targetPath } }),
+      }).catch(() => {});
     }
   };
 
@@ -1135,6 +1217,7 @@ export function ResultsViewHost({
           selectedIds={selectedIds}
           searchQuery={query}
           favorites={favorites}
+          selectedScope={selectedScope}
           onSelect={handleSelectRow}
           onToggleCheck={handleToggleCheck}
           onToggleBookmark={handleToggleBookmark}
