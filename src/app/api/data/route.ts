@@ -116,6 +116,7 @@ interface LiveNotionPage {
 }
 
 const liveNotionOverrides = new Map<string, LiveNotionPage>();
+let liveDropboxCache: any[] | null = null;
 
 function extractNotionPageData(page: any): LiveNotionPage {
   const id = page.id ? String(page.id).replace(/-/g, "").toLowerCase() : "";
@@ -598,7 +599,14 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       }
 
       const rawIndex = readLocalJson<any[]>("index_cache.json", []);
-      const items:any[]=previous?.items?previous.items.map((row:any)=>({...row})):rawIndex.map(normalizeSearchRow);
+      let baseRows: any[];
+      if (liveDropboxCache !== null) {
+        const nonDbx = rawIndex.filter((x: any) => x.Source !== 1 && x.ExternalSourceName !== "Dropbox");
+        baseRows = [...nonDbx, ...liveDropboxCache];
+      } else {
+        baseRows = rawIndex;
+      }
+      const items: any[] = previous?.items ? previous.items.map((row: any) => ({ ...row })) : baseRows.map(normalizeSearchRow);
 
       if(bootstrap&&supabaseConfigured()){const available=items.filter(row=>row.source!=='Notion');return NextResponse.json({total:available.length,items:available});}
 
@@ -1541,6 +1549,7 @@ async function POSTLive(req: NextRequest) {
           const currentCache = readLocalJson<any[]>('index_cache.json', []);
           const nonDropboxItems = currentCache.filter((x: any) => x.Source !== 1 && x.ExternalSourceName !== 'Dropbox');
           const mergedCache = [...nonDropboxItems, ...scanResults];
+          liveDropboxCache = scanResults;
           const cacheFile = path.join(PROJECT_DATA_DIR, 'index_cache.json');
           try { fs.writeFileSync(cacheFile, JSON.stringify(mergedCache, null, 2), 'utf8'); } catch {}
 
