@@ -349,7 +349,20 @@ export function ResultsVirtualTable({
     const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
-    const displayPath = item.sourceName || (targetPath ? targetPath.replace(/\\/g, "/").split("/").slice(-2, -1)[0] : "—");
+    // Para Dropbox: mostrar la carpeta contenedora real (ej. /DRX/apartallante.com o el folder) en lugar de solo "Dropbox"
+    let displayPath = "—";
+    if (item.source === "Dropbox" || item.sourceName === "Dropbox") {
+      if (item.folder && item.folder !== "/" && item.folder !== "Dropbox") {
+        displayPath = item.folder.replace(/\\/g, "/").replace(/^\/+/, "");
+      } else if (targetPath) {
+        const parts = targetPath.replace(/\\/g, "/").split("/").filter(Boolean);
+        displayPath = parts.length > 1 ? parts.slice(0, -1).join("/") : (parts[0] || "Dropbox");
+      } else {
+        displayPath = "Dropbox";
+      }
+    } else {
+      displayPath = item.sourceName || (targetPath ? targetPath.replace(/\\/g, "/").split("/").slice(-2, -1)[0] : "—");
+    }
 
     return (
       <div
