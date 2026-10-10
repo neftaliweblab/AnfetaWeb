@@ -607,6 +607,11 @@ export function ResultsVirtualTable({
     const isChecked = selectedIds.has(item.id);
     const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
+    const targetPath = (item.target || item.path || "").trim();
+    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(item.name || targetPath);
+    const imgSrc = targetPath.startsWith("http")
+      ? targetPath
+      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath || item.name)}`;
     return (
       <div
         key={item.id}
@@ -702,6 +707,21 @@ export function ResultsVirtualTable({
             </button>
           </div>
         </div>
+
+        {/* Si es imagen, mostrar vista previa en el cuadro */}
+        {isImg ? (
+          <div className="w-full h-28 my-1.5 rounded-md bg-[#0A0F16] border border-[#1E293B] overflow-hidden flex items-center justify-center relative group/img">
+            <img
+              src={imgSrc}
+              alt={item.name}
+              loading="lazy"
+              className="max-h-full max-w-full object-contain transition-transform group-hover/img:scale-105"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = "none";
+              }}
+            />
+          </div>
+        ) : null}
 
         <div
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
