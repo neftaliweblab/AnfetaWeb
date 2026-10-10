@@ -1429,8 +1429,12 @@ async function POSTLive(req: NextRequest) {
           let hasMore = true;
           let cursor: string | undefined;
 
-          // Primer lote de archivos en /DRX o raíz
-          const targetPath = (payload?.folder || '/DRX').replace(/\\/g, '/');
+          // Carpeta destino en Dropbox API: raíz es '' (cadena vacía) o ruta con leading slash sin trailing slash
+          let cleanTarget = (payload?.folder || '/DRX').replace(/\\/g, '/').trim();
+          if (cleanTarget === '/' || cleanTarget === '') cleanTarget = '';
+          else if (!cleanTarget.startsWith('/')) cleanTarget = '/' + cleanTarget;
+          cleanTarget = cleanTarget.replace(/\/+$/, '');
+
           const initialRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
             method: 'POST',
             headers: {
@@ -1438,7 +1442,7 @@ async function POSTLive(req: NextRequest) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              path: targetPath === '/' ? '' : targetPath,
+              path: cleanTarget,
               recursive: true,
               include_media_info: false,
               include_deleted: false,
@@ -1449,8 +1453,8 @@ async function POSTLive(req: NextRequest) {
 
           if (!initialRes.ok) {
             const errJson = await initialRes.json();
-            // Si la carpeta /DRX no existe aún, intentamos en la raíz
-            if (targetPath !== '') {
+            // Si la carpeta especificada no existe aún, intentamos en la raíz
+            if (cleanTarget !== '') {
               const rootRes = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${dbxToken}`, 'Content-Type': 'application/json' },
