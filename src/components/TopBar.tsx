@@ -81,11 +81,9 @@ export function TopBar({
   }, []);
 
   return (
-    <header className="h-14 bg-[#0F141A] border-b border-[#26323E] px-4 flex items-center justify-between gap-4 select-none flex-shrink-0 z-50">
-      <TeamPresence/>
-      {onChangePerson&&<button onClick={onChangePerson} className="shrink-0 rounded border border-cyan-900 bg-slate-900 px-2 py-1 text-xs text-cyan-200" title="Cambiar persona activa">{currentUser||'Elegir persona'} ▾</button>}
+    <header className="h-14 bg-[#0F141A] border-b border-[#26323E] px-4 flex items-center justify-between gap-3 sm:gap-4 select-none flex-shrink-0 z-50">
       {/* Brand logo */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0">
         <div
           className="flex items-center gap-2.5 cursor-pointer group"
           onClick={() => onSelectView("results")}
@@ -100,11 +98,25 @@ export function TopBar({
             <span className="text-xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#00A8FF] via-[#38BDF8] to-[#4ADE80] drop-shadow-[0_0_12px_rgba(0,168,255,0.45)]">
               ANFETA
             </span>
-            <span className="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#131A22] text-[#38BDF8] border border-[#223848]">
+            <span className="hidden sm:inline-block text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#131A22] text-[#38BDF8] border border-[#223848]">
               v2.0
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Indicador En Línea y Persona activa */}
+      <div className="flex items-center gap-2 shrink-0">
+        <TeamPresence />
+        {onChangePerson && (
+          <button
+            onClick={onChangePerson}
+            className="shrink-0 rounded border border-cyan-900 bg-slate-900 px-2 py-1 text-xs text-cyan-200 hover:bg-slate-800 transition-colors"
+            title="Cambiar persona activa"
+          >
+            {currentUser || 'Elegir persona'} ▾
+          </button>
+        )}
       </div>
 
       {/* Global Search Bar con Flyout Predictivo */}

@@ -2,7 +2,7 @@ import {drxFolder} from '@/lib/drxUploadPlan';
 import {getSettings} from '@/services/serverSettings';
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-async function getDropboxAccessToken(tokenOverride?: string): Promise<string> {
+export async function getDropboxAccessToken(tokenOverride?: string): Promise<string> {
   if (tokenOverride) return tokenOverride;
 
   const refreshToken = process.env.DROPBOX_REFRESH_TOKEN;

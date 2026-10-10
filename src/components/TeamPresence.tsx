@@ -74,19 +74,19 @@ export function TeamPresence(){
         type="button"
         onClick={()=>setOpen(prev=>!prev)}
         title={error||`${onlineCount} de ${people.length} en línea. Clic para ver última conexión`}
-        className={'hidden lg:inline-flex items-center gap-1.5 text-[11px] font-medium rounded-md border px-2.5 py-1 transition-colors cursor-pointer select-none '+(
+        className={'inline-flex items-center gap-1.5 text-[11px] font-medium rounded-md border px-2 py-1 transition-colors cursor-pointer select-none '+(
           error
             ?'border-amber-800/80 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50'
-            :'border-slate-700 bg-slate-900/80 text-emerald-300 hover:bg-slate-800 hover:border-slate-600'
+            :'border-slate-700 bg-slate-900/90 text-emerald-300 hover:bg-slate-800 hover:border-slate-600'
         )}
       >
-        <span className={'w-2 h-2 rounded-full '+(error?'bg-amber-400':onlineCount>0?'bg-emerald-400 animate-pulse':'bg-slate-500')} />
-        <span>{error?'Presencia sin conectar':`${onlineCount} en línea`}</span>
+        <span className={'w-2 h-2 rounded-full '+(error?'bg-amber-400':onlineCount>0?'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]':'bg-slate-500')} />
+        <span className="whitespace-nowrap">{error?'Desconectado':`${onlineCount} en línea`}</span>
         <span className="text-[9px] opacity-60">▾</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-72 max-w-[92vw] rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-md z-50 text-slate-100">
+        <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-700/80 bg-[#0F172A]/95 p-3 shadow-2xl backdrop-blur-md z-[100] text-slate-100">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] font-semibold tracking-wider text-slate-300 uppercase">
             <span>Equipo ANFETA</span>
             <span className="text-emerald-400 text-[10px] lowercase font-normal">{onlineCount} en línea</span>

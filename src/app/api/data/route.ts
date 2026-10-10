@@ -23,7 +23,7 @@ import { listReviewNotifications, readNotificationThread, replyNotification } fr
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
-import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud } from '@/services/dropboxUpload';
+import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
@@ -1406,7 +1406,14 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "sync-dropbox") {
       const settings = getSettings();
-      const dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
+      let dbxToken = (payload?.dropboxToken || settings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || "").trim();
+      if (!dbxToken) {
+        try {
+          dbxToken = await getDropboxAccessToken();
+        } catch {
+          dbxToken = "";
+        }
+      }
 
       // Si hay Token de Dropbox (Cloud / Web) indexamos vía API de Dropbox
       if (dbxToken) {
