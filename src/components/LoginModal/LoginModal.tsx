@@ -24,14 +24,36 @@ const USERS = [
 export function LoginModal({ onSuccess }: LoginModalProps) {
   const [sharedMode,setSharedMode]=useState(false);
   useEffect(()=>{let alive=true;void fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{if(alive)setSharedMode(data.sharedMode===true);}).catch(()=>{});return()=>{alive=false;};},[]);
-  const [selectedUser, setSelectedUser] = useState("nneft");
+  const [selectedUser, setSelectedUser] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_last_user") || localStorage.getItem("anfeta_active_user");
+        if (saved && USERS.some(u => u.tag === saved || u.name.toLowerCase() === saved.toLowerCase())) {
+          const match = USERS.find(u => u.tag === saved || u.name.toLowerCase() === saved.toLowerCase());
+          if (match) return match.tag;
+        }
+      } catch {}
+    }
+    return "nneft";
+  });
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e:React.FormEvent) => {
     e.preventDefault();setError('');setLoading(true);
-    try{const response=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:selectedUser,password})});const data=await response.json();if(!response.ok)throw new Error(data.error);localStorage.removeItem('anfeta_auth_session');onSuccess(data.user||'',{sharedMode:data.sharedMode===true});}catch(error){setError(error instanceof Error?error.message:'No se pudo iniciar sesión.');}finally{setLoading(false);}
+    try{
+      const response=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:selectedUser,password})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error);
+      localStorage.removeItem('anfeta_auth_session');
+      try { localStorage.setItem('anfeta_last_user', selectedUser); } catch {}
+      onSuccess(data.user||'',{sharedMode:data.sharedMode===true});
+    }catch(error){
+      setError(error instanceof Error?error.message:'No se pudo iniciar sesión.');
+    }finally{
+      setLoading(false);
+    }
   };
 
   return (
@@ -62,7 +84,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
           )}
 
           {/* User selector */}
-          {!sharedMode && <div className="space-y-1.5">
+          <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-[#38BDF8]" />
               Colaborador:
@@ -80,8 +102,6 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
             </select>
           </div>
 
-          }
-          {sharedMode&&<p className="text-sm text-slate-300">Ingresa con la clave compartida. Después elige la persona que está usando ANFETA.</p>}
           {/* Password */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
@@ -97,7 +117,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
               className="w-full bg-[#080B0F] border border-[#26323E] text-slate-100 text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8] transition-colors"
             />
             <p className="text-[10px] text-slate-500 italic">
-              {sharedMode?'Usa la contraseña de acceso compartido.':'Usa la contraseña de tu cuenta del equipo.'}
+              {sharedMode?'Usa la clave de acceso corporativa compartida.':'Usa la contraseña de tu cuenta del equipo.'}
             </p>
           </div>
 
