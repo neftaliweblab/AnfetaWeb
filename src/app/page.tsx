@@ -14,6 +14,7 @@ import { DailyProgressPanel } from "@/components/DailyProgressPanel/DailyProgres
 import { MessagesHost } from "@/components/MessagesHost/MessagesHost";
 import { RemindersCalendarHost } from "@/components/RemindersCalendarHost/RemindersCalendarHost";
 import { SettingsModal } from "@/components/SettingsModal/SettingsModal";
+import { normalizePerson } from "@/services/identityNormalizer";
 import {PersonSelector} from '@/components/LoginModal/PersonSelector';
 import { LoginModal } from "@/components/LoginModal/LoginModal";
 import { StatusBar } from "@/components/StatusBar";
@@ -648,15 +649,35 @@ export default function AnfetaApp() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentUser={currentUser}
-        onSaveCurrentUser={()=>setPersonPickerOpen(true)}
+        onSaveCurrentUser={async (tag) => {
+          const person = normalizePerson(tag);
+          setCurrentUser(person);
+          try {
+            localStorage.setItem("anfeta_last_user", person);
+            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: person }));
+            await fetch("/api/auth", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ person }),
+            });
+          } catch {}
+          window.location.reload();
+        }}
       />
 
       {/* Login Corporativo Modal */}
       {!isAuthenticated && (
         <LoginModal
           onSuccess={(userTag) => {
-            setCurrentUser(userTag);
+            const person = normalizePerson(userTag);
+            setCurrentUser(person);
             setIsAuthenticated(true);
+            try {
+              localStorage.setItem("anfeta_last_user", person);
+              const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+              localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: person }));
+            } catch {}
           }}
         />
       )}

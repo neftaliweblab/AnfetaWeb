@@ -33,7 +33,8 @@ export function TeamPresence(){
       }catch(e){
         if(!controller.signal.aborted){
           setPeople([]);
-          setError(e instanceof Error?e.message:'Presencia no disponible.');
+          setConfigured(false);
+          setError('');
         }
       }finally{
         busy=false;
@@ -64,7 +65,7 @@ export function TeamPresence(){
     return()=>document.removeEventListener('mousedown',handleClickOutside);
   },[open]);
 
-  if(!configured&&!error)return null;
+  if(!configured)return null;
 
   const onlineCount = people.filter(p=>p.isOnline).length;
 

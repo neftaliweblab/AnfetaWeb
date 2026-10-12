@@ -22,6 +22,7 @@ import {
   WindowsAudioDevice,
   openWindowsSoundSettings,
 } from "@/services/windowsIntegration";
+import { normalizePerson } from "@/services/identityNormalizer";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -44,6 +45,17 @@ const USERS_LIST = [
   { tag: "__all__", name: "Todos los usuarios", role: "Modo Administrador Global" },
 ];
 
+function toUserTag(val: string): string {
+  if (!val) return "nneft";
+  const direct = USERS_LIST.find((u) => u.tag === val);
+  if (direct) return direct.tag;
+  const byName = USERS_LIST.find((u) => u.name.toLowerCase() === val.toLowerCase());
+  if (byName) return byName.tag;
+  const person = normalizePerson(val);
+  const byPerson = USERS_LIST.find((u) => u.name.toLowerCase() === person.toLowerCase());
+  return byPerson?.tag || "nneft";
+}
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -51,7 +63,7 @@ export function SettingsModal({
   onSaveCurrentUser,
 }: SettingsModalProps) {
   const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
-  const [userTag, setUserTag] = useState(currentUser);
+  const [userTag, setUserTag] = useState(() => toUserTag(currentUser));
   const [devices, setDevices] = useState<WindowsAudioDevice[]>([]);
   const [volume, setVolume] = useState(80);
   const [dictateToasts, setDictateToasts] = useState(true);
@@ -76,6 +88,9 @@ export function SettingsModal({
 
   useEffect(() => {
     if (isOpen) {
+      if (currentUser) {
+        setUserTag(toUserTag(currentUser));
+      }
       getWindowsAudioDevices().then(setDevices);
 
       // 1. Leer inmediatamente de localStorage (para persistencia 100% confiable en la web/Vercel)
@@ -87,7 +102,7 @@ export function SettingsModal({
           if (parsed.dropboxToken) setDropboxToken(parsed.dropboxToken);
           if (parsed.cloudFolder) setCloudFolder(parsed.cloudFolder);
           if (parsed.dropboxPath) setDropboxPath(parsed.dropboxPath);
-          if (parsed.currentUser) setUserTag(parsed.currentUser);
+          if (parsed.currentUser) setUserTag(toUserTag(parsed.currentUser));
         }
       } catch (err) {
         console.warn("Error leyendo localStorage anfeta_settings:", err);
@@ -104,18 +119,18 @@ export function SettingsModal({
             if (data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (data.cloudFolder) setCloudFolder(data.cloudFolder);
             if (data.dropboxPath) setDropboxPath(data.dropboxPath);
-            if (data.currentUser) setUserTag(data.currentUser);
+            if (data.currentUser) setUserTag(toUserTag(data.currentUser));
           } catch {
             if (data.notionToken) setNotionToken(data.notionToken);
             if (data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (data.cloudFolder) setCloudFolder(data.cloudFolder);
             if (data.dropboxPath) setDropboxPath(data.dropboxPath);
-            if (data.currentUser) setUserTag(data.currentUser);
+            if (data.currentUser) setUserTag(toUserTag(data.currentUser));
           }
         })
         .catch(() => {});
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   const loadCloudFolders = async (targetPath = "") => {
     setLoadingCloudFolders(true);

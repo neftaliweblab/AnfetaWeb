@@ -91,9 +91,8 @@ export async function GET(req: Request) {
     if (!supabaseConfigured()) return NextResponse.json({configured: false, people: []});
     const people = await getTeamPresenceList();
     return NextResponse.json({configured: true, people}, {headers: {'Cache-Control': 'no-store'}});
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'No se pudo obtener la presencia.';
-    return NextResponse.json({error: message}, {status: 502});
+  } catch {
+    return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
   }
 }
 
@@ -104,11 +103,12 @@ export async function POST(req: Request) {
     if (!supabaseConfigured()) return NextResponse.json({configured: false, people: []});
     const identity = await supabaseIdentity(), admin = supabaseAdmin();
     const result = await admin.from('team_presence').upsert({user_id: identity.id, last_seen: new Date().toISOString()});
-    if (result.error) throw new Error('Ejecuta la cuarta migracion para activar la presencia del equipo.');
+    if (result.error) {
+      return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
+    }
     const people = await getTeamPresenceList();
     return NextResponse.json({configured: true, people}, {headers: {'Cache-Control': 'no-store'}});
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'No se pudo actualizar la presencia.';
-    return NextResponse.json({error: message}, {status: /Inicia sesion/i.test(message) ? 401 : 502});
+  } catch {
+    return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
   }
 }
