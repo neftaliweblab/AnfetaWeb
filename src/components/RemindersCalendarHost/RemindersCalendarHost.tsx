@@ -9,6 +9,8 @@ function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexic
 type Item={id:string;title:string;due_date:string;due_time:string;priority:string;completed:boolean;revision:number;creator_id:string;assignee_id:string;recurrence?:string};
 export function RemindersCalendarHost(){const [items,setItems]=useState<Item[]>([]),[people,setPeople]=useState<{id:string;name:string}[]>([]),[current,setCurrent]=useState(''),[date,setDate]=useState(today),[title,setTitle]=useState(''),[time,setTime]=useState('12:00'),[assignee,setAssignee]=useState(''),[priority,setPriority]=useState('medium'),[error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
 const [view,setView]=useState('day'),[personFilter,setPersonFilter]=useState(''),[textFilter,setTextFilter]=useState(''),[truncated,setTruncated]=useState(false);const range=agendaRange(date,view);const [notice,setNotice]=useState('');
+useEffect(()=>{if(!error)return;const t=setTimeout(()=>setError(''),6000);return()=>clearTimeout(t);},[error]);
+useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),6000);return()=>clearTimeout(t);},[notice]);
 const [scope,setScope]=useState('all');const [now,setNow]=useState(Date.now);useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer);},[]);const visibleItems=filterAgenda(filterReminders(items,scope,now),personFilter,textFilter);
 const [editing,setEditing]=useState<Item|null>(null),[recurrence,setRecurrence]=useState('none');
 const cancelEdit=()=>{setEditing(null);setTitle('');setRecurrence('none');setTime('12:00');setPriority('medium');setAssignee(current);};

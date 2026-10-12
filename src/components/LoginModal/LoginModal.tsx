@@ -40,6 +40,12 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(''), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
   const handleSubmit = async (e:React.FormEvent) => {
     e.preventDefault();setError('');setLoading(true);
     try{
@@ -47,7 +53,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({user:selectedUser,password}),
-        signal:AbortSignal.timeout(12000),
+        signal:AbortSignal.timeout(30000),
       });
       let data: any = null;
       try {
@@ -63,8 +69,14 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
       try { localStorage.setItem('anfeta_last_user', selectedUser); } catch {}
       onSuccess(data.user||'',{sharedMode:data.sharedMode===true});
     }catch(error){
-      const msg = error instanceof Error ? error.message : 'No se pudo iniciar sesión.';
-      setError(msg.includes('is not valid JSON') ? 'Error de conexión con el servidor. Intenta de nuevo.' : msg);
+      const raw = error instanceof Error ? error.message : 'No se pudo iniciar sesión.';
+      let msg = raw;
+      if (raw.includes('signal timed out') || raw.includes('aborted') || (error instanceof DOMException && error.name === 'TimeoutError')) {
+        msg = 'Tiempo de espera agotado al conectar con el servidor. Intenta de nuevo.';
+      } else if (raw.includes('is not valid JSON')) {
+        msg = 'Error de conexión con el servidor. Intenta de nuevo.';
+      }
+      setError(msg);
     }finally{
       setLoading(false);
     }

@@ -77,6 +77,11 @@ export function CalendarHost({
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(''), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
   const [headerSummary,setHeaderSummary]=useState<{person:string|null}|null>(null),[previewTab,setPreviewTab]=useState<'checks'|'activities'>('checks'),[batchDefaults,setBatchDefaults]=useState<{person:string;day:string}|null>(null);const [showBatch,setShowBatch]=useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const mutationVersion = React.useRef(0);

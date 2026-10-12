@@ -142,6 +142,11 @@ export function ResultsViewHost({
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [statusError, setStatusError] = useState('');
+  useEffect(() => {
+    if (!statusError) return;
+    const timer = setTimeout(() => setStatusError(''), 6000);
+    return () => clearTimeout(timer);
+  }, [statusError]);
   const [globalPasteText, setGlobalPasteText] = useState("");
   const [globalPasteImage, setGlobalPasteImage] = useState<GlobalPasteImagePayload | null>(null);
 

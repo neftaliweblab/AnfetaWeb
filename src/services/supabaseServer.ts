@@ -6,7 +6,7 @@ import {cookies} from 'next/headers';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 export function supabaseConfigured(){return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_SECRET_KEY);}
 function config(){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!url||!key)throw new Error('Configura la URL y la clave publicable de Supabase en el servidor.');return {url,key};}
-export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}}});}
+export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
 export function supabaseAdmin(){const {url}=config();const key=process.env.SUPABASE_SECRET_KEY;if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
 export function validateProfile(profile:any){const person=normalizePerson(profile?.person_tag);if(!profile?.active||!PERSON_ALIASES[person])throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Solicita su asignación al administrador.');return person;}
 export async function supabaseIdentity(){
@@ -110,14 +110,10 @@ export async function loginSharedAccess(password:string, targetUser?:string){
 
  if(targetUser){
   const person=normalizePerson(targetUser),tag=PERSON_ALIASES[person]?.[0]||'nneft';
-  const profile=await getOrEnsureProfile(admin,tag);
+  const profilePromise=getOrEnsureProfile(admin,tag).catch(()=>null);
+  const timeoutPromise=new Promise<null>(res=>setTimeout(()=>res(null),2500));
+  const profile=await Promise.race([profilePromise,timeoutPromise]);
   const selectedId=profile?.id||baseId;
-
-  if(profile?.login_email){
-   try {
-    await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
-   } catch {}
-  }
 
   await saveSharedGate({baseId,selectedId,person,personTag:tag,expires:Date.now()+8*3600000});
   return {person,needsPersonSelection:false};
