@@ -24,7 +24,38 @@ async function ensureSharedTeam(){
  }
 }
 export async function loginSharedAccess(password:string){
- const baseId=sharedAccountId(),admin=supabaseAdmin(),account=await admin.auth.admin.getUserById(baseId);if(account.error||!account.data.user?.email)throw new Error('Revisa el UUID de la cuenta de acceso compartido.');
+ const baseId=sharedAccountId(),admin=supabaseAdmin();
+ let account=await admin.auth.admin.getUserById(baseId);
+ if(account.error||!account.data?.user?.email){
+  const sharedEmail='anfeta-shared-access@internal.anfeta.invalid';
+  const envPass=process.env.ANFETA_SHARED_PASSWORD||process.env.ANFETA_SHARED_AUTH_PASSWORD;
+  const initialPass=envPass||password;
+  const safePass=initialPass.length<6?initialPass.padEnd(8,'0'):initialPass;
+  const created=await admin.auth.admin.createUser({id:baseId,email:sharedEmail,password:safePass,email_confirm:true});
+  if(created.data?.user?.email){
+   account=created;
+  }else if(admin.auth.admin.listUsers){
+   const list=await admin.auth.admin.listUsers();
+   const existing=list.data?.users?.find((u:any)=>u.email===sharedEmail);
+   if(existing){
+    if(existing.id!==baseId&&admin.auth.admin.deleteUser){
+     await admin.auth.admin.deleteUser(existing.id);
+     const retry=await admin.auth.admin.createUser({id:baseId,email:sharedEmail,password:safePass,email_confirm:true});
+     if(retry.data?.user?.email)account=retry;
+    }else{
+     account={data:{user:existing},error:null} as any;
+    }
+   }
+  }
+ }
+ if(account.error||!account.data?.user?.email)throw new Error('No se pudo inicializar la cuenta de acceso compartido.');
+ const envPassword=process.env.ANFETA_SHARED_PASSWORD||process.env.ANFETA_SHARED_AUTH_PASSWORD;
+ if(envPassword){
+  if(password!==envPassword)throw new Error('Clave de acceso incorrecta.');
+  if(admin.auth.admin.updateUserById){
+   await admin.auth.admin.updateUserById(baseId,{password:envPassword});
+  }
+ }
  const client=await supabaseSessionClient();const signed=await client.auth.signInWithPassword({email:account.data.user.email,password});
  if(signed.error)throw new Error('Clave de acceso incorrecta.');
  try{const checked=await client.auth.getUser();if(checked.error||checked.data.user?.id!==baseId)throw new Error('No se pudo verificar el acceso compartido.');await ensureSharedTeam();await saveSharedGate({baseId,selectedId:'',expires:Date.now()+8*3600000});return {person:'',needsPersonSelection:true};}
