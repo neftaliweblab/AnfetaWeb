@@ -115,13 +115,7 @@ export async function loginSharedAccess(password:string, targetUser?:string){
 
   if(profile?.login_email){
    try {
-    const directSign=await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
-    if(directSign?.error&&admin.auth.admin?.generateLink){
-     const link=await admin.auth.admin.generateLink({type:'magiclink',email:profile.login_email}).catch(()=>null);
-     if(link?.data?.properties?.hashed_token){
-      await client.auth.verifyOtp({token_hash:link.data.properties.hashed_token,type:'magiclink'}).catch(()=>null);
-     }
-    }
+    await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
    } catch {}
   }
 
