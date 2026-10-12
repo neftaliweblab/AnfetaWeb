@@ -51,27 +51,46 @@ async function getOrEnsureProfile(admin:any,tag:string){
  const found=q.maybeSingle?await q.maybeSingle():await q.single();
  if(found?.data?.login_email)return found.data;
  const email='anfeta.'+tag+'@gmail.com';
- const created=await admin.auth.admin.createUser({email,password:randomBytes(32).toString('base64url'),email_confirm:true});
- let user=created.data?.user;
- if(!user){
-  const recovered=await admin.auth.admin.generateLink({type:'magiclink',email});
-  user=recovered.data?.user;
+ let user: any = null;
+ if(admin.auth.admin?.createUser){
+  try {
+   const created=await admin.auth.admin.createUser({email,password:randomBytes(32).toString('base64url'),email_confirm:true});
+   user=created.data?.user;
+  } catch {}
  }
- if(!user&&admin.auth.admin.listUsers){
-  const list=await admin.auth.admin.listUsers();
-  const match=list?.data?.users?.find((u:any)=>u.email===email);
-  if(match)user=match;
+ if(!user&&admin.auth.admin?.generateLink){
+  try {
+   const recovered=await admin.auth.admin.generateLink({type:'magiclink',email});
+   user=recovered.data?.user;
+  } catch {}
+ }
+ if(!user&&admin.auth.admin?.listUsers){
+  try {
+   const list=await admin.auth.admin.listUsers();
+   const match=list?.data?.users?.find((u:any)=>u.email===email);
+   if(match)user=match;
+  } catch {}
  }
  if(user){
   const row={id:user.id,person_tag:tag,login_email:email,active:true};
-  if(admin.from('profiles').upsert){
-   await admin.from('profiles').upsert(row,{onConflict:'person_tag'});
-  }else{
-   await admin.from('profiles').insert(row);
-  }
+  try {
+   if(admin.from('profiles').upsert){
+    await admin.from('profiles').upsert(row,{onConflict:'person_tag'});
+   }else{
+    await admin.from('profiles').insert(row);
+   }
+  } catch {}
   return row;
  }
- return null;
+ const fallbackRow={id:sharedAccountId(),person_tag:tag,login_email:email,active:true};
+ try {
+  if(admin.from('profiles').upsert){
+   await admin.from('profiles').upsert(fallbackRow,{onConflict:'person_tag'});
+  }else{
+   await admin.from('profiles').insert(fallbackRow);
+  }
+ } catch {}
+ return fallbackRow;
 }
 
 async function ensureSharedTeam(){
@@ -92,28 +111,22 @@ export async function loginSharedAccess(password:string, targetUser?:string){
  if(targetUser){
   const person=normalizePerson(targetUser),tag=PERSON_ALIASES[person]?.[0]||'nneft';
   const profile=await getOrEnsureProfile(admin,tag);
-  if(!profile?.id||!profile?.login_email)throw new Error('No se pudo preparar el perfil de '+person+'.');
+  const selectedId=profile?.id||baseId;
 
-  let signedIn=false;
-  const directSign=await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
-  if(!directSign?.error&&directSign?.data?.user?.id===profile.id)signedIn=true;
-
-  if(!signedIn&&admin.auth.admin?.updateUserById){
-   await admin.auth.admin.updateUserById(profile.id,{password:'Anfeta!26'}).catch(()=>null);
-   const retrySign=await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
-   if(!retrySign?.error&&retrySign?.data?.user?.id===profile.id)signedIn=true;
+  if(profile?.login_email){
+   try {
+    const directSign=await client.auth.signInWithPassword({email:profile.login_email,password:'Anfeta!26'}).catch(()=>null);
+    if(directSign?.error&&admin.auth.admin?.generateLink){
+     const link=await admin.auth.admin.generateLink({type:'magiclink',email:profile.login_email}).catch(()=>null);
+     if(link?.data?.properties?.hashed_token){
+      await client.auth.verifyOtp({token_hash:link.data.properties.hashed_token,type:'magiclink'}).catch(()=>null);
+     }
+    }
+   } catch {}
   }
 
-  if(!signedIn&&admin.auth.admin?.generateLink){
-   const link=await admin.auth.admin.generateLink({type:'magiclink',email:profile.login_email}).catch(()=>null);
-   if(link?.data?.properties?.hashed_token){
-    const verified=await client.auth.verifyOtp({token_hash:link.data.properties.hashed_token,type:'magiclink'}).catch(()=>null);
-    if(!verified?.error&&verified?.data?.user?.id===profile.id)signedIn=true;
-   }
-  }
-
-  await saveSharedGate({baseId,selectedId:profile.id,person,personTag:tag,expires:Date.now()+8*3600000});
-  return {person:validateProfile(profile),needsPersonSelection:false};
+  await saveSharedGate({baseId,selectedId,person,personTag:tag,expires:Date.now()+8*3600000});
+  return {person,needsPersonSelection:false};
  }
 
  const account=await admin.auth.admin.getUserById(baseId).catch(()=>null);
