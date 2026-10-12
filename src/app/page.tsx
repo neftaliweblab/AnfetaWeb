@@ -512,8 +512,16 @@ export default function AnfetaApp() {
         onLogout={async () => {
           try {
             localStorage.removeItem("anfeta_auth_session");
+            localStorage.removeItem("anfeta_settings");
+            localStorage.removeItem("anfeta_last_user");
           } catch {}
-          const response=await fetch('/api/auth',{method:'DELETE'});if(!response.ok){window.alert('No se pudo cerrar la sesión. Intenta de nuevo.');return;}setSearchIndex([]);setCalendarActivities([]);setIsAuthenticated(false);
+          try {
+            await fetch('/api/auth', { method: 'DELETE' });
+          } catch {}
+          setSearchIndex([]);
+          setCalendarActivities([]);
+          setIsAuthenticated(false);
+          window.location.reload();
         }}
         unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}
         searchIndex={searchIndex}

@@ -687,25 +687,12 @@ export function ResultsViewHost({
         if (saved) token = JSON.parse(saved).notionToken || "";
       } catch {}
 
-      if (!token || !token.trim()) {
-        const prompted = window.prompt("Ingresa tu Notion Token de integración para sincronizar en vivo con Notion:");
-        if (prompted && prompted.trim()) {
-          token = prompted.trim();
-          try {
-            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
-            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, notionToken: token }));
-          } catch {}
-        }
-      }
-
-      // Si hay token de Notion, forzar sincronización en vivo de páginas modificadas
-      if (token && token.trim()) {
-        await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "sync-notion", payload: { token: token.trim() } }),
-        }).catch(() => {});
-      }
+      // Sincronización en vivo con Notion (usa token local si existe, o el configurado en el servidor)
+      await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync-notion", payload: token?.trim() ? { token: token.trim() } : {} }),
+      }).catch(() => {});
 
       const data=await loadSearchIndex({fresh:true});
       window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));

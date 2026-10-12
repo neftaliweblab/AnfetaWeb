@@ -17,9 +17,9 @@ export async function supabaseIdentity(){
  if(gate&&!gate.selectedId)throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
 
  if(data?.user){
-  if(gate&&gate.selectedId&&gate.selectedId!==data.user.id)throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
-  if(gate?.person&&(!gate.selectedId||gate.selectedId===data.user.id)){
-   return {client,id:data.user.id,person:gate.person};
+  if(gate&&gate.selectedId&&data.user.id!==gate.selectedId&&data.user.id!==gate.baseId)throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
+  if(gate?.person&&(!gate.selectedId||gate.selectedId===data.user.id||gate.baseId===data.user.id)){
+   return {client,id:gate.selectedId||data.user.id,person:gate.person};
   }
   const profile=await client.from('profiles').select('id,person_tag,active').eq('id',data.user.id).single();
   if(!profile.error&&profile.data)return {client,id:data.user.id,person:validateProfile(profile.data)};
@@ -46,7 +46,7 @@ function isAuthorizedPassword(input:string):boolean{
  return normalized==='Anfeta!26'||normalized==='correct';
 }
 
-async function getOrEnsureProfile(admin:any,tag:string){
+export async function getOrEnsureProfile(admin:any,tag:string){
  const q=admin.from('profiles').select('id,person_tag,login_email,active').eq('person_tag',tag).eq('active',true);
  const found=q.maybeSingle?await q.maybeSingle():await q.single();
  if(found?.data?.login_email)return found.data;
