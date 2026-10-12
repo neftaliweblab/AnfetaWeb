@@ -1285,9 +1285,17 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
 async function POSTLive(req: NextRequest) {
   try {
-    const actor=await requireActor(req);assertSameOrigin(req);
+    assertSameOrigin(req);
     const body = await req.json();
     const { action } = body;
+    let actor: string = "";
+    try {
+      actor = await requireActor(req);
+    } catch (authErr) {
+      if (action !== "test-notion-token" && action !== "test-dropbox-token") {
+        throw authErr;
+      }
+    }
     const payload={...(body.payload || {}),currentUser:actor};
 
     if(action==='unified-upload'){
@@ -1480,31 +1488,35 @@ async function POSTLive(req: NextRequest) {
     }
 
     if (action === "test-notion-token") {
-      const token = payload?.token || getSettings().notionToken;
-      if (!token || !token.trim()) {
-        return NextResponse.json({ success: false, error: "Token vacío" }, { status: 400 });
+      const token = (payload?.token || getSettings().notionToken || "").trim();
+      if (!token) {
+        return NextResponse.json({ success: false, error: "Ingresa el token de Notion antes de probar." }, { status: 200 });
       }
 
       try {
         const res = await fetch("https://api.notion.com/v1/users/me", {
           headers: {
-            Authorization: `Bearer ${token.trim()}`,
+            Authorization: `Bearer ${token}`,
             "Notion-Version": "2022-06-28",
           },
+          signal: AbortSignal.timeout(10000),
         });
-        const data = await res.json();
-        if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (res.ok && data) {
           return NextResponse.json({
             success: true,
             bot: data.name || data.bot?.owner?.user?.name || "Integración Conectada",
           });
         }
         return NextResponse.json(
-          { success: false, error: data.message || `HTTP ${res.status}` },
-          { status: 400 }
+          { success: false, error: data?.message || `Notion respondió con código HTTP ${res.status}` },
+          { status: 200 }
         );
       } catch (err: any) {
-        return NextResponse.json({ success: false, error: err.message }, { status: /Inicia sesión/.test(err?.message || '')?401:500 });
+        const msg = err.name === 'TimeoutError' || err.name === 'AbortError'
+          ? "Tiempo de espera agotado al conectar con Notion (10s)."
+          : (err.message || "Error al verificar el token de Notion");
+        return NextResponse.json({ success: false, error: msg }, { status: 200 });
       }
     }
 
@@ -1517,9 +1529,10 @@ async function POSTLive(req: NextRequest) {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          signal: AbortSignal.timeout(10000),
         });
-        const data = await res.json();
-        if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (res.ok && data) {
           return NextResponse.json({
             success: true,
             account: data.name?.display_name || data.email || "Cuenta de Dropbox vinculada",
@@ -1527,11 +1540,14 @@ async function POSTLive(req: NextRequest) {
           });
         }
         return NextResponse.json(
-          { success: false, error: data.error_summary || `HTTP ${res.status}` },
-          { status: 400 }
+          { success: false, error: data?.error_summary || data?.error?.['.tag'] || `Dropbox respondió con código HTTP ${res.status}` },
+          { status: 200 }
         );
       } catch (err: any) {
-        return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+        const msg = err.name === 'TimeoutError' || err.name === 'AbortError'
+          ? "Tiempo de espera agotado al conectar con Dropbox (10s)."
+          : (err.message || "Error al verificar el token de Dropbox");
+        return NextResponse.json({ success: false, error: msg }, { status: 200 });
       }
     }
 

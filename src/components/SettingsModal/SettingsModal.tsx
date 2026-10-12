@@ -153,7 +153,8 @@ export function SettingsModal({
   };
 
   const handleTestToken = async () => {
-    if (!notionToken.trim()) {
+    const token = notionToken.trim();
+    if (!token) {
       setTestStatus({ ok: false, msg: "Ingresa el token de Notion antes de probar" });
       return;
     }
@@ -163,16 +164,23 @@ export function SettingsModal({
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "test-notion-token", payload: { token: notionToken.trim() } }),
+        body: JSON.stringify({ action: "test-notion-token", payload: { token } }),
+        signal: AbortSignal.timeout(12000),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `Respuesta del servidor no válida (HTTP ${res.status})`,
+      }));
       if (data.success) {
         setTestStatus({ ok: true, msg: `✓ Conectado: ${data.bot}` });
       } else {
-        setTestStatus({ ok: false, msg: `✕ Error: ${data.error}` });
+        setTestStatus({ ok: false, msg: `✕ ${data.error || "No se pudo conectar a Notion"}` });
       }
     } catch (e: any) {
-      setTestStatus({ ok: false, msg: `✕ ${e.message}` });
+      const msg = e.name === "TimeoutError" || e.name === "AbortError"
+        ? "Tiempo de espera agotado al conectar con Notion (12s)."
+        : (e.message || "Error de red al conectar");
+      setTestStatus({ ok: false, msg: `✕ ${msg}` });
     } finally {
       setIsTestingToken(false);
     }
@@ -186,15 +194,22 @@ export function SettingsModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "test-dropbox-token", payload: { token: dropboxToken.trim() } }),
+        signal: AbortSignal.timeout(12000),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `Respuesta del servidor no válida (HTTP ${res.status})`,
+      }));
       if (data.success) {
         setDropboxTestStatus({ ok: true, msg: `✓ Conectado a Dropbox: ${data.account || data.email}` });
       } else {
-        setDropboxTestStatus({ ok: false, msg: `✕ ${data.error}` });
+        setDropboxTestStatus({ ok: false, msg: `✕ ${data.error || "No se pudo conectar a Dropbox"}` });
       }
     } catch (e: any) {
-      setDropboxTestStatus({ ok: false, msg: `✕ ${e.message}` });
+      const msg = e.name === "TimeoutError" || e.name === "AbortError"
+        ? "Tiempo de espera agotado al conectar con Dropbox (12s)."
+        : (e.message || "Error de red al conectar");
+      setDropboxTestStatus({ ok: false, msg: `✕ ${msg}` });
     } finally {
       setIsTestingDropbox(false);
     }
@@ -207,17 +222,24 @@ export function SettingsModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sync-notion", payload: { token: notionToken.trim() } }),
+        signal: AbortSignal.timeout(30000),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `Respuesta del servidor no válida (HTTP ${res.status})`,
+      }));
       if (data.success) {
         // Disparar evento para que la vista recargue los datos actualizados de Notion
         window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: data }));
         alert(data.message || `Sincronizadas ${data.count} páginas con Notion.`);
       } else {
-        alert(`Error al sincronizar con Notion: ${data.error}`);
+        alert(`Error al sincronizar con Notion: ${data.error || "Error desconocido"}`);
       }
     } catch (e: any) {
-      alert(`Error de red: ${e.message}`);
+      const msg = e.name === "TimeoutError" || e.name === "AbortError"
+        ? "Tiempo de espera agotado al sincronizar con Notion."
+        : (e.message || "Error de red");
+      alert(`Error de red: ${msg}`);
     } finally {
       setIsSyncing(false);
     }

@@ -30,10 +30,11 @@ export async function refreshDropboxAccessToken(
     method: 'POST',
     headers,
     body: bodyParams,
+    signal: AbortSignal.timeout(10000),
   });
 
-  const data = await res.json();
-  if (res.ok && data.access_token) {
+  const data = await res.json().catch(() => null);
+  if (res.ok && data?.access_token) {
     const expiresInMs = (data.expires_in || 14400) * 1000;
     cachedToken = {
       token: data.access_token,
@@ -42,7 +43,7 @@ export async function refreshDropboxAccessToken(
     return data.access_token;
   }
 
-  const errDetail = data.error_description || data.error || JSON.stringify(data);
+  const errDetail = data?.error_description || data?.error || (data ? JSON.stringify(data) : `HTTP ${res.status}`);
   console.error('Dropbox OAuth refresh error:', errDetail);
   throw new Error(`Dropbox OAuth error: ${errDetail}`);
 }
