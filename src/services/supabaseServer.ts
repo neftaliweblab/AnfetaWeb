@@ -7,7 +7,7 @@ import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 export function supabaseConfigured(){return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_SECRET_KEY);}
 function config(){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!url||!key)throw new Error('Configura la URL y la clave publicable de Supabase en el servidor.');return {url,key};}
 export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}}});}
-export function supabaseAdmin(){const {url}=config();const key=process.env.SUPABASE_SECRET_KEY;if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(60000),cache:'no-store'})}});}
+export function supabaseAdmin(){const {url}=config();const key=process.env.SUPABASE_SECRET_KEY;if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
 export function validateProfile(profile:any){const person=normalizePerson(profile?.person_tag);if(!profile?.active||!PERSON_ALIASES[person])throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Solicita su asignación al administrador.');return person;}
 export async function supabaseIdentity(){
  const client=await supabaseSessionClient();
@@ -18,11 +18,17 @@ export async function supabaseIdentity(){
 
  if(data?.user){
   if(gate&&gate.selectedId&&gate.selectedId!==data.user.id)throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
+  if(gate?.person&&(!gate.selectedId||gate.selectedId===data.user.id)){
+   return {client,id:data.user.id,person:gate.person};
+  }
   const profile=await client.from('profiles').select('id,person_tag,active').eq('id',data.user.id).single();
   if(!profile.error&&profile.data)return {client,id:data.user.id,person:validateProfile(profile.data)};
  }
 
  if(gate?.selectedId){
+  if(gate?.person){
+   return {client,id:gate.selectedId,person:gate.person};
+  }
   const admin=supabaseAdmin();
   const q=admin.from('profiles').select('id,person_tag,active').eq('id',gate.selectedId);
   const profile=q.maybeSingle?await q.maybeSingle():await q.single();
@@ -106,8 +112,7 @@ export async function loginSharedAccess(password:string, targetUser?:string){
    }
   }
 
-  await saveSharedGate({baseId,selectedId:profile.id,expires:Date.now()+8*3600000});
-  void ensureSharedTeam().catch(()=>{});
+  await saveSharedGate({baseId,selectedId:profile.id,person,personTag:tag,expires:Date.now()+8*3600000});
   return {person:validateProfile(profile),needsPersonSelection:false};
  }
 
@@ -146,5 +151,5 @@ export async function selectSharedPerson(input:string){
   }
  }
 
- await saveSharedGate({...gate,selectedId:profile.id});return {person:validateProfile(profile)};
+ await saveSharedGate({...gate,selectedId:profile.id,person,personTag:tag});return {person:validateProfile(profile)};
 }

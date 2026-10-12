@@ -43,14 +43,28 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const handleSubmit = async (e:React.FormEvent) => {
     e.preventDefault();setError('');setLoading(true);
     try{
-      const response=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:selectedUser,password})});
-      const data=await response.json();
-      if(!response.ok)throw new Error(data.error);
+      const response=await fetch('/api/auth',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({user:selectedUser,password}),
+        signal:AbortSignal.timeout(12000),
+      });
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        if (response.status === 504) {
+          throw new Error('El servidor tardó en responder. Por favor intenta de nuevo.');
+        }
+        throw new Error(`Error en el servidor (HTTP ${response.status}).`);
+      }
+      if(!response.ok)throw new Error(data?.error || 'No se pudo iniciar sesión.');
       localStorage.removeItem('anfeta_auth_session');
       try { localStorage.setItem('anfeta_last_user', selectedUser); } catch {}
       onSuccess(data.user||'',{sharedMode:data.sharedMode===true});
     }catch(error){
-      setError(error instanceof Error?error.message:'No se pudo iniciar sesión.');
+      const msg = error instanceof Error ? error.message : 'No se pudo iniciar sesión.';
+      setError(msg.includes('is not valid JSON') ? 'Error de conexión con el servidor. Intenta de nuevo.' : msg);
     }finally{
       setLoading(false);
     }

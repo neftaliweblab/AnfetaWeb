@@ -3,7 +3,7 @@ import {cookies} from 'next/headers';
 export const SHARED_COOKIE='anfeta_shared_access';
 export function sharedAccessConfigured(){return true;}
 export function sharedAccountId(){const id=process.env.ANFETA_SHARED_AUTH_USER_ID||'';if(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))return id;return '9e5e16dd-c844-49f6-9a72-9838e41d8b38';}
-export interface SharedGate {baseId:string;selectedId:string;expires:number}
+export interface SharedGate {baseId:string;selectedId:string;expires:number;person?:string;personTag?:string}
 function secret(){const value=process.env.SUPABASE_SECRET_KEY;if(!value)throw new Error('Configura Supabase en el servidor.');return value;}
 export function encodeSharedGate(gate:SharedGate){const data=Buffer.from(JSON.stringify(gate)).toString('base64url');return data+'.'+createHmac('sha256',secret()).update('anfeta-shared-v1:'+data).digest('base64url');}
 export function decodeSharedGate(value:string):SharedGate|undefined{try{const [data,signature,extra]=value.split('.');if(!data||!signature||extra)return;const expected=createHmac('sha256',secret()).update('anfeta-shared-v1:'+data).digest();const actual=Buffer.from(signature,'base64url');if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return;const gate=JSON.parse(Buffer.from(data,'base64url').toString());if(gate.baseId!==sharedAccountId()||!Number.isFinite(gate.expires)||gate.expires<=Date.now()||gate.expires>Date.now()+8*3600000+5000||typeof gate.selectedId!=='string')return;return gate;}catch{return;}}
