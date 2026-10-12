@@ -67,16 +67,37 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
             Checklist v9:
           </span>
           <span className="font-mono text-[#4ADE80]">
-            {activity.checklistCompleted} / {activity.checklistTotal} ({pct}%)
+            {total > 0 ? `${completed} / ${total} (${pct}%)` : "Sin tareas"}
           </span>
         </div>
-        <div className="w-full h-1.5 bg-[#1B2735] rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-[#00A8FF] to-[#4ADE80] transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        {total > 0 && (
+          <div className="w-full h-1.5 bg-[#1B2735] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[#00A8FF] to-[#4ADE80] transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        )}
       </div>
+
+      {/* Checklist Items list if available */}
+      {activity.checklistItems && activity.checklistItems.length > 0 && (
+        <div className="max-h-48 overflow-y-auto space-y-1 pt-1.5 border-t border-[#253549]/60 scrollbar-thin">
+          {activity.checklistItems.map((chk: any, idx: number) => {
+            const isDone = Boolean(chk.isChecked);
+            return (
+              <div key={chk.id || chk.blockId || idx} className="flex items-start gap-1.5 p-1 rounded bg-[#0E1520]/60 text-[10.5px]">
+                <span className={`shrink-0 mt-0.5 font-bold ${isDone ? "text-emerald-400" : "text-slate-500"}`}>
+                  {isDone ? "✓" : "○"}
+                </span>
+                <span className={`leading-tight ${isDone ? "text-slate-400 line-through opacity-80" : "text-slate-200"}`}>
+                  {chk.text || "Tarea sin título"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Time and Status */}
       <div className="flex items-center justify-between text-[10px] text-[#94A3B8] font-mono pt-1">

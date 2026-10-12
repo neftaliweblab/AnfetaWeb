@@ -229,7 +229,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
         const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed || returned);
         reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
         cacheReviewFlowMemory(settings, id, reviewFlow);
-        void saveReviewFlow(settings, id, reviewFlow).catch(() => {});
+        await saveReviewFlow(settings, id, reviewFlow).catch(() => {});
       } catch (error) {
         updated.__notificationWarning = 'La actividad se guardó, pero no se confirmó el aviso de revisión. ' + (error instanceof Error ? error.message : '');
       }

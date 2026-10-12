@@ -102,6 +102,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     checklistTotal: raw.ChecklistTotal ?? raw.checklistTotal ?? 0,
     checklistCompleted: raw.ChecklistCompleted ?? raw.checklistCompleted ?? 0,
     completedChecks:raw.completedChecks || [],
+    checklistItems: raw.checklistItems || raw.ChecklistItems || raw.completedChecks || [],
     todayChecklistCompleted:
       raw.TodayChecklistCompleted ?? raw.todayChecklistCompleted ?? 0,
     isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? calendarUrgent(title)),

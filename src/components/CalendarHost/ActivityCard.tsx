@@ -11,6 +11,22 @@ import { workflowState } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
 import { SendToReviewModal } from "./SendToReviewModal";
+import { anfetaSync } from "@/lib/anfetaBroadcastSync";
+
+interface ChecklistCardCacheEntry {
+  total: number;
+  completed: number;
+  today: number;
+  items: any[];
+  completedChecks: any[];
+}
+
+const checklistMemoryCache = new Map<string, ChecklistCardCacheEntry>();
+const checklistInFlight = new Map<string, Promise<ChecklistCardCacheEntry | null>>();
+
+function cleanCardId(id: string): string {
+  return (id || "").replace(/^review-mirror-/, "").replace(/[^a-zA-Z0-9]/g, "");
+}
 
 interface ActivityCardProps {
   currentUser: string;
@@ -60,6 +76,126 @@ export function ActivityCard({
 
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const [checklistData, setChecklistData] = useState<ChecklistCardCacheEntry | null>(() => {
+    const key = cleanCardId(activity.pageId);
+    if (checklistMemoryCache.has(key)) return checklistMemoryCache.get(key)!;
+    if (activity.checklistScanned || (activity.checklistTotal ?? 0) > 0 || (activity.checklistItems && activity.checklistItems.length > 0)) {
+      const entry: ChecklistCardCacheEntry = {
+        total: activity.checklistTotal ?? 0,
+        completed: activity.checklistCompleted ?? 0,
+        today: activity.todayChecklistCompleted ?? 0,
+        items: activity.checklistItems || activity.completedChecks || [],
+        completedChecks: activity.completedChecks || [],
+      };
+      checklistMemoryCache.set(key, entry);
+      return entry;
+    }
+    return null;
+  });
+
+  const [loadingChecklist, setLoadingChecklist] = useState(false);
+
+  React.useEffect(() => {
+    const key = cleanCardId(activity.pageId);
+    if (checklistMemoryCache.has(key)) {
+      setChecklistData(checklistMemoryCache.get(key)!);
+    } else if (activity.checklistScanned || (activity.checklistTotal ?? 0) > 0 || (activity.checklistItems && activity.checklistItems.length > 0)) {
+      const entry: ChecklistCardCacheEntry = {
+        total: activity.checklistTotal ?? 0,
+        completed: activity.checklistCompleted ?? 0,
+        today: activity.todayChecklistCompleted ?? 0,
+        items: activity.checklistItems || activity.completedChecks || [],
+        completedChecks: activity.completedChecks || [],
+      };
+      checklistMemoryCache.set(key, entry);
+      setChecklistData(entry);
+    }
+  }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
+
+  const fetchChecklistIfNeeded = React.useCallback(async () => {
+    const rawId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, "") : activity.pageId;
+    if (!rawId || rawId.startsWith("act-")) return;
+    const key = cleanCardId(rawId);
+
+    if (checklistMemoryCache.has(key)) {
+      setChecklistData(checklistMemoryCache.get(key)!);
+      return;
+    }
+
+    if (activity.checklistScanned && ((activity.checklistTotal ?? 0) > 0 || activity.checklistItems?.length)) {
+      const entry: ChecklistCardCacheEntry = {
+        total: activity.checklistTotal ?? 0,
+        completed: activity.checklistCompleted ?? 0,
+        today: activity.todayChecklistCompleted ?? 0,
+        items: activity.checklistItems || activity.completedChecks || [],
+        completedChecks: activity.completedChecks || [],
+      };
+      checklistMemoryCache.set(key, entry);
+      setChecklistData(entry);
+      return;
+    }
+
+    let promise = checklistInFlight.get(key);
+    if (!promise) {
+      setLoadingChecklist(true);
+      promise = (async (): Promise<ChecklistCardCacheEntry | null> => {
+        try {
+          const res = await fetch("/api/data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "get-checklist", payload: { pageId: rawId } }),
+          });
+          const data = await res.json();
+          if (data.success && Array.isArray(data.items)) {
+            const items = data.items;
+            const total = items.length;
+            const completed = items.filter((i: any) => i.isChecked).length;
+            const todayStr = mexicoDate(activity.start || new Date());
+            const completedChecks = items.filter((item: any) => item.isChecked && (item.markingSource === "verified" ? item.markedAt && mexicoDate(item.markedAt) === todayStr : item.markingSource === "estimated" && item.editedAt && mexicoDate(item.editedAt) === todayStr));
+            const activeCompleted = completedChecks.length > 0 ? completedChecks : items.filter((item: any) => item.isChecked);
+            const today = completedChecks.length > 0 ? completedChecks.length : completed;
+            const entry: ChecklistCardCacheEntry = {
+              total,
+              completed,
+              today,
+              items,
+              completedChecks: activeCompleted,
+            };
+            checklistMemoryCache.set(key, entry);
+            anfetaSync.broadcast({
+              type: "ACTIVITY_UPDATED",
+              pageId: activity.pageId,
+              updates: {
+                checklistScanned: true,
+                checklistTotal: total,
+                checklistCompleted: completed,
+                todayChecklistCompleted: today,
+                checklistItems: items,
+                completedChecks: activeCompleted,
+              },
+            });
+            return entry;
+          }
+          return null;
+        } catch {
+          return null;
+        } finally {
+          checklistInFlight.delete(key);
+        }
+      })();
+      checklistInFlight.set(key, promise);
+    }
+
+    try {
+      const result = await promise;
+      if (result) {
+        setChecklistData(result);
+      }
+    } finally {
+      setLoadingChecklist(false);
+    }
+  }, [activity.isReviewMirror, activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistItems, activity.completedChecks, activity.todayChecklistCompleted, activity.start]);
 
   // Safe titles & metadata
   const title = activity?.title || (activity as any)?.Title || "";
@@ -161,12 +297,18 @@ export function ActivityCard({
   const widthPct = 100 / Math.max(1, overlapTotal);
   const leftPct = overlapIndex * widthPct;
 
-  const totalChecklist = activity.checklistTotal ?? 0;
-  const completedChecklist = activity.checklistCompleted ?? 0;
+  const effectiveTotal = checklistData ? checklistData.total : (activity.checklistTotal ?? 0);
+  const effectiveCompleted = checklistData ? checklistData.completed : (activity.checklistCompleted ?? 0);
+  const effectiveToday = checklistData ? checklistData.today : (activity.todayChecklistCompleted ?? 0);
+  const effectiveItems = checklistData ? checklistData.items : (activity.checklistItems || activity.completedChecks || []);
+  const isScanned = !!(activity.checklistScanned || checklistData);
+  const totalChecklist = effectiveTotal;
+  const completedChecklist = effectiveCompleted;
   const pct = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
 
   // Hover handlers con protección mejorada de zoom y colisiones en pantalla
   const handleMouseEnter = () => {
+    void fetchChecklistIfNeeded();
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (cardRef.current) {
@@ -314,10 +456,15 @@ export function ActivityCard({
             >
               {completedChecklist}/{totalChecklist}
             </span>
+          ) : loadingChecklist ? (
+            <span className="p-0.5 text-cyan-400 shrink-0 opacity-80 animate-pulse" title="Cargando checklist...">
+              <Clock className="w-3 h-3 animate-spin" />
+            </span>
           ) : (
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                void fetchChecklistIfNeeded();
                 setShowPopup(!showPopup);
               }}
               className="p-0.5 text-slate-500 hover:text-[#38BDF8] shrink-0 opacity-40 hover:opacity-100 transition-opacity"
@@ -451,6 +598,20 @@ export function ActivityCard({
             </div>
 
             {/* Resumen de Checks e Historial Hoy (Anfeta Original Parity) */}
+            {loadingChecklist && (
+              <div className="pt-2 border-t border-[#1E2E40] py-2 flex items-center gap-2 text-[10.5px] text-cyan-300 font-mono animate-pulse">
+                <Clock className="w-3.5 h-3.5 text-cyan-400 animate-spin shrink-0" />
+                <span>Cargando checks de la actividad...</span>
+              </div>
+            )}
+
+            {!loadingChecklist && isScanned && totalChecklist === 0 && (
+              <div className="pt-2 border-t border-[#1E2E40] py-1.5 flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
+                <CheckSquare className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>Sin tareas checklist en esta actividad</span>
+              </div>
+            )}
+
             {totalChecklist > 0 && (
               <div className="pt-2 border-t border-[#1E2E40] space-y-1.5">
                 <div className="flex items-center justify-between text-[10.5px]">
@@ -462,9 +623,9 @@ export function ActivityCard({
                     <span className="text-emerald-400 font-bold">
                       {completedChecklist} / {totalChecklist} ({pct}%)
                     </span>
-                    {(activity.todayChecklistCompleted ?? 0) > 0 && (
+                    {effectiveToday > 0 && (
                       <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
-                        +{activity.todayChecklistCompleted} hoy
+                        +{effectiveToday} hoy
                       </span>
                     )}
                   </div>
@@ -478,11 +639,11 @@ export function ActivityCard({
                 </div>
 
                 {/* Desglose rápido de Checks con fecha de agregado y completado */}
-                {((activity.checklistItems && activity.checklistItems.length > 0) || (activity.completedChecks && activity.completedChecks.length > 0)) && (
+                {effectiveItems.length > 0 && (
                   <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
                     showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
                   }`}>
-                    {(activity.checklistItems || activity.completedChecks || []).slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
+                    {effectiveItems.slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
                       const isDone = Boolean(chk.isChecked);
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
                       const doneDate = chk.markedAt || chk.editedAt ? formatSmartDate(chk.markedAt || chk.editedAt) : null;
@@ -584,7 +745,18 @@ export function ActivityCard({
           style={{ top: `${top + 10}px`, left: `calc(${leftPct}% + 10px)` }}
           className="fixed z-50"
         >
-          <ChecklistPopup activity={activity} onClose={() => setShowPopup(false)} />
+          <ChecklistPopup
+            activity={{
+              ...activity,
+              checklistScanned: true,
+              checklistTotal: totalChecklist,
+              checklistCompleted: completedChecklist,
+              todayChecklistCompleted: effectiveToday,
+              checklistItems: effectiveItems,
+              completedChecks: checklistData?.completedChecks || activity.completedChecks || [],
+            }}
+            onClose={() => setShowPopup(false)}
+          />
         </div>
       )}
 

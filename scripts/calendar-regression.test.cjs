@@ -45,7 +45,7 @@ global.fetch=async(url,options={})=>{
   if((target==='blocks/'+other+'/children'||target.startsWith('blocks/copied-')) && method==='PATCH')return response({results:body.children.map((b,i)=>({...b,id:'copied-'+i}))});
   if(target==='pages/'+pid && method==='GET')return response(state.page);
   if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
-  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
+  if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'Due Fecha Recordatorio':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
   if(target.endsWith('/query') && state.guestReviewer) return response({results:[{...fixture(),properties:{...fixture().properties,'Assignee/Ejecutor Principal':{type:'people',people:[{id:'guest-isaias',name:'iisai@pprin.com'}]}}}],has_more:false});
   if(target.endsWith('/query')) return response(body.start_cursor ? {results:[{...fixture(),id:other}],has_more:false} : {results:[state.queryCurrent ? state.page : fixture()],has_more:true,next_cursor:'page-two'});
   if(target.startsWith('users?'))return response({results:state.usersMissing?[]:[{id:'john-id',type:'person',name:'John',person:{email:'jjohn@pprin.com'}},{id:'genaro-id',type:'person',name:'Genaro',person:{email:'ggena@pprin.com'}}],has_more:false});
@@ -289,8 +289,9 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const {financeRowsForDay}=require(root+'/src/services/calendarFinance.ts');const items=financeRowsForDay([{id:'p',source:'Notion',sourceName:'Cobrar y pagar',name:'[Cobrar y pagar] zPAGAR Proveedor',scheduledDate:'2026-10-06'}],'2026-10-06');assert.equal(items[0].kind,'pago');
   });
   await test('Finanzas resuelve fuente real y pagina Notion en lugar de depender del índice',async()=>{
-    state.page.parent={data_source_id:'finance-source'};state.page.properties.Name.title=[{text:{content:'zPAGAR Proveedor'}}];state.queryCurrent=true;
-    const {loadLiveFinance}=require(root+'/src/services/notionFinance.ts');const items=await loadLiveFinance(settings,[{id:pid,externalId:pid,source:'Notion',sourceName:'Cobrar y pagar'}],'2026-10-05');assert.equal(items.length,1);assert.equal(items[0].kind,'pago');assert.equal(state.calls.filter(c=>c.target==='data_sources/finance-source/query').length,2);
+    process.env.NOTION_FINANCE_DATA_SOURCE_ID='finance-source';
+    state.page.parent={data_source_id:'finance-source'};state.page.properties.Name.title=[{text:{content:'zPAGAR Proveedor'}}];state.page.properties['Due Fecha Recordatorio']={type:'date',date:{start:'2026-10-05T14:00:00Z'}};state.queryCurrent=true;
+    const {loadLiveFinance}=require(root+'/src/services/notionFinance.ts');const items=await loadLiveFinance(settings,[{id:pid,externalId:pid,source:'Notion',sourceName:'Cobrar y pagar'}],'2026-10-05');assert.equal(items.length,1);assert.equal(items[0].kind,'pago');assert.equal(state.calls.filter(c=>c.target==='data_sources/finance-source/query').length,2);delete process.env.NOTION_FINANCE_DATA_SOURCE_ID;
   });
   await test('zREVISION conserva horario histórico incluso para dirección',async()=>{
     state.page.properties.Name.title=[{text:{content:'zREVISION anfeta.com nneft Entregada'}}];
