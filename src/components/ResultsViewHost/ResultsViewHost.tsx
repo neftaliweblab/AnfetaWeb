@@ -792,11 +792,8 @@ export function ResultsViewHost({
       }
     } catch {}
 
-    if (!dropboxToken?.trim()) {
-      setAppNotification({
-        type: 'warning',
-        text: '⚠️ Falta configurar el Token de Dropbox. Ve a ⚙️ Configuración para agregarlo.'
-      });
+    if (!hasDropboxToken && !dropboxToken?.trim()) {
+      setIsDropboxConnectOpen(true);
       setIsSyncingDropbox(false);
       return;
     }
@@ -812,7 +809,7 @@ export function ResultsViewHost({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "sync-dropbox",
-          payload: { folder: cloudFolder, dropboxToken: dropboxToken.trim() },
+          payload: { folder: cloudFolder, dropboxToken: dropboxToken.trim() || undefined },
         }),
       });
       const data = await res.json();
@@ -828,6 +825,9 @@ export function ResultsViewHost({
         });
         sendWindowsNotification("ANFETA Dropbox", data.message || `Indexados ${data.count} elementos.`);
       } else {
+        if (data.error && (data.error.includes("token") || data.error.includes("vinculad") || data.error.includes("OAuth"))) {
+          setIsDropboxConnectOpen(true);
+        }
         setAppNotification({
           type: 'error',
           text: `❌ Error en Dropbox: ${data.error || 'No se pudo sincronizar'}`

@@ -192,7 +192,7 @@ export async function getDropboxAccessToken(tokenOverride?: string, forceRefresh
     return fallback;
   }
 
-  throw new Error('Configura DROPBOX_REFRESH_TOKEN o DROPBOX_ACCESS_TOKEN en Vercel.');
+  throw new Error('Dropbox no está vinculado. Haz clic en "Conectar con Dropbox" para autorizar tu cuenta.');
 }
 
 export async function uploadDropboxCloud(filename: string, bytes: Buffer, folder: string, tokenOverride?: string) {

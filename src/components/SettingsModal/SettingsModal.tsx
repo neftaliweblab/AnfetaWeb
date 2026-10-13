@@ -291,7 +291,9 @@ export function SettingsModal({
       }),
     }).catch(() => {});
 
-    onSaveCurrentUser(userTag);
+    if (userTag && userTag !== currentUser) {
+      onSaveCurrentUser(userTag);
+    }
     onClose();
   };
 
@@ -642,45 +644,6 @@ export function SettingsModal({
                 </div>
               </div>
 
-              {/* Token opcional de Dropbox API */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Key className="w-3 h-3 text-[#38BDF8]" />
-                    Token manual de Dropbox (Avanzado):
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-mono">
-                    ✓ Renovación perpetua activa en Vercel
-                  </span>
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={dropboxToken}
-                    onChange={(e) => setDropboxToken(e.target.value)}
-                    placeholder="Automático vía DROPBOX_REFRESH_TOKEN en Vercel"
-                    className="flex-1 h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8]"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleTestDropbox}
-                    disabled={isTestingDropbox}
-                    className="px-3 h-8 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#38BDF8] text-[11px] font-semibold rounded shrink-0 transition-colors cursor-pointer"
-                  >
-                    {isTestingDropbox ? "Probando..." : "Probar"}
-                  </button>
-                  {dropboxToken && (
-                    <button
-                      type="button"
-                      onClick={() => setDropboxToken("")}
-                      className="px-2.5 h-8 bg-[#2A1519] hover:bg-[#3D1D23] border border-[#FB7185]/40 text-[#FB7185] text-[10.5px] rounded shrink-0 transition-colors cursor-pointer"
-                      title="Limpiar token y usar auto-renovación de Vercel"
-                    >
-                      Limpiar
-                    </button>
-                  )}
-                </div>
-
                 {dropboxTestStatus && (
                   <div
                     className={`p-2 rounded text-[11px] font-medium ${
@@ -692,20 +655,6 @@ export function SettingsModal({
                     {dropboxTestStatus.msg}
                   </div>
                 )}
-
-                {dropboxToken.startsWith("sl.") && (
-                  <div className="flex items-center justify-between p-2 rounded bg-amber-950/40 border border-amber-600/40 text-amber-300 text-[10px]">
-                    <span>⚠️ Tienes guardado un token temporal (expira en 4h). Haz clic en Limpiar para usar la auto-renovación de Vercel.</span>
-                    <button
-                      type="button"
-                      onClick={() => setDropboxToken("")}
-                      className="ml-2 px-2 py-0.5 rounded bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 font-semibold cursor-pointer shrink-0"
-                    >
-                      Limpiar
-                    </button>
-                  </div>
-                )}
-              </div>
 
               {/* Modo de escritorio opcional (colapsable) */}
               <div className="pt-2">

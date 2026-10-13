@@ -295,7 +295,18 @@ export function SearchConfigRow({
               )}
               <span>{isSyncingDropbox ? "Indexando Dropbox..." : "Sync Dropbox"}</span>
             </button>
-            {hasDropboxToken === false ? (
+            {hasDropboxToken === true ? (
+              <button
+                type="button"
+                onClick={onOpenDropboxConnect || onOpenSettings}
+                title="Dropbox conectado mediante OAuth - Clic para ver estado o cambiar cuenta"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
+                className="px-1.5 py-0.5 rounded border border-cyan-500/20 bg-cyan-950/20 text-cyan-400 flex items-center gap-1 hover:bg-cyan-900/30 cursor-pointer transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                <span>Dropbox OK</span>
+              </button>
+            ) : (
               <button
                 type="button"
                 onClick={onOpenDropboxConnect || onOpenSettings}
@@ -309,18 +320,7 @@ export function SearchConfigRow({
                 />
                 <span>Conectar Dropbox</span>
               </button>
-            ) : hasDropboxToken === true ? (
-              <button
-                type="button"
-                onClick={onOpenDropboxConnect || onOpenSettings}
-                title="Dropbox conectado mediante OAuth - Clic para ver estado o cambiar cuenta"
-                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
-                className="px-1.5 py-0.5 rounded border border-cyan-500/20 bg-cyan-950/20 text-cyan-400 flex items-center gap-1 hover:bg-cyan-900/30 cursor-pointer transition-colors"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                <span>Dropbox OK</span>
-              </button>
-            ) : null}
+            )}
           </div>
         )}
 

@@ -57,9 +57,9 @@ export function DropboxConnectModal({
       const stored = localStorage.getItem("anfeta_settings");
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.dropboxToken && parsed.dropboxToken.trim()) {
+        if (parsed.dropboxToken && parsed.dropboxToken.trim() && parsed.dropboxAccountName) {
           setHasToken(true);
-          setConnectedAccount(parsed.dropboxAccountName || "Cuenta vinculada");
+          setConnectedAccount(parsed.dropboxAccountName);
           setConnectedEmail(parsed.dropboxAccountEmail || "");
         } else {
           setHasToken(false);
@@ -79,10 +79,14 @@ export function DropboxConnectModal({
     fetch("/api/data?type=settings")
       .then((r) => r.json())
       .then((data) => {
-        if (data && (data.dropboxToken || data.hasDropboxToken)) {
+        if (data && data.dropboxToken && data.dropboxAccountName) {
           setHasToken(true);
-          if (data.dropboxAccountName) setConnectedAccount(data.dropboxAccountName);
+          setConnectedAccount(data.dropboxAccountName);
           if (data.dropboxAccountEmail) setConnectedEmail(data.dropboxAccountEmail);
+        } else if (!data?.dropboxToken) {
+          setHasToken(false);
+          setConnectedAccount(null);
+          setConnectedEmail(null);
         }
       })
       .catch(() => {});
@@ -288,19 +292,19 @@ export function DropboxConnectModal({
             </div>
           )}
 
-          {/* Estado de cuenta conectada */}
-          {hasToken && !isReconnecting ? (
+          {/* Estado de cuenta conectada (si existe) */}
+          {hasToken && (
             <div className="space-y-3 p-3.5 rounded-lg bg-[#111A24] border border-[#233547]">
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
                     <span className="font-semibold text-cyan-300 text-xs">
-                      Dropbox Conectado Correctamente
+                      Cuenta Vinculada Actualmente
                     </span>
                   </div>
-                  <p className="text-[#F1F5F9] font-medium">
-                    {connectedAccount || "Cuenta de Dropbox vinculada"}
+                  <p className="text-[#F1F5F9] font-medium text-xs">
+                    {connectedAccount || "Cuenta de Dropbox"}
                   </p>
                   {connectedEmail && (
                     <p className="text-[11px] text-[#94A3B8] font-mono">{connectedEmail}</p>
@@ -308,7 +312,7 @@ export function DropboxConnectModal({
                 </div>
                 <div className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
                   <ShieldCheck className="w-3 h-3" />
-                  <span>Auto-renovación permanente</span>
+                  <span>Auto-renovación activa</span>
                 </div>
               </div>
 
@@ -324,7 +328,7 @@ export function DropboxConnectModal({
                 </div>
               )}
 
-              <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-[#1C2735]">
+              <div className="pt-2 flex items-center justify-between border-t border-[#1C2735]">
                 <button
                   type="button"
                   onClick={handleTestConnection}
@@ -336,123 +340,107 @@ export function DropboxConnectModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsReconnecting(true)}
-                  className="px-3 py-1.5 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#CBD5E1] rounded text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
-                >
-                  <Key className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Re-vincular / Cambiar Cuenta</span>
-                </button>
-                <button
-                  type="button"
                   onClick={handleDisconnect}
                   disabled={isDisconnecting}
-                  className="ml-auto px-2.5 py-1.5 bg-rose-950/30 hover:bg-rose-900/40 border border-rose-500/30 text-rose-300 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  className="px-2.5 py-1.5 bg-rose-950/30 hover:bg-rose-900/40 border border-rose-500/30 text-rose-300 rounded text-xs flex items-center gap-1 cursor-pointer transition-colors"
                   title="Desvincular Dropbox de ANFETA"
                 >
                   <Unlink className="w-3.5 h-3.5" />
-                  <span>{isDisconnecting ? "Desvinculando..." : "Desvincular"}</span>
+                  <span>{isDisconnecting ? "Desvinculando..." : "Desvincular Cuenta"}</span>
                 </button>
               </div>
             </div>
-          ) : (
-            /* Flujo OAuth de 2 pasos */
-            <div className="space-y-4">
-              <p className="text-[#94A3B8] text-[11.5px] leading-relaxed">
-                Vincula tu cuenta de Dropbox de forma segura en dos pasos. ANFETA guardará un
-                token permanente que se auto-renueva automáticamente sin requerir que copies contraseñas ni tokens manuales.
+          )}
+
+          {/* Flujo OAuth de 2 pasos (siempre disponible) */}
+          <div className="space-y-3.5">
+            <div>
+              <p className="text-[#F1F5F9] font-semibold text-xs">
+                {hasToken ? "Vincular otra cuenta o renovar permisos:" : "Vincular Cuenta con Dropbox:"}
               </p>
+              <p className="text-[#94A3B8] text-[11px] mt-0.5">
+                Solicita el permiso directamente a Dropbox en 2 sencillos pasos sin exponer contraseñas.
+              </p>
+            </div>
 
-              {/* Paso 1 */}
-              <div className="p-3.5 rounded-lg bg-[#111A24] border border-[#233547] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-[#F1F5F9] text-xs flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px] font-bold">
-                      1
-                    </span>
-                    Solicitar permiso en Dropbox
+            {/* Paso 1 */}
+            <div className="p-3.5 rounded-lg bg-[#111A24] border border-[#233547] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[#F1F5F9] text-xs flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px] font-bold">
+                    1
                   </span>
-                  <span className="text-[10px] text-[#94A3B8]">Abre pestaña nueva</span>
-                </div>
-                <p className="text-[11px] text-[#94A3B8]">
-                  Haz clic en el botón para abrir la página oficial de Dropbox. Inicia sesión, pulsa
-                  <strong className="text-white"> "Permitir"</strong> y copia el código de autorización que Dropbox te mostrará en pantalla.
-                </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleOpenAuthUrl}
-                    className="flex-1 px-3.5 py-2 bg-[#00A8FF] hover:bg-[#1FB6FF] text-[#080B0F] font-bold rounded flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Abrir Dropbox y Autorizar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyUrl}
-                    title="Copiar enlace de autorización al portapapeles"
-                    className="px-2.5 py-2 bg-[#162232] hover:bg-[#1E2E44] border border-[#2B4058] text-cyan-300 rounded flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    {copiedUrl ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span className="text-[10.5px]">{copiedUrl ? "Copiado" : "Copiar Link"}</span>
-                  </button>
-                </div>
+                  Solicitar permiso en Dropbox
+                </span>
+                <span className="text-[10px] text-[#94A3B8]">Abre pestaña nueva</span>
               </div>
-
-              {/* Paso 2 */}
-              <div className="p-3.5 rounded-lg bg-[#111A24] border border-[#233547] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-[#F1F5F9] text-xs flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px] font-bold">
-                      2
-                    </span>
-                    Pegar código de autorización
-                  </span>
-                  <span className="text-[10px] text-[#94A3B8]">Código de 40+ caracteres</span>
-                </div>
-                <p className="text-[11px] text-[#94A3B8]">
-                  Pega aquí el código que te dio Dropbox tras hacer clic en Permitir:
-                </p>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={authCode}
-                    onChange={(e) => setAuthCode(e.target.value)}
-                    placeholder="Pega el código de autorización de Dropbox aquí..."
-                    className="w-full h-9 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-xs focus:outline-none focus:border-cyan-400"
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleExchangeCode}
-                      disabled={isExchanging || !authCode.trim()}
-                      className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-[#080B0F] font-bold rounded flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
-                    >
-                      {isExchanging ? (
-                        <>
-                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Canjeando código con Dropbox...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Vincular Cuenta de Dropbox</span>
-                        </>
-                      )}
-                    </button>
-                    {isReconnecting && (
-                      <button
-                        type="button"
-                        onClick={() => setIsReconnecting(false)}
-                        className="px-3 py-2 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#94A3B8] rounded text-xs cursor-pointer"
-                      >
-                        Cancelar
-                      </button>
-                    )}
-                  </div>
-                </div>
+              <p className="text-[11px] text-[#94A3B8]">
+                Haz clic en el botón. En Dropbox, inicia sesión y haz clic en <strong className="text-white">"Permitir"</strong>.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleOpenAuthUrl}
+                  className="flex-1 px-3.5 py-2 bg-[#00A8FF] hover:bg-[#1FB6FF] text-[#080B0F] font-bold rounded flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Abrir Dropbox y Autorizar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyUrl}
+                  title="Copiar enlace de autorización al portapapeles"
+                  className="px-2.5 py-2 bg-[#162232] hover:bg-[#1E2E44] border border-[#2B4058] text-cyan-300 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedUrl ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span className="text-[10.5px]">{copiedUrl ? "Copiado" : "Copiar Link"}</span>
+                </button>
               </div>
             </div>
-          )}
+
+            {/* Paso 2 */}
+            <div className="p-3.5 rounded-lg bg-[#111A24] border border-[#233547] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[#F1F5F9] text-xs flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px] font-bold">
+                    2
+                  </span>
+                  Pegar código de autorización
+                </span>
+                <span className="text-[10px] text-[#94A3B8]">Código de Dropbox</span>
+              </div>
+              <p className="text-[11px] text-[#94A3B8]">
+                Pega aquí el código que te mostró Dropbox y pulsa vincular:
+              </p>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={authCode}
+                  onChange={(e) => setAuthCode(e.target.value)}
+                  placeholder="Pega el código de autorización aquí..."
+                  className="w-full h-9 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-xs focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleExchangeCode}
+                  disabled={isExchanging || !authCode.trim()}
+                  className="w-full px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-[#080B0F] font-bold rounded flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
+                >
+                  {isExchanging ? (
+                    <>
+                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Canjeando código con Dropbox...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Vincular Cuenta de Dropbox</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Pie del modal */}

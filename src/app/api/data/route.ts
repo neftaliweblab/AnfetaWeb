@@ -554,7 +554,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ".json": "application/json; charset=utf-8",
         };
 
-        // 1. Si es archivo local existente en disco Windows
+        // 1. Si es archivo local existente en disco Windows (ruta absoluta)
         if (filePath.includes(":\\") && fs.existsSync(filePath)) {
           const buffer = fs.readFileSync(filePath);
           const contentType = mimeTypes[ext] || "application/octet-stream";
@@ -566,7 +566,31 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           });
         }
 
-        // 2. Si es archivo en Dropbox Cloud (ruta remota /DRX/...)
+        // 2. Si es archivo existente en la carpeta local de Dropbox en disco
+        const settings = getSettings();
+        const baseDropbox = (settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
+        const cleanRel = filePath.replace(/^[\\/]+/, "");
+        const localCandidates = [
+          path.join(baseDropbox, cleanRel),
+          path.join(baseDropbox, "DRX", cleanRel.replace(/^DRX[\\/]/i, "")),
+          path.join(baseDropbox, path.basename(filePath)),
+        ];
+        for (const candidate of localCandidates) {
+          try {
+            if (fs.existsSync(candidate) && !fs.statSync(candidate).isDirectory()) {
+              const buffer = fs.readFileSync(candidate);
+              const contentType = mimeTypes[ext] || "application/octet-stream";
+              return new NextResponse(buffer, {
+                headers: {
+                  "Content-Type": contentType,
+                  "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+                },
+              });
+            }
+          } catch {}
+        }
+
+        // 3. Si es archivo en Dropbox Cloud (API remota)
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
         const { buffer, contentType: rawContentType } = await getDropboxFileContent(filePath, tokenOverride);
         const contentType = mimeTypes[ext] || rawContentType || "application/octet-stream";

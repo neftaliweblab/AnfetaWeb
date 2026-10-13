@@ -145,10 +145,8 @@ export default function AnfetaApp() {
     }
     loadInitialData();
 
-    const handleSettingsChanged = (e: any) => {
-      if (e.detail?.currentUser) {
-        if(sharedMode) setPersonPickerOpen(true);
-      }
+    const handleSettingsChanged = () => {
+      // Configuraciones actualizadas sin forzar selector de persona
     };
 
     const handleDataRefreshed = async () => {
@@ -682,18 +680,19 @@ export default function AnfetaApp() {
         currentUser={currentUser}
         onSaveCurrentUser={async (tag) => {
           const person = normalizePerson(tag);
-          setCurrentUser(person);
-          try {
-            localStorage.setItem("anfeta_last_user", person);
-            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
-            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: person }));
-            await fetch("/api/auth", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ person }),
-            });
-          } catch {}
-          window.location.reload();
+          if (person !== currentUser) {
+            setCurrentUser(person);
+            try {
+              localStorage.setItem("anfeta_last_user", person);
+              const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+              localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: person }));
+              await fetch("/api/auth", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ person }),
+              });
+            } catch {}
+          }
         }}
       />
 
