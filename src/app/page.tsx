@@ -1,6 +1,7 @@
 "use client";
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
+import {loadCachedIndex,saveCachedIndex} from '@/lib/clientIndexCache';
 
 import {readApiJson} from '@/lib/readApiJson';
 import { mexicoDate } from "@/services/calendarPresentation";
@@ -49,8 +50,27 @@ export default function AnfetaApp() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [indexSyncLabel,setIndexSyncLabel]=useState('Catálogo listo');
-  useEffect(()=>{const update=(event:Event)=>{const data=(event as CustomEvent).detail||{};setIndexSyncLabel(data.warning||data.cacheMeta?.lastError?'Catálogo local activo (Sincronización pendiente)':data.cacheMeta?.syncing?'Sincronizando Notion...':data.cacheMeta?.source==='supabase'?'En línea (Supabase)':data.items?.length?`${data.items.length} elementos listos`:'Catálogo listo');};window.addEventListener('anfeta_index_status',update);return()=>window.removeEventListener('anfeta_index_status',update);},[]);
+  const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
+  useEffect(()=>{
+    loadCachedIndex().then((cached)=>{
+      if(cached?.items?.length){
+        setSearchIndex(cached.items);
+        setIndexSyncLabel(`${cached.items.length.toLocaleString()} elementos listos`);
+      }
+    });
+    const update=(event:Event)=>{
+      const data=(event as CustomEvent).detail||{};
+      setIndexSyncLabel(
+        data.warning||data.cacheMeta?.lastError?'Catálogo local activo (Sincronización pendiente)':
+        data.cacheMeta?.syncing?'Sincronizando Notion...':
+        data.cacheMeta?.source==='supabase'?'En línea (Supabase)':
+        data.items?.length?`${data.items.length.toLocaleString()} elementos listos`:
+        'Catálogo listo'
+      );
+    };
+    window.addEventListener('anfeta_index_status',update);
+    return()=>window.removeEventListener('anfeta_index_status',update);
+  },[]);
   const [currentUser, setCurrentUser] = useState(() => {
     if (typeof window === "undefined") return "nneft";
     try {
@@ -101,7 +121,7 @@ export default function AnfetaApp() {
 
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:searchIndex.length>0?indexVersion:undefined,token:userToken||undefined,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));}}});indexVersion=data.indexVersion;if(stopped)return;if(data.items?.length)setSearchIndex(previous=>retainSearchResults(previous,data));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){if(searchIndex.length===0){try{const fallbackData=await loadSearchIndex({signal:initialController.signal,fresh:true,token:userToken||undefined});if(fallbackData?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,fallbackData));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:fallbackData}));return;}}catch{}}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:searchIndex.length>0?indexVersion:undefined,token:userToken||undefined,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(data.items?.length){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){if(searchIndex.length===0){try{const fallbackData=await loadSearchIndex({signal:initialController.signal,fresh:true,token:userToken||undefined});if(fallbackData?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,fallbackData));void saveCachedIndex(fallbackData);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:fallbackData}));return;}}catch{}}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
         void loadIndex();indexFocus=()=>void loadIndex();indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
 
         // Calendar dates and today's activities
@@ -149,7 +169,7 @@ export default function AnfetaApp() {
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
 
-        const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length)setSearchIndex(prev=>retainSearchResults(prev,p));} });if(idxData.items?.length)setSearchIndex(previous=>retainSearchResults(previous,idxData));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
+        const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length){setSearchIndex(prev=>retainSearchResults(prev,p));setIndexSyncLabel(`Cargando catálogo (${p.items.length.toLocaleString()}...`);}} });if(idxData.items?.length){setSearchIndex(previous=>retainSearchResults(previous,idxData));void saveCachedIndex(idxData);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
         const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });

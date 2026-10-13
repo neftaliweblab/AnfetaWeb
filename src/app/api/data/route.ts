@@ -735,7 +735,21 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               row.name = `${baseMatch ? baseMatch[0] : ""}${calTitle.trim()}`;
             }
           }
-          if (!row.scheduledDate && cal.raw.Start) row.scheduledDate = cal.raw.Start;
+          if (cal.raw.Start) {
+            row.scheduledDate = cal.raw.Start + (cal.raw.End ? ' - ' + cal.raw.End : '');
+            row.serverModified = cal.raw.Start;
+            row.modifiedLocalDate = cal.date;
+          }
+          if (cal.raw.Status) {
+            row.updateStatus = cal.raw.Status;
+            row.projectUpdateStatus = cal.raw.Status;
+          }
+          if (cal.raw.Person) {
+            row.assignedPerson = cal.raw.Person;
+          }
+          if (cal.raw.Domain || cal.raw.ParsedDomain) {
+            row.domainChip = cal.raw.Domain || cal.raw.ParsedDomain;
+          }
           if (!row.externalUrl && cal.raw.PageUrl) row.externalUrl = cal.raw.PageUrl;
         }
       }
@@ -778,7 +792,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const a = cal.raw;
         const title = a.Title || "";
         if (!title) continue;
-        items.push({
+        items.unshift({
           id: a.PageId,
           name: `[Revisiones] ${title}`,
           path: "",
@@ -929,7 +943,12 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
             activities.push(...batch.filter(Boolean));
           }
         } catch (error) {
-          return NextResponse.json({error:'No se pudo cargar el calendario de Notion. ' + (error instanceof Error ? error.message : '')}, {status:502});
+          if (cached.length > 0) {
+            activities = cached.filter(a => days.includes(mexicoDate(a.start)));
+            warning = 'Calendario en caché: no se pudo actualizar desde Notion. ' + (error instanceof Error ? error.message : '');
+          } else {
+            return NextResponse.json({error:'No se pudo cargar el calendario de Notion. ' + (error instanceof Error ? error.message : '')}, {status:502});
+          }
         }
       } else {
         activities = cached.filter(a => days.includes(mexicoDate(a.start)));

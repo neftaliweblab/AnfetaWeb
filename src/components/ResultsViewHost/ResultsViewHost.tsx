@@ -3,6 +3,7 @@ import {ExportResults} from './ExportResults';
 import {newestFirst} from '@/lib/searchResultOrder';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
+import {loadCachedIndex} from '@/lib/clientIndexCache';
 
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
@@ -256,7 +257,15 @@ export function ResultsViewHost({
   const [pageSize, setPageSize] = useState(100);
 
   React.useEffect(() => {
-    setItems(initialItems);
+    if (initialItems.length > 0) {
+      setItems(initialItems);
+    } else {
+      loadCachedIndex().then((cached) => {
+        if (cached?.items?.length) {
+          setItems((prev) => (prev.length === 0 ? cached.items : prev));
+        }
+      });
+    }
   }, [initialItems]);
 
   // Auto-recuperación si el catálogo quedó en 0 items en el arranque
