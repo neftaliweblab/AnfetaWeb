@@ -24,23 +24,29 @@ export function validateProfile(profile:any){const person=normalizePerson(profil
 function serviceError(error:any,context:string){const message=String(error?.message||'');if(/timeout|abort|fetch|network/i.test(message)||error?.status>=500)return Object.assign(new Error('Supabase no está disponible temporalmente durante '+context+'. Intenta de nuevo; no se activó una sesión provisional.'),{status:503});return new Error(context+'. Revisa la configuración de Supabase y los permisos del servidor.');}
 let inFlightIdentity: { key: string; promise: Promise<{ id: string; person: string }> } | null = null;
 
-async function checkedUser(client: any, timeoutMs = 25000) {
+async function checkedUser(client: any, timeoutMs = 14000) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await Promise.race([
+      const res = await Promise.race([
         client.auth.getUser(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error('Supabase tardó demasiado en verificar o renovar la sesión. Intenta de nuevo.')),
-            attempt === 0 ? timeoutMs : 15000
+            attempt === 0 ? timeoutMs : 12000
           );
         }),
       ]);
+      if (res?.error && attempt === 0 && (/timeout|abort|fetch|network|ECONNRESET/i.test(String(res.error.message || '')) || res.error.status >= 500)) {
+        if (timer) { clearTimeout(timer); timer = undefined; }
+        await new Promise((res) => setTimeout(res, 800));
+        continue;
+      }
+      return res;
     } catch (err: any) {
       if (timer) { clearTimeout(timer); timer = undefined; }
       if (attempt === 0 && (/tardó demasiado|timeout|network|ECONNRESET|fetch failed/i.test(String(err?.message || '')))) {
-        await new Promise((res) => setTimeout(res, 500));
+        await new Promise((res) => setTimeout(res, 800));
         continue;
       }
       throw err;

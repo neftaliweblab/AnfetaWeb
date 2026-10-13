@@ -37,7 +37,77 @@ import {OfflineMutationQueue} from '@/services/offlineQueue';
 export default function AnfetaApp() {
   const [sharedMode,setSharedMode]=useState(false),[personPickerOpen,setPersonPickerOpen]=useState(false);
   const [isAuthenticated,setIsAuthenticated]=useState(false),[authChecking,setAuthChecking]=useState(true),[authError,setAuthError]=useState('');
-  useEffect(()=>{let stopped=false,busy=false,generation=0;const controller=new AbortController();const changed=()=>{generation++;};const refresh=async()=>{if(stopped||busy||document.hidden)return;busy=true;const request=++generation;try{const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(stopped||request!==generation)return;if([400,401,403].includes(response.status)){OfflineMutationQueue.setOwner('');setIsAuthenticated(false);}const data=await readApiJson(response);if(stopped||request!==generation)return;OfflineMutationQueue.setOwner(data.authenticated?data.ownerId||'':'');setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');setAuthError('');}catch(error){if(!stopped&&request===generation)setAuthError(error instanceof Error?error.message:'No se pudo verificar la sesión.');}finally{busy=false;if(!stopped)setAuthChecking(false);}};void refresh();const timer=setInterval(refresh,120000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('anfeta_auth_changed',changed);return()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_auth_changed',changed);};},[]);
+  const isAuthRef = useRef(false);
+  isAuthRef.current = isAuthenticated;
+  const refreshAuthRef = useRef<() => void>(() => {});
+
+  useEffect(()=>{
+    let stopped=false,busy=false,generation=0;
+    let controller=new AbortController();
+    const changed=()=>{generation++;};
+
+    const refresh=async(manualRetry=false, isInitial=false)=>{
+      if(stopped||(busy&&!manualRetry)||(!manualRetry&&document.hidden))return;
+      busy=true;
+      if(manualRetry){
+        controller.abort();
+        controller=new AbortController();
+      }
+      const request=++generation;
+      for(let attempt=0;attempt<2;attempt++){
+        try{
+          const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(28000)])});
+          if(stopped||request!==generation)return;
+          if([400,401,403].includes(response.status)){
+            OfflineMutationQueue.setOwner('');
+            setIsAuthenticated(false);
+          }
+          const data=await readApiJson(response);
+          if(stopped||request!==generation)return;
+          OfflineMutationQueue.setOwner(data.authenticated?data.ownerId||'':'');
+          setIsAuthenticated(data.authenticated===true);
+          setSharedMode(data.sharedMode===true);
+          if(data.authenticated)setCurrentUser(data.user||'');
+          setAuthError('');
+          break;
+        }catch(error){
+          if(stopped||request!==generation)return;
+          const msg=error instanceof Error?error.message:'No se pudo verificar la sesión.';
+          const isTransient=/tardó|timeout|network|503|fetch|abort/i.test(msg);
+          if(isAuthRef.current&&!manualRetry&&isTransient){
+            break;
+          }
+          if(attempt===0&&isTransient&&(isInitial||manualRetry)){
+            await new Promise(r=>setTimeout(r,1200));
+            continue;
+          }
+          setAuthError(msg);
+        }
+      }
+      busy=false;
+      if(!stopped)setAuthChecking(false);
+    };
+
+    refreshAuthRef.current=()=>{
+      setAuthError('');
+      if(!isAuthRef.current)setAuthChecking(true);
+      void refresh(true);
+    };
+
+    void refresh(false,true);
+    const timer=setInterval(()=>void refresh(false),120000);
+    window.addEventListener('focus',()=>void refresh(false));
+    document.addEventListener('visibilitychange',()=>void refresh(false));
+    window.addEventListener('anfeta_auth_changed',changed);
+    return()=>{
+      stopped=true;
+      controller.abort();
+      clearInterval(timer);
+      window.removeEventListener('focus',()=>void refresh(false));
+      document.removeEventListener('visibilitychange',()=>void refresh(false));
+      window.removeEventListener('anfeta_auth_changed',changed);
+    };
+  },[]);
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
@@ -515,13 +585,13 @@ export default function AnfetaApp() {
   const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
 
   if(authChecking)return <main className="grid min-h-screen place-items-center bg-[#080B0F] text-cyan-200" role="status">Verificando acceso…</main>;
-  if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100">{authError} <button onClick={()=>window.location.reload()} className="ml-2 underline">Reintentar conexión</button></p>}</div><LoginModal onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
+  if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100 flex items-center justify-between"><span>{authError}</span> <button onClick={()=>refreshAuthRef.current()} className="ml-2 underline font-medium">Reintentar conexión</button></p>}</div><LoginModal onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
 
   if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
-      {authError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm">{authError} <button className="ml-2 underline" onClick={()=>window.location.reload()}>Reintentar conexión</button></div>}
+      {authError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between"><span>{authError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}
       {/* Top Bar with Navigation and Global Search */}
       <TopBar
