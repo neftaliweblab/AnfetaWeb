@@ -181,7 +181,15 @@ export default function AnfetaApp() {
     setCalendarActivities([]);
     async function fetchCalendarForDate() {
       try {
-        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, { signal: controller.signal });
+        let token = "";
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) token = JSON.parse(s).notionToken || "";
+        } catch {}
+        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+          signal: controller.signal,
+          headers: token ? { "x-notion-token": token } : {},
+        });
         {
           const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
@@ -589,7 +597,14 @@ export default function AnfetaApp() {
             onOpenDailyProgress={() => setActiveView("dailyProgress")}
             onRefresh={async () => {
               try {
-                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`);
+                let token = "";
+                try {
+                  const s = localStorage.getItem("anfeta_settings");
+                  if (s) token = JSON.parse(s).notionToken || "";
+                } catch {}
+                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+                  headers: token ? { "x-notion-token": token } : {},
+                });
                 {
                   const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');

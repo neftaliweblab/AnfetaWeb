@@ -56,14 +56,28 @@ export function DailyProgressPanel({
   useEffect(() => {
     if (scope === "week") {
       let isMounted = true;
-      fetch(`/api/data?type=calendar&scope=week&date=${currentDate}`)
+      let token = "";
+      try {
+        const s = localStorage.getItem("anfeta_settings");
+        if (s) {
+          const parsed = JSON.parse(s);
+          if (parsed.notionToken) token = parsed.notionToken;
+        }
+      } catch {}
+
+      const url = `/api/data?type=calendar&scope=week&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+      fetch(url, {
+        headers: token ? { "x-notion-token": token } : {},
+      })
         .then(readApiJson)
         .then((data) => {
           if (isMounted && data.activities) {
             setWeekActivities(data.activities);
           }
         })
-        .catch((err) => {if(isMounted)setSummaryError(err instanceof Error?err.message:"No se pudo cargar la semana.");});
+        .catch((err) => {
+          if (isMounted) setSummaryError(err instanceof Error ? err.message : "No se pudo cargar la semana.");
+        });
       return () => {
         isMounted = false;
       };

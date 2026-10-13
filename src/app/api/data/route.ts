@@ -480,6 +480,18 @@ async function fetchNotionBlocksRecursive(
   return output;
 }
 
+function resolveNotionToken(req: Request | NextRequest, searchParams?: URLSearchParams): string {
+  const fromParam = searchParams?.get("token") || (req.url ? new URL(req.url).searchParams.get("token") : null);
+  const fromHeader = req.headers.get("x-notion-token");
+  let fromCookie: string | undefined;
+  try {
+    const cookieHeader = req.headers.get("cookie") || "";
+    const match = cookieHeader.match(/anfeta_notion_token=([^;]+)/);
+    if (match) fromCookie = decodeURIComponent(match[1]);
+  } catch {}
+  return (fromParam || fromHeader || fromCookie || getSettings().notionToken || "").trim();
+}
+
 async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifiedActor?:string) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
@@ -492,7 +504,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       const day=searchParams.get('date') || mexicoDate();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return NextResponse.json({error:'Fecha inválida.'},{status:400});
       let rows=readLocalJson<any[]>('index_cache.json',[]).map(normalizeSearchRow).map(row=>{const live=liveNotionOverrides.get(cleanPageId(row.externalId || row.id));return live?{...row,name:live.title,scheduledDate:live.dateStart + (live.dateEnd ? ' - ' + live.dateEnd : ''),assignedPerson:live.person,externalUrl:live.url}:row;});
-      const settings=getSettings();const token=(req.headers.get('x-notion-token') || settings.notionToken || '').trim();
+      const settings=getSettings();const token=resolveNotionToken(req, searchParams);
       const fallback=async(message:string)=>{let cacheError='';if(supabaseConfigured())try{const snapshot=await readSnapshot(await snapshotContext(actor,{...settings,notionToken:token},'search-index'));if(snapshot?.has_payload&&Array.isArray(snapshot.payload?.items))rows=snapshot.payload.items.map(normalizeSearchRow);}catch(e){cacheError=' No se pudo leer el índice Supabase: '+(e instanceof Error?e.message:'error');}return NextResponse.json({date:day,items:financeRowsForDay(rows,day),origin:'index',warning:message+cacheError},{headers:{'Cache-Control':'no-store'}});};
       if(token)try {const items=await loadLiveFinance({...settings,notionToken:token},rows,day,searchParams.get('fresh')==='1');return NextResponse.json({date:day,items,origin:'notion',warning:''},{headers:{'Cache-Control':'no-store'}});}
       catch(error){return fallback('No se pudo actualizar Cobros/Pagos; se muestra el índice guardado. '+(error instanceof Error?error.message:''));}
@@ -583,7 +595,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "users") {
-      const token = (getSettings().notionToken || "").trim();
+      const token = resolveNotionToken(req, searchParams);
       const defaultUsers = [
         { code: "nneft", name: "Neftali", email: "nnetf@practicante.com" },
         { code: "jjohn", name: "John", email: "jjohn@pprin.com" },
@@ -637,7 +649,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "search-index") {
-      const token = (getSettings().notionToken || "").trim();
+      const token = resolveNotionToken(req, searchParams);
 
       let syncWarning:string|undefined;let syncFailed=false;let fullIds:Set<string>|undefined;
       const syncStarted=new Date().toISOString();let observedEdited:string|undefined;
@@ -868,7 +880,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     if (type === "calendar" || type === "calendar-week" || type === "calendar-project") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return NextResponse.json({error:'Fecha inválida.'}, {status:400});
       const settings = getSettings();
-      const token = (settings.notionToken || '').trim();
+      const token = resolveNotionToken(req, searchParams);
       const isWeek = scope === 'week' || type === 'calendar-week';
       const shift = (day: string, n: number) => new Date(Date.parse(day + 'T12:00:00Z') + n*86400000).toISOString().slice(0,10);
       const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
@@ -1484,11 +1496,21 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "save-settings") {
       saveSettings(payload);
-      return NextResponse.json({ success: true, settings: payload });
+      const res = NextResponse.json({ success: true, settings: payload });
+      if (payload?.notionToken) {
+        res.cookies.set("anfeta_notion_token", payload.notionToken.trim(), {
+          path: "/",
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 31536000,
+        });
+      }
+      return res;
     }
 
     if (action === "test-notion-token") {
-      const token = (payload?.token || getSettings().notionToken || "").trim();
+      const token = (payload?.token || resolveNotionToken(req) || "").trim();
       if (!token) {
         return NextResponse.json({ success: false, error: "Ingresa el token de Notion antes de probar." }, { status: 200 });
       }
@@ -1552,7 +1574,7 @@ async function POSTLive(req: NextRequest) {
     }
 
     if (action === "sync-notion") {
-      const token = payload?.token || getSettings().notionToken;
+      const token = (payload?.token || resolveNotionToken(req) || "").trim();
       if (!token || !token.trim()) {
         return NextResponse.json(
           { success: false, error: "No se ha configurado el Token de Notion" },
@@ -2125,9 +2147,9 @@ async function POSTLive(req: NextRequest) {
 // Both stored snapshots and fresh reads still require the authenticated account.
 
 function cachedResponse(data:any,row:any,syncing=false){return NextResponse.json({...data,warning:row?.last_error||data.warning,cacheMeta:{source:'supabase',updatedAt:row?.updated_at||null,stale:syncing||!row?.valid||Boolean(row?.last_error),syncing,lastError:row?.last_error||null}},{headers:{'Cache-Control':'no-store'}});}
-async function refreshSnapshot(context:any,req:NextRequest,row:any,actor:string){const lease=await claimSnapshot(context);if(!lease)return undefined;try{if(row&&!row.valid)clearReadBlocksCache(getSettings());if(!getSettings().notionToken)throw new Error('Configura el token de Notion para sincronizar.');const response=await GETLive(req,row?.payload&&!row.force_full&&new URL(req.url).searchParams.get("fresh")!=="1"?row.payload:undefined,false,actor);const data=await response.clone().json();if(!response.ok||data.error||data.syncFailed)throw new Error(data.error||data.warning||'No se pudo actualizar desde Notion.');let saved:boolean;try{saved=await finishSnapshot(context,lease,data);}catch(saveError){const warning=saveError instanceof Error?saveError.message:'No se pudo guardar la copia Supabase.';try{await finishSnapshot(context,lease,null,warning);}catch{}return NextResponse.json({...data,warning,cacheMeta:{source:'notion',stale:true,syncing:false,lastError:warning}},{headers:{'Cache-Control':'no-store'}});}if(!saved)throw new Error('Los datos cambiaron durante la sincronización. Se repetirá la lectura.');return cachedResponse(data,{updated_at:new Date().toISOString(),valid:true});}catch(error){const message=error instanceof Error?error.message:'No se pudo sincronizar.';await finishSnapshot(context,lease,null,message);throw error;}}
+async function refreshSnapshot(context:any,req:NextRequest,row:any,actor:string){const lease=await claimSnapshot(context);if(!lease)return undefined;try{const token=resolveNotionToken(req);const liveSettings={...getSettings(),notionToken:token};if(row&&!row.valid)clearReadBlocksCache(liveSettings);if(!token)throw new Error('Configura el token de Notion para sincronizar.');const response=await GETLive(req,row?.payload&&!row.force_full&&new URL(req.url).searchParams.get("fresh")!=="1"?row.payload:undefined,false,actor);const data=await response.clone().json();if(!response.ok||data.error||data.syncFailed)throw new Error(data.error||data.warning||'No se pudo actualizar desde Notion.');let saved:boolean;try{saved=await finishSnapshot(context,lease,data);}catch(saveError){const warning=saveError instanceof Error?saveError.message:'No se pudo guardar la copia Supabase.';try{await finishSnapshot(context,lease,null,warning);}catch{}return NextResponse.json({...data,warning,cacheMeta:{source:'notion',stale:true,syncing:false,lastError:warning}},{headers:{'Cache-Control':'no-store'}});}if(!saved)throw new Error('Los datos cambiaron durante la sincronización. Se repetirá la lectura.');return cachedResponse(data,{updated_at:new Date().toISOString(),valid:true});}catch(error){const message=error instanceof Error?error.message:'No se pudo sincronizar.';await finishSnapshot(context,lease,null,message);throw error;}}
 async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext?:any){const url=new URL(req.url),key=snapshotRequestKey(url);if(!supabaseConfigured()||!key)return GETLive(req);let actor:string;try{actor=verifiedActor||await requireActor(req);}catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Inicia sesión para continuar.'},{status:401});}
- try{const context=providedContext||await snapshotContext(actor,getSettings(),key),row=await readSnapshot(context,key==='search-index'),hasPayload=row?.has_payload||Boolean(row?.payload);const force=url.searchParams.get('fresh')==='1';if(row&&hasPayload&&!force&&Date.parse(row.retry_after||'')>Date.now())return cachedResponse(row.payload||{},row);if(row&&hasPayload&&row.valid&&!force){const age=Date.now()-Date.parse(row.updated_at||''),stale=age>(key==='search-index'?60000:30000);const retryReady=!(Date.parse(row.retry_after||'')>Date.now());if(stale&&retryReady)after(async()=>{try{await refreshSnapshot(context,req,key==='search-index'?await readSnapshot(context):row,actor);}catch{console.warn('La copia disponible se conserva; consulta el error de sincronización.');}});return cachedResponse(row.payload||{},row,(stale&&retryReady)||Date.parse(row.lease_until||'')>Date.now());}
+ try{const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};const context=providedContext||await snapshotContext(actor,liveSettings,key),row=await readSnapshot(context,key==='search-index'),hasPayload=row?.has_payload||Boolean(row?.payload);const force=url.searchParams.get('fresh')==='1';if(row&&hasPayload&&!force&&Date.parse(row.retry_after||'')>Date.now())return cachedResponse(row.payload||{},row);if(row&&hasPayload&&row.valid&&!force){const age=Date.now()-Date.parse(row.updated_at||''),stale=age>(key==='search-index'?60000:30000);const retryReady=!(Date.parse(row.retry_after||'')>Date.now());if(stale&&retryReady)after(async()=>{try{await refreshSnapshot(context,req,key==='search-index'?await readSnapshot(context):row,actor);}catch{console.warn('La copia disponible se conserva; consulta el error de sincronización.');}});return cachedResponse(row.payload||{},row,(stale&&retryReady)||Date.parse(row.lease_until||'')>Date.now());}
  if(key==='search-index'&&!force&&!hasPayload){const initial=await GETLive(req,undefined,true,actor);const data=await initial.json();const retryReady=!(Date.parse(row?.retry_after||'')>Date.now());if(retryReady)after(async()=>{try{await refreshSnapshot(context,req,row,actor);}catch{console.warn('La primera sincronización del índice no se completó.');}});return NextResponse.json({...data,warning:row?.last_error||data.warning,cacheMeta:{source:'local',syncing:retryReady,stale:true,updatedAt:null,lastError:row?.last_error||null}},{headers:{'Cache-Control':'no-store'}});}
  try{return await refreshSnapshot(context,req,key==='search-index'&&hasPayload?await readSnapshot(context):row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,false,actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
@@ -2135,7 +2157,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 export async function POST(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{await invalidateSnapshots(getSettings(),body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
- let context:any,verifiedActor:string|undefined;try{if(supabaseConfigured()){const actor=await requireActor(req);verifiedActor=actor;context=await snapshotContext(actor,getSettings(),'search-index');if(offset>0&&!['local','live'].includes(url.searchParams.get('indexOrigin')||'')){const slice=await readIndexSlice(context,offset,limit,version);if(slice)return NextResponse.json(slice,{status:slice.code?409:200,headers:{'Cache-Control':'no-store'}});}}
+ let context:any,verifiedActor:string|undefined;try{if(supabaseConfigured()){const actor=await requireActor(req);verifiedActor=actor;const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};context=await snapshotContext(actor,liveSettings,'search-index');if(offset>0&&!['local','live'].includes(url.searchParams.get('indexOrigin')||'')){const slice=await readIndexSlice(context,offset,limit,version);if(slice)return NextResponse.json(slice,{status:slice.code?409:200,headers:{'Cache-Control':'no-store'}});}}
  const response=offset>0&&['local','live'].includes(url.searchParams.get('indexOrigin')||'')?await GETLive(req,undefined,url.searchParams.get('indexOrigin')==='local',verifiedActor):await GETSnapshot(req,verifiedActor,context);if(!response.ok)return response;const data=await response.json();let result:any;if(context&&data.cacheMeta?.source==='supabase'){result=await readIndexSlice(context,offset,limit,version,url.searchParams.get('ifVersion')||undefined);if(result)result={...result,cacheMeta:data.cacheMeta,warning:data.warning};}
  if(!result){const rows=data.items||[],current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');if(version&&version!==current)return NextResponse.json({error:'La versión del índice cambió.',code:'index_version_changed'},{status:409});const singleResponse=offset===0&&data.cacheMeta?.source!=='supabase'&&Buffer.byteLength(JSON.stringify(rows))<3000000;let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+(singleResponse?rows.length:limit));end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>(singleResponse?3000000:2000000)){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}result={...data,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null};}
  if(result.code)return NextResponse.json(result,{status:409});if(offset===0&&url.searchParams.get('ifVersion')===result.indexVersion)result={...result,items:undefined,nextOffset:null,unchanged:true};return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}});

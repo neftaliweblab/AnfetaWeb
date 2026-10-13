@@ -1,6 +1,8 @@
 import fs from 'node:fs';import path from 'node:path';
 const SETTINGS_FILE=path.join(process.cwd(),'settings.json');
 const WIN_SETTINGS_DIR=path.join(process.env.LOCALAPPDATA || 'C:/Users/nanoc/AppData/Local','AnfetaCalendarLab');const WIN_SETTINGS_FILE=path.join(WIN_SETTINGS_DIR,'settings.json');
+let memorySettings: any = null;
+
 export function getSettings() {
   let settings = {
     notionToken: process.env.NOTION_TOKEN || "",
@@ -21,12 +23,16 @@ export function getSettings() {
   } catch (e) {
     console.error("Error reading settings:", e);
   }
+  if (memorySettings) {
+    settings = { ...settings, ...memorySettings };
+  }
   if (process.env.NOTION_TOKEN) settings.notionToken = process.env.NOTION_TOKEN;
   if (process.env.DROPBOX_ACCESS_TOKEN) settings.dropboxToken = process.env.DROPBOX_ACCESS_TOKEN;
   return settings;
 }
 
 export function saveSettings(data: any) {
+  memorySettings = { ...(memorySettings || {}), ...data };
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2), "utf-8");
     if (!fs.existsSync(WIN_SETTINGS_DIR)) {
