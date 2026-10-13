@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Lock, Shield, User, KeyRound, AlertCircle, ArrowRight } from "lucide-react";
 import { PERSON_ALIASES, PERSON_METADATA } from "@/services/identityNormalizer";
 
 interface LoginModalProps {
+  sharedMode?:boolean;
   onSuccess: (userTag: string, options?: {sharedMode?:boolean}) => void;
 }
 
@@ -21,9 +22,8 @@ const USERS = [
   { tag: "eemma", name: "Emmanuel", role: "Soporte & Web" },
 ];
 
-export function LoginModal({ onSuccess }: LoginModalProps) {
-  const [sharedMode,setSharedMode]=useState(false);
-  useEffect(()=>{let alive=true;void fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{if(alive)setSharedMode(data.sharedMode===true);}).catch(()=>{});return()=>{alive=false;};},[]);
+export function LoginModal({ onSuccess,sharedMode=true }: LoginModalProps) {
+
   const [selectedUser, setSelectedUser] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -41,7 +41,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e:React.FormEvent) => {
-    e.preventDefault();setError('');setLoading(true);
+    e.preventDefault();if(loading)return;setError('');setLoading(true);
     try{
       const response=await fetch('/api/auth',{
         method:'POST',
@@ -104,7 +104,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
           )}
 
           {/* User selector */}
-          <div className="space-y-1.5">
+          {!sharedMode&&<div className="space-y-1.5">
             <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-[#38BDF8]" />
               Colaborador:
@@ -120,7 +120,8 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
                 </option>
               ))}
             </select>
-          </div>
+          </div>}
+          {sharedMode&&<p className="text-xs text-slate-400">Ingresa con la clave compartida. Después podrás elegir tu persona.</p>}
 
           {/* Password */}
           <div className="space-y-1.5">

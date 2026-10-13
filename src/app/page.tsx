@@ -34,8 +34,9 @@ import { CalendarAutomationModal } from "@/components/CalendarHost/CalendarAutom
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 import {OfflineMutationQueue} from '@/services/offlineQueue';
+import {authErrorMessage} from '@/lib/authErrorMessage';
 export default function AnfetaApp() {
-  const [sharedMode,setSharedMode]=useState(false),[personPickerOpen,setPersonPickerOpen]=useState(false);
+  const [sharedMode,setSharedMode]=useState(true),[personPickerOpen,setPersonPickerOpen]=useState(false);
   const [isAuthenticated,setIsAuthenticated]=useState(false),[authChecking,setAuthChecking]=useState(true),[authError,setAuthError]=useState('');
   const isAuthRef = useRef(false);
   isAuthRef.current = isAuthenticated;
@@ -44,7 +45,7 @@ export default function AnfetaApp() {
   useEffect(()=>{
     let stopped=false,busy=false,generation=0;
     let controller=new AbortController();
-    const changed=()=>{generation++;};
+    const changed=()=>{generation++;controller.abort();controller=new AbortController();busy=false;};
 
     const refresh=async(manualRetry=false, isInitial=false)=>{
       if(stopped||(busy&&!manualRetry)||(!manualRetry&&document.hidden))return;
@@ -54,7 +55,7 @@ export default function AnfetaApp() {
         controller=new AbortController();
       }
       const request=++generation;
-      for(let attempt=0;attempt<2;attempt++){
+      for(let attempt=0;attempt<1;attempt++){
         try{
           const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(28000)])});
           if(stopped||request!==generation)return;
@@ -72,14 +73,10 @@ export default function AnfetaApp() {
           break;
         }catch(error){
           if(stopped||request!==generation)return;
-          const msg=error instanceof Error?error.message:'No se pudo verificar la sesión.';
+          const msg=authErrorMessage(error);
           const isTransient=/tardó|timeout|network|503|fetch|abort/i.test(msg);
           if(isAuthRef.current&&!manualRetry&&isTransient){
             break;
-          }
-          if(attempt===0&&isTransient&&(isInitial||manualRetry)){
-            await new Promise(r=>setTimeout(r,1200));
-            continue;
           }
           setAuthError(msg);
         }
@@ -96,15 +93,16 @@ export default function AnfetaApp() {
 
     void refresh(false,true);
     const timer=setInterval(()=>void refresh(false),120000);
-    window.addEventListener('focus',()=>void refresh(false));
-    document.addEventListener('visibilitychange',()=>void refresh(false));
+    const onFocus=()=>void refresh(false);
+    window.addEventListener('focus',onFocus);
+    document.addEventListener('visibilitychange',onFocus);
     window.addEventListener('anfeta_auth_changed',changed);
     return()=>{
       stopped=true;
       controller.abort();
       clearInterval(timer);
-      window.removeEventListener('focus',()=>void refresh(false));
-      document.removeEventListener('visibilitychange',()=>void refresh(false));
+      window.removeEventListener('focus',onFocus);
+      document.removeEventListener('visibilitychange',onFocus);
       window.removeEventListener('anfeta_auth_changed',changed);
     };
   },[]);
@@ -585,7 +583,7 @@ export default function AnfetaApp() {
   const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
 
   if(authChecking)return <main className="grid min-h-screen place-items-center bg-[#080B0F] text-cyan-200" role="status">Verificando acceso…</main>;
-  if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100 flex items-center justify-between"><span>{authError}</span> <button onClick={()=>refreshAuthRef.current()} className="ml-2 underline font-medium">Reintentar conexión</button></p>}</div><LoginModal onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
+  if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100 flex items-center justify-between"><span>{authError}</span> <button onClick={()=>refreshAuthRef.current()} className="ml-2 underline font-medium">Reintentar conexión</button></p>}</div><LoginModal sharedMode={sharedMode} onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
 
   if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
@@ -770,6 +768,7 @@ export default function AnfetaApp() {
       {/* Login Corporativo Modal */}
       {!isAuthenticated && (
         <LoginModal
+          sharedMode={sharedMode}
           onSuccess={(userTag) => {
             const person = normalizePerson(userTag);
             setCurrentUser(person);
