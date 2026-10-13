@@ -69,6 +69,103 @@ function isImageFile(pathOrName: string): boolean {
   return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
 }
 
+function NotionImageBlock({
+  block,
+  pageTitle,
+  onOpenLightbox,
+}: {
+  block: PreviewBlock;
+  pageTitle: string;
+  onOpenLightbox: (img: { src: string; caption?: string }) => void;
+}) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [triedProxy, setTriedProxy] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(block.url || "");
+  const [loading, setLoading] = useState(true);
+
+  const handleError = () => {
+    if (!triedProxy && (block.id || block.url)) {
+      setTriedProxy(true);
+      setCurrentSrc(`/api/data?type=image-proxy&blockId=${encodeURIComponent(block.id || "")}&url=${encodeURIComponent(block.url || "")}`);
+    } else {
+      setLoadFailed(true);
+      setLoading(false);
+    }
+  };
+
+  const caption = block.caption || block.text || "";
+
+  if (loadFailed) {
+    return (
+      <div className="my-2 p-3 rounded-lg border border-[#1E2836] bg-[#0A0F16] flex flex-col items-center justify-center text-center gap-2 text-xs text-[#94A3B8]">
+        <ImageIcon className="w-8 h-8 text-[#38BDF8]/40" />
+        <span className="font-medium text-[#CBD5E1] truncate max-w-full">
+          {caption || "Imagen no disponible en Notion"}
+        </span>
+        <div className="flex items-center gap-2 mt-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              setLoadFailed(false);
+              setTriedProxy(false);
+              setCurrentSrc(block.url || "");
+              setLoading(true);
+            }}
+            className="px-2.5 py-1 rounded bg-[#162235] hover:bg-[#1E2E48] text-[#38BDF8] border border-[#234268] text-[10.5px] cursor-pointer transition-colors"
+          >
+            ↻ Reintentar
+          </button>
+          {block.url && (
+            <a
+              href={block.url}
+              target="_blank"
+              rel="noreferrer"
+              className="px-2.5 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-slate-400 border border-slate-700 text-[10.5px] transition-colors"
+            >
+              Abrir enlace ↗
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="my-2 rounded border border-[#1E2836] overflow-hidden bg-[#0A0F16] group/img relative cursor-zoom-in"
+      onClick={() => onOpenLightbox({ src: currentSrc, caption: caption || pageTitle })}
+      title="Clic para ver en pantalla completa y ampliar"
+    >
+      {loading && (
+        <div className="h-44 w-full flex items-center justify-center bg-[#080D14] animate-pulse text-[#475569] text-[10px]">
+          <span className="flex items-center gap-1.5 text-cyan-400 font-mono">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            Cargando imagen…
+          </span>
+        </div>
+      )}
+      <img
+        src={currentSrc}
+        alt={caption || "Imagen"}
+        referrerPolicy="no-referrer"
+        crossOrigin="anonymous"
+        className={`max-h-60 w-full object-contain transition-transform duration-200 group-hover/img:scale-[1.02] ${loading ? "hidden" : "block"}`}
+        onLoad={() => setLoading(false)}
+        onError={handleError}
+      />
+      <div className="absolute top-1.5 right-1.5 p-1 rounded bg-black/60 text-white/90 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center gap-1 text-[9px] pointer-events-none">
+        <ZoomIn className="w-3 h-3 text-[#38BDF8]" />
+        <span>Ampliar</span>
+      </div>
+      {caption && (
+        <p className="p-1 text-[9px] text-[#64748B] text-center bg-[#0D131C] border-t border-[#1E2836] truncate">
+          {caption}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DetailsPane({
   item,
   isPinned=false,
@@ -509,32 +606,17 @@ export function DetailsPane({
       return <hr key={block.id || index} className="border-[#1E2836] my-2" />;
     }
 
-    if (k === "image" && block.url) {
+    if (k === "image" && (block.url || block.id)) {
       return (
-        <div
+        <NotionImageBlock
           key={block.id || index}
-          className="my-2 rounded border border-[#1E2836] overflow-hidden bg-[#0A0F16] group/img relative cursor-zoom-in"
-          onClick={() => {
-            setLightboxImages([{ src: block.url!, caption: block.caption || parsed.title }]);
+          block={block}
+          pageTitle={parsed.title}
+          onOpenLightbox={(img) => {
+            setLightboxImages([img]);
             setLightboxIndex(0);
           }}
-          title="Clic para ver en pantalla completa y ampliar"
-        >
-          <img
-            src={block.url}
-            alt={block.caption || "Imagen"}
-            className="max-h-56 w-full object-contain transition-transform duration-200 group-hover/img:scale-[1.02]"
-          />
-          <div className="absolute top-1.5 right-1.5 p-1 rounded bg-black/60 text-white/90 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center gap-1 text-[9px] pointer-events-none">
-            <ZoomIn className="w-3 h-3 text-[#38BDF8]" />
-            <span>Ampliar</span>
-          </div>
-          {block.caption && (
-            <p className="p-1 text-[9px] text-[#64748B] text-center bg-[#0D131C] border-t border-[#1E2836]">
-              {block.caption}
-            </p>
-          )}
-        </div>
+        />
       );
     }
 

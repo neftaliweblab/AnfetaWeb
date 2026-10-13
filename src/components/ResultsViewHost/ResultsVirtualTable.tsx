@@ -707,7 +707,12 @@ export function ResultsVirtualTable({
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
-    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(item.name || targetPath);
+    const isImg =
+      item.type === "IMAGE" ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(targetPath) ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg)($|\s|\.)/i.test(item.name || "") ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg)/i.test(item.extension || "") ||
+      Boolean(item.coverUrl || item.thumbnailUrl);
     const isDoc = /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?)$/i.test(item.name || targetPath);
     const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
     const ext = (item.extension || (item.name || "").split(".").pop() || "").toUpperCase();
@@ -728,9 +733,12 @@ export function ResultsVirtualTable({
     }
     const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
     const activePath = (targetPath || item.path || item.name || "").trim();
-    const imgSrc = activePath.startsWith("http")
-      ? activePath
-      : `/api/data?type=file-preview&path=${encodeURIComponent(activePath)}${tokenQuery}`;
+    let imgSrc = item.coverUrl || item.thumbnailUrl || "";
+    if (!imgSrc) {
+      imgSrc = activePath.startsWith("http")
+        ? activePath
+        : `/api/data?type=file-preview&path=${encodeURIComponent(activePath)}${tokenQuery}`;
+    }
     return (
       <div
         key={item.id}
@@ -834,9 +842,16 @@ export function ResultsVirtualTable({
               src={imgSrc}
               alt={item.name}
               loading="lazy"
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
               className="max-h-full max-w-full object-contain transition-transform group-hover/img:scale-105"
               onError={(e) => {
-                const imgEl = e.currentTarget as HTMLElement;
+                const imgEl = e.currentTarget as HTMLImageElement;
+                if (!imgEl.dataset.retried && item.id) {
+                  imgEl.dataset.retried = "true";
+                  imgEl.src = `/api/data?type=image-proxy&blockId=${encodeURIComponent(item.externalId || item.id || "")}&url=${encodeURIComponent(imgSrc)}`;
+                  return;
+                }
                 imgEl.style.display = "none";
                 const fallback = imgEl.parentElement?.querySelector(".img-fallback") as HTMLElement | null;
                 if (fallback) fallback.style.display = "flex";

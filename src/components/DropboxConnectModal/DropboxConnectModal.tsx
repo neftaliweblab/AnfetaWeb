@@ -273,6 +273,8 @@ export function DropboxConnectModal({
       <div
         className="relative w-full max-w-lg bg-[#0D131B] border border-[#26354A] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         {/* Cabecera */}
         <div className="px-5 py-3.5 bg-[#141C27] border-b border-[#26354A] flex items-center justify-between shrink-0">
@@ -447,6 +449,8 @@ export function DropboxConnectModal({
                     type="text"
                     value={authCode}
                     onChange={(e) => setAuthCode(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                     placeholder="Pega el código de autorización aquí..."
                     className="flex-1 h-9 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-xs focus:outline-none focus:border-cyan-400"
                   />

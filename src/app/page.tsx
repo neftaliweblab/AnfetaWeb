@@ -33,10 +33,11 @@ import {mexicoMinutes} from '@/services/calendarPresentation';
 import { CalendarAutomationModal } from "@/components/CalendarHost/CalendarAutomationModal";
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
+import {OfflineMutationQueue} from '@/services/offlineQueue';
 export default function AnfetaApp() {
   const [sharedMode,setSharedMode]=useState(false),[personPickerOpen,setPersonPickerOpen]=useState(false);
   const [isAuthenticated,setIsAuthenticated]=useState(false),[authChecking,setAuthChecking]=useState(true),[authError,setAuthError]=useState('');
-  useEffect(()=>{let stopped=false,busy=false,generation=0;const controller=new AbortController();const changed=()=>{generation++;};const refresh=async()=>{if(stopped||busy||document.hidden)return;busy=true;const request=++generation;try{const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(stopped||request!==generation)return;if([400,401,403].includes(response.status))setIsAuthenticated(false);const data=await readApiJson(response);if(stopped||request!==generation)return;setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');setAuthError('');}catch(error){if(!stopped&&request===generation)setAuthError(error instanceof Error?error.message:'No se pudo verificar la sesión.');}finally{busy=false;if(!stopped)setAuthChecking(false);}};void refresh();const timer=setInterval(refresh,120000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('anfeta_auth_changed',changed);return()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_auth_changed',changed);};},[]);
+  useEffect(()=>{let stopped=false,busy=false,generation=0;const controller=new AbortController();const changed=()=>{generation++;};const refresh=async()=>{if(stopped||busy||document.hidden)return;busy=true;const request=++generation;try{const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(stopped||request!==generation)return;if([400,401,403].includes(response.status)){OfflineMutationQueue.setOwner('');setIsAuthenticated(false);}const data=await readApiJson(response);if(stopped||request!==generation)return;OfflineMutationQueue.setOwner(data.authenticated?data.ownerId||'':'');setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');setAuthError('');}catch(error){if(!stopped&&request===generation)setAuthError(error instanceof Error?error.message:'No se pudo verificar la sesión.');}finally{busy=false;if(!stopped)setAuthChecking(false);}};void refresh();const timer=setInterval(refresh,120000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('anfeta_auth_changed',changed);return()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_auth_changed',changed);};},[]);
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
@@ -111,11 +112,11 @@ export default function AnfetaApp() {
 
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,token:userToken||undefined,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
-        void loadIndex();indexFocus=()=>void loadIndex();indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        void loadIndex();indexFocus=()=>void loadIndex();window.addEventListener('anfeta_settings_changed',indexFocus);indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
 
         // Calendar dates and today's activities
-        const calUrl = `/api/data?type=calendar&basic=1&date=${currentDate}${userToken ? `&token=${encodeURIComponent(userToken)}` : ""}`;
+        const calUrl = `/api/data?type=calendar&basic=1&date=${currentDate}`;
         const calRes = await fetch(calUrl, {
           headers: userToken ? { "x-notion-token": userToken } : {},
         });
@@ -158,7 +159,7 @@ export default function AnfetaApp() {
         } catch {}
 
         const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length){setSearchIndex(prev=>retainSearchResults(prev,p));setIndexSyncLabel(`Cargando catálogo (${p.items.length.toLocaleString()}...`);}} });if(Array.isArray(idxData.items)){setSearchIndex(previous=>retainSearchResults(previous,idxData));void saveCachedIndex(idxData,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
-        const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+        const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
         {
@@ -198,7 +199,7 @@ export default function AnfetaApp() {
           const s = localStorage.getItem("anfeta_settings");
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
-        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
           signal: controller.signal,
           headers: token ? { "x-notion-token": token } : {},
         });
@@ -534,6 +535,7 @@ export default function AnfetaApp() {
         currentUser={currentUser}
         onLogout={async () => {
           try {
+            OfflineMutationQueue.setOwner('');
             localStorage.removeItem("anfeta_auth_session");
             localStorage.removeItem("anfeta_settings");
             localStorage.removeItem("anfeta_last_user");
@@ -616,7 +618,7 @@ export default function AnfetaApp() {
                   const s = localStorage.getItem("anfeta_settings");
                   if (s) token = JSON.parse(s).notionToken || "";
                 } catch {}
-                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
+                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
                   headers: token ? { "x-notion-token": token } : {},
                 });
                 {
@@ -681,17 +683,16 @@ export default function AnfetaApp() {
         onSaveCurrentUser={async (tag) => {
           const person = normalizePerson(tag);
           if (person !== currentUser) {
-            setCurrentUser(person);
+            const confirmed=await readApiJson(await fetch('/api/auth',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({person}),signal:AbortSignal.timeout(30000)}));
+            if(!confirmed.success||normalizePerson(confirmed.user)!==person)throw new Error('No se confirmó la persona.');
+            OfflineMutationQueue.setOwner('');window.dispatchEvent(new Event('anfeta_auth_changed'));setCurrentUser(person);
             try {
               localStorage.setItem("anfeta_last_user", person);
               const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
               localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: person }));
-              await fetch("/api/auth", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ person }),
-              });
+
             } catch {}
+            window.location.reload();
           }
         }}
       />

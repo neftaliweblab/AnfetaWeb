@@ -3,6 +3,7 @@ const colors: Record<string, string> = {
   PAGADO: 'border-emerald-700/60 bg-emerald-950/80 text-emerald-200',
   TERMINADO: 'border-emerald-700/60 bg-emerald-950/80 text-emerald-200',
   PENDIENTE: 'border-amber-700/60 bg-amber-950/80 text-amber-200',
+  PARCIAL: 'border-orange-700/60 bg-orange-950/80 text-orange-200',
   REVISAR: 'border-fuchsia-700/60 bg-fuchsia-950/80 text-fuchsia-200',
   PAUSADO: 'border-violet-700/60 bg-violet-950/80 text-violet-200',
 };

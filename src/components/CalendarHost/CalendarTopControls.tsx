@@ -48,6 +48,8 @@ interface CalendarTopControlsProps {
   onOpenDailyProgress?: () => void;
   onRefresh?: () => void;
   onOpenStandaloneWindow?: () => void;
+  calendarPalette?: "web" | "desktop";
+  onTogglePalette?: () => void;
 }
 
 export function CalendarTopControls({
@@ -72,6 +74,8 @@ export function CalendarTopControls({
   onOpenDailyProgress,
   onRefresh,
   onOpenStandaloneWindow,
+  calendarPalette = "web",
+  onTogglePalette,
 }: CalendarTopControlsProps) {
   const shiftDay = (offset: number) => {
     onSelectDate(shiftDayString(currentDate, offset));
@@ -216,6 +220,28 @@ export function CalendarTopControls({
         >
           <CreditCard className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Pagos</span>
         </button>
+
+        {/* Toggle Paleta Web / Escritorio */}
+        {onTogglePalette && (
+          <button
+            onClick={onTogglePalette}
+            className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              calendarPalette === "desktop"
+                ? "bg-[#1E293B] text-[#FBBF24] border-[#FBBF24]/60 shadow-[0_0_8px_rgba(251,191,36,0.25)]"
+                : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#38BDF8]"
+            }`}
+            aria-label="Alternar colores tipo aplicación"
+            aria-pressed={calendarPalette === "desktop"}
+            title={calendarPalette === "desktop" ? "Colores tipo escritorio activos · Clic para volver a colores web" : "Colores web activos · Clic para activar paleta tipo aplicación"}
+          >
+            <span
+              className="w-2 h-2 rounded-full inline-block shrink-0"
+              style={{ backgroundColor: calendarPalette === "desktop" ? "#F59E0B" : "#06B6D4" }}
+            />
+            <span className="hidden xl:inline">{calendarPalette === "desktop" ? "Colores App" : "Colores Web"}</span>
+            <span className="xl:hidden">{calendarPalette === "desktop" ? "App" : "Web"}</span>
+          </button>
+        )}
 
         {/* Botón Plantillas */}
         <button

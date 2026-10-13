@@ -1,125 +1,25 @@
-/**
- * Cola de cambios y mutaciones offline de ANFETA (IndexedDB / localStorage).
- * Permite encolar mutaciones (checklist, estados de calendario, recordatorios)
- * cuando se pierde conexión y reintentarlas automáticamente con backoff exponencial al reconectar.
- */
-
-export interface QueuedMutation {
-  id: string;
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body: string;
-  createdAt: number;
-  retryCount: number;
-}
-
-const STORAGE_KEY = "anfeta_offline_mutation_queue_v1";
-
+export interface QueuedMutation {id:string;owner:string;url:string;body:string;createdAt:number;retryCount:number;nextAttempt:number;state:'pending'|'failed';error?:string;leaseUntil?:number;lease?:string}
+let owner='';
+const DB='anfeta-offline-v2',STORE='mutations';
+async function database(){return new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(Error('No se pudo abrir el almacenamiento de cambios.'));});}
+async function transaction<T>(write:boolean,run:(store:IDBObjectStore,result:(value:T)=>void)=>void):Promise<T>{const db=await database();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,write?'readwrite':'readonly');let value:T;tx.oncomplete=()=>{db.close();resolve(value);};tx.onerror=tx.onabort=()=>{db.close();reject(Error('No se pudo guardar el cambio local.'));};run(tx.objectStore(STORE),v=>{value=v;});});}
+function notify(){window.dispatchEvent(new Event('anfeta_offline_queue_changed'));}
+function permitted(url:string,body:any){if(url==='/api/reminders')return ['complete','edit'].includes(body.action)&&Number.isInteger(body.revision);if(url!=='/api/data')return false;const p=body.payload||{};if(body.action==='toggle-checklist')return typeof p.expectedChecked==='boolean';return ['update-activity-schedule','update-activity-details','update-activity-status'].includes(body.action)&&!p.reviewer&&!p.reviewAction&&!p.person&&!!p.expectedTitle&&!!p.expectedStart&&!!p.expectedEnd;}
 export class OfflineMutationQueue {
-  private static isFlushing = false;
-
-  public static getQueue(): QueuedMutation[] {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  public static enqueue(url: string, body: any, method = "POST"): void {
-    if (typeof window === "undefined") return;
-    const item: QueuedMutation = {
-      id: `mut_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      url,
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: typeof body === "string" ? body : JSON.stringify(body),
-      createdAt: Date.now(),
-      retryCount: 0,
-    };
-
-    const queue = this.getQueue();
-    queue.push(item);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-      window.dispatchEvent(new CustomEvent("anfeta_offline_queue_changed", { detail: { count: queue.length } }));
-    } catch (e) {
-      console.warn("No se pudo encolar la mutación offline:", e);
-    }
-  }
-
-  public static async flush(): Promise<{ successCount: number; failedCount: number }> {
-    if (typeof window === "undefined" || !navigator.onLine || this.isFlushing) {
-      return { successCount: 0, failedCount: 0 };
-    }
-
-    this.isFlushing = true;
-    let queue = this.getQueue();
-    if (queue.length === 0) {
-      this.isFlushing = false;
-      return { successCount: 0, failedCount: 0 };
-    }
-
-    const remaining: QueuedMutation[] = [];
-    let successCount = 0;
-    let failedCount = 0;
-
-    for (const item of queue) {
-      try {
-        const res = await fetch(item.url, {
-          method: item.method,
-          headers: item.headers,
-          body: item.body,
-        });
-
-        if (res.ok) {
-          successCount++;
-        } else {
-          // Error 4xx/5xx del servidor
-          item.retryCount += 1;
-          if (item.retryCount < 5) {
-            remaining.push(item);
-          }
-          failedCount++;
-        }
-      } catch {
-        // Sigue sin conexión
-        item.retryCount += 1;
-        remaining.push(item);
-        failedCount++;
-        break; // Detener hasta la siguiente reconexión
-      }
-    }
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
-      window.dispatchEvent(
-        new CustomEvent("anfeta_offline_queue_changed", { detail: { count: remaining.length } })
-      );
-      if (successCount > 0) {
-        window.dispatchEvent(new CustomEvent("anfeta_data_refreshed"));
-      }
-    } catch {}
-
-    this.isFlushing = false;
-    return { successCount, failedCount };
-  }
-
-  public static initAutoSync(): void {
-    if (typeof window === "undefined") return;
-    window.addEventListener("online", () => {
-      console.log("Conexión reestablecida. Procesando cola de cambios offline...");
-      void this.flush();
-    });
-
-    // Reintento periódico si hay conexión
-    setInterval(() => {
-      if (navigator.onLine && this.getQueue().length > 0) {
-        void this.flush();
-      }
-    }, 30000);
-  }
+ // The old queue has no owner. Preserve it verbatim; never attribute it automatically.
+ static legacyQueue():any[]{try{const value=JSON.parse(localStorage.getItem('anfeta_offline_mutation_queue_v1')||'[]');return Array.isArray(value)?value:[];}catch{return [];}}
+ static exportLegacy(){const raw=localStorage.getItem('anfeta_offline_mutation_queue_v1');if(!raw)return;const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([raw],{type:'application/json'}));link.download='anfeta-cambios-antiguos-sin-propietario.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}
+ static setOwner(id:string){owner=id||'';if(typeof window!=='undefined')notify();}
+ static async getQueue():Promise<QueuedMutation[]>{if(!owner||typeof indexedDB==='undefined')return [];const selected=owner;return transaction(false,(s,done)=>{const r=s.getAll();r.onsuccess=()=>done(r.result.filter((item:QueuedMutation)=>item.owner===selected));});}
+ static async enqueue(url:string,body:any){if(!owner)throw Error('Confirma tu persona en línea antes de guardar cambios offline.');if(!permitted(url,body))throw Error('Esta acción requiere conexión para confirmar el resultado.');const item:QueuedMutation={id:crypto.randomUUID(),owner,url,body:JSON.stringify(body),createdAt:Date.now(),retryCount:0,nextAttempt:0,state:'pending'};await transaction<void>(true,(s,done)=>{s.add(item);done();});notify();return item.id;}
+ static async flush(){let successCount=0,failedCount=0;const selected=owner;if(!selected||!navigator.onLine)return {successCount,failedCount};for(const item of await this.getQueue()){
+   if(owner!==selected||item.state==='failed'||item.nextAttempt>Date.now())continue;
+   const lease=crypto.randomUUID();const claimed=await transaction<boolean>(true,(s,done)=>{const r=s.get(item.id);r.onsuccess=()=>{const live=r.result;if(!live||live.owner!==selected||live.state!=='pending'||live.leaseUntil>Date.now()){done(false);return;}s.put({...live,lease,leaseUntil:Date.now()+90000});done(true);};});if(!claimed)continue;
+   let confirmed=false,error='',permanent=false;
+   try{const auth=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.timeout(15000)});const identity=await auth.json();if(!auth.ok||identity.ownerId!==selected||owner!==selected)throw Error('La sesión cambió. Activa la persona original para continuar.');const res=await fetch(item.url,{method:'POST',headers:{'Content-Type':'application/json','x-anfeta-owner':selected,'x-anfeta-request-id':item.id},body:item.body,signal:AbortSignal.timeout(30000)});const data=await res.json();confirmed=res.ok&&data.success!==false;if(!confirmed){error=data.error||'El servidor no confirmó el cambio.';permanent=[400,403,409,422].includes(res.status);}}
+   catch(e){error=e instanceof Error?e.message:'Error de conexión';}
+   await transaction<void>(true,(s,done)=>{const r=s.get(item.id);r.onsuccess=()=>{const live=r.result;if(live?.lease!==lease){done();return;}if(confirmed)s.delete(item.id);else s.put({...live,lease:undefined,leaseUntil:0,retryCount:live.retryCount+1,nextAttempt:Date.now()+Math.min(300000,5000*2**Math.min(live.retryCount,6)),state:permanent?'failed':'pending',error});done();};});notify();if(confirmed){successCount++;window.dispatchEvent(new Event('anfeta_data_refreshed'));}else{failedCount++;break;}
+ }return {successCount,failedCount};}
+ static initAutoSync(){const flush=()=>void this.flush().catch(()=>{});window.addEventListener('online',flush);const timer=setInterval(flush,30000);return ()=>{window.removeEventListener('online',flush);clearInterval(timer);};}
 }
+export async function offlineAwareFetch(url:string,body:any):Promise<Response>{if(!navigator.onLine){await OfflineMutationQueue.enqueue(url,body);return Response.json({success:true,queued:true});}return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});}

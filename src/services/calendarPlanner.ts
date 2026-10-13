@@ -11,7 +11,7 @@ export function planOneClick(activities:any[],day:string,person:string,startMinu
     if (!Number.isFinite(duration)||duration<=0) continue;
     while (cursor+duration<=1320 && fixed.some(([a,b])=>cursor<b&&cursor+duration>a)) cursor+=15;
     if(cursor+duration>1320) throw new Error('La jornada no alcanza para todas las actividades; no se ha guardado ningún cambio.');
-    changes.push({pageId:activity.pageId,title:activity.title,start:at(day,cursor),end:at(day,cursor+duration)});cursor+=duration;
+    changes.push({pageId:activity.pageId,title:activity.title,expectedTitle:activity.title,expectedStart:activity.start,expectedEnd:activity.end,start:at(day,cursor),end:at(day,cursor+duration)});cursor+=duration;
   }
   return changes;
 }

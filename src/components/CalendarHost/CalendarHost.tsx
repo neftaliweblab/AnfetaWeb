@@ -1,4 +1,6 @@
 "use client";
+import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
+import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
 import {financeSlot} from '@/lib/financeColumnOptions';
 import {reviewTitle} from '@/services/reviewTitle';
@@ -96,6 +98,24 @@ export function CalendarHost({
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [phaseFilter,setPhaseFilter]=useState('');
+  const [calendarPalette, setCalendarPalette] = useState<"web" | "desktop">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_calendar_palette");
+        if (saved === "web" || saved === "desktop") return saved;
+      } catch {}
+    }
+    return "web";
+  });
+  const handleTogglePalette = () => {
+    setCalendarPalette((prev) => {
+      const next = prev === "web" ? "desktop" : "web";
+      try {
+        localStorage.setItem("anfeta_calendar_palette", next);
+      } catch {}
+      return next;
+    });
+  };
   const [extraHours,setExtraHours]=useState(false);
   const [financeItems,setFinanceItems]=useState<any[]>([]);
   const [financeWarning,setFinanceWarning]=useState('');
@@ -192,8 +212,8 @@ export function CalendarHost({
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         setActivitiesList(prev=>{
-          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:activity.reviewFlow || old.reviewFlow}:activity;});
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:a.reviewFlow||prev.find(old=>old.pageId===a.pageId)?.reviewFlow}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
+          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         enrichOffset=data.nextEnrichOffset || 0;
@@ -221,7 +241,7 @@ export function CalendarHost({
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
 
-  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
+  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
@@ -235,11 +255,9 @@ export function CalendarHost({
       }catch(e){pending.current.delete(pageId);setError(e instanceof Error?e.message:'No se pudo preparar la revisión.');return false;}
     }
     try {
-      const response = await fetch('/api/data', {
-        method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
-        body:JSON.stringify({ action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} }),
-      });
+      const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction)?{expectedReviewUpdatedAt:original.reviewFlow?.UpdatedAt||null}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
+      if(data.queued){setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
       const saved: NotionCalendarActivity = data.activity;
       recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
@@ -259,6 +277,7 @@ export function CalendarHost({
       onRefresh?.();
       return true;
     } catch (error) {
+      recentSaves.current.delete(pageId);
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
@@ -486,6 +505,8 @@ export function CalendarHost({
         onOpenDailyProgress={onOpenDailyProgress}
         onRefresh={onRefresh}
         onOpenStandaloneWindow={onOpenStandaloneWindow}
+        calendarPalette={calendarPalette}
+        onTogglePalette={handleTogglePalette}
       />
 
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
@@ -611,6 +632,7 @@ export function CalendarHost({
                           pixelsPerHour={pixelsPerHour}
                           overlapIndex={overlapIndex}
                           overlapTotal={overlapTotal}
+                          palette={calendarPalette}
                           isSelected={selectedActivity?.pageId === act.pageId && isDetailOpen}
                           onSelectActivity={(selected) => {
                             setSelectedActivity(selected);

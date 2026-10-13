@@ -29,7 +29,7 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: string;
-  onSaveCurrentUser: (u: string) => void;
+  onSaveCurrentUser: (u: string) => Promise<void>;
 }
 
 const USERS_LIST = [
@@ -43,7 +43,7 @@ const USERS_LIST = [
   { tag: "ssote", name: "Sotelo", role: "Diseño & Creativo" },
   { tag: "aacal", name: "Acalli", role: "Gestión & Contenido" },
   { tag: "eemma", name: "Emmanuel", role: "Sistemas & Datos" },
-  { tag: "__all__", name: "Todos los usuarios", role: "Modo Administrador Global" },
+
 ];
 
 function toUserTag(val: string): string {
@@ -63,6 +63,7 @@ export function SettingsModal({
   currentUser,
   onSaveCurrentUser,
 }: SettingsModalProps) {
+  const [saveError,setSaveError]=useState(''),[saving,setSaving]=useState(false);
   const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
   const [userTag, setUserTag] = useState(() => toUserTag(currentUser));
   const [devices, setDevices] = useState<WindowsAudioDevice[]>([]);
@@ -263,6 +264,8 @@ export function SettingsModal({
   };
 
   const handleSave = async () => {
+    if(saving)return;setSaving(true);setSaveError('');
+    try{if(normalizePerson(userTag)!==normalizePerson(currentUser))await onSaveCurrentUser(userTag);}catch(e){setSaveError(e instanceof Error?e.message:'No se pudo cambiar la persona.');setSaving(false);return;}
     const savedConfig = {
       notionToken: notionToken.trim(),
       dropboxToken: dropboxToken.trim(),
@@ -292,9 +295,9 @@ export function SettingsModal({
     }).catch(() => {});
 
     if (userTag && userTag !== currentUser) {
-      onSaveCurrentUser(userTag);
+      // Persona confirmada antes de guardar ajustes.
     }
-    onClose();
+    setSaving(false);onClose();
   };
 
   if (!isOpen) return null;
@@ -343,6 +346,7 @@ export function SettingsModal({
 
         {/* Form Body */}
         <div className="p-5 max-h-[75vh] overflow-y-auto space-y-4 text-xs text-[#CBD5E1] scrollbar-thin">
+          {saveError&&<p role="alert" className="text-red-300">{saveError}</p>}
           {/* Identidad de Usuario en Windows */}
           <div className="space-y-1.5">
             <label className="font-semibold text-[#F1F5F9] flex items-center justify-between">
@@ -752,6 +756,7 @@ export function SettingsModal({
             Cancelar
           </button>
           <button
+            disabled={saving}
             onClick={handleSave}
             className="px-4 py-1.5 bg-[#00A8FF] hover:bg-[#1FB6FF] text-[#080B0F] text-xs font-bold rounded flex items-center gap-1"
           >

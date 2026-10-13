@@ -1,4 +1,5 @@
 "use client";
+import {offlineAwareFetch} from '@/services/offlineQueue';
 
 import { calendarDisplayTitle, calendarTime } from "@/services/calendarPresentation";
 import React, { useState, useEffect } from "react";
@@ -127,9 +128,10 @@ export function CalendarDetailPanel({
     }
     load();
     const timer = setInterval(load, 30000);
+    window.addEventListener('anfeta_data_refreshed',load);
     window.addEventListener('focus', load);
     document.addEventListener('visibilitychange', load);
-    return () => {controller.abort();clearInterval(timer);window.removeEventListener('focus', load);document.removeEventListener('visibilitychange', load);};
+    return () => {controller.abort();clearInterval(timer);window.removeEventListener('anfeta_data_refreshed',load);window.removeEventListener('focus', load);document.removeEventListener('visibilitychange', load);};
   }, [activity.pageId, activity.isReviewMirror, retry]);
 
   const updating = React.useRef(false);
@@ -141,9 +143,9 @@ export function CalendarDetailPanel({
     updating.current = true; setChecklistError(''); setStatusMessage('');
     setItems(prev => prev.map(i => i.id === item.id ? {...i,isUpdating:true} : i));
     try {
-      const response = await fetch('/api/data', { method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(60000),
-        body:JSON.stringify({action:'toggle-checklist',payload:{pageId,blockId:item.blockId || item.id,checked:!item.isChecked,expectedChecked:item.isChecked,currentUser}}) });
+      const response = await offlineAwareFetch('/api/data',{action:'toggle-checklist',payload:{pageId,blockId:item.blockId || item.id,checked:!item.isChecked,expectedChecked:item.isChecked,currentUser}});
       const data = await response.json();
+      if(data.queued){setStatusMessage('Check pendiente guardado localmente. Se confirmará al volver la conexión.');return;}
       if (!response.ok || !data.success) throw new Error(data.error || 'Notion no confirmó el cambio.');
       if (activePage.current !== pageId) return;
       const updated = items.map(i => i.id === item.id ? {...i,isChecked:data.checked,isUpdating:false} : i);

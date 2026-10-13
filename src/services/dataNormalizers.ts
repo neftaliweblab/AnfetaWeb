@@ -73,6 +73,8 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     assignedPerson,
     checklistProgressText: raw.ChecklistProgressText || "",
     hasChecklistProgress: !!raw.ChecklistProgressText,
+    coverUrl: raw.CoverUrl || raw.coverUrl || raw.Cover?.file?.url || raw.Cover?.external?.url || "",
+    thumbnailUrl: raw.ThumbnailUrl || raw.thumbnailUrl || "",
   };
 }
 
@@ -108,6 +110,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     isUrgent: !!(raw.IsCritical ?? raw.isUrgent ?? calendarUrgent(title)),
     isReviewMirror: !!(raw.IsReviewMirror ?? raw.isReviewMirror),
     reviewFlow: raw.ReviewFlow || raw.reviewFlow,
+    reviewFlowScanned:raw.reviewFlowScanned,
     isCompletedForReview: workflow === 'review' || (workflow === 'unknown' && !!(raw.IsCompletedForReview ?? raw.isCompletedForReview)),
     isFinalized: workflow === 'completed' || (workflow === 'unknown' && !!(raw.IsFinalized ?? raw.isFinalized)),
     isSuspended: workflow === 'suspended' || (workflow === 'unknown' && !!(raw.IsSuspended ?? raw.isSuspended)),

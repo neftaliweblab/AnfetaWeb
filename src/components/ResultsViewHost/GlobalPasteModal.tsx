@@ -1,4 +1,5 @@
 "use client";
+import {readUploadDraft,saveUploadDraft,clearUploadDraft,UploadDraft} from '@/lib/uploadDraft';
 import React,{useState,useEffect,useRef} from 'react';
 import {X,Upload,Loader2,Folder,ChevronRight,FolderPlus} from 'lucide-react';
 import {detectUpload,drxFolder,monthToken,projectCategories,softwareCategories,replaceUploadPrefix,uploadFilename} from '@/lib/drxUploadPlan';
@@ -53,13 +54,16 @@ export function GlobalPasteModal({isOpen,currentUser,initialFiles=EMPTY,initialT
   }, [showFolderPicker]);
 
   const prefixRef=useRef('');
-useEffect(()=>{if(!isOpen)return;const batch=initialFiles.length?initialFiles:initialImage?[initialImage]:[];const detected=detectUpload([initialDomain,initialText,...batch.map(f=>f.filename)].join(' '));const d=initialDomain||detected.domain,m=monthToken();let saved:any='both';let savedDraft:any=null;try{saved=localStorage.getItem('anfeta_upload_destination')||'both';const rawDraft=localStorage.getItem('anfeta_upload_draft');if(rawDraft)savedDraft=JSON.parse(rawDraft);}catch{}setMode(initialDestination||(['both','dropbox','notion'].includes(saved)?saved:'both'));setFiles(batch);setDomain(d||savedDraft?.domain||'');setRoot(detected.root);setCategory(detected.category);setMonth(m);setPerson(savedDraft?.person||'');setBody(initialText||savedDraft?.body||'');setSeparate(false);setError('');setStatus('');setLocked(false);setBusy(false);const prefix=[d||savedDraft?.domain,detected.root,m].filter(Boolean).join(' ');prefixRef.current=prefix;let description=batch.length===1?batch[0].filename.replace(/\.[a-z0-9]{1,12}$/i,''):savedDraft?.title||'';if(/^(Captura_ANFETA|image|clipboard|tmp|codex-clipboard)/i.test(description))description='';if(d)description=description.split(d).join('').trim();setTitle([prefix,description].filter(Boolean).join(' '));},[isOpen,initialFiles,initialImage,initialText,initialDestination,initialDomain]);
-useEffect(()=>{if(!isOpen||!domain)return;try{localStorage.setItem('anfeta_upload_draft',JSON.stringify({domain,title,body,person,updatedAt:Date.now()}));}catch{}},[domain,title,body,person,isOpen]);
+  const recovery=useRef<UploadDraft|null>(null);
+  const [draftReady,setDraftReady]=useState(false),[started,setStarted]=useState(false);
+  useEffect(()=>{if(!isOpen)return;let stopped=false;setDraftReady(false);void readUploadDraft(currentUser).then(async draft=>{if(stopped)return;if(draft){recovery.current=draft;const p=draft.plan;setMode(p.mode);setFiles(p.files||[]);setDomain(p.domain||'');setRoot(p.root||'proyecto');setCategory(p.category||'proyecto');setMonth(p.month||monthToken());setPerson(p.personTag||'');setTitle(p.title||'');setBody(p.body||'');setSeparate(!!p.separatePages);setCustomFolder(p.customFolder||'');prefixRef.current=[p.domain,p.root,p.month,p.personTag].filter(Boolean).join(' ');setStarted(draft.started);setStatus('Lote recuperado: '+draft.receipts.length+' pasos confirmados. Se retomarán los pendientes.');}else{recovery.current={id:crypto.randomUUID(),owner:currentUser,plan:{},receipts:[],started:false,updatedAt:Date.now()};setStarted(false);}setDraftReady(true);}).catch(e=>{if(!stopped)setError(e.message);});return()=>{stopped=true;};},[isOpen,currentUser]);
+useEffect(()=>{if(!isOpen)return;const batch=initialFiles.length?initialFiles:initialImage?[initialImage]:[];const detected=detectUpload([initialDomain,initialText,...batch.map(f=>f.filename)].join(' '));const d=initialDomain||detected.domain,m=monthToken();let saved:any='both';let savedDraft:any=null;try{saved=localStorage.getItem('anfeta_upload_destination')||'both';const rawDraft=localStorage.getItem('anfeta_upload_draft:'+currentUser);if(rawDraft)savedDraft=JSON.parse(rawDraft);}catch{}setMode(initialDestination||(['both','dropbox','notion'].includes(saved)?saved:'both'));setFiles(batch);setDomain(d||savedDraft?.domain||'');setRoot(detected.root);setCategory(detected.category);setMonth(m);setPerson(savedDraft?.person||'');setBody(initialText||savedDraft?.body||'');setSeparate(false);setError('');setStatus('');setLocked(false);setBusy(false);const prefix=[d||savedDraft?.domain,detected.root,m].filter(Boolean).join(' ');prefixRef.current=prefix;let description=batch.length===1?batch[0].filename.replace(/\.[a-z0-9]{1,12}$/i,''):savedDraft?.title||'';if(/^(Captura_ANFETA|image|clipboard|tmp|codex-clipboard)/i.test(description))description='';if(d)description=description.split(d).join('').trim();setTitle([prefix,description].filter(Boolean).join(' '));},[isOpen,initialFiles,initialImage,initialText,initialDestination,initialDomain]);
+useEffect(()=>{if(!isOpen||!draftReady||!recovery.current||started)return;const draft={...recovery.current,plan:{mode,domain,root,category,month,personTag:person,title,body,files,separatePages:separate,customFolder},updatedAt:Date.now()};recovery.current=draft;const timer=setTimeout(()=>void saveUploadDraft(draft).catch(e=>setError(e.message)),300);return()=>clearTimeout(timer);},[isOpen,draftReady,started,mode,domain,root,category,month,person,title,body,files,separate,customFolder]);
 useEffect(()=>{if(!isOpen)return;const prefix=[domain,root,month,person].filter(Boolean).join(' ');if(prefix===prefixRef.current)return;const previous=prefixRef.current;setTitle(old=>replaceUploadPrefix(old,previous,prefix));prefixRef.current=prefix;},[domain,root,month,person,isOpen]);
 if(!isOpen)return null;let folder='';try{folder=drxFolder(domain,root,category);}catch{}const count=files.length,chosen=reviewers.find(p=>p.tag===person);
 async function submit(e:React.FormEvent){
   e.preventDefault();
-  if(busy||locked)return;
+  if(busy||locked||!draftReady)return;
   setError('');
   if(mode!=='notion'&&!folder&&!customFolder){
     setError('Escribe el dominio para construir la ruta DRX o elige una carpeta.');
@@ -75,36 +79,29 @@ async function submit(e:React.FormEvent){
   }
   setBusy(true);
   try{
+    if(!recovery.current)throw Error('No se preparó la recuperación del lote.');
+    const frozen=recovery.current.started?recovery.current.plan:{mode,domain,root,category,month,personTag:person,title:title.trim(),body,files,separatePages:separate,customFolder};
+    recovery.current={...recovery.current,plan:frozen,started:true,updatedAt:Date.now()};
+    await saveUploadDraft(recovery.current);setStarted(true);
     const response=await fetch('/api/data',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
+      signal:AbortSignal.timeout(110000),
       body:JSON.stringify({
         action:'unified-upload',
-        payload:{
-          mode,
-          domain,
-          root,
-          category,
-          customFolder: customFolder || undefined,
-          person:chosen?.person||'',
-          title:title.trim(),
-          body,
-          files,
-          separatePages:separate,
-          currentUser
-        }
+        payload:{...frozen,month:undefined,personTag:undefined,uploadId:recovery.current.id,person:reviewers.find(p=>p.tag===frozen.personTag)?.person||'',currentUser}
       })
     });
     const raw=await response.text();
     let data:any;
     try{data=JSON.parse(raw);}catch{throw new Error('El servidor no pudo completar la subida (HTTP '+response.status+').');}
+    recovery.current={...recovery.current,receipts:data.receipts||recovery.current.receipts,updatedAt:Date.now()};await saveUploadDraft(recovery.current);
     for(const [index,item] of (data.receipts||[]).entries()){
       if(item.kind==='event')continue;
       onSuccess(item.kind==='notion'?{id:item.pageId,externalId:item.pageId,name:item.activity?.title||title,path:item.pageUrl,externalUrl:item.pageUrl,source:'Notion',type:'PAGE'}:{id:'dropbox-'+Date.now()+'-'+index,name:item.filename,path:item.path,target:item.path,folder:item.targetDir,source:'Dropbox',type:'FILE',sizeBytes:item.sizeBytes});
     }
     if(!response.ok||!data.success){
       if(data.receipts?.length){
-        setLocked(true);
         setStatus(data.receipts.length+' operaciones ya guardadas. Revisa el error antes de iniciar otro envío.');
       }
       throw new Error(data.error||'La subida no se completó.');
@@ -114,7 +111,7 @@ async function submit(e:React.FormEvent){
     setStatus('Guardado correctamente.'+(warnings.length?' '+warnings.join(' '):''));
     try{
       localStorage.setItem('anfeta_upload_destination',mode);
-      localStorage.removeItem('anfeta_upload_draft');
+      await clearUploadDraft(currentUser);
     }catch{}
     if(!warnings.length)onClose();
   }catch(e){
@@ -132,6 +129,7 @@ return <div role="dialog" aria-modal="true" aria-label="Subir archivo" className
       {count>0&&<span title={files.map(f=>f.filename).join('\n')} className="text-xs text-cyan-300">📦 {count} archivos</span>}
       <button type="button" disabled={busy} aria-label="Cerrar" onClick={onClose} className="ml-auto cursor-pointer"><X size={20}/></button>
     </header>
+    <fieldset disabled={busy||started||!draftReady} className="space-y-3">
     <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-800 p-1">
       {([{id:'both',label:'🌐 Notion + Dropbox'},{id:'dropbox',label:'📦 Solo Dropbox'},{id:'notion',label:'📝 Solo Notion'}] as const).map(x=>
         <label key={x.id} className={'cursor-pointer rounded-lg p-2 text-center text-xs '+(mode===x.id?'bg-sky-900 text-cyan-200 ring-1 ring-cyan-600':'text-slate-400')}>
@@ -290,4 +288,5 @@ return <div role="dialog" aria-modal="true" aria-label="Subir archivo" className
     )}
 
     <details open={!count&&Boolean(initialText)}><summary className="cursor-pointer text-xs text-slate-400">Contenido y adjuntos</summary><textarea aria-label="Contenido" value={body} onChange={e=>setBody(e.target.value)} rows={3} className={style}/><input type="file" multiple disabled={busy} aria-label="Adjuntar archivos" onChange={async e=>{const selected=Array.from(e.target.files||[]);try{const batch=await Promise.all(selected.map(file=>new Promise<GlobalPasteImagePayload>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const dataUrl=String(reader.result);resolve({filename:file.name,base64:dataUrl.split(',')[1],dataUrl,sizeBytes:file.size,contentType:file.type});};reader.onerror=()=>reject(Error('No se pudo leer '+file.name));reader.readAsDataURL(file);})));setFiles(batch);}catch(err){setError(err instanceof Error?err.message:'No se pudieron leer los archivos.');}}} className="text-xs mt-2"/></details>
-{error&&<p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}{status&&<p role="status" className="text-sm text-cyan-200">{status}</p>}<footer className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm">{locked?'Cerrar':'Cancelar'}</button><button disabled={busy||locked} className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2 font-bold text-white text-sm disabled:opacity-50">{busy&&<Loader2 size={16} className="animate-spin"/>}{busy?'Subiendo…':'Continuar y subir'}</button></footer></form></div>;}
+</fieldset>
+{error&&<p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}{status&&<p role="status" className="text-sm text-cyan-200">{status}</p>}{started&&<p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó incierto, revísalo en Notion/Dropbox antes de repetirlo.</p>}<footer className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm">{locked?'Cerrar':'Cancelar'}</button><button disabled={busy||locked||!draftReady} className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2 font-bold text-white text-sm disabled:opacity-50">{busy&&<Loader2 size={16} className="animate-spin"/>}{busy?'Subiendo…':started?'Retomar lote':'Continuar y subir'}</button></footer></form></div>;}

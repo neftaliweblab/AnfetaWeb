@@ -1,4 +1,6 @@
 import {financeDateField,financeStatus} from '@/services/financeRules';
+import {replayMutation} from '@/services/replayMutation';
+import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
 import {queryAnfetaIndex,uniqueIndex} from '@/services/notionIndexParity';
 import {diagnoseNotion} from '@/services/notionDiagnostics';
 import {executiveActivities} from '@/services/progressKpis';
@@ -592,6 +594,89 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       }
     }
 
+    if (type === "image-proxy") {
+      try {
+        const imageUrl = (searchParams.get("url") || "").trim();
+        const blockId = (searchParams.get("blockId") || "").trim();
+        let targetUrl = imageUrl;
+
+        // Si no viene URL pero viene blockId, o para refrescar Notion
+        if (!targetUrl && blockId) {
+          const settings = getSettings();
+          if (settings.notionToken) {
+            const bRes = await fetch(`https://api.notion.com/v1/blocks/${blockId}`, {
+              headers: {
+                Authorization: `Bearer ${settings.notionToken.trim()}`,
+                "Notion-Version": "2022-06-28",
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (bRes.ok) {
+              const bData = await bRes.json();
+              const p = bData[bData.type] || {};
+              targetUrl = p.file?.url || p.external?.url || p.url || "";
+            }
+          }
+        }
+
+        if (!targetUrl) {
+          return NextResponse.json({ error: "URL de imagen no proporcionada" }, { status: 400 });
+        }
+
+        let imgRes = await fetch(targetUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          },
+          signal: AbortSignal.timeout(20000),
+        });
+
+        // Si falló con 403 (URL de S3 firmada por Notion expirada) y tenemos blockId, refrescar el bloque en Notion
+        if (imgRes.status === 403 && blockId) {
+          const settings = getSettings();
+          if (settings.notionToken) {
+            const bRes = await fetch(`https://api.notion.com/v1/blocks/${blockId}`, {
+              headers: {
+                Authorization: `Bearer ${settings.notionToken.trim()}`,
+                "Notion-Version": "2022-06-28",
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (bRes.ok) {
+              const bData = await bRes.json();
+              const p = bData[bData.type] || {};
+              const freshUrl = p.file?.url || p.external?.url || p.url || "";
+              if (freshUrl && freshUrl !== targetUrl) {
+                targetUrl = freshUrl;
+                imgRes = await fetch(targetUrl, {
+                  headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+                  signal: AbortSignal.timeout(20000),
+                });
+              }
+            }
+          }
+        }
+
+        if (!imgRes.ok) {
+          return NextResponse.json({ error: `Error obteniendo imagen (${imgRes.status})` }, { status: imgRes.status });
+        }
+
+        const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+        const arrayBuf = await imgRes.arrayBuffer();
+
+        return new NextResponse(new Uint8Array(arrayBuf), {
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+          },
+        });
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Error al procesar vista previa de imagen" },
+          { status: 502 }
+        );
+      }
+    }
+
     if (type === "settings") {
       const {notionToken,...publicSettings}=getSettings();
       const hasDropbox = Boolean(publicSettings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || process.env.DROPBOX_REFRESH_TOKEN);
@@ -940,16 +1025,17 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
               // A restricted nested/synced block must not hide every calendar page.
-              let reviewFlow: any = knownReviewFlow(liveSettings,page) || old?.reviewFlow;
+              const known=knownReviewFlow(liveSettings,page);
+              let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status?old.reviewFlow:undefined),reviewFlowScanned=!!known;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
-              if (!basic && !reviewFlow) try { reviewFlow = await cachedReviewFlow(liveSettings, page); }
+              if (!basic) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
-                reviewFlow: reviewFlow || old?.reviewFlow, domain:calendarDomain(live.title,live.domain), status:live.status,
+                reviewFlow, reviewFlowScanned, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
                 isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
@@ -1215,7 +1301,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       if (token && token.trim()) {
         try {
           blocks = await fetchNotionBlocksRecursive(cleanId, token, 0, 3);
-          if (blocks.length > 0 && blocks.some((b) => b.text?.trim())) {
+          if (blocks.length > 0 && blocks.some((b) => b.text?.trim() || b.url || b.kind === "image")) {
             source = "notion-api";
             contentText = blocks
               .map((b) => b.text)
@@ -1227,8 +1313,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }
       }
 
-      // 2. Si no hay bloques con texto desde la API, recurrir a caché local (notion_content_cache.json)
-      if (blocks.length === 0 || !blocks.some((b) => b.text?.trim())) {
+      // 2. Si no hay bloques con texto o imágenes desde la API, recurrir a caché local (notion_content_cache.json)
+      if (blocks.length === 0 || !blocks.some((b) => b.text?.trim() || b.url || b.kind === "image")) {
         const cachePath = path.join(LOCAL_STATE_DIR, "notion_content_cache.json");
         if (fs.existsSync(cachePath)) {
           try {
@@ -1351,7 +1437,9 @@ async function POSTLive(req: NextRequest) {
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
       if(mode!=='notion')drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
-      const receipts:any[]=[],warnings:string[]=[];const invoke=async(action:string,value:any)=>{const response=await POSTLive(new NextRequest(req.url,{method:'POST',headers:req.headers,body:JSON.stringify({action,payload:value})}));const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'No se confirmó la operación.');return data;};
+      if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))return NextResponse.json({error:'Actualiza la web para guardar el identificador del lote recuperable.'},{status:400});
+      const batchKey=operationKey('upload',actor,input.uploadId,JSON.stringify({...input,currentUser:undefined}));
+      const receipts:any[]=[],warnings:string[]=[];const invoke=async(action:string,value:any)=>{return durableStep(operationKey(batchKey,action,JSON.stringify(value)),async()=>{const response=await POSTLive(new NextRequest(req.url,{method:'POST',headers:req.headers,body:JSON.stringify({action,payload:value})}));const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'No se confirmó la operación.');return data;});};
       const batch=files.length?files:[{filename:(input.title||'Contenido')+'.txt',base64:Buffer.from(String(input.body),'utf8').toString('base64'),contentType:'text/plain'}];
       try{
         if(mode!=='notion')for(const [index,file] of batch.entries()){
@@ -1374,7 +1462,7 @@ async function POSTLive(req: NextRequest) {
           }
         }
         if(mode==='both'){
-          try{const now=new Date(),day=mexicoDate(now.toISOString());const minutes=Math.min(1305,Math.max(480,Math.ceil((Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}).format(now))*60+now.getMinutes())/15)*15));const at=(m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';const person=input.person?normalizePerson(input.person):actor;const event=await createActivity(getSettings(),actor,{title:input.title||batch[0].filename,domain:input.domain,person,start:at(minutes),end:at(minutes+15),body:receipts.map(r=>r.pageUrl||r.path).filter(Boolean).join('\n')});receipts.push({kind:'event',pageId:event.page.id,pageUrl:event.page.url});}catch(error){warnings.push('Los archivos se guardaron, pero no se creó la actividad temporal: '+(error instanceof Error?error.message:''));}
+          try{const now=new Date(),day=mexicoDate(now.toISOString());const minutes=Math.min(1305,Math.max(480,Math.ceil((Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}).format(now))*60+now.getMinutes())/15)*15));const at=(m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';const person=input.person?normalizePerson(input.person):actor;const event=await durableStep(operationKey(batchKey,'event'),()=>createActivity(getSettings(),actor,{title:input.title||batch[0].filename,domain:input.domain,person,start:at(minutes),end:at(minutes+15),body:receipts.map(r=>r.pageUrl||r.path).filter(Boolean).join('\n')}));receipts.push({kind:'event',pageId:event.page.id,pageUrl:event.page.url});}catch(error){warnings.push('Los archivos se guardaron, pero no se creó la actividad temporal: '+(error instanceof Error?error.message:''));}
         }
         return NextResponse.json({success:true,receipts,warnings});
       }catch(error){return NextResponse.json({success:false,receipts,error:error instanceof Error?error.message:'La subida no se completó.'},{status:502});}
@@ -2035,7 +2123,7 @@ async function POSTLive(req: NextRequest) {
       if (!Array.isArray(input.changes) || !input.changes.length || input.changes.length>30) return NextResponse.json({error:'Selecciona entre 1 y 30 actividades.'},{status:400});
       const results:any[]=[];
       for (const change of input.changes) {
-        try {const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);persistCalendarActivity(activity);results.push({success:true,activity});}
+        try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);persistCalendarActivity(activity);results.push({success:true,activity});}
         catch(error){results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
       }
       return NextResponse.json({success:results.every(result=>result.success),results});
@@ -2048,6 +2136,7 @@ async function POSTLive(req: NextRequest) {
       try {
         if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
         if (action === 'get-checklist') return NextResponse.json({ success:true, items:await readChecklist(settings, pageId) });
+        return await withActivityLease(operationKey(settings.notionToken,cleanPageId(pageId)),async()=>{
         const actor = input.currentUser || settings.currentUser;
         const currentPage=await assertChecklistAccess(settings, actor, pageId);
         const items = await readChecklist(settings, pageId);
@@ -2062,6 +2151,7 @@ async function POSTLive(req: NextRequest) {
         invalidateChecklist(settings,pageId);
         let stats:any;try{stats=await checklistSnapshot(settings,currentPage,mexicoDate());}catch{warning=[warning,'El check se guardó, pero no se confirmaron los contadores.'].filter(Boolean).join(' ');}
         return NextResponse.json({success:true, blockId:item.blockId, checked,warning,stats});
+        });
       } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }
     }
 
@@ -2254,7 +2344,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
  try{return await refreshSnapshot(context,req,key==='search-index'&&hasPayload?await readSnapshot(context):row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
-export async function POST(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
+async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){
  const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);
@@ -2293,3 +2383,5 @@ export async function GET(req:NextRequest){
   return NextResponse.json(result,{headers:{'Cache-Control':'no-store','Server-Timing':'index;dur='+(Date.now()-started)}});
  }catch(error){const message=error instanceof Error?error.message:'No se pudo cargar el índice.';console.warn('[ANFETA index]',JSON.stringify({offset,durationMs:Date.now()-started,outcome:'failed',cause:message}));return NextResponse.json({error:message},{status:/Inicia sesión/.test(message)?401:502});}
 }
+export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
+

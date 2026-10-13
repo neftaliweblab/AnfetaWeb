@@ -28,16 +28,17 @@ export function cacheReviewFlowMemory(settings: CalendarSettings, pageId: string
   const key = settings.notionToken + ':' + pageId;
   flowCache.set(key, { edited: edited || '', expires: Date.now() + 120000, flow });
 }
+export function clearReviewFlowMemory(settings:CalendarSettings,pageId:string){flowCache.delete(settings.notionToken+':'+pageId);}
 export function knownReviewFlow(settings:CalendarSettings,page:any) {
   const cached=flowCache.get(settings.notionToken+':'+page.id);
   if (!cached) return undefined;
-  if (!cached.edited || cached.edited === page.last_edited_time || cached.expires > Date.now()) return cached.flow;
+  if (cached.expires > Date.now() && cached.edited === page.last_edited_time) return cached.flow;
   return undefined;
 }
 export async function cachedReviewFlow(settings: CalendarSettings, page: any) {
   const key = settings.notionToken + ':' + page.id;
   const cached = flowCache.get(key);
-  if (cached && (cached.edited === page.last_edited_time || !cached.edited) && cached.expires > Date.now()) return cached.flow;
+  if (cached && cached.edited === page.last_edited_time && cached.expires > Date.now()) return cached.flow;
   const flow = await readReviewFlow(settings, page.id);
   if (flowCache.size >= 512) flowCache.delete(flowCache.keys().next().value!);
   flowCache.set(key,{edited:page.last_edited_time,expires:Date.now()+60000,flow});

@@ -28,6 +28,35 @@ function cleanCardId(id: string): string {
   return (id || "").replace(/^review-mirror-/, "").replace(/[^a-zA-Z0-9]/g, "");
 }
 
+function getDesktopAreaColors(area?: string | null): { bg: string; text: string; border: string } {
+  const clean = (area || "").toUpperCase().trim();
+  switch (clean) {
+    case "ADS":
+      return { bg: "#0284C7", text: "#FFFFFF", border: "#0EA5E9" };
+    case "SEO":
+      return { bg: "#059669", text: "#FFFFFF", border: "#10B981" };
+    case "WEB":
+    case "WEBS":
+      return { bg: "#7C3AED", text: "#FFFFFF", border: "#8B5CF6" };
+    case "COTI":
+      return { bg: "#D97706", text: "#FFFFFF", border: "#F59E0B" };
+    case "MAPS":
+      return { bg: "#E11D48", text: "#FFFFFF", border: "#F43F5E" };
+    case "REDES":
+      return { bg: "#DB2777", text: "#FFFFFF", border: "#EC4899" };
+    case "APP":
+      return { bg: "#4F46E5", text: "#FFFFFF", border: "#6366F1" };
+    case "BIBLIA":
+      return { bg: "#9333EA", text: "#FFFFFF", border: "#A855F7" };
+    case "DISEÑO":
+      return { bg: "#EA580C", text: "#FFFFFF", border: "#FB923C" };
+    case "CONTENIDO":
+      return { bg: "#0D9488", text: "#FFFFFF", border: "#14B8A6" };
+    default:
+      return { bg: "#1E293B", text: "#38BDF8", border: "#38BDF8/40" };
+  }
+}
+
 interface ActivityCardProps {
   currentUser: string;
   displayDate?: string;
@@ -35,6 +64,7 @@ interface ActivityCardProps {
   pixelsPerHour: number;
   overlapIndex: number;
   overlapTotal: number;
+  palette?: "web" | "desktop";
   isSelected?: boolean;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
@@ -47,6 +77,7 @@ export function ActivityCard({
   pixelsPerHour,
   overlapIndex,
   overlapTotal,
+  palette = "web",
   isSelected,
   onSelectActivity,
   onUpdateActivity,
@@ -294,6 +325,82 @@ export function ActivityCard({
     phaseTextColor = "#FDE68A";
   }
 
+  // Desktop palette customization (ANFETA Desktop parity)
+  let priorityBorderColor = "#64748B";
+  const titleUpper = (activity.title || "").toUpperCase();
+  if (isUrgent || calendarUrgent(activity.title)) {
+    priorityBorderColor = "#F87171";
+  } else if (titleUpper.includes("01") || titleUpper.includes("ALTA") || titleUpper.includes("URGENT")) {
+    priorityBorderColor = "#FBBF24";
+  } else if (titleUpper.includes("ESPERA") || titleUpper.includes("WAIT")) {
+    priorityBorderColor = "#60A5FA";
+  } else if (isCompleted) {
+    priorityBorderColor = "#10B981";
+  } else if (isReview) {
+    priorityBorderColor = "#38BDF8";
+  } else if (isSuspended) {
+    priorityBorderColor = "#C084FC";
+  } else {
+    priorityBorderColor = "#EAB308";
+  }
+
+  let desktopCardBg = "bg-[#1E232B]";
+  let desktopCardBorder = "border-[#333C4A]";
+  if (isUrgent) {
+    desktopCardBg = "bg-[#28181D]";
+    desktopCardBorder = "border-[#522935]";
+  } else if (isCompleted) {
+    desktopCardBg = "bg-[#1D2B24]";
+    desktopCardBorder = "border-[#2B4438]";
+  } else if (isReview) {
+    desktopCardBg = "bg-[#182535]";
+    desktopCardBorder = "border-[#253D58]";
+  } else if (isSuspended) {
+    desktopCardBg = "bg-[#231A2D]";
+    desktopCardBorder = "border-[#3E2C52]";
+  }
+
+  if (palette === "desktop") {
+    if (isUrgent) {
+      badgeBg = "#4C1D24";
+      badgeBorder = "#F87171";
+      badgeText = "#FECDD3";
+      phaseLabel = "00 URGENTE";
+      phaseColor = "#4C1D24";
+      phaseTextColor = "#FECDD3";
+    } else if (isCompleted) {
+      badgeBg = "#14382A";
+      badgeBorder = "#10B981";
+      badgeText = "#A7F3D0";
+      phaseLabel = "TERMINADA";
+      phaseColor = "#14382A";
+      phaseTextColor = "#A7F3D0";
+    } else if (isReview) {
+      badgeBg = "#12304A";
+      badgeBorder = "#38BDF8";
+      badgeText = "#BAE6FD";
+      phaseLabel = "EN REVISIÓN";
+      phaseColor = "#12304A";
+      phaseTextColor = "#BAE6FD";
+    } else if (isSuspended) {
+      badgeBg = "#301B42";
+      badgeBorder = "#C084FC";
+      badgeText = "#E9D5FF";
+      phaseLabel = "SUSPENDIDA";
+      phaseColor = "#301B42";
+      phaseTextColor = "#E9D5FF";
+    } else {
+      badgeBg = "#382914";
+      badgeBorder = "#F59E0B";
+      badgeText = "#FDE68A";
+      phaseLabel = "POR HACER";
+      phaseColor = "#382914";
+      phaseTextColor = "#FDE68A";
+    }
+  }
+
+  const desktopArea = getDesktopAreaColors(typeLabel);
+
   const widthPct = 100 / Math.max(1, overlapTotal);
   const leftPct = overlapIndex * widthPct;
 
@@ -399,10 +506,13 @@ export function ActivityCard({
           height: `${height}px`,
           width: `calc(${widthPct}% - 4px)`,
           left: `calc(${leftPct}% + 2px)`,
+          ...(palette === "desktop" ? { borderLeftWidth: "4px", borderLeftColor: priorityBorderColor } : {}),
         }}
         className={`absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-        } transition-all select-none overflow-hidden ${cardBg} ${cardBorder} ${
+        } transition-all select-none overflow-hidden ${
+          palette === "desktop" ? `${desktopCardBg} ${desktopCardBorder}` : `${cardBg} ${cardBorder}`
+        } ${
           isSelected
             ? "ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(56,189,248,0.4)] z-30"
             : "hover:z-20 hover:border-slate-500 shadow-sm"
@@ -422,7 +532,16 @@ export function ActivityCard({
 
             {/* Badge de tipo de actividad (ADS, WEBS, SEO, MAPS, etc.) */}
             {typeLabel && (
-              <span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#1E293B] border border-[#38BDF8]/40 text-[#38BDF8] tracking-wider">
+              <span
+                style={
+                  palette === "desktop"
+                    ? { backgroundColor: desktopArea.bg, color: desktopArea.text, borderColor: desktopArea.border }
+                    : undefined
+                }
+                className={`shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono tracking-wider border ${
+                  palette === "desktop" ? "" : "bg-[#1E293B] border-[#38BDF8]/40 text-[#38BDF8]"
+                }`}
+              >
                 {typeLabel}
               </span>
             )}

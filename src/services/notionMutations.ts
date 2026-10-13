@@ -1,7 +1,8 @@
+import {withActivityLease,operationKey} from './reliableOperations';
 import {editActivityDescription} from './activityTitleEdit';
 import {reviewTitle} from './reviewTitle';
 import { sendReviewNotification } from './reviewNotifications';
-import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow, cacheReviewFlowMemory } from './notionCalendar';
+import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow, cacheReviewFlowMemory, clearReviewFlowMemory } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
@@ -45,16 +46,19 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
   const key = settings.notionToken + ':' + id;
   if (mutationLocks.has(key)) throw new Error('La actividad se está guardando; espera antes de reenviarla.');
   mutationLocks.add(key);
-  try { return await mutateActivityUnlocked(settings, actor, id, updates, cached); }
+  try {const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};return await withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),()=>mutateActivityUnlocked(bounded, actor, id, updates, cached)); }
   finally {mutationLocks.delete(key);}
 }
 async function mutateActivityUnlocked(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
   const title = titleOf(page);
+  if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
+  if(updates.expectedStatus!==undefined && (calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'')!==updates.expectedStatus)throw new Error('El estado cambió en otro dispositivo. Actualiza antes de guardar.');
   const locks = Object.entries(page.properties || {}).some(([name, prop]: any) => /lock|bloquead/i.test(name) && prop.type === 'checkbox' && prop.checkbox);
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
+  if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
   if ((updates.start || updates.end) && /(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || ''))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
@@ -65,6 +69,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const completed = updates.status && workflowState(updates.status) === 'completed';
   if (completed && !isReviewer(actor)) throw new Error('Solo John, Isaías o Genaro pueden terminar una revisión.');
   const previousFlow = updates.reviewer || completed || returned || reassigned ? await readReviewFlow(settings, id) : undefined;
+  if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
   if (returned && (!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
   if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
@@ -194,7 +199,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       ReviewAssignee: updates.reviewer ? normalizePerson(updates.reviewer) : previousFlow.ReviewAssignee,
       OriginalAssigneeUserId: reassigned && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.OriginalAssigneeUserId || (field?.[1].type === 'people' ? field[1].people?.[0]?.id : '') || '',
       ReviewAssigneeUserId: updates.reviewer && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.ReviewAssigneeUserId || '',
-      State: returned ? 'returned' : reassigned ? 'reassigned' : completed ? 'approved' : 'pending', SubmittedAt: previousFlow?.SubmittedAt || new Date().toISOString(),
+      State: returned ? 'returned' : reassigned ? 'reassigned' : completed ? 'approved' : 'pending', SubmittedAt: updates.reviewer ? new Date().toISOString() : previousFlow?.SubmittedAt || new Date().toISOString(),
+      Round: updates.reviewer ? (Number(previousFlow?.Round)||0)+1 : previousFlow?.Round||1,
       UpdatedAt: new Date().toISOString(), UpdatedBy: actor, Note: returned ? String(updates.note).trim() : reassigned ? 'Reasignada para continuar trabajo.' : completed ? 'Revisión terminada desde ANFETA web.' : 'Enviada a revisión desde ANFETA web.',
       LeaveVisualCopy: updates.reviewer ? updates.leaveVisualCopy !== false : previousFlow?.LeaveVisualCopy,
       AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
@@ -211,9 +217,10 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
   }
   if (reviewFlow) {
-    cacheReviewFlowMemory(settings, id, reviewFlow, page.last_edited_time);
+
     try { await saveReviewFlow(settings, id, reviewFlow); }
     catch (error) {
+      clearReviewFlowMemory(settings,id);
       // Notion has no transaction across a page and its blocks. Restore the page if metadata fails.
       const restore: Record<string, any> = {};
       for (const name of Object.keys(properties)) {
@@ -226,11 +233,12 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       catch { throw new Error('Notion guardó parte del cambio, pero no el flujo de revisión. Actualiza el calendario y revisa la actividad antes de volver a enviarla.'); }
       throw new Error('No se guardó el flujo de revisión; se restauró la actividad. ' + (error instanceof Error ? error.message : ''));
     }
+    cacheReviewFlowMemory(settings,id,reviewFlow,updated.last_edited_time);
     if (updates.reviewer || ((completed || returned) && previousFlow?.State === 'pending')) {
       try {
         const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed || returned);
         reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
-        cacheReviewFlowMemory(settings, id, reviewFlow);
+        cacheReviewFlowMemory(settings, id, reviewFlow, updated.last_edited_time);
         await saveReviewFlow(settings, id, reviewFlow).catch(() => {});
       } catch (error) {
         updated.__notificationWarning = 'La actividad se guardó, pero no se confirmó el aviso de revisión. ' + (error instanceof Error ? error.message : '');
@@ -266,6 +274,7 @@ export async function createActivity(settings: Settings, actor: string, payload:
     if (!dateField) throw new Error('La base no tiene fecha programada.');
     properties[dateField[0]] = { date: { start, end } };
   }
+  if(start){const status=calendarStatusField(database);if(!status)throw new Error('La base no tiene Estado editable para crear actividades.');const options=status[1][status[1].type]?.options||[];const pending=options.find((option:any)=>option.name==='prtuzREVISION')||options.find((option:any)=>workflowState(option.name)==='pending');if(!pending)throw new Error('Configura un estado POR HACER en la base antes de crear actividades.');properties[status[0]]={[status[1].type]:{name:pending.name}};}
   const personField = assignedField(database);
   if (person && !personField) throw new Error('La fuente no tiene persona asignada editable.');
   if (person && personField) {
@@ -280,7 +289,10 @@ export async function createActivity(settings: Settings, actor: string, payload:
   const domainField = fields.find(([n,p]) => /dominio|domain/i.test(n) && ['select','rich_text'].includes(p.type));
   if (domain && domainField) properties[domainField[0]] = domainField[1].type === 'select' ? { select: { name: domain } } : { rich_text: [{ text: { content: domain } }] };
   const children: any[] = [];
-  if (payload.body) children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: payload.body.slice(0,2000) } }] } });
+  const fullBody=String(payload.body||'');
+  const chunks=Array.from(fullBody).reduce<string[]>((parts,char)=>{if(!parts.length||parts[parts.length-1].length+char.length>1900)parts.push('');parts[parts.length-1]+=char;return parts;},[]);
+  if(chunks.length>80)throw new Error('El texto excede el límite de esta creación. Divide el contenido en varias páginas.');
+  for(const content of chunks)children.push({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content}}]}});
   for (const file of payload.files || []) {
     if (!file.filename || !file.base64 || Buffer.byteLength(file.base64, 'base64') > 20 * 1024 * 1024) throw new Error('Cada adjunto de Notion debe tener nombre y pesar como máximo 20 MB.');
     const upload = await notionRequest(settings, 'file_uploads', 'POST', { mode: 'single_part', filename: file.filename, content_type: file.contentType || /^data:([^;]+);/.exec(file.dataUrl || '')?.[1] || 'application/octet-stream' });
@@ -289,6 +301,7 @@ export async function createActivity(settings: Settings, actor: string, payload:
     if (!res.ok) throw new Error('Notion rechazó el archivo adjunto.');
     children.push({ object: 'block', type: 'file', file: { type: 'file_upload', file_upload: { id: upload.id } } });
   }
+  if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
   const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
   return { page, activity: normalizeActivity({ pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
 }

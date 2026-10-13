@@ -137,21 +137,22 @@ export function openWindowsSoundSettings() {
 }
 
 /** Abrir carpeta o archivo en Explorador de Windows mediante bridge local o protocolo anfeta:// */
-export function openWindowsPath(localPath: string) {
+export async function openWindowsPath(localPath: string) {
   if (!localPath || typeof window === "undefined") return;
   try {
     // 1. Intentar comunicar con bridge local de ANFETA si está activo en 127.0.0.1:4821
-    fetch("http://127.0.0.1:4821/open", {
+    const response=await fetch("http://127.0.0.1:4821/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: localPath }),
-    }).catch(() => {
+      signal:AbortSignal.timeout(3000),
+    });
+    if(!response.ok)throw new Error('El bridge rechazó la apertura (HTTP '+response.status+').');
+  } catch {
       // 2. Si no responde el servidor HTTP local, intentar protocolo registrado anfeta://
       const customUri = `anfeta://open?path=${encodeURIComponent(localPath)}`;
       window.location.href = customUri;
-    });
-  } catch {
-    console.warn("No se pudo invocar el bridge de Windows para:", localPath);
+    console.warn("El bridge no confirmó la apertura; se intentó el protocolo ANFETA.");
   }
 }
 

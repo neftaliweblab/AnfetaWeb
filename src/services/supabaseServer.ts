@@ -22,19 +22,92 @@ export function supabaseAdmin(){
 export function validateProfile(profile:any){const person=normalizePerson(profile?.person_tag);if(!profile?.active||!PERSON_ALIASES[person])throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Solicita su asignación al administrador.');return person;}
 
 function serviceError(error:any,context:string){const message=String(error?.message||'');if(/timeout|abort|fetch|network/i.test(message)||error?.status>=500)return Object.assign(new Error('Supabase no está disponible temporalmente durante '+context+'. Intenta de nuevo; no se activó una sesión provisional.'),{status:503});return new Error(context+'. Revisa la configuración de Supabase y los permisos del servidor.');}
-async function checkedUser(client:any){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([client.auth.getUser(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Supabase tardó demasiado en verificar o renovar la sesión. Intenta de nuevo.')),8000);})]);}finally{if(timer)clearTimeout(timer);}}
-async function checkedSignIn(client:any,credentials:any){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([client.auth.signInWithPassword(credentials),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Supabase tardó demasiado en iniciar sesión. Intenta de nuevo.')),8000);})]);}finally{if(timer)clearTimeout(timer);}}
-export async function supabaseIdentity(){
- const client=await supabaseSessionClient();let result:any;
- try{result=await checkedUser(client);}catch(error){if(error instanceof Error&&error.message.startsWith('Supabase tardó'))throw error;throw serviceError(error,'verificar la sesión');}
- if(result.error&&(/timeout|abort|fetch|network/i.test(String(result.error.message))||result.error.status>=500))throw serviceError(result.error,'verificar la sesión');
- if(result.error||!result.data?.user)throw new Error('Inicia sesión para continuar.');
- const user=result.data.user,gate=sharedAccessConfigured()?await readSharedGate():undefined;
- if(sharedAccessConfigured()&&(!gate?.selectedId||gate.selectedId!==user.id))throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
- const profile=await client.from('profiles').select('id,person_tag,active').eq('id',user.id).single();
- if(profile.error&&(/timeout|abort|fetch|network/i.test(String(profile.error.message))||profile.status>=500))throw serviceError({...profile.error,status:profile.status},'leer el perfil activo');
- if(profile.error||!profile.data)throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Revisa la tabla profiles.');
- return {client,id:user.id,person:validateProfile(profile.data)};
+let inFlightIdentity: { key: string; promise: Promise<{ id: string; person: string }> } | null = null;
+
+async function checkedUser(client: any, timeoutMs = 25000) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await Promise.race([
+        client.auth.getUser(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Supabase tardó demasiado en verificar o renovar la sesión. Intenta de nuevo.')),
+            attempt === 0 ? timeoutMs : 15000
+          );
+        }),
+      ]);
+    } catch (err: any) {
+      if (timer) { clearTimeout(timer); timer = undefined; }
+      if (attempt === 0 && (/tardó demasiado|timeout|network|ECONNRESET|fetch failed/i.test(String(err?.message || '')))) {
+        await new Promise((res) => setTimeout(res, 500));
+        continue;
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+}
+
+async function checkedSignIn(client: any, credentials: any) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      client.auth.signInWithPassword(credentials),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Supabase tardó demasiado en iniciar sesión. Intenta de nuevo.')), 10000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export async function supabaseIdentity() {
+  const store = await cookies();
+  const sessionKey = store.getAll().map((c) => `${c.name}:${c.value}`).sort().join(';');
+  const client = await supabaseSessionClient();
+
+  if (inFlightIdentity && inFlightIdentity.key === sessionKey) {
+    const shared = await inFlightIdentity.promise;
+    return { client, id: shared.id, person: shared.person };
+  }
+
+  const resolveIdentity = async () => {
+    let result: any;
+    try {
+      result = await checkedUser(client);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Supabase tardó')) throw error;
+      throw serviceError(error, 'verificar la sesión');
+    }
+    if (result.error && (/timeout|abort|fetch|network/i.test(String(result.error.message)) || result.error.status >= 500)) {
+      throw serviceError(result.error, 'verificar la sesión');
+    }
+    if (result.error || !result.data?.user) throw new Error('Inicia sesión para continuar.');
+    const user = result.data.user, gate = sharedAccessConfigured() ? await readSharedGate() : undefined;
+    if (sharedAccessConfigured() && (!gate?.selectedId || gate.selectedId !== user.id)) {
+      throw new Error('Inicia sesión y elige la persona que está usando ANFETA.');
+    }
+    const profile = await client.from('profiles').select('id,person_tag,active').eq('id', user.id).single();
+    if (profile.error && (/timeout|abort|fetch|network/i.test(String(profile.error.message)) || profile.status >= 500)) {
+      throw serviceError({ ...profile.error, status: profile.status }, 'leer el perfil activo');
+    }
+    if (profile.error || !profile.data) throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Revisa la tabla profiles.');
+    return { id: user.id, person: validateProfile(profile.data) };
+  };
+
+  const currentPromise = resolveIdentity();
+  inFlightIdentity = { key: sessionKey, promise: currentPromise };
+  try {
+    const resolved = await currentPromise;
+    return { client, id: resolved.id, person: resolved.person };
+  } finally {
+    if (inFlightIdentity?.promise === currentPromise) {
+      inFlightIdentity = null;
+    }
+  }
 }
 export async function loginSupabase(user:string,password:string){const client=await supabaseSessionClient();let email=user.trim();if(!email.includes('@')){const tag=PERSON_ALIASES[normalizePerson(user)]?.[0];if(!tag)throw new Error('Usuario o contraseña incorrectos.');const profile=await supabaseAdmin().from('profiles').select('login_email').eq('person_tag',tag).eq('active',true).single();if(profile.error||!profile.data?.login_email)throw new Error('Usuario o contraseña incorrectos.');email=profile.data.login_email;}const {error}=await checkedSignIn(client,{email,password});if(error)throw new Error('Usuario o contraseña incorrectos.');try{return await supabaseIdentity();}catch(error){await client.auth.signOut();throw error;}}
 
@@ -67,7 +140,7 @@ export async function loginSharedAccess(password:string,_targetUser?:string){
  await saveSharedGate({baseId,selectedId:'',expires:Date.now()+8*3600000});
  return {person:'',needsPersonSelection:true};
 }
-export async function sharedAccessStatus(){const gate=await readSharedGate();if(!gate)return {authenticated:false,user:'',needsPersonSelection:false};if(!gate.selectedId){const client=await supabaseSessionClient(),checked=await checkedUser(client);if(checked.error&&/timeout|abort|fetch|network/i.test(String(checked.error.message)))throw serviceError(checked.error,'verificar el acceso común');if(!checked.data?.user||checked.data.user.id!==gate.baseId){await clearSharedGate();return {authenticated:false,user:'',needsPersonSelection:false};}return {authenticated:true,user:'',needsPersonSelection:true};}const identity=await supabaseIdentity();return {authenticated:true,user:identity.person,needsPersonSelection:false};}
+export async function sharedAccessStatus(){const gate=await readSharedGate();if(!gate)return {authenticated:false,user:'',needsPersonSelection:false};if(!gate.selectedId){const client=await supabaseSessionClient(),checked=await checkedUser(client);if(checked.error&&/timeout|abort|fetch|network/i.test(String(checked.error.message)))throw serviceError(checked.error,'verificar el acceso común');if(!checked.data?.user||checked.data.user.id!==gate.baseId){await clearSharedGate();return {authenticated:false,user:'',needsPersonSelection:false};}return {authenticated:true,user:'',needsPersonSelection:true};}const identity=await supabaseIdentity();return {authenticated:true,user:identity.person,ownerId:identity.id,needsPersonSelection:false};}
 export async function selectSharedPerson(input:string){
  const gate=await readSharedGate();if(!gate)throw new Error('Inicia sesión para elegir persona.');
  const person=normalizePerson(input),tag=PERSON_ALIASES[person]?.[0];if(!tag)throw new Error('Persona no válida.');
