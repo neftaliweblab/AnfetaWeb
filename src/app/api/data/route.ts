@@ -24,7 +24,7 @@ import { listReviewNotifications, readNotificationThread, replyNotification } fr
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
-import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent } from '@/services/dropboxUpload';
+import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson } from '@/services/identityNormalizer';
@@ -585,7 +585,16 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "settings") {
-      const {notionToken,...publicSettings}=getSettings();return NextResponse.json({...publicSettings,currentUser:actor,notionConfigured:!!notionToken});
+      const {notionToken,...publicSettings}=getSettings();
+      const hasDropbox = Boolean(publicSettings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || process.env.DROPBOX_REFRESH_TOKEN);
+      return NextResponse.json({
+        ...publicSettings,
+        currentUser: actor,
+        notionConfigured: !!notionToken,
+        hasDropboxToken: hasDropbox,
+        dropboxAccountName: (publicSettings as any).dropboxAccountName || "",
+        dropboxAccountEmail: (publicSettings as any).dropboxAccountEmail || "",
+      });
     }
 
     if (type === "templates") {
@@ -1590,6 +1599,63 @@ async function POSTLive(req: NextRequest) {
           ? "Tiempo de espera agotado al conectar con Dropbox (10s)."
           : (err.message || "Error al verificar el token de Dropbox");
         return NextResponse.json({ success: false, error: msg }, { status: 200 });
+      }
+    }
+
+    if (action === "exchange-dropbox-code") {
+      const code = (payload?.code || "").trim();
+      if (!code) {
+        return NextResponse.json(
+          { success: false, error: "Por favor introduce el código de autorización que Dropbox te mostró." },
+          { status: 400 }
+        );
+      }
+      try {
+        const result = await exchangeDropboxCode(code);
+        const tokenToSave = (result.refreshToken || result.accessToken).trim();
+        const prev = getSettings();
+        const updated = {
+          ...prev,
+          dropboxToken: tokenToSave,
+          dropboxAccountName: result.displayName || "",
+          dropboxAccountEmail: result.email || "",
+        };
+        saveSettings(updated);
+
+        return NextResponse.json({
+          success: true,
+          account: result.displayName,
+          email: result.email,
+          token: tokenToSave,
+          hasRefreshToken: Boolean(result.refreshToken),
+          message: `Cuenta de Dropbox vinculada correctamente: ${result.displayName || result.email}`,
+        });
+      } catch (err: any) {
+        let msg = err.message || "Error al verificar código con Dropbox";
+        if (msg.includes("code doesn't exist or has expired") || msg.includes("invalid_grant")) {
+          msg = "El código ingresado no existe o ha expirado. Por favor genera un nuevo código en Dropbox e inténtalo de nuevo.";
+        }
+        return NextResponse.json({ success: false, error: msg }, { status: 200 });
+      }
+    }
+
+    if (action === "disconnect-dropbox") {
+      try {
+        const prev = getSettings();
+        const updated = {
+          ...prev,
+          dropboxToken: "",
+          dropboxAccountName: "",
+          dropboxAccountEmail: "",
+        };
+        saveSettings(updated);
+        clearCachedDropboxToken();
+        return NextResponse.json({
+          success: true,
+          message: "Cuenta de Dropbox desvinculada exitosamente.",
+        });
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: err.message || "Error al desvincular Dropbox" }, { status: 500 });
       }
     }
 

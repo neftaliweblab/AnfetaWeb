@@ -45,6 +45,7 @@ interface SearchConfigRowProps {
   hasNotionToken?: boolean;
   hasDropboxToken?: boolean;
   onOpenSettings?: () => void;
+  onOpenDropboxConnect?: () => void;
   notification?: { type: 'info' | 'success' | 'warning' | 'error'; text: string } | null;
 }
 
@@ -111,6 +112,7 @@ export function SearchConfigRow({
   hasNotionToken,
   hasDropboxToken,
   onOpenSettings,
+  onOpenDropboxConnect,
   notification,
 }: SearchConfigRowProps) {
   const [showColsMenu, setShowColsMenu] = useState(false);
@@ -296,23 +298,28 @@ export function SearchConfigRow({
             {hasDropboxToken === false ? (
               <button
                 type="button"
-                onClick={onOpenSettings}
-                title="Token de Dropbox no detectado. Haz clic para configurarlo en ⚙️ Configuración"
+                onClick={onOpenDropboxConnect || onOpenSettings}
+                title="Conectar con Dropbox mediante código de autorización (OAuth)"
                 style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
-                className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 flex items-center gap-1 hover:bg-amber-500/20 cursor-pointer transition-colors"
+                className="px-2 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 flex items-center gap-1.5 hover:bg-cyan-500/20 hover:border-cyan-400 cursor-pointer transition-colors"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                <span>Falta Token</span>
+                <Cloud
+                  style={{ width: `${Math.round(11 * scale)}px`, height: `${Math.round(11 * scale)}px` }}
+                  className="text-cyan-400"
+                />
+                <span>Conectar Dropbox</span>
               </button>
             ) : hasDropboxToken === true ? (
-              <span
-                title="Token de Dropbox configurado"
-                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
-                className="px-1 py-0.5 rounded text-cyan-400 flex items-center gap-1"
+              <button
+                type="button"
+                onClick={onOpenDropboxConnect || onOpenSettings}
+                title="Dropbox conectado mediante OAuth - Clic para ver estado o cambiar cuenta"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
+                className="px-1.5 py-0.5 rounded border border-cyan-500/20 bg-cyan-950/20 text-cyan-400 flex items-center gap-1 hover:bg-cyan-900/30 cursor-pointer transition-colors"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
                 <span>Dropbox OK</span>
-              </span>
+              </button>
             ) : null}
           </div>
         )}

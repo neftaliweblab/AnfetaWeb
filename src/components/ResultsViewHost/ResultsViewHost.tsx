@@ -25,6 +25,7 @@ import { PendingTaskModal } from "./PendingTaskModal";
 import { NotionTemplatesModal } from "./NotionTemplatesModal";
 import {detectUpload} from '@/lib/drxUploadPlan';
 import { DropboxUploadModal } from "./DropboxUploadModal";
+import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
 import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import { filterByNotionBase } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
@@ -164,6 +165,7 @@ export function ResultsViewHost({
 
   const [hasNotionToken, setHasNotionToken] = useState<boolean | undefined>(undefined);
   const [hasDropboxToken, setHasDropboxToken] = useState<boolean | undefined>(undefined);
+  const [isDropboxConnectOpen, setIsDropboxConnectOpen] = useState(false);
 
   useEffect(() => {
     const checkTokens = () => {
@@ -183,6 +185,36 @@ export function ResultsViewHost({
       }
     };
     checkTokens();
+
+    // Auto-detectar credenciales configuradas en el servidor
+    fetch("/api/data?type=settings")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data) {
+          if (typeof data.notionConfigured === "boolean") {
+            setHasNotionToken((prev) => (prev !== undefined ? prev : data.notionConfigured));
+          }
+          if (data.dropboxToken || data.hasDropboxToken) {
+            setHasDropboxToken(true);
+            try {
+              const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
+              if (!prev.dropboxToken && data.dropboxToken) {
+                localStorage.setItem(
+                  "anfeta_settings",
+                  JSON.stringify({
+                    ...prev,
+                    dropboxToken: data.dropboxToken,
+                    dropboxAccountName: data.dropboxAccountName || "",
+                    dropboxAccountEmail: data.dropboxAccountEmail || "",
+                  })
+                );
+              }
+            } catch {}
+          }
+        }
+      })
+      .catch(() => {});
+
     window.addEventListener("anfeta_settings_changed", checkTokens);
     return () => window.removeEventListener("anfeta_settings_changed", checkTokens);
   }, []);
@@ -1173,6 +1205,7 @@ export function ResultsViewHost({
         hasNotionToken={hasNotionToken}
         hasDropboxToken={hasDropboxToken}
         onOpenSettings={onOpenSettings}
+        onOpenDropboxConnect={() => setIsDropboxConnectOpen(true)}
         notification={appNotification}
       />
 
@@ -1511,6 +1544,26 @@ export function ResultsViewHost({
         selectedItems={items.filter((it) => selectedIds.has(it.id))}
         onClose={() => setIsBatchRenameOpen(false)}
         onConfirm={handleBatchRenameConfirm}
+      />
+
+      {/* Modal Conectar Dropbox OAuth */}
+      <DropboxConnectModal
+        isOpen={isDropboxConnectOpen}
+        onClose={() => setIsDropboxConnectOpen(false)}
+        onConnected={(info) => {
+          setHasDropboxToken(true);
+          setAppNotification({
+            type: "success",
+            text: `✓ Dropbox conectado: ${info.account}`,
+          });
+        }}
+        onDisconnected={() => {
+          setHasDropboxToken(false);
+          setAppNotification({
+            type: "info",
+            text: "Dropbox desvinculado",
+          });
+        }}
       />
     </div>
   );

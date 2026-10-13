@@ -23,6 +23,7 @@ import {
   openWindowsSoundSettings,
 } from "@/services/windowsIntegration";
 import { normalizePerson } from "@/services/identityNormalizer";
+import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -85,6 +86,7 @@ export function SettingsModal({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingDropbox, setIsSyncingDropbox] = useState(false);
   const [showAdvancedLocal, setShowAdvancedLocal] = useState(false);
+  const [showDropboxOAuthModal, setShowDropboxOAuthModal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -602,12 +604,50 @@ export function SettingsModal({
                 </div>
               )}
 
+              {/* Conexión OAuth recomendada */}
+              <div className="p-3 rounded-lg bg-[#0E1722] border border-[#23384D] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-[#F1F5F9] flex items-center gap-1.5">
+                    <Cloud className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    Conexión Directa con Dropbox (OAuth 2.0)
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    Auto-renovación permanente
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-[#94A3B8]">
+                  Solicita el permiso en Dropbox mediante código de autorización sin necesidad de tokens manuales ni expiración de 4 horas.
+                </p>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowDropboxOAuthModal(true)}
+                    className="px-3 py-1.5 bg-[#00A8FF] hover:bg-[#1FB6FF] text-[#080B0F] text-[11px] font-bold rounded flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                  >
+                    <Key className="w-3 h-3" />
+                    <span>{dropboxToken ? "Administrar / Re-vincular Dropbox" : "Conectar con Dropbox"}</span>
+                  </button>
+                  {dropboxToken && (
+                    <button
+                      type="button"
+                      onClick={handleTestDropbox}
+                      disabled={isTestingDropbox}
+                      className="px-3 py-1.5 bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] text-[#38BDF8] text-[11px] font-semibold rounded flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <RotateCw className={`w-3 h-3 ${isTestingDropbox ? "animate-spin" : ""}`} />
+                      <span>{isTestingDropbox ? "Probando..." : "Probar Conexión"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Token opcional de Dropbox API */}
               <div className="space-y-1.5 pt-1">
                 <label className="text-[10.5px] text-[#94A3B8] flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <Key className="w-3 h-3 text-[#38BDF8]" />
-                    Token de Dropbox (Opcional - Vercel auto-renueva):
+                    Token manual de Dropbox (Avanzado):
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
                     ✓ Renovación perpetua activa en Vercel
@@ -770,6 +810,20 @@ export function SettingsModal({
           </button>
         </div>
       </div>
+
+      {/* Modal Conectar Dropbox OAuth */}
+      <DropboxConnectModal
+        isOpen={showDropboxOAuthModal}
+        onClose={() => setShowDropboxOAuthModal(false)}
+        onConnected={(info) => {
+          setDropboxToken(info.token || "");
+          setDropboxTestStatus({ ok: true, msg: `✓ Conectado a Dropbox: ${info.account}` });
+        }}
+        onDisconnected={() => {
+          setDropboxToken("");
+          setDropboxTestStatus(null);
+        }}
+      />
     </div>
   );
 }

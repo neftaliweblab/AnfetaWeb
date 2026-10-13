@@ -1,8 +1,96 @@
 import {drxFolder} from '@/lib/drxUploadPlan';
 import {getSettings} from '@/services/serverSettings';
-export const DEFAULT_DROPBOX_APP_KEY = '98zsk2p74wgempw';
+import {DEFAULT_DROPBOX_APP_KEY, getDropboxAuthorizeUrl} from '@/lib/dropboxConfig';
+export {DEFAULT_DROPBOX_APP_KEY, getDropboxAuthorizeUrl};
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
+
+export function clearCachedDropboxToken() {
+  cachedToken = null;
+}
+
+export interface DropboxExchangeResult {
+  accessToken: string;
+  refreshToken?: string;
+  accountId?: string;
+  uid?: string;
+  displayName?: string;
+  email?: string;
+}
+
+export async function exchangeDropboxCode(
+  code: string,
+  appKey = DEFAULT_DROPBOX_APP_KEY,
+  appSecret?: string
+): Promise<DropboxExchangeResult> {
+  const cleanCode = code.trim();
+  const cleanAppKey = (appKey || DEFAULT_DROPBOX_APP_KEY).trim();
+  const bodyParams = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code: cleanCode,
+    client_id: cleanAppKey,
+  });
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  const secret = (appSecret || process.env.DROPBOX_APP_SECRET || '').trim();
+  if (secret) {
+    const basic = Buffer.from(`${cleanAppKey}:${secret}`).toString('base64');
+    headers['Authorization'] = `Basic ${basic}`;
+  }
+
+  const res = await fetch('https://api.dropboxapi.com/oauth2/token', {
+    method: 'POST',
+    headers,
+    body: bodyParams,
+    signal: AbortSignal.timeout(15000),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.access_token) {
+    const errDetail = data?.error_description || data?.error || (data ? JSON.stringify(data) : `HTTP ${res.status}`);
+    console.error('Dropbox OAuth exchange error:', errDetail);
+    throw new Error(errDetail);
+  }
+
+  const expiresInMs = (data.expires_in || 14400) * 1000;
+  cachedToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + expiresInMs,
+  };
+
+  let displayName = '';
+  let email = '';
+  try {
+    const accountRes = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${data.access_token}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (accountRes.ok) {
+      const accountData = await accountRes.json().catch(() => null);
+      if (accountData) {
+        displayName = accountData.name?.display_name || accountData.name?.familiar_name || '';
+        email = accountData.email || '';
+      }
+    }
+  } catch (accErr) {
+    console.warn('No se pudo obtener información de cuenta Dropbox:', accErr);
+  }
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    accountId: data.account_id,
+    uid: data.uid,
+    displayName: displayName || email || 'Cuenta de Dropbox',
+    email,
+  };
+}
 
 export async function refreshDropboxAccessToken(
   refreshToken: string,
