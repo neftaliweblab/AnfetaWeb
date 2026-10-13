@@ -41,6 +41,10 @@ interface SearchConfigRowProps {
   onToggleCol: (col: "path" | "status" | "scheduledDate" | "modifiedDate") => void;
   onMaximizeNameCol: () => void;
   onResetCols: () => void;
+  hasNotionToken?: boolean;
+  hasDropboxToken?: boolean;
+  onOpenSettings?: () => void;
+  notification?: { type: 'info' | 'success' | 'warning' | 'error'; text: string } | null;
 }
 
 const MONTHS = [
@@ -103,6 +107,10 @@ export function SearchConfigRow({
   onToggleCol,
   onMaximizeNameCol,
   onResetCols,
+  hasNotionToken,
+  hasDropboxToken,
+  onOpenSettings,
+  notification,
 }: SearchConfigRowProps) {
   const [showColsMenu, setShowColsMenu] = useState(false);
   const colsRef = useRef<HTMLDivElement>(null);
@@ -196,70 +204,116 @@ export function SearchConfigRow({
 
         {/* Botón Sincronizar Notion en Vivo */}
         {onSyncNotion && (
-          <button
-            type="button"
-            onClick={() => onSyncNotion()}
-            disabled={isSyncingNotion}
-            style={{
-              gap: `${Math.round(4 * scale)}px`,
-              minHeight: `${Math.round(26 * scale)}px`,
-              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-            }}
-            className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
-              isSyncingNotion
-                ? "bg-[#1E3A5F] border-[#38BDF8] text-[#38BDF8] opacity-80"
-                : "bg-[#14233A] border-[#25466A] hover:border-[#38BDF8] text-[#38BDF8] hover:bg-[#1B2F4E]"
-            }`}
-            title="Sincronizar cambios en vivo desde Notion API"
-          >
-            {isSyncingNotion ? (
-              <Loader2
-                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
-                className="animate-spin text-[#38BDF8]"
-              />
-            ) : (
-              <RefreshCw
-                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
-                className="text-[#38BDF8]"
-              />
-            )}
-            <span>{isSyncingNotion ? "Sincronizando Notion..." : "Sync Notion"}</span>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onSyncNotion()}
+              disabled={isSyncingNotion}
+              style={{
+                gap: `${Math.round(4 * scale)}px`,
+                minHeight: `${Math.round(26 * scale)}px`,
+                padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+                fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              }}
+              className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
+                isSyncingNotion
+                  ? "bg-[#1E3A5F] border-[#38BDF8] text-[#38BDF8] opacity-80"
+                  : "bg-[#14233A] border-[#25466A] hover:border-[#38BDF8] text-[#38BDF8] hover:bg-[#1B2F4E]"
+              }`}
+              title="Sincronizar cambios en vivo desde Notion API"
+            >
+              {isSyncingNotion ? (
+                <Loader2
+                  style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                  className="animate-spin text-[#38BDF8]"
+                />
+              ) : (
+                <RefreshCw
+                  style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                  className="text-[#38BDF8]"
+                />
+              )}
+              <span>{isSyncingNotion ? "Sincronizando Notion..." : "Sync Notion"}</span>
+            </button>
+            {hasNotionToken === false ? (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                title="Token de Notion no detectado. Haz clic para configurarlo en ⚙️ Configuración"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
+                className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 flex items-center gap-1 hover:bg-amber-500/20 cursor-pointer transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Falta Token</span>
+              </button>
+            ) : hasNotionToken === true ? (
+              <span
+                title="Token de Notion configurado"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
+                className="px-1 py-0.5 rounded text-emerald-400 flex items-center gap-1"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>Notion OK</span>
+              </span>
+            ) : null}
+          </div>
         )}
 
         {/* Botón Sincronizar Dropbox Cloud en Vivo */}
         {onSyncDropbox && (
-          <button
-            type="button"
-            onClick={() => onSyncDropbox()}
-            disabled={isSyncingDropbox}
-            style={{
-              gap: `${Math.round(4 * scale)}px`,
-              minHeight: `${Math.round(26 * scale)}px`,
-              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-            }}
-            className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
-              isSyncingDropbox
-                ? "bg-[#0C4A6E] border-[#38BDF8] text-[#38BDF8] opacity-80"
-                : "bg-[#0F1E30] border-[#1E3A5F] hover:border-[#38BDF8] text-cyan-200 hover:bg-[#132A45]"
-            }`}
-            title="Sincronizar e indexar archivos desde Dropbox Cloud (API)"
-          >
-            {isSyncingDropbox ? (
-              <Loader2
-                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
-                className="animate-spin text-cyan-300"
-              />
-            ) : (
-              <Cloud
-                style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
-                className="text-cyan-400"
-              />
-            )}
-            <span>{isSyncingDropbox ? "Indexando Dropbox..." : "Sync Dropbox"}</span>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onSyncDropbox()}
+              disabled={isSyncingDropbox}
+              style={{
+                gap: `${Math.round(4 * scale)}px`,
+                minHeight: `${Math.round(26 * scale)}px`,
+                padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+                fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              }}
+              className={`rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all ${
+                isSyncingDropbox
+                  ? "bg-[#0C4A6E] border-[#38BDF8] text-[#38BDF8] opacity-80"
+                  : "bg-[#0F1E30] border-[#1E3A5F] hover:border-[#38BDF8] text-cyan-200 hover:bg-[#132A45]"
+              }`}
+              title="Sincronizar e indexar archivos desde Dropbox Cloud (API)"
+            >
+              {isSyncingDropbox ? (
+                <Loader2
+                  style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                  className="animate-spin text-cyan-300"
+                />
+              ) : (
+                <Cloud
+                  style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+                  className="text-cyan-400"
+                />
+              )}
+              <span>{isSyncingDropbox ? "Indexando Dropbox..." : "Sync Dropbox"}</span>
+            </button>
+            {hasDropboxToken === false ? (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                title="Token de Dropbox no detectado. Haz clic para configurarlo en ⚙️ Configuración"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px`, minHeight: `${Math.round(22 * scale)}px` }}
+                className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 flex items-center gap-1 hover:bg-amber-500/20 cursor-pointer transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>Falta Token</span>
+              </button>
+            ) : hasDropboxToken === true ? (
+              <span
+                title="Token de Dropbox configurado"
+                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
+                className="px-1 py-0.5 rounded text-cyan-400 flex items-center gap-1"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                <span>Dropbox OK</span>
+              </span>
+            ) : null}
+          </div>
         )}
 
         {/* Tag inicial */}
@@ -560,6 +614,33 @@ export function SearchConfigRow({
           )}
         </div>
       </div>
+      {notification && (
+        <div
+          role="status"
+          className={`mt-1.5 px-3 py-1.5 rounded text-xs font-medium flex items-center justify-between transition-all animate-in fade-in duration-200 ${
+            notification.type === 'error'
+              ? 'bg-rose-950/90 border border-rose-500/50 text-rose-200'
+              : notification.type === 'warning'
+              ? 'bg-amber-950/90 border border-amber-500/50 text-amber-200'
+              : notification.type === 'success'
+              ? 'bg-emerald-950/90 border border-emerald-500/50 text-emerald-200'
+              : 'bg-sky-950/90 border border-sky-500/50 text-sky-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span>{notification.text}</span>
+          </div>
+          {notification.type === 'warning' && onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="underline hover:text-white ml-2 text-[11px] cursor-pointer"
+            >
+              Abrir Configuración ⚙️
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -49,8 +49,8 @@ export default function AnfetaApp() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [indexSyncLabel,setIndexSyncLabel]=useState('Esperando índice');
-  useEffect(()=>{const update=(event:Event)=>{const data=(event as CustomEvent).detail||{};setIndexSyncLabel(data.warning||data.cacheMeta?.lastError?'Error de sincronización':data.cacheMeta?.syncing?'Actualizando índice':data.cacheMeta?.source==='supabase'?'Copia guardada':'Datos disponibles; copia pendiente');};window.addEventListener('anfeta_index_status',update);return()=>window.removeEventListener('anfeta_index_status',update);},[]);
+  const [indexSyncLabel,setIndexSyncLabel]=useState('Catálogo listo');
+  useEffect(()=>{const update=(event:Event)=>{const data=(event as CustomEvent).detail||{};setIndexSyncLabel(data.warning||data.cacheMeta?.lastError?'Catálogo local activo (Sincronización pendiente)':data.cacheMeta?.syncing?'Sincronizando Notion...':data.cacheMeta?.source==='supabase'?'En línea (Supabase)':data.items?.length?`${data.items.length} elementos listos`:'Catálogo listo');};window.addEventListener('anfeta_index_status',update);return()=>window.removeEventListener('anfeta_index_status',update);},[]);
   const [currentUser, setCurrentUser] = useState(() => {
     if (typeof window === "undefined") return "nneft";
     try {
@@ -134,7 +134,6 @@ export default function AnfetaApp() {
       }
     }
     loadInitialData();
-    return()=>{stopped=true;initialController.abort();if(indexTimer)clearTimeout(indexTimer);if(indexInterval)clearInterval(indexInterval);if(indexFocus)window.removeEventListener('focus',indexFocus);};
 
     const handleSettingsChanged = (e: any) => {
       if (e.detail?.currentUser) {
@@ -150,7 +149,7 @@ export default function AnfetaApp() {
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
 
-        const idxData=await loadSearchIndex();if(idxData.items)setSearchIndex(previous=>retainSearchResults(previous,idxData));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
+        const idxData=await loadSearchIndex({ token });if(idxData.items)setSearchIndex(previous=>retainSearchResults(previous,idxData));window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
         const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
@@ -167,6 +166,11 @@ export default function AnfetaApp() {
     window.addEventListener("anfeta_data_refreshed", handleDataRefreshed);
 
     return () => {
+      stopped = true;
+      initialController.abort();
+      if (indexTimer) clearTimeout(indexTimer);
+      if (indexInterval) clearInterval(indexInterval);
+      if (indexFocus) window.removeEventListener('focus', indexFocus);
       window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
       window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
     };

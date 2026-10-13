@@ -144,9 +144,45 @@ export function ResultsViewHost({
   const [statusError, setStatusError] = useState('');
   useEffect(() => {
     if (!statusError) return;
-    const timer = setTimeout(() => setStatusError(''), 6000);
+    const timer = setTimeout(() => setStatusError(''), 5000);
     return () => clearTimeout(timer);
   }, [statusError]);
+
+  const [appNotification, setAppNotification] = useState<{
+    type: 'info' | 'success' | 'warning' | 'error';
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!appNotification) return;
+    const timer = setTimeout(() => setAppNotification(null), 5000);
+    return () => clearTimeout(timer);
+  }, [appNotification]);
+
+  const [hasNotionToken, setHasNotionToken] = useState<boolean | undefined>(undefined);
+  const [hasDropboxToken, setHasDropboxToken] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    const checkTokens = () => {
+      try {
+        const saved = localStorage.getItem("anfeta_settings");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setHasNotionToken(Boolean(parsed.notionToken?.trim()));
+          setHasDropboxToken(Boolean(parsed.dropboxToken?.trim()));
+        } else {
+          setHasNotionToken(false);
+          setHasDropboxToken(false);
+        }
+      } catch {
+        setHasNotionToken(false);
+        setHasDropboxToken(false);
+      }
+    };
+    checkTokens();
+    window.addEventListener("anfeta_settings_changed", checkTokens);
+    return () => window.removeEventListener("anfeta_settings_changed", checkTokens);
+  }, []);
   const [globalPasteText, setGlobalPasteText] = useState("");
   const [globalPasteImage, setGlobalPasteImage] = useState<GlobalPasteImagePayload | null>(null);
 
@@ -680,25 +716,72 @@ export function ResultsViewHost({
 
   const handleRefreshIndex = async () => {
     setIsSyncingNotion(true);
+    let token = "";
     try {
-      let token = "";
+      const saved = localStorage.getItem("anfeta_settings");
+      if (saved) token = JSON.parse(saved).notionToken || "";
+    } catch {}
+
+    if (!token?.trim()) {
+      setAppNotification({
+        type: 'warning',
+        text: '⚠️ Falta configurar el Token de Notion. Ve a ⚙️ Configuración para agregarlo.'
+      });
+      setIsSyncingNotion(false);
+      return;
+    }
+
+    setAppNotification({
+      type: 'info',
+      text: '⏳ Conectando con Notion API...'
+    });
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
       try {
-        const saved = localStorage.getItem("anfeta_settings");
-        if (saved) token = JSON.parse(saved).notionToken || "";
-      } catch {}
+        const res = await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "sync-notion", payload: { token: token.trim() } }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const data = await res.json().catch(() => ({}));
+        if (data.error) console.warn("sync-notion warning:", data.error);
+      } catch (postErr) {
+        console.warn("sync-notion timeout/error:", postErr);
+      }
 
-      // Sincronización en vivo con Notion (usa token local si existe, o el configurado en el servidor)
-      await fetch("/api/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sync-notion", payload: token?.trim() ? { token: token.trim() } : {} }),
-      }).catch(() => {});
+      setAppNotification({
+        type: 'info',
+        text: '⏳ Cargando catálogo actualizado...'
+      });
 
-      const data=await loadSearchIndex({fresh:true});
-      window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));
-      if(data.items){setItems(previous=>retainSearchResults(previous,data));window.dispatchEvent(new CustomEvent('anfeta_data_refreshed',{detail:data}));sendWindowsNotification('ANFETA',data.warning?'Resultados disponibles; actualización pendiente.':'Índice actualizado.');}
+      const data = await loadSearchIndex({ fresh: true, token: token.trim() });
+      window.dispatchEvent(new CustomEvent('anfeta_index_status', { detail: data }));
+      if (data.items && data.items.length > 0) {
+        setItems(previous => retainSearchResults(previous, data));
+        window.dispatchEvent(new CustomEvent('anfeta_data_refreshed', { detail: data }));
+        setAppNotification({
+          type: 'success',
+          text: `✅ Índice sincronizado: ${data.total || data.items.length} elementos disponibles.`
+        });
+        sendWindowsNotification('ANFETA', data.warning ? 'Resultados disponibles; actualización pendiente.' : 'Índice actualizado.');
+      } else {
+        setAppNotification({
+          type: 'info',
+          text: `✅ Catálogo al día (${items.length} elementos listos).`
+        });
+      }
     } catch(error) {
-      setStatusError(error instanceof Error?error.message:"Error al sincronizar con Notion.");
+      const msg = error instanceof Error ? error.message : "Error al sincronizar con Notion.";
+      setAppNotification({
+        type: 'error',
+        text: `❌ ${msg} (Catálogo local preservado: ${items.length} elementos)`
+      });
+      setStatusError(msg);
     } finally {
       setIsSyncingNotion(false);
     }
@@ -707,24 +790,38 @@ export function ResultsViewHost({
   const handleSyncDropbox = async () => {
     setIsSyncingDropbox(true);
     setStatusError("");
+    let cloudFolder = "/DRX";
+    let dropboxToken = "";
     try {
-      let cloudFolder = "/DRX";
-      let dropboxToken = "";
-      try {
-        const saved = localStorage.getItem("anfeta_settings");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.cloudFolder) cloudFolder = parsed.cloudFolder;
-          if (parsed.dropboxToken) dropboxToken = parsed.dropboxToken;
-        }
-      } catch {}
+      const saved = localStorage.getItem("anfeta_settings");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.cloudFolder) cloudFolder = parsed.cloudFolder;
+        if (parsed.dropboxToken) dropboxToken = parsed.dropboxToken;
+      }
+    } catch {}
 
+    if (!dropboxToken?.trim()) {
+      setAppNotification({
+        type: 'warning',
+        text: '⚠️ Falta configurar el Token de Dropbox. Ve a ⚙️ Configuración para agregarlo.'
+      });
+      setIsSyncingDropbox(false);
+      return;
+    }
+
+    setAppNotification({
+      type: 'info',
+      text: '⏳ Conectando con Dropbox Cloud API...'
+    });
+
+    try {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "sync-dropbox",
-          payload: { folder: cloudFolder, dropboxToken },
+          payload: { folder: cloudFolder, dropboxToken: dropboxToken.trim() },
         }),
       });
       const data = await res.json();
@@ -734,12 +831,25 @@ export function ResultsViewHost({
           setItems((prev) => retainSearchResults(prev, fresh));
           window.dispatchEvent(new CustomEvent("anfeta_data_refreshed", { detail: fresh }));
         }
+        setAppNotification({
+          type: 'success',
+          text: `✅ Dropbox sincronizado: ${data.count || 0} archivos indexados.`
+        });
         sendWindowsNotification("ANFETA Dropbox", data.message || `Indexados ${data.count} elementos.`);
       } else {
+        setAppNotification({
+          type: 'error',
+          text: `❌ Error en Dropbox: ${data.error || 'No se pudo sincronizar'}`
+        });
         setStatusError(`Error al sincronizar Dropbox: ${data.error}`);
       }
     } catch (e: any) {
-      setStatusError(e.message || "Error al conectar con Dropbox Cloud API");
+      const msg = e.message || "Error al conectar con Dropbox Cloud API";
+      setAppNotification({
+        type: 'error',
+        text: `❌ ${msg}`
+      });
+      setStatusError(msg);
     } finally {
       setIsSyncingDropbox(false);
     }
@@ -1112,6 +1222,10 @@ export function ResultsViewHost({
         onToggleCol={(col) => setVisibleCols((prev) => ({ ...prev, [col]: !prev[col] }))}
         onMaximizeNameCol={() => setVisibleCols({ path: false, status: false, scheduledDate: false, modifiedDate: false })}
         onResetCols={() => setVisibleCols({ path: true, status: true, scheduledDate: true, modifiedDate: true })}
+        hasNotionToken={hasNotionToken}
+        hasDropboxToken={hasDropboxToken}
+        onOpenSettings={onOpenSettings}
+        notification={appNotification}
       />
 
       {/* 4. Contenedor de 4 Columnas Dinámicas */}

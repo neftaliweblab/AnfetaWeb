@@ -1583,13 +1583,19 @@ async function POSTLive(req: NextRequest) {
       const token = (payload?.token || resolveNotionToken(req) || "").trim();
       if (!token || !token.trim()) {
         return NextResponse.json(
-          { success: false, error: "No se ha configurado el Token de Notion" },
+          { success: false, error: "Falta configurar el Token de Notion. Ve a Configuración para agregarlo." },
           { status: 400 }
         );
       }
 
       try {
-        const results=await searchNotionPages({...getSettings(),notionToken:token},true);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('La consulta a Notion tardó más de 6s')), 6000)
+        );
+        const results = await Promise.race([
+          searchNotionPages({...getSettings(), notionToken: token}, true),
+          timeoutPromise
+        ]);
         let updatedCount = 0;
 
         for (const item of results) {
@@ -1610,7 +1616,7 @@ async function POSTLive(req: NextRequest) {
           message: `Sincronizadas ${updatedCount} páginas recientes desde Notion API`,
         });
       } catch (err: any) {
-        return NextResponse.json({ success: false, error: err.message }, { status: /Inicia sesión/.test(err?.message || '')?401:500 });
+        return NextResponse.json({ success: false, error: err.message }, { status: 200 });
       }
     }
 
@@ -2165,6 +2171,7 @@ export async function POST(req:NextRequest){const body=await req.clone().json().
 export async function GET(req:NextRequest){const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
  let context:any,verifiedActor:string|undefined;try{if(supabaseConfigured()){const actor=await requireActor(req);verifiedActor=actor;const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};context=await snapshotContext(actor,liveSettings,'search-index');if(offset>0&&!['local','live'].includes(url.searchParams.get('indexOrigin')||'')){const slice=await readIndexSlice(context,offset,limit,version);if(slice)return NextResponse.json(slice,{status:slice.code?409:200,headers:{'Cache-Control':'no-store'}});}}
  const response=offset>0&&['local','live'].includes(url.searchParams.get('indexOrigin')||'')?await GETLive(req,undefined,url.searchParams.get('indexOrigin')==='local',verifiedActor):await GETSnapshot(req,verifiedActor,context);if(!response.ok)return response;const data=await response.json();let result:any;if(context&&data.cacheMeta?.source==='supabase'){result=await readIndexSlice(context,offset,limit,version,url.searchParams.get('ifVersion')||undefined);if(result)result={...result,cacheMeta:data.cacheMeta,warning:data.warning};}
+ if(data.cacheMeta?.source==='supabase'&&(!result||(offset===0&&(!result.items||result.items.length===0)&&!result.unchanged))){const liveRes=await GETLive(req,undefined,true,verifiedActor);const liveData=await liveRes.json();const rows=liveData.items||[];const current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+limit);end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>2000000){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}result={...liveData,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null,cacheMeta:{source:'local',syncing:data.cacheMeta?.syncing||false,stale:true,updatedAt:null,lastError:data.cacheMeta?.lastError||null}};}
  if(!result){const rows=data.items||[],current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');if(version&&version!==current)return NextResponse.json({error:'La versión del índice cambió.',code:'index_version_changed'},{status:409});const singleResponse=offset===0&&data.cacheMeta?.source!=='supabase'&&Buffer.byteLength(JSON.stringify(rows))<3000000;let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+(singleResponse?rows.length:limit));end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>(singleResponse?3000000:2000000)){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}result={...data,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null};}
  if(result.code)return NextResponse.json(result,{status:409});if(offset===0&&url.searchParams.get('ifVersion')===result.indexVersion)result={...result,items:undefined,nextOffset:null,unchanged:true};return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}});
  }catch(error){const message=error instanceof Error?error.message:'No se pudo cargar el índice.';return NextResponse.json({error:message},{status:/Inicia sesión/.test(message)?401:502});}}
