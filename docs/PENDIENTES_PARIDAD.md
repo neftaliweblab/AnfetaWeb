@@ -43,7 +43,8 @@ Actualizado: 2026-10-13. Implementado significa presente en el código; no impli
 ## PUBLICACIÓN Y VERIFICACIÓN
 - Prioridad: publicar las correcciones de estabilidad y verificar acceso común, cambio de persona, diagnóstico Notion, carga de resultados y regreso tras inactividad. No se ha comprobado la configuración ni los logs de Vercel.
 - Publicar el código local y comprobar los flujos con usuarios/dispositivos reales.
-- Migraciones disponibles en el repositorio: hasta SQL 14; verificar cuáles están aplicadas antes de ejecutar alguna. No repetir la instalación completa sobre un proyecto existente. El bloque del 13 de octubre requiere 202610130014_reliable_operations.sql. El bloque de estabilidad del 12 de octubre no requiere SQL nuevo.
+- Migraciones disponibles en el repositorio: hasta SQL 15; verificar cuáles están aplicadas antes de ejecutar alguna. No repetir la instalación completa sobre un proyecto existente. Las operaciones fiables requieren 202610130014_reliable_operations.sql; el control de carga del índice requiere 202610130015_index_load_control.sql antes de publicar el código. El bloque de estabilidad del 12 de octubre no requiere SQL nuevo.
+- Supabase: aplicar SQL15 y medir la carga real con DIAGNOSTICO_CARGA_SOLO_LECTURA.sql. Implementados catálogo sin cambios sin nuevos lotes, limpieza limitada de generaciones sin referencias, lectura JSON agregada y menor frecuencia de consultas. Pendiente comprobar recuperación del acceso y métricas del proyecto después de publicarlo.
 - Detalles fijados y filtros de recordatorios no requieren SQL nuevo.
 - Quedan avisos de compilación existentes sobre acceso al disco Dropbox; no son errores de TypeScript.
 - No se afirma paridad total ni que estos cambios estén desplegados.

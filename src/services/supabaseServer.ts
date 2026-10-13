@@ -1,4 +1,5 @@
 import {supabaseTransport} from './authRequestScope';
+import {supabaseConnectionConfig} from './supabaseConfiguration';
 import {randomBytes} from 'node:crypto';
 import {sharedAccessConfigured,sharedAccountId,readSharedGate,saveSharedGate,clearSharedGate} from './sharedAccess';
 import {createServerClient} from '@supabase/ssr';
@@ -6,13 +7,13 @@ import {createClient} from '@supabase/supabase-js';
 import {cookies} from 'next/headers';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 export function supabaseConfigured(){return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_SECRET_KEY);}
-function config(){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!url||!key)throw new Error('Configura la URL y la clave publicable de Supabase en el servidor.');return {url,key};}
+function config(){return supabaseConnectionConfig();}
 export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}},global:{fetch:(input,init)=>supabaseTransport(input,init,30000)}});}
 let adminClientInstance: any = null;
 export function supabaseAdmin(){
   if (adminClientInstance) return adminClientInstance;
   const {url}=config();
-  const key=process.env.SUPABASE_SECRET_KEY;
+  const key=process.env.SUPABASE_SECRET_KEY?.trim();
   if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');
   adminClientInstance = createClient(url,key,{
     auth:{persistSession:false,autoRefreshToken:false},
