@@ -1,4 +1,5 @@
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
+import {BoundedCache} from '@/lib/boundedCache';
 import {financeDateField,financeStatus} from '@/services/financeRules';
 import {replayMutation} from '@/services/replayMutation';
 import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
@@ -74,9 +75,8 @@ function readLocalJson<T>(filename: string, defaultValue: T): T {
 // Caché en memoria para vistas previas con TTL de 15 minutos
 export const maxDuration = 120;
 
-const previewMemoryCache = new Map<string, { timestamp: number; payload: any }>();
+const previewMemoryCache = new BoundedCache<{timestamp:number;payload:any}>(100,8*1024*1024,15*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
-const dropboxPreviewCache = new Map<string, { buffer: Buffer; contentType: string; expiresAt: number }>();
 
 const calendarMemoryUpdates = new Map<string, any>();
 const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
@@ -558,33 +558,12 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ".json": "application/json; charset=utf-8",
         };
 
-        const cacheKey = filePath.toLowerCase();
-        const cached = dropboxPreviewCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-          return new NextResponse(new Uint8Array(cached.buffer), {
-            headers: {
-              "Content-Type": cached.contentType,
-              "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
-            },
-          });
-        }
-
-        // Obtener la vista previa directamente desde la API oficial de Dropbox
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
-        const { buffer, contentType: rawContentType } = await getDropboxFileContent(filePath, tokenOverride);
-        const contentType = mimeTypes[ext] || rawContentType || "application/octet-stream";
-
-        // Almacenar en caché en memoria por 15 minutos para optimizar ancho de banda y velocidad
-        dropboxPreviewCache.set(cacheKey, {
-          buffer,
-          contentType,
-          expiresAt: Date.now() + 15 * 60 * 1000,
-        });
-
-        return new NextResponse(new Uint8Array(buffer), {
+        const result = await getDropboxFileContent(filePath, tokenOverride, true);
+        return new NextResponse(result.body, {
           headers: {
-            "Content-Type": contentType,
-            "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+            "Content-Type": mimeTypes[ext] || result.contentType || "application/octet-stream",
+            "Cache-Control": "private, no-store",
           },
         });
       } catch (error) {
@@ -1947,7 +1926,7 @@ async function POSTLive(req: NextRequest) {
           const mergedCache = [...nonDropboxItems, ...scanResults];
           liveDropboxCache = scanResults;
           const cacheFile = path.join(PROJECT_DATA_DIR, 'index_cache.json');
-          try { fs.writeFileSync(cacheFile, JSON.stringify(mergedCache, null, 2), 'utf8'); } catch {}
+          if(!process.env.VERCEL)try { fs.writeFileSync(cacheFile, JSON.stringify(mergedCache, null, 2), 'utf8'); } catch {}
 
           return NextResponse.json({
             success: true,

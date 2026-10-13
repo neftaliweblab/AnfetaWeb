@@ -1,0 +1,5 @@
+const fs=require('fs'),ts=require('typescript'),vm=require('vm'),assert=require('assert/strict');
+const result={};let buffered=0;const body=new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2]));c.close();}});
+const source=ts.transpileModule(fs.readFileSync(__dirname+'/../src/services/dropboxUpload.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+vm.runInNewContext(source,{exports:result,require:()=>({getSettings:()=>({}),drxFolder:()=>'',DEFAULT_DROPBOX_APP_KEY:'test'}),process:{env:{}},Buffer,URLSearchParams,AbortSignal,console,fetch:async()=>({ok:true,status:200,body,headers:new Headers({'content-type':'application/pdf'}),arrayBuffer:async()=>{buffered++;throw Error('archivo completo leído');}})});
+(async()=>{const response=await result.getDropboxFileContent('/sample.pdf','sl.test',true);assert.equal(response.body,body);assert.equal(buffered,0);assert.equal(response.contentType,'application/pdf');console.log('OK Dropbox streaming: transmite el cuerpo sin cargar arrayBuffer.');})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -365,7 +365,9 @@ export function cloudFolder(domain: string | undefined, target: string | undefin
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }
 
-export async function getDropboxFileContent(filePath: string, tokenOverride?: string): Promise<{ buffer: Buffer; contentType: string }> {
+export function getDropboxFileContent(filePath:string,tokenOverride:string|undefined,stream:true):Promise<{body:ReadableStream<Uint8Array>;contentType:string}>;
+export function getDropboxFileContent(filePath:string,tokenOverride?:string):Promise<{buffer:Buffer;contentType:string}>;
+export async function getDropboxFileContent(filePath: string, tokenOverride?: string, stream=false): Promise<any> {
   let token = await getDropboxAccessToken(tokenOverride);
   let cleanPath = filePath.replace(/\\/g, '/').trim();
 
@@ -443,6 +445,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
       }
 
       if (dlRes.ok) {
+        if(stream&&dlRes.body)return {body:dlRes.body,contentType:dlRes.headers.get('content-type')||'image/jpeg'};
         const buffer = Buffer.from(await dlRes.arrayBuffer());
         const contentType = dlRes.headers.get('content-type') || 'image/jpeg';
         return { buffer, contentType };
@@ -450,6 +453,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
     }
 
     if (response.ok) {
+      if(stream&&response.body)return {body:response.body,contentType:response.headers.get('content-type')||(isImg?'image/jpeg':'application/octet-stream')};
       const buffer = Buffer.from(await response.arrayBuffer());
       const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
       return { buffer, contentType };

@@ -1,0 +1,4 @@
+const fs=require('fs'),ts=require('typescript'),vm=require('vm'),assert=require('assert/strict');
+const source=ts.transpileModule(fs.readFileSync(__dirname+'/../src/lib/boundedCache.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+let now=0;const context={exports:{},Date:{now:()=>now},Map,Number};vm.runInNewContext(source,context);const Cache=context.exports.BoundedCache;
+const cache=new Cache(2,6,100,v=>v.length);cache.set('a','aaa').set('b','bbb');assert.equal(cache.get('a'),'aaa');cache.set('c','ccc');assert.equal(cache.get('b'),undefined);assert.equal(cache.get('a'),'aaa');cache.set('huge','1234567');assert.equal(cache.get('huge'),undefined);now=101;assert.equal(cache.get('a'),undefined);cache.set('x','xx');cache.clear();assert.equal(cache.get('x'),undefined);console.log('OK caché: límite por bytes/entradas, LRU, expiración y limpieza.');
