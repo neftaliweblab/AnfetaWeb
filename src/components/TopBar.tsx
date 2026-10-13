@@ -64,8 +64,9 @@ export function TopBar({
   }, []);
 
   const predictiveData = useMemo(() => {
+    if (activeView === "calendar" || !isPredictiveOpen) return { headerText: "", suggestions: [], savedSearches: [], hintText: "" };
     return buildPredictiveData(searchQuery, searchIndex);
-  }, [searchQuery, searchIndex]);
+  }, [searchQuery, searchIndex, activeView, isPredictiveOpen]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -127,8 +128,12 @@ export function TopBar({
             id="anfeta-search-input"
             type="text"
             value={searchQuery}
-            onFocus={() => setIsPredictiveOpen(true)}
-            onClick={() => setIsPredictiveOpen(true)}
+            onFocus={() => {
+              if (activeView !== "calendar") setIsPredictiveOpen(true);
+            }}
+            onClick={() => {
+              if (activeView !== "calendar") setIsPredictiveOpen(true);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 setIsPredictiveOpen(false);
@@ -138,10 +143,16 @@ export function TopBar({
             }}
             onChange={(e) => {
               onSearchChange(e.target.value);
-              setIsPredictiveOpen(true);
-              if (activeView !== "results") onSelectView("results");
+              if (activeView !== "calendar") {
+                setIsPredictiveOpen(true);
+                if (activeView !== "results") onSelectView("results");
+              }
             }}
-            placeholder="Buscar por término, ext:pdf, folder:dropbox, dm:3, regex:, o *comodín* (Ctrl+Alt+B)..."
+            placeholder={
+              activeView === "calendar"
+                ? "Filtrar calendario por título, dominio, persona... (Ctrl+Alt+B buscador)"
+                : "Buscar por término, ext:pdf, folder:dropbox, dm:3, regex:, o *comodín* (Ctrl+Alt+B)..."
+            }
             className="w-full h-9 pl-9 pr-8 bg-[#080B0F] text-[#F1F5F9] text-xs placeholder-[#64748B] rounded border border-[#26323E] focus:border-[#00A8FF] focus:outline-none focus:ring-1 focus:ring-[#00A8FF] transition-all shadow-[0_0_10px_rgba(0,168,255,0.12)]"
           />
           {searchQuery && (
@@ -155,19 +166,21 @@ export function TopBar({
         </div>
 
         {/* Panel Predictivo Flotante */}
-        <SearchPredictiveFlyout
-          isOpen={isPredictiveOpen}
-          onClose={() => setIsPredictiveOpen(false)}
-          headerText={predictiveData.headerText}
-          suggestions={predictiveData.suggestions}
-          savedSearches={predictiveData.savedSearches}
-          hintText={predictiveData.hintText}
-          currentQuery={searchQuery}
-          onApplyQuery={(newQ) => {
-            onSearchChange(newQ);
-            if (activeView !== "results") onSelectView("results");
-          }}
-        />
+        {activeView !== "calendar" && (
+          <SearchPredictiveFlyout
+            isOpen={isPredictiveOpen}
+            onClose={() => setIsPredictiveOpen(false)}
+            headerText={predictiveData.headerText}
+            suggestions={predictiveData.suggestions}
+            savedSearches={predictiveData.savedSearches}
+            hintText={predictiveData.hintText}
+            currentQuery={searchQuery}
+            onApplyQuery={(newQ) => {
+              onSearchChange(newQ);
+              if (activeView !== "results") onSelectView("results");
+            }}
+          />
+        )}
       </div>
 
       {/* Navigation Host Buttons */}
