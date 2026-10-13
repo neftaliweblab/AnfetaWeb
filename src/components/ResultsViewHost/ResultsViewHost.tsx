@@ -7,7 +7,7 @@ import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {normalizePerson} from '@/services/identityNormalizer';
 
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
 import { FolderOpen, ChevronRight, ArrowUpLeft } from "lucide-react";
@@ -102,6 +102,7 @@ export function ResultsViewHost({
 
   // Search input & scopes
   const [query, setQuery] = useState(externalQuery || "");
+  const deferredQuery = useDeferredValue(query);
   const [resultPerson,setResultPerson]=useState("__all__");
   const [selectedScope, setSelectedScope] = useState("Notion");
   const [filterFavorites, setFilterFavorites] = useState(false);
@@ -1093,8 +1094,8 @@ export function ResultsViewHost({
   // Filter & scope processing
   const filteredItems = useMemo(() => {
     let res = items.filter((item) => {
-      if (query.trim()) {
-        if (!matchesFlexibleOrQuotedQuery(item, query, searchOptions)) {
+      if (deferredQuery.trim()) {
+        if (!matchesFlexibleOrQuotedQuery(item, deferredQuery, searchOptions)) {
           return false;
         }
       }
@@ -1165,9 +1166,9 @@ export function ResultsViewHost({
       return [...res].sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
     }
     return res;
-  }, [items, query, searchOptions, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, resultPerson]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson]);
 
-  useEffect(()=>{setCurrentPage(1);},[query,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   const pagedItems = useMemo(() => {

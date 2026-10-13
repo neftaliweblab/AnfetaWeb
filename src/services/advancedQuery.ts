@@ -361,14 +361,25 @@ export function matchesFlexibleOrQuotedQuery(
   }
 
   // 2. Construcción de searchable concatenando todos los metadatos relevantes
+  // Limpiar dominios genéricos y rutas base de providers (Notion/Dropbox) para evitar que todas las filas coincidan con "notion" o "dropbox"
+  const cleanTarget = (item.target || "")
+    .replace(/^https?:\/\/(?:app\.|www\.)?notion\.(?:com|so)\/[a-z0-9_\/]*\/?/i, "")
+    .replace(/^.*[\\/]Dropbox[\\/]/i, "");
+
+  const cleanPath = (item.path || "")
+    .replace(/^.*[\\/]Dropbox[\\/]/i, "");
+
+  const cleanSourceName = item.sourceName && item.sourceName !== "Notion" && item.sourceName !== "Dropbox" ? item.sourceName : undefined;
+  const cleanExtSourceName = item.externalSourceName && item.externalSourceName !== "Notion" && item.externalSourceName !== "Dropbox" ? item.externalSourceName : undefined;
+
   const rawSearchable = [
     item.name,
     item.displayName,
     item.domainChip,
     item.areaChip,
     item.displayLocation,
-    item.target,
-    item.path,
+    cleanTarget,
+    cleanPath,
     (item as any).pathColumn,
     item.searchText,
     item.description,
@@ -377,9 +388,8 @@ export function matchesFlexibleOrQuotedQuery(
     item.projectUpdateStatus,
     item.status,
     item.scheduledDate,
-    item.externalSourceName,
-    item.sourceName,
-    item.source,
+    cleanExtSourceName,
+    cleanSourceName,
     item.assignedPerson,
     ...(item.assignmentKeys || []),
   ]
@@ -418,6 +428,13 @@ export function matchesFlexibleOrQuotedQuery(
   return tokens.every((token) => {
     const tokenVal = matchCase ? token.value : token.value.toLowerCase();
     const valLow = token.value.toLowerCase();
+
+    // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
+    if (valLow.startsWith("source:") && !token.isExact) {
+      const sWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
+      const sMatch = (item.source || "").toLowerCase().includes(sWant) || ((item.sourceName || "").toLowerCase().includes(sWant));
+      return token.isNegated ? !sMatch : sMatch;
+    }
 
     // Filtro por extensión (ej. ext:pdf, ext:img)
     if (valLow.startsWith("ext:") && !token.isExact) {

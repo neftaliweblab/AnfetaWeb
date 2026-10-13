@@ -83,8 +83,9 @@ export function SearchInputBar({
   })();
 
   const predictiveData = useMemo(() => {
+    if (!isPredictiveOpen) return { headerText: "", suggestions: [], savedSearches: [], hintText: "" };
     return buildPredictiveData(query, searchIndex);
-  }, [query, searchIndex]);
+  }, [query, searchIndex, isPredictiveOpen]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

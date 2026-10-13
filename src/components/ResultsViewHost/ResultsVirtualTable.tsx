@@ -339,6 +339,13 @@ export function ResultsVirtualTable({
     };
   }, [contextMenu]);
 
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = 0;
+    }
+  }, [items, searchQuery]);
+
   const scale = (() => {
     if (!textScale) return 1.0;
     const num = parseFloat(textScale.replace("%", "").trim());
@@ -398,12 +405,34 @@ export function ResultsVirtualTable({
     return <FileCode style={iconStyle} className="text-[#06B6D4]" />;
   };
 
+  const visualPartsCache = useRef<Map<string, any>>(new Map());
+  const getVisualPartsCached = (rawName: string, status?: string, snippet?: string) => {
+    const key = `${rawName}|${status || ""}|${snippet || ""}`;
+    let cached = visualPartsCache.current.get(key);
+    if (!cached) {
+      if (visualPartsCache.current.size > 2000) visualPartsCache.current.clear();
+      cached = parseVisualParts(rawName, status, snippet);
+      visualPartsCache.current.set(key, cached);
+    }
+    return cached;
+  };
+
   const highlightMatch = (text: string) => {
-    if (!searchQuery || searchQuery.trim().length < 2) return text;
-    const cleanQ = searchQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const parts = text.split(new RegExp(`(${cleanQ})`, "gi"));
+    if (!text || !searchQuery || searchQuery.trim().length < 2) return text;
+    const words = searchQuery
+      .trim()
+      .split(/\s+/)
+      .map((w) => w.replace(/^["'+\-!]+|["'+\-!]+$/g, "").trim())
+      .filter((w) => w.length >= 2 && !w.includes(":"));
+    if (words.length === 0) return text;
+    const escaped = words
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+    const regex = new RegExp(`(${escaped})`, "gi");
+    const parts = text.split(regex);
+    const wordSet = new Set(words.map((w) => w.toLowerCase()));
     return parts.map((part, i) =>
-      part.toLowerCase() === searchQuery.toLowerCase() ? (
+      wordSet.has(part.toLowerCase()) ? (
         <span key={i} className="text-[#38BDF8] bg-[#38BDF8]/20 px-0.5 rounded font-bold">
           {part}
         </span>
@@ -416,7 +445,7 @@ export function ResultsVirtualTable({
   const renderRow = (item: any) => {
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
-    const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
     // Para Dropbox: mostrar la carpeta contenedora real (ej. /DRX/apartallante.com o el folder) en lugar de solo "Dropbox"
@@ -675,7 +704,7 @@ export function ResultsVirtualTable({
   const renderCard = (item: any) => {
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
-    const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
     const isImg = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(item.name || targetPath);
@@ -1061,7 +1090,7 @@ export function ResultsVirtualTable({
 
       {/* Lista de Resultados (Modo Lista o Cuadrícula) */}
       {viewZoom === "list" ? (
-        <div className="flex-1 overflow-y-auto divide-y divide-[#17212F] scrollbar-thin">
+        <div ref={listScrollRef} className="flex-1 overflow-y-auto divide-y divide-[#17212F] scrollbar-thin">
           {groupedItems ? (
             groupedItems.map((group) => (
               <div key={group.key} className="mb-1">
