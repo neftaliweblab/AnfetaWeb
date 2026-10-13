@@ -1590,7 +1590,7 @@ async function POSTLive(req: NextRequest) {
 
       try {
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('La consulta a Notion tardó más de 6s')), 6000)
+          setTimeout(() => reject(new Error('La consulta a Notion tardó más de 18s')), 18000)
         );
         const results = await Promise.race([
           searchNotionPages({...getSettings(), notionToken: token}, true),

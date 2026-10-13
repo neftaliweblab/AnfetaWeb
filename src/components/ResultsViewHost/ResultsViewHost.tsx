@@ -259,6 +259,25 @@ export function ResultsViewHost({
     setItems(initialItems);
   }, [initialItems]);
 
+  // Auto-recuperación si el catálogo quedó en 0 items en el arranque
+  useEffect(() => {
+    if (!isActive || items.length > 0) return;
+    const timer = setTimeout(async () => {
+      if (items.length === 0) {
+        try {
+          const res = await fetch("/api/data?type=search-index&indexOrigin=local&limit=500", { cache: "no-store" });
+          if (res.ok) {
+            const d = await res.json();
+            if (d.items?.length) {
+              setItems((prev) => prev.length === 0 ? retainSearchResults(prev, d) : prev);
+            }
+          }
+        } catch {}
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isActive, items.length]);
+
   // Recarga en vivo al indexar Dropbox o refrescar datos
   useEffect(() => {
     const handleDataRefreshed = async () => {
@@ -738,7 +757,7 @@ export function ResultsViewHost({
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       try {
         const res = await fetch("/api/data", {
@@ -759,7 +778,13 @@ export function ResultsViewHost({
         text: '⏳ Cargando catálogo actualizado...'
       });
 
-      const data = await loadSearchIndex({ fresh: true, token: token.trim() });
+      const data = await loadSearchIndex({
+        fresh: true,
+        token: token.trim(),
+        onPartial: (p) => {
+          if (p?.items?.length) setItems((prev) => retainSearchResults(prev, p));
+        },
+      });
       window.dispatchEvent(new CustomEvent('anfeta_index_status', { detail: data }));
       if (data.items && data.items.length > 0) {
         setItems(previous => retainSearchResults(previous, data));
