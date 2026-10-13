@@ -657,9 +657,15 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       // Cached index is shown immediately; background refresh uses an overlap for recent edits.
       if (token&&!bootstrap) {
         try {
-          const pages=await queryAnfetaIndex({...getSettings(),notionToken:token},fullSync?undefined:previous?.syncMeta?.dataAsOf);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout de consulta Notion (>8s)')), 8000)
+          );
+          const pages = await Promise.race([
+            queryAnfetaIndex({...getSettings(),notionToken:token},fullSync?undefined:previous?.syncMeta?.dataAsOf),
+            timeoutPromise
+          ]);
           observedEdited=pages.map(page=>page.last_edited_time).filter((value:any)=>Number.isFinite(Date.parse(value))).sort().at(-1);
-          if(supabaseConfigured()&&fullSync)fullIds=new Set(pages.map(page=>cleanPageId(page.id)));
+          if(supabaseConfigured()&&fullSync&&(pages as any).isComplete!==false)fullIds=new Set(pages.map(page=>cleanPageId(page.id)));
           for(const item of pages){const pageData=extractNotionPageData(item);if(pageData.id){liveNotionOverrides.set(pageData.id,pageData);calendarMemoryUpdates.delete(pageData.id);}}
         } catch (err) {
           syncFailed=true;syncWarning='No se pudo actualizar el índice desde Notion. '+(err instanceof Error?err.message:'Intenta de nuevo.');
@@ -676,7 +682,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       }
       const items: any[] = previous?.items ? previous.items.map((row: any) => ({ ...row })) : baseRows.map(normalizeSearchRow);
 
-      if(bootstrap&&supabaseConfigured()){const available=items.filter(row=>row.source!=='Notion');return NextResponse.json({total:available.length,items:available});}
+      if(bootstrap&&supabaseConfigured()){return NextResponse.json({total:items.length,items});}
 
       // Paridad ANFETA: el caché de calendario se refresca con más frecuencia que
       // index_cache.json. Si una página fue renombrada en Notion (ej. "Pre proyecto"
