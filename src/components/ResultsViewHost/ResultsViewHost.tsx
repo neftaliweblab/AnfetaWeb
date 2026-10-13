@@ -112,7 +112,25 @@ export function ResultsViewHost({
   const [textScale, setTextScale] = useState("100%");
   const [groupBy, setGroupBy] = useState("none");
   const [selectedMonth, setSelectedMonth] = useState("Todos");
-  const [viewZoom, setViewZoom] = useState<"list" | "small" | "medium" | "large">("list");
+  const [viewZoom, setViewZoom] = useState<"list" | "small" | "medium" | "large">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_view_zoom");
+        if (saved && ["list", "small", "medium", "large"].includes(saved)) {
+          return saved as "list" | "small" | "medium" | "large";
+        }
+      } catch {}
+    }
+    return "list";
+  });
+
+  const handleChangeViewZoom = (newZoom: "list" | "small" | "medium" | "large") => {
+    setViewZoom(newZoom);
+    try {
+      localStorage.setItem("anfeta_view_zoom", newZoom);
+    } catch {}
+  };
+
   const [searchOptions, setSearchOptions] = useState<{
     matchCase: boolean;
     matchWholeWord: boolean;
@@ -162,6 +180,48 @@ export function ResultsViewHost({
     const timer = setTimeout(() => setAppNotification(null), 5000);
     return () => clearTimeout(timer);
   }, [appNotification]);
+
+  const viewZoomRef = useRef(viewZoom);
+  useEffect(() => {
+    viewZoomRef.current = viewZoom;
+  }, [viewZoom]);
+
+  const lastGlobalWheelRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleWindowWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      // Prevenir el zoom completo del navegador
+      e.preventDefault();
+
+      const now = Date.now();
+      if (now - lastGlobalWheelRef.current < 160) return;
+      if (Math.abs(e.deltaY) < 5) return;
+
+      lastGlobalWheelRef.current = now;
+
+      const levels: ("list" | "small" | "medium" | "large")[] = ["list", "small", "medium", "large"];
+      const current = viewZoomRef.current;
+      const idx = levels.indexOf(current);
+
+      if (e.deltaY < 0) {
+        if (idx < levels.length - 1) {
+          handleChangeViewZoom(levels[idx + 1]);
+        }
+      } else if (e.deltaY > 0) {
+        if (idx > 0) {
+          handleChangeViewZoom(levels[idx - 1]);
+        }
+      }
+    };
+
+    window.addEventListener("wheel", handleWindowWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWindowWheel);
+    };
+  }, [isActive]);
 
   const [hasNotionToken, setHasNotionToken] = useState<boolean | undefined>(undefined);
   const [hasDropboxToken, setHasDropboxToken] = useState<boolean | undefined>(undefined);
@@ -1190,7 +1250,7 @@ export function ResultsViewHost({
         selectedMonth={selectedMonth}
         onChangeMonth={setSelectedMonth}
         viewZoom={viewZoom}
-        onChangeViewZoom={setViewZoom}
+        onChangeViewZoom={handleChangeViewZoom}
         isPendientesOpen={isPendientesOpen}
         onTogglePendientes={() => setIsPendientesOpen(!isPendientesOpen)}
         pendingCount={pendingTasks.filter((t) => !t.isCompleted).length}
@@ -1362,6 +1422,7 @@ export function ResultsViewHost({
           showScheduledDate={visibleCols.scheduledDate}
           showModifiedDate={visibleCols.modifiedDate}
           viewZoom={viewZoom}
+          onChangeViewZoom={handleChangeViewZoom}
           textScale={textScale}
           groupBy={groupBy}
         /></div>

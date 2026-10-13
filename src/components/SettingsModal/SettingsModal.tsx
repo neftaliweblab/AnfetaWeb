@@ -300,10 +300,11 @@ export function SettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 select-none"
-      onClick={onClose}
-    >
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+        onClick={onClose}
+      >
       <div
         className={`w-full bg-[#0F141A] border border-[#26323E] rounded-xl shadow-2xl overflow-hidden transition-all ${
           modalSize === "small" ? "max-w-md" : modalSize === "large" ? "max-w-3xl" : "max-w-xl"
@@ -759,8 +760,9 @@ export function SettingsModal({
           </button>
         </div>
       </div>
+    </div>
 
-      {/* Modal Conectar Dropbox OAuth */}
+      {/* Modal Conectar Dropbox OAuth (hermano independiente, fuera del backdrop de SettingsModal) */}
       <DropboxConnectModal
         isOpen={showDropboxOAuthModal}
         onClose={() => setShowDropboxOAuthModal(false)}
@@ -773,6 +775,6 @@ export function SettingsModal({
           setDropboxTestStatus(null);
         }}
       />
-    </div>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Cloud,
   ExternalLink,
@@ -13,6 +13,7 @@ import {
   CheckCheck,
   ShieldCheck,
   Unlink,
+  ClipboardPaste,
 } from "lucide-react";
 import { getDropboxAuthorizeUrl, DropboxOAuthAccountInfo } from "@/lib/dropboxConfig";
 
@@ -42,6 +43,7 @@ export function DropboxConnectModal({
   const [hasToken, setHasToken] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   // Leer estado actual de conexión
   useEffect(() => {
@@ -90,6 +92,11 @@ export function DropboxConnectModal({
         }
       })
       .catch(() => {});
+
+    // Auto-focus en el campo de código tras abrir el modal
+    setTimeout(() => {
+      codeInputRef.current?.focus();
+    }, 150);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -107,6 +114,16 @@ export function DropboxConnectModal({
       await navigator.clipboard.writeText(authUrl);
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2500);
+    } catch {}
+  };
+
+  const handlePasteCode = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        setAuthCode(text.trim());
+        setErrorMessage(null);
+      }
     } catch {}
   };
 
@@ -244,8 +261,19 @@ export function DropboxConnectModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="relative w-full max-w-lg bg-[#0D131B] border border-[#26354A] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="relative w-full max-w-lg bg-[#0D131B] border border-[#26354A] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Cabecera */}
         <div className="px-5 py-3.5 bg-[#141C27] border-b border-[#26354A] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
@@ -413,13 +441,25 @@ export function DropboxConnectModal({
                 Pega aquí el código que te mostró Dropbox y pulsa vincular:
               </p>
               <div className="space-y-2">
-                <input
-                  type="text"
-                  value={authCode}
-                  onChange={(e) => setAuthCode(e.target.value)}
-                  placeholder="Pega el código de autorización aquí..."
-                  className="w-full h-9 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-xs focus:outline-none focus:border-cyan-400"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={codeInputRef}
+                    type="text"
+                    value={authCode}
+                    onChange={(e) => setAuthCode(e.target.value)}
+                    placeholder="Pega el código de autorización aquí..."
+                    className="flex-1 h-9 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-xs focus:outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePasteCode}
+                    className="px-3 h-9 bg-[#162232] hover:bg-[#1E2E44] border border-[#2B4058] text-cyan-300 rounded font-medium text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+                    title="Pegar código desde el portapapeles"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Pegar</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={handleExchangeCode}

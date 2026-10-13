@@ -554,32 +554,52 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ".json": "application/json; charset=utf-8",
         };
 
-        // 1. Si es archivo local existente en disco Windows (ruta absoluta)
-        if (filePath.includes(":\\") && fs.existsSync(filePath)) {
-          const buffer = fs.readFileSync(filePath);
-          const contentType = mimeTypes[ext] || "application/octet-stream";
-          return new NextResponse(buffer, {
-            headers: {
-              "Content-Type": contentType,
-              "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
-            },
-          });
+        // 1. Si es archivo local existente en disco Windows (ruta absoluta o con variaciones de sufijo)
+        if (filePath.includes(":\\")) {
+          const absCandidates = [
+            filePath,
+            filePath.replace(/\.carpeta\b/gi, ".proyecto"),
+            filePath.replace(/\.carpeta\b/gi, ".programa"),
+            filePath.replace(/\.carpeta\b/gi, ".webs"),
+          ];
+          for (const abs of absCandidates) {
+            try {
+              if (fs.existsSync(abs) && !fs.statSync(abs).isDirectory()) {
+                const buffer = fs.readFileSync(abs);
+                const contentType = mimeTypes[path.extname(abs).toLowerCase()] || mimeTypes[ext] || "application/octet-stream";
+                return new NextResponse(buffer, {
+                  headers: {
+                    "Content-Type": contentType,
+                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+                  },
+                });
+              }
+            } catch {}
+          }
         }
 
         // 2. Si es archivo existente en la carpeta local de Dropbox en disco
         const settings = getSettings();
         const baseDropbox = (settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
         const cleanRel = filePath.replace(/^[\\/]+/, "");
+        const cleanNoDRX = cleanRel.replace(/^DRX[\\/]/i, "");
         const localCandidates = [
           path.join(baseDropbox, cleanRel),
-          path.join(baseDropbox, "DRX", cleanRel.replace(/^DRX[\\/]/i, "")),
+          path.join(baseDropbox, "DRX", cleanNoDRX),
+          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".proyecto")),
+          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".proyecto")),
+          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".programa")),
+          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".programa")),
+          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".webs")),
+          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".webs")),
           path.join(baseDropbox, path.basename(filePath)),
+          path.join(baseDropbox, "DRX", path.basename(filePath)),
         ];
         for (const candidate of localCandidates) {
           try {
             if (fs.existsSync(candidate) && !fs.statSync(candidate).isDirectory()) {
               const buffer = fs.readFileSync(candidate);
-              const contentType = mimeTypes[ext] || "application/octet-stream";
+              const contentType = mimeTypes[path.extname(candidate).toLowerCase()] || mimeTypes[ext] || "application/octet-stream";
               return new NextResponse(buffer, {
                 headers: {
                   "Content-Type": contentType,

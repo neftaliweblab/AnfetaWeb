@@ -735,9 +735,10 @@ export function DetailsPane({
                       } catch {}
                     }
                     const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
-                    const imgSrc = targetPath.startsWith("http")
-                      ? targetPath
-                      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath)}${tokenQuery}`;
+                    const activePath = (targetPath || item.path || item.name || "").trim();
+                    const imgSrc = activePath.startsWith("http")
+                      ? activePath
+                      : `/api/data?type=file-preview&path=${encodeURIComponent(activePath)}${tokenQuery}`;
                     setLightboxImages([{ src: imgSrc, caption: item.name }]);
                     setLightboxIndex(0);
                   }}
@@ -750,7 +751,8 @@ export function DetailsPane({
               </div>
             </div>
             {(() => {
-              const previewSrc = getFilePreviewSrc(targetPath);
+              const activePath = (targetPath || item.path || item.name || "").trim();
+              const previewSrc = getFilePreviewSrc(activePath);
               return (
                 <div
                   className="h-48 bg-[#0A0F16] border border-[#1E293B] rounded flex items-center justify-center overflow-hidden cursor-zoom-in group/cardimg relative"

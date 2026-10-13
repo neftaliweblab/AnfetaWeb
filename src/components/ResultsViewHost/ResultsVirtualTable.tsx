@@ -76,6 +76,7 @@ interface ResultsTableProps {
   showScheduledDate?: boolean;
   showModifiedDate?: boolean;
   viewZoom?: "list" | "small" | "medium" | "large";
+  onChangeViewZoom?: (zoom: "list" | "small" | "medium" | "large") => void;
   textScale?: string;
   groupBy?: string;
 }
@@ -177,6 +178,7 @@ export function ResultsVirtualTable({
   showScheduledDate = true,
   showModifiedDate = true,
   viewZoom = "list",
+  onChangeViewZoom,
   textScale = "100%",
   groupBy = "none",
 }: ResultsTableProps) {
@@ -184,6 +186,69 @@ export function ResultsVirtualTable({
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastWheelTimeRef = useRef<number>(0);
+  const viewZoomRef = useRef(viewZoom);
+  const [zoomBadge, setZoomBadge] = useState<string | null>(null);
+  const zoomBadgeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    viewZoomRef.current = viewZoom;
+  }, [viewZoom]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      // Evitar el zoom de todo el navegador
+      e.preventDefault();
+
+      const now = Date.now();
+      if (now - lastWheelTimeRef.current < 160) return;
+      if (Math.abs(e.deltaY) < 5) return;
+
+      lastWheelTimeRef.current = now;
+
+      const levels: ("list" | "small" | "medium" | "large")[] = ["list", "small", "medium", "large"];
+      const labels: Record<string, string> = {
+        list: "Lista Detallada",
+        small: "Cuadrícula Pequeña",
+        medium: "Cuadrícula Mediana",
+        large: "Cuadrícula Grande",
+      };
+
+      const current = viewZoomRef.current;
+      const idx = levels.indexOf(current);
+
+      let nextZoom: "list" | "small" | "medium" | "large" | null = null;
+      if (e.deltaY < 0) {
+        // Rueda hacia arriba -> Zoom in (agrandar vista)
+        if (idx < levels.length - 1) {
+          nextZoom = levels[idx + 1];
+        }
+      } else if (e.deltaY > 0) {
+        // Rueda hacia abajo -> Zoom out (reducir vista)
+        if (idx > 0) {
+          nextZoom = levels[idx - 1];
+        }
+      }
+
+      if (nextZoom && onChangeViewZoom) {
+        onChangeViewZoom(nextZoom);
+        setZoomBadge(`🔍 Vista: ${labels[nextZoom] || nextZoom}`);
+        if (zoomBadgeTimeoutRef.current) clearTimeout(zoomBadgeTimeoutRef.current);
+        zoomBadgeTimeoutRef.current = setTimeout(() => setZoomBadge(null), 900);
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      if (zoomBadgeTimeoutRef.current) clearTimeout(zoomBadgeTimeoutRef.current);
+    };
+  }, [onChangeViewZoom]);
 
   // Anchos de columna configurables y redimensionables interactivamente
   type ColumnKey = "path" | "status" | "scheduledDate" | "modifiedDate";
@@ -613,11 +678,15 @@ export function ResultsVirtualTable({
     const parsed = parseVisualParts(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
-    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(item.name || targetPath);
+    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(item.name || targetPath);
     const isDoc = /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?)$/i.test(item.name || targetPath);
     const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
     const ext = (item.extension || (item.name || "").split(".").pop() || "").toUpperCase();
     const textSnippet = (item.contentSnippet || item.description || "").trim();
+    const imgHeightClass =
+      viewZoom === "large" ? "h-48" : viewZoom === "medium" ? "h-36" : "h-24";
+    const docHeightClass =
+      viewZoom === "large" ? "h-40" : viewZoom === "medium" ? "h-28" : "h-20";
     let clientToken = "";
     if (typeof window !== "undefined") {
       try {
@@ -629,9 +698,10 @@ export function ResultsVirtualTable({
       } catch {}
     }
     const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
-    const imgSrc = targetPath.startsWith("http")
-      ? targetPath
-      : `/api/data?type=file-preview&path=${encodeURIComponent(targetPath || item.name)}${tokenQuery}`;
+    const activePath = (targetPath || item.path || item.name || "").trim();
+    const imgSrc = activePath.startsWith("http")
+      ? activePath
+      : `/api/data?type=file-preview&path=${encodeURIComponent(activePath)}${tokenQuery}`;
     return (
       <div
         key={item.id}
@@ -730,7 +800,7 @@ export function ResultsVirtualTable({
 
         {/* Si es imagen, mostrar vista previa en el cuadro con fallback estético */}
         {isImg ? (
-          <div className="w-full h-28 my-1.5 rounded-md bg-[#0A0F16] border border-[#1E293B] overflow-hidden flex items-center justify-center relative group/img">
+          <div className={`w-full ${imgHeightClass} my-1.5 rounded-md bg-[#0A0F16] border border-[#1E293B] overflow-hidden flex items-center justify-center relative group/img`}>
             <img
               src={imgSrc}
               alt={item.name}
@@ -750,7 +820,7 @@ export function ResultsVirtualTable({
             </div>
           </div>
         ) : (isDoc || isCode || ext) && ext !== item.name.toUpperCase() ? (
-          <div className="w-full h-24 my-1.5 rounded-md bg-[#070A0F] border border-[#1E293B] p-2 flex flex-col justify-between overflow-hidden relative group/doc">
+          <div className={`w-full ${docHeightClass} my-1.5 rounded-md bg-[#070A0F] border border-[#1E293B] p-2 flex flex-col justify-between overflow-hidden relative group/doc`}>
             <div className="flex items-center justify-between z-10">
               <span
                 className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold tracking-wider uppercase border ${
@@ -829,6 +899,7 @@ export function ResultsVirtualTable({
 
   return (
     <div
+      ref={containerRef}
       className={`flex-1 flex flex-col h-full bg-[#0F141C] border ${
         isDraggingOver ? "border-[#38BDF8] ring-2 ring-[#38BDF8]/40" : "border-[#1E2836]"
       } rounded-lg select-none text-[11.5px] overflow-hidden relative transition-colors`}
@@ -846,6 +917,13 @@ export function ResultsVirtualTable({
         }
       }}
     >
+      {/* Indicador HUD al alternar zoom con Ctrl + Rueda */}
+      {zoomBadge && (
+        <div className="absolute top-10 right-4 z-40 bg-[#0C1A2E]/95 border border-[#38BDF8] text-[#38BDF8] px-3 py-1.5 rounded-lg shadow-xl font-bold text-xs flex items-center gap-2 pointer-events-none animate-in fade-in duration-100">
+          <span>{zoomBadge}</span>
+        </div>
+      )}
+
       {/* Overlay al arrastrar archivos */}
       {isDraggingOver && (
         <div className="absolute inset-0 bg-[#0284C7]/20 backdrop-blur-sm z-30 flex flex-col items-center justify-center border-2 border-dashed border-[#38BDF8] rounded-lg pointer-events-none">
