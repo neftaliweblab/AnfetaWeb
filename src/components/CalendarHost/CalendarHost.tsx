@@ -199,7 +199,8 @@ export function CalendarHost({
         enrichOffset=data.nextEnrichOffset || 0;
         if(enrichOffset)enrichmentTimer=setTimeout(refresh,100);
         setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
-        setError(data.warning || '');
+        const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
+        if (!isBgSyncWarning) setError(data.warning || '');
       } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
       finally {busy = false;}
     };
@@ -251,7 +252,8 @@ export function CalendarHost({
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
       // Broadcast only the state confirmed by Notion.
       anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
-      setError(data.warning || '');
+      const isBgWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
+      if (!isBgWarning) setError(data.warning || '');
       window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start&&saved.start){const date=mexicoDate(saved.start);if(date!==currentDate)onSelectDate(date);}
       onRefresh?.();

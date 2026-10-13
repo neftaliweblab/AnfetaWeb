@@ -6,7 +6,7 @@ import {cookies} from 'next/headers';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 export function supabaseConfigured(){return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_SECRET_KEY);}
 function config(){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!url||!key)throw new Error('Configura la URL y la clave publicable de Supabase en el servidor.');return {url,key};}
-export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
+export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(30000),cache:'no-store'})}});}
 let adminClientInstance: any = null;
 export function supabaseAdmin(){
   if (adminClientInstance) return adminClientInstance;
@@ -15,7 +15,7 @@ export function supabaseAdmin(){
   if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');
   adminClientInstance = createClient(url,key,{
     auth:{persistSession:false,autoRefreshToken:false},
-    global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}
+    global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(30000),cache:'no-store'})}
   });
   return adminClientInstance;
 }
