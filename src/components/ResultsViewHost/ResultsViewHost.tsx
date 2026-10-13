@@ -799,6 +799,8 @@ export function ResultsViewHost({
       if (saved) token = JSON.parse(saved).notionToken || "";
     } catch {}
 
+    window.dispatchEvent(new CustomEvent('anfeta_index_status', { detail: { cacheMeta: { syncing: true } } }));
+
     try {
       setAppNotification({
         type: 'info',
@@ -838,6 +840,14 @@ export function ResultsViewHost({
       setIsSyncingNotion(false);
     }
   };
+
+  useEffect(() => {
+    const handleTrigger = () => {
+      void handleRefreshIndex();
+    };
+    window.addEventListener('anfeta_trigger_refresh_index', handleTrigger);
+    return () => window.removeEventListener('anfeta_trigger_refresh_index', handleTrigger);
+  }, []);
 
   const handleSyncDropbox = async () => {
     setIsSyncingDropbox(true);
