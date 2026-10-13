@@ -73,6 +73,7 @@ export const maxDuration = 120;
 
 const previewMemoryCache = new Map<string, { timestamp: number; payload: any }>();
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
+const dropboxPreviewCache = new Map<string, { buffer: Buffer; contentType: string; expiresAt: number }>();
 
 const calendarMemoryUpdates = new Map<string, any>();
 const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
@@ -554,67 +555,30 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ".json": "application/json; charset=utf-8",
         };
 
-        // 1. Si es archivo local existente en disco Windows (ruta absoluta o con variaciones de sufijo)
-        if (filePath.includes(":\\")) {
-          const absCandidates = [
-            filePath,
-            filePath.replace(/\.carpeta\b/gi, ".proyecto"),
-            filePath.replace(/\.carpeta\b/gi, ".programa"),
-            filePath.replace(/\.carpeta\b/gi, ".webs"),
-          ];
-          for (const abs of absCandidates) {
-            try {
-              if (fs.existsSync(abs) && !fs.statSync(abs).isDirectory()) {
-                const buffer = fs.readFileSync(abs);
-                const contentType = mimeTypes[path.extname(abs).toLowerCase()] || mimeTypes[ext] || "application/octet-stream";
-                return new NextResponse(buffer, {
-                  headers: {
-                    "Content-Type": contentType,
-                    "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
-                  },
-                });
-              }
-            } catch {}
-          }
+        const cacheKey = filePath.toLowerCase();
+        const cached = dropboxPreviewCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+          return new NextResponse(new Uint8Array(cached.buffer), {
+            headers: {
+              "Content-Type": cached.contentType,
+              "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
+            },
+          });
         }
 
-        // 2. Si es archivo existente en la carpeta local de Dropbox en disco
-        const settings = getSettings();
-        const baseDropbox = (settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox").trim();
-        const cleanRel = filePath.replace(/^[\\/]+/, "");
-        const cleanNoDRX = cleanRel.replace(/^DRX[\\/]/i, "");
-        const localCandidates = [
-          path.join(baseDropbox, cleanRel),
-          path.join(baseDropbox, "DRX", cleanNoDRX),
-          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".proyecto")),
-          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".proyecto")),
-          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".programa")),
-          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".programa")),
-          path.join(baseDropbox, cleanRel.replace(/\.carpeta\b/gi, ".webs")),
-          path.join(baseDropbox, "DRX", cleanNoDRX.replace(/\.carpeta\b/gi, ".webs")),
-          path.join(baseDropbox, path.basename(filePath)),
-          path.join(baseDropbox, "DRX", path.basename(filePath)),
-        ];
-        for (const candidate of localCandidates) {
-          try {
-            if (fs.existsSync(candidate) && !fs.statSync(candidate).isDirectory()) {
-              const buffer = fs.readFileSync(candidate);
-              const contentType = mimeTypes[path.extname(candidate).toLowerCase()] || mimeTypes[ext] || "application/octet-stream";
-              return new NextResponse(buffer, {
-                headers: {
-                  "Content-Type": contentType,
-                  "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",
-                },
-              });
-            }
-          } catch {}
-        }
-
-        // 3. Si es archivo en Dropbox Cloud (API remota)
+        // Obtener la vista previa directamente desde la API oficial de Dropbox
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
         const { buffer, contentType: rawContentType } = await getDropboxFileContent(filePath, tokenOverride);
         const contentType = mimeTypes[ext] || rawContentType || "application/octet-stream";
-        return new NextResponse(buffer, {
+
+        // Almacenar en caché en memoria por 15 minutos para optimizar ancho de banda y velocidad
+        dropboxPreviewCache.set(cacheKey, {
+          buffer,
+          contentType,
+          expiresAt: Date.now() + 15 * 60 * 1000,
+        });
+
+        return new NextResponse(new Uint8Array(buffer), {
           headers: {
             "Content-Type": contentType,
             "Cache-Control": "public, max-age=86400, stale-while-revalidate=43200",

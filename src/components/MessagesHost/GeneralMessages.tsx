@@ -120,8 +120,9 @@ export function GeneralMessages() {
         pending = false;
       }
     };
-    void refresh();
-    const timer = setInterval(refresh, 10000);
+    const timer = setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, 45000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {

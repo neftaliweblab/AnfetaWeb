@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       .eq('active', true);
 
     const profileMap = new Map<string, string>();
-    profiles?.forEach((p) => {
+    profiles?.forEach((p: any) => {
       profileMap.set(p.id, normalizePerson(p.person_tag));
     });
 

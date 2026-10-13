@@ -365,86 +365,108 @@ export function cloudFolder(domain: string | undefined, target: string | undefin
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }
 
-export async function getDropboxFileContent(filePath: string, tokenOverride?: string) {
+export async function getDropboxFileContent(filePath: string, tokenOverride?: string): Promise<{ buffer: Buffer; contentType: string }> {
   let token = await getDropboxAccessToken(tokenOverride);
   let cleanPath = filePath.replace(/\\/g, '/').trim();
-  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
 
-  const arg = JSON.stringify({ path: cleanPath }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
-  
-  // Si es imagen, intentamos pedir thumbnail para rapidez, o descarga directa
-  const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(cleanPath);
-  const endpoint = isImg
-    ? 'https://content.dropboxapi.com/2/files/get_thumbnail_v2'
-    : 'https://content.dropboxapi.com/2/files/download';
-
-  const bodyArg = isImg
-    ? JSON.stringify({ resource: { '.tag': 'path', path: cleanPath }, format: 'jpeg', size: 'w640h480', mode: 'strict' }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
-    : arg;
-
-  let response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Dropbox-API-Arg': bodyArg,
-    },
-    signal: AbortSignal.timeout(30000),
-  });
-
-  // Si falló por 401 (token expirado o inválido), forzar auto-renovación y reintentar
-  if (response.status === 401) {
-    try {
-      token = await getDropboxAccessToken(undefined, true);
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Dropbox-API-Arg': bodyArg,
-        },
-        signal: AbortSignal.timeout(30000),
-      });
-    } catch (renewErr) {
-      console.warn("Reintento con token renovado falló:", renewErr);
-    }
+  // Si viene una ruta local completa de Windows (ej. C:/Users/nanoc/Dropbox/DRX/...), extraer ruta en la nube
+  const dbxMatch = cleanPath.match(/.*\/Dropbox(\/.*)$/i);
+  if (dbxMatch) {
+    cleanPath = dbxMatch[1];
+  } else if (/^[a-zA-Z]:\//i.test(cleanPath)) {
+    cleanPath = cleanPath.replace(/^[a-zA-Z]:/i, '');
   }
 
-  if (!response.ok) {
-    // Si falló thumbnail, intentar descarga directa
-    if (isImg) {
-      let fallbackRes = await fetch('https://content.dropboxapi.com/2/files/download', {
+  if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+
+  const candidatePaths = [
+    cleanPath,
+    cleanPath.replace(/\.carpeta\b/gi, '.proyecto'),
+    cleanPath.replace(/\.proyecto\b/gi, '.Carpeta'),
+    cleanPath.replace(/\.carpeta\b/gi, '.programa'),
+    cleanPath.replace(/\.carpeta\b/gi, '.webs'),
+  ];
+  // Eliminar duplicados manteniendo orden
+  const uniquePaths = Array.from(new Set(candidatePaths));
+
+  const tryFetchPath = async (targetPath: string) => {
+    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(targetPath);
+    const endpoint = isImg
+      ? 'https://content.dropboxapi.com/2/files/get_thumbnail_v2'
+      : 'https://content.dropboxapi.com/2/files/download';
+
+    const bodyArg = isImg
+      ? JSON.stringify({ resource: { '.tag': 'path', path: targetPath }, format: 'jpeg', size: 'w640h480', mode: 'strict' }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
+      : JSON.stringify({ path: targetPath }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+
+    let response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Dropbox-API-Arg': bodyArg,
+      },
+      signal: AbortSignal.timeout(25000),
+    });
+
+    if (response.status === 401) {
+      try {
+        token = await getDropboxAccessToken(undefined, true);
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Dropbox-API-Arg': bodyArg,
+          },
+          signal: AbortSignal.timeout(25000),
+        });
+      } catch {}
+    }
+
+    if (!response.ok && isImg) {
+      // Si falló el thumbnail por formato o tamaño, intentar descarga directa
+      const dlArg = JSON.stringify({ path: targetPath }).replace(/[\u007f-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+      let dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Dropbox-API-Arg': arg,
-        },
-        signal: AbortSignal.timeout(30000),
+        headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': dlArg },
+        signal: AbortSignal.timeout(25000),
       });
 
-      if (fallbackRes.status === 401) {
+      if (dlRes.status === 401) {
         try {
           token = await getDropboxAccessToken(undefined, true);
-          fallbackRes = await fetch('https://content.dropboxapi.com/2/files/download', {
+          dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Dropbox-API-Arg': arg,
-            },
-            signal: AbortSignal.timeout(30000),
+            headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': dlArg },
+            signal: AbortSignal.timeout(25000),
           });
         } catch {}
       }
 
-      if (fallbackRes.ok) {
-        const buffer = Buffer.from(await fallbackRes.arrayBuffer());
-        const contentType = fallbackRes.headers.get('content-type') || 'image/jpeg';
+      if (dlRes.ok) {
+        const buffer = Buffer.from(await dlRes.arrayBuffer());
+        const contentType = dlRes.headers.get('content-type') || 'image/jpeg';
         return { buffer, contentType };
       }
     }
-    const errText = await response.text();
-    throw new Error(`Error descargando de Dropbox (${response.status}): ${errText}`);
+
+    if (response.ok) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
+      return { buffer, contentType };
+    }
+
+    return null;
+  };
+
+  let lastError = '';
+  for (const candidate of uniquePaths) {
+    try {
+      const result = await tryFetchPath(candidate);
+      if (result) return result;
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+    }
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
-  return { buffer, contentType };
+  throw new Error(`No se pudo obtener la vista previa desde Dropbox API (${cleanPath}): ${lastError || 'Archivo no encontrado'}`);
 }

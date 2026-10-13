@@ -20,7 +20,7 @@ export function CalendarReviewNotifications({currentUser}:{currentUser:string}) 
       } catch(e) {if (!stopped) setError(e instanceof Error ? e.message : 'No se pudieron cargar los avisos.');}
       finally {busy=false;}
     };
-    void refresh(); const timer=setInterval(refresh,30000);
+    void refresh(); const timer=setInterval(()=>{ if (!document.hidden) void refresh(); },60000);
     window.addEventListener('focus',refresh); window.addEventListener('online',refresh); document.addEventListener('visibilitychange',refresh); window.addEventListener('anfeta_review_saved',refresh);
     return () => {stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_review_saved',refresh);};
   },[currentUser,key]);

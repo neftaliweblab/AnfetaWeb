@@ -7,7 +7,18 @@ import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 export function supabaseConfigured(){return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_SECRET_KEY);}
 function config(){const url=process.env.NEXT_PUBLIC_SUPABASE_URL,key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;if(!url||!key)throw new Error('Configura la URL y la clave publicable de Supabase en el servidor.');return {url,key};}
 export async function supabaseSessionClient(){const {url,key}=config(),store=await cookies();return createServerClient(url,key,{cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'},cookies:{getAll:()=>store.getAll(),setAll:values=>{values.forEach(({name,value,options})=>store.set(name,value,options))}},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
-export function supabaseAdmin(){const {url}=config();const key=process.env.SUPABASE_SECRET_KEY;if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}});}
+let adminClientInstance: any = null;
+export function supabaseAdmin(){
+  if (adminClientInstance) return adminClientInstance;
+  const {url}=config();
+  const key=process.env.SUPABASE_SECRET_KEY;
+  if(!key)throw new Error('Configura SUPABASE_SECRET_KEY únicamente en el servidor.');
+  adminClientInstance = createClient(url,key,{
+    auth:{persistSession:false,autoRefreshToken:false},
+    global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000),cache:'no-store'})}
+  });
+  return adminClientInstance;
+}
 export function validateProfile(profile:any){const person=normalizePerson(profile?.person_tag);if(!profile?.active||!PERSON_ALIASES[person])throw new Error('Tu cuenta no tiene un perfil ANFETA activo. Solicita su asignación al administrador.');return person;}
 
 function serviceError(error:any,context:string){const message=String(error?.message||'');if(/timeout|abort|fetch|network/i.test(message)||error?.status>=500)return Object.assign(new Error('Supabase no está disponible temporalmente durante '+context+'. Intenta de nuevo; no se activó una sesión provisional.'),{status:503});return new Error(context+'. Revisa la configuración de Supabase y los permisos del servidor.');}
