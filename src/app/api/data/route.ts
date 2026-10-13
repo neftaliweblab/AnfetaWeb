@@ -1,5 +1,6 @@
 import {financeDateField,financeStatus} from '@/services/financeRules';
 import {queryAnfetaIndex,uniqueIndex} from '@/services/notionIndexParity';
+import {diagnoseNotion} from '@/services/notionDiagnostics';
 import {executiveActivities} from '@/services/progressKpis';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 import {readUserState,updateUserState} from '@/services/userState';
@@ -648,7 +649,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       return NextResponse.json({ users: Array.from(usersMap.values()) });
     }
 
+    if(type==="notion-diagnostics"){const report=await diagnoseNotion({...getSettings(),notionToken:resolveNotionToken(req,searchParams)});return NextResponse.json({...report,tokenSource:req.headers.get("x-notion-token")||searchParams.get("token")?"navegador":"servidor"},{headers:{"Cache-Control":"no-store"}});}
     if (type === "search-index") {
+      // The foreground serves pages from snapshots; full reads run after the response.
       const token = resolveNotionToken(req, searchParams);
 
       let syncWarning:string|undefined;let syncFailed=false;let fullIds:Set<string>|undefined;
@@ -657,13 +660,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       // Cached index is shown immediately; background refresh uses an overlap for recent edits.
       if (token&&!bootstrap) {
         try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout de consulta Notion (>8s)')), 8000)
-          );
-          const pages = await Promise.race([
-            queryAnfetaIndex({...getSettings(),notionToken:token},fullSync?undefined:previous?.syncMeta?.dataAsOf),
-            timeoutPromise
-          ]);
+          const pages = await queryAnfetaIndex({...getSettings(),notionToken:token},fullSync?undefined:previous?.syncMeta?.dataAsOf);
           observedEdited=pages.map(page=>page.last_edited_time).filter((value:any)=>Number.isFinite(Date.parse(value))).sort().at(-1);
           if(supabaseConfigured()&&fullSync&&(pages as any).isComplete!==false)fullIds=new Set(pages.map(page=>cleanPageId(page.id)));
           for(const item of pages){const pageData=extractNotionPageData(item);if(pageData.id){liveNotionOverrides.set(pageData.id,pageData);calendarMemoryUpdates.delete(pageData.id);}}
@@ -2178,17 +2175,47 @@ async function POSTLive(req: NextRequest) {
 function cachedResponse(data:any,row:any,syncing=false){return NextResponse.json({...data,warning:row?.last_error||data.warning,cacheMeta:{source:'supabase',updatedAt:row?.updated_at||null,stale:syncing||!row?.valid||Boolean(row?.last_error),syncing,lastError:row?.last_error||null}},{headers:{'Cache-Control':'no-store'}});}
 async function refreshSnapshot(context:any,req:NextRequest,row:any,actor:string){const lease=await claimSnapshot(context);if(!lease)return undefined;try{const token=resolveNotionToken(req);const liveSettings={...getSettings(),notionToken:token};if(row&&!row.valid)clearReadBlocksCache(liveSettings);if(!token)throw new Error('Configura el token de Notion para sincronizar.');const response=await GETLive(req,row?.payload&&!row.force_full&&new URL(req.url).searchParams.get("fresh")!=="1"?row.payload:undefined,false,actor);const data=await response.clone().json();if(!response.ok||data.error||data.syncFailed)throw new Error(data.error||data.warning||'No se pudo actualizar desde Notion.');let saved:boolean;try{saved=await finishSnapshot(context,lease,data);}catch(saveError){const warning=saveError instanceof Error?saveError.message:'No se pudo guardar la copia Supabase.';try{await finishSnapshot(context,lease,null,warning);}catch{}return NextResponse.json({...data,warning,cacheMeta:{source:'notion',stale:true,syncing:false,lastError:warning}},{headers:{'Cache-Control':'no-store'}});}if(!saved)throw new Error('Los datos cambiaron durante la sincronización. Se repetirá la lectura.');return cachedResponse(data,{updated_at:new Date().toISOString(),valid:true});}catch(error){const message=error instanceof Error?error.message:'No se pudo sincronizar.';await finishSnapshot(context,lease,null,message);throw error;}}
 async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext?:any){const url=new URL(req.url),key=snapshotRequestKey(url);if(!supabaseConfigured()||!key)return GETLive(req);let actor:string;try{actor=verifiedActor||await requireActor(req);}catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Inicia sesión para continuar.'},{status:401});}
- try{const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};const context=providedContext||await snapshotContext(actor,liveSettings,key),row=await readSnapshot(context,key==='search-index'),hasPayload=row?.has_payload||Boolean(row?.payload);const force=url.searchParams.get('fresh')==='1';if(row&&hasPayload&&!force&&Date.parse(row.retry_after||'')>Date.now())return cachedResponse(row.payload||{},row);if(row&&hasPayload&&!force){const age=Date.now()-Date.parse(row.updated_at||''),stale=!row.valid||age>(key==='search-index'?60000:30000);const retryReady=!(Date.parse(row.retry_after||'')>Date.now());if(stale&&retryReady)after(async()=>{try{await refreshSnapshot(context,req,key==='search-index'?await readSnapshot(context):row,actor);}catch{console.warn('La copia disponible se conserva; consulta el error de sincronización.');}});return cachedResponse(row.payload||{},row,(stale&&retryReady)||Date.parse(row.lease_until||'')>Date.now());}
- if(key==='search-index'&&!force&&!hasPayload){const initial=await GETLive(req,undefined,true,actor);const data=await initial.json();const retryReady=!(Date.parse(row?.retry_after||'')>Date.now());if(retryReady)after(async()=>{try{await refreshSnapshot(context,req,row,actor);}catch{console.warn('La primera sincronización del índice no se completó.');}});return NextResponse.json({...data,warning:row?.last_error||data.warning,cacheMeta:{source:'local',syncing:retryReady,stale:true,updatedAt:null,lastError:row?.last_error||null}},{headers:{'Cache-Control':'no-store'}});}
+ try{const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};const context=providedContext||await snapshotContext(actor,liveSettings,key),row=await readSnapshot(context,key==='search-index'),hasPayload=row?.has_payload||Boolean(row?.payload);const force=url.searchParams.get('fresh')==='1';if(row&&hasPayload&&!force&&Date.parse(row.retry_after||'')>Date.now())return cachedResponse(row.payload||{},row);if(row&&hasPayload&&(key==='search-index'||!force)){const age=Date.now()-Date.parse(row.updated_at||''),stale=force||!row.valid||age>(key==='search-index'?60000:30000);const retryReady=force||!(Date.parse(row.retry_after||'')>Date.now());if(stale&&retryReady)after(async()=>{try{await refreshSnapshot(context,req,key==='search-index'?await readSnapshot(context):row,actor);}catch{console.warn('La copia disponible se conserva; consulta el error de sincronización.');}});return cachedResponse(row.payload||{},row,(stale&&retryReady)||Date.parse(row.lease_until||'')>Date.now());}
+ if(key==='search-index'&&!hasPayload){const initial=await GETLive(req,undefined,true,actor);const data=await initial.json();const retryReady=!(Date.parse(row?.retry_after||'')>Date.now());if(retryReady)after(async()=>{try{await refreshSnapshot(context,req,row,actor);}catch{console.warn('La primera sincronización del índice no se completó.');}});return NextResponse.json({...data,warning:row?.last_error||data.warning,cacheMeta:{source:'local',syncing:retryReady,stale:true,updatedAt:null,lastError:row?.last_error||null}},{headers:{'Cache-Control':'no-store'}});}
  try{return await refreshSnapshot(context,req,key==='search-index'&&hasPayload?await readSnapshot(context):row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
- }catch(error){const response=await GETLive(req,undefined,false,actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
+ }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
 export async function POST(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
-export async function GET(req:NextRequest){const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
- let context:any,verifiedActor:string|undefined;try{if(supabaseConfigured()){const actor=await requireActor(req);verifiedActor=actor;const token=resolveNotionToken(req),liveSettings={...getSettings(),notionToken:token};context=await snapshotContext(actor,liveSettings,'search-index');if(offset>0&&!['local','live'].includes(url.searchParams.get('indexOrigin')||'')){const slice=await readIndexSlice(context,offset,limit,version);if(slice)return NextResponse.json(slice,{status:slice.code?409:200,headers:{'Cache-Control':'no-store'}});}}
- const response=offset>0?await GETLive(req,undefined,true,verifiedActor):await GETSnapshot(req,verifiedActor,context);if(!response.ok)return response;const data=await response.json();let result:any;if(context&&data.cacheMeta?.source==='supabase'){result=await readIndexSlice(context,offset,limit,version,url.searchParams.get('ifVersion')||undefined);if(result)result={...result,cacheMeta:data.cacheMeta,warning:data.warning};}
- if(data.cacheMeta?.source==='supabase'&&(!result||(offset===0&&(!result.items||result.items.length===0)&&!result.unchanged))){const liveRes=await GETLive(req,undefined,true,verifiedActor);const liveData=await liveRes.json();const rows=liveData.items||[];const current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+limit);end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>2000000){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}result={...liveData,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null,cacheMeta:{source:'local',syncing:data.cacheMeta?.syncing||false,stale:true,updatedAt:null,lastError:data.cacheMeta?.lastError||null}};}
- if(!result){const rows=data.items||[],current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');if(version&&version!==current)return NextResponse.json({error:'La versión del índice cambió.',code:'index_version_changed'},{status:409});const singleResponse=offset===0&&data.cacheMeta?.source!=='supabase'&&Buffer.byteLength(JSON.stringify(rows))<3000000;let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+(singleResponse?rows.length:limit));end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>(singleResponse?3000000:2000000)){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}result={...data,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null};}
- if(result.code)return NextResponse.json(result,{status:409});if(offset===0&&url.searchParams.get('ifVersion')===result.indexVersion)result={...result,items:undefined,nextOffset:null,unchanged:true};return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}});
- }catch(error){const message=error instanceof Error?error.message:'No se pudo cargar el índice.';return NextResponse.json({error:message},{status:/Inicia sesión/.test(message)?401:502});}}
+export async function GET(req:NextRequest){
+ const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);
+ const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;
+ if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
+ const started=Date.now();let context:any,actor:string|undefined;
+ try{
+  if(supabaseConfigured()){
+   actor=await requireActor(req);const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+   context=await snapshotContext(actor,settings,'search-index');
+   if(!['local','live'].includes(url.searchParams.get('indexOrigin')||'')){
+    const row=await readSnapshot(context,true);
+    if(row?.has_payload||row?.payload){
+     const slice=await readIndexSlice(context,offset,limit,version,url.searchParams.get('ifVersion')||undefined);
+     if(slice){
+      if(slice.code)return NextResponse.json(slice,{status:409,headers:{'Cache-Control':'no-store'}});
+      const force=url.searchParams.get('fresh')==='1',age=Date.now()-Date.parse(row.updated_at||''),stale=!row.valid||!Number.isFinite(age)||age>60000;
+      const retryReady=force||!(Date.parse(row.retry_after||'')>Date.now()),leased=Date.parse(row.lease_until||'')>Date.now();
+      const refreshing=offset===0&&(force||stale)&&retryReady&&!leased;
+      if(refreshing)after(async()=>{try{await refreshSnapshot(context,req,await readSnapshot(context),actor!);}catch(error){console.warn('[ANFETA index refresh]',JSON.stringify({outcome:'failed',cause:error instanceof Error?error.message:'No se completó'}));}});
+      const response=cachedResponse({...slice,total:slice.total??row.payload?.total??row.payload?.items?.length},row,refreshing||leased);response.headers.set('Server-Timing','index;dur='+(Date.now()-started));return response;
+     }
+    }
+   }
+  }
+  const response=offset>0?await GETLive(req,undefined,true,actor):await GETSnapshot(req,actor,context);if(!response.ok)return response;
+  const data=await response.json();
+  if(context&&data.cacheMeta?.source==='supabase'){
+   const slice=await readIndexSlice(context,offset,limit,version,url.searchParams.get('ifVersion')||undefined);if(slice)return NextResponse.json({...slice,cacheMeta:data.cacheMeta,warning:data.warning},{status:slice.code?409:200,headers:{'Cache-Control':'no-store'}});
+  }
+  const rows=data.items||[],current=createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+  if(version&&version!==current)return NextResponse.json({error:'La versión del índice cambió.',code:'index_version_changed'},{status:409});
+  let bytes=0,end=offset;for(;end<Math.min(rows.length,offset+limit);end++){const size=Buffer.byteLength(JSON.stringify(rows[end]));if(bytes+size>2000000){if(end===offset)throw new Error('Un resultado del índice es demasiado grande para cargarlo.');break;}bytes+=size;}
+  const result:any={...data,items:rows.slice(offset,end),total:rows.length,indexVersion:current,nextOffset:end<rows.length?end:null};
+  if(offset===0&&url.searchParams.get('ifVersion')===current)Object.assign(result,{items:undefined,nextOffset:null,unchanged:true});
+  return NextResponse.json(result,{headers:{'Cache-Control':'no-store','Server-Timing':'index;dur='+(Date.now()-started)}});
+ }catch(error){const message=error instanceof Error?error.message:'No se pudo cargar el índice.';console.warn('[ANFETA index]',JSON.stringify({offset,durationMs:Date.now()-started,outcome:'failed',cause:message}));return NextResponse.json({error:message},{status:/Inicia sesión/.test(message)?401:502});}
+}

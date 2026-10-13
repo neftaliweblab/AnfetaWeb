@@ -1,9 +1,10 @@
 "use client";
 import {ExportResults} from './ExportResults';
+import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {newestFirst} from '@/lib/searchResultOrder';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
-import {loadCachedIndex} from '@/lib/clientIndexCache';
+import {normalizePerson} from '@/services/identityNormalizer';
 
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
@@ -99,7 +100,8 @@ export function ResultsViewHost({
   const [activeTabId, setActiveTabId] = useState("tab_1");
 
   // Search input & scopes
-  const [query, setQuery] = useState(externalQuery || "nneft");
+  const [query, setQuery] = useState(externalQuery || "");
+  const [resultPerson,setResultPerson]=useState("__all__");
   const [selectedScope, setSelectedScope] = useState("Notion");
   const [filterFavorites, setFilterFavorites] = useState(false);
 
@@ -247,6 +249,7 @@ export function ResultsViewHost({
 
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(initialItems);
+  React.useEffect(()=>{setItems(initialItems);},[initialItems]);
   const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
   useEffect(()=>{setPinnedDetail(old=>old?items.find(row=>row.id===old.id)||null:null);},[items]);
   const [selectedItem, setSelectedItem] = useState<SearchResultRow | null>(null);
@@ -255,53 +258,6 @@ export function ResultsViewHost({
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
-
-  React.useEffect(() => {
-    if (initialItems.length > 0) {
-      setItems(initialItems);
-    } else {
-      loadCachedIndex().then((cached) => {
-        if (cached?.items?.length) {
-          setItems((prev) => (prev.length === 0 ? cached.items : prev));
-        }
-      });
-    }
-  }, [initialItems]);
-
-  // Auto-recuperación si el catálogo quedó en 0 items en el arranque
-  useEffect(() => {
-    if (!isActive || items.length > 0) return;
-    const timer = setTimeout(async () => {
-      if (items.length === 0) {
-        try {
-          const res = await fetch("/api/data?type=search-index&indexOrigin=local&limit=500", { cache: "no-store" });
-          if (res.ok) {
-            const d = await res.json();
-            if (d.items?.length) {
-              setItems((prev) => prev.length === 0 ? retainSearchResults(prev, d) : prev);
-            }
-          }
-        } catch {}
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [isActive, items.length]);
-
-  // Recarga en vivo al indexar Dropbox o refrescar datos
-  useEffect(() => {
-    const handleDataRefreshed = async () => {
-      try {
-        const fresh = await loadSearchIndex({ fresh: true });
-        if (fresh?.items) {
-          setItems((prev) => retainSearchResults(prev, fresh));
-        }
-      } catch {}
-    };
-    window.addEventListener("anfeta_data_refreshed", handleDataRefreshed);
-    return () => {
-      window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
-    };
-  }, []);
 
   React.useEffect(() => {
     if (externalQuery !== undefined && externalQuery !== query) {
@@ -750,38 +706,7 @@ export function ResultsViewHost({
       if (saved) token = JSON.parse(saved).notionToken || "";
     } catch {}
 
-    if (!token?.trim()) {
-      setAppNotification({
-        type: 'warning',
-        text: '⚠️ Falta configurar el Token de Notion. Ve a ⚙️ Configuración para agregarlo.'
-      });
-      setIsSyncingNotion(false);
-      return;
-    }
-
-    setAppNotification({
-      type: 'info',
-      text: '⏳ Conectando con Notion API...'
-    });
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-      try {
-        const res = await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "sync-notion", payload: { token: token.trim() } }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        const data = await res.json().catch(() => ({}));
-        if (data.error) console.warn("sync-notion warning:", data.error);
-      } catch (postErr) {
-        console.warn("sync-notion timeout/error:", postErr);
-      }
-
       setAppNotification({
         type: 'info',
         text: '⏳ Cargando catálogo actualizado...'
@@ -789,7 +714,7 @@ export function ResultsViewHost({
 
       const data = await loadSearchIndex({
         fresh: true,
-        token: token.trim(),
+        token: token.trim()||undefined,
         onPartial: (p) => {
           if (p?.items?.length) setItems((prev) => retainSearchResults(prev, p));
         },
@@ -799,14 +724,14 @@ export function ResultsViewHost({
         setItems(previous => retainSearchResults(previous, data));
         window.dispatchEvent(new CustomEvent('anfeta_data_refreshed', { detail: data }));
         setAppNotification({
-          type: 'success',
-          text: `✅ Índice sincronizado: ${data.total || data.items.length} elementos disponibles.`
+          type: data.warning?'warning':data.cacheMeta?.syncing?'info':'success',
+          text: data.warning?'Resultados disponibles; '+data.warning:data.cacheMeta?.syncing?`Actualización en curso; ${data.items.length} registros disponibles.`:`Índice cargado: ${data.total??data.items.length} registros disponibles.`
         });
         sendWindowsNotification('ANFETA', data.warning ? 'Resultados disponibles; actualización pendiente.' : 'Índice actualizado.');
       } else {
         setAppNotification({
           type: 'info',
-          text: `✅ Catálogo al día (${items.length} elementos listos).`
+          text: data.warning|| (data.cacheMeta?.syncing?'Sincronización iniciada; todavía no se recibieron registros de Notion.':'La consulta devolvió 0 registros. Revisa la base, la persona y los filtros.')
         });
       }
     } catch(error) {
@@ -1090,8 +1015,8 @@ export function ResultsViewHost({
     }
 
     // Filtrado estricto por usuario activo si no es "__all__" y no está en Scope de carpetas/dropbox
-    if (currentUser && currentUser !== "__all__" && selectedScope !== "Dropbox" && selectedScope !== "Carpetas") {
-      const uLow = currentUser.toLowerCase().trim();
+    if (resultPerson && resultPerson !== "__all__" && selectedScope !== "Dropbox" && selectedScope !== "Carpetas") {
+      const uLow = resultPerson.toLowerCase().trim();
       res = res.filter((it) => {
         const p = (it.assignedPerson || "").toLowerCase();
         const keys = Array.isArray((it as any).assignmentKeys)
@@ -1148,9 +1073,10 @@ export function ResultsViewHost({
       return [...res].sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
     }
     return res;
-  }, [items, query, searchOptions, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, currentUser]);
+  }, [items, query, searchOptions, selectedScope, filterFavorites, favorites, selectedIds, selectedMonth, groupBy, resultPerson]);
 
-  useEffect(()=>{setCurrentPage(1);},[query,selectedScope,currentUser,pageSize]);
+  useEffect(()=>{setCurrentPage(1);},[query,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);
+  useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -1215,20 +1141,8 @@ export function ResultsViewHost({
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
-        currentUser={currentUser}
-        onChangeCurrentUser={(newUser) => {
-          onChangeCurrentUser?.(newUser);
-          try {
-            const prev = JSON.parse(localStorage.getItem("anfeta_settings") || "{}");
-            localStorage.setItem("anfeta_settings", JSON.stringify({ ...prev, currentUser: newUser }));
-            window.dispatchEvent(new CustomEvent("anfeta_settings_changed", { detail: { currentUser: newUser } }));
-          } catch {}
-          if (newUser !== "__all__") {
-            handleQueryChange(newUser);
-          } else {
-            handleQueryChange("");
-          }
-        }}
+        currentUser={resultPerson}
+        onChangeCurrentUser={setResultPerson}
         onSyncNotion={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
         onSyncDropbox={handleSyncDropbox}
@@ -1348,7 +1262,7 @@ export function ResultsViewHost({
                 </button>
               )}
             </div>
-            <ExportResults rows={filteredItems} />
+            <div className="flex flex-wrap items-center justify-end gap-2"><NotionConnectionCheck/><ExportResults rows={filteredItems}/></div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
           <ResultsVirtualTable
           currentUser={currentUser}

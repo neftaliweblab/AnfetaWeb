@@ -1,7 +1,8 @@
 # ANFETA WEB — estado y pendientes
-Actualizado: 2026-10-07. Implementado significa presente en el código; no implica validación completa en producción.
+Actualizado: 2026-10-12. Implementado significa presente en el código; no implica validación completa en producción.
 
 ## IMPLEMENTADO EN EL CÓDIGO
+- ESTABILIDAD DE ACCESO/ÍNDICE: acceso común verificado por Supabase, selección OTP confirmada sin UUID de respaldo ni cambio de contraseñas; errores de UUID específicos y límite para renovación de sesión. Índice paginado completo, respuesta desde caché con refresco diferido, offsets reales y datos parciales conservados. Menos consultas duplicadas, caché por persona/fuente y metadata sin descargar todo el catálogo. Filtro de persona separado de la identidad; estados vacío/error/sincronizando y diagnóstico Notion descargable. Lectura real local: token y seis bases válidos, 4283 páginas en 21.0 s; falta validar Vercel y sesiones reales. Detalle en docs/ESTABILIDAD_2026-10-12.md.
 - BUSCADOR: consultas avanzadas, filtros, índice paginado, incremental y guardado por lotes; seis bases del escritorio, clasificación, deduplicación por ID, recordatorios completados excluidos y orden por modificación descendente. Exportación CSV de todos los resultados filtrados. Importación CSV de consultas guardadas simples, con vista previa y deduplicación.
 - FAVORITOS: favoritos y búsquedas guardadas por cuenta; filtro de consultas guardadas por nombre/texto; respaldo y recuperación de favoritos sin eliminar existentes; nombres editables y respaldo/recuperación JSON con vista previa, deduplicación y consultas conservadas; eventos entre pestañas, foco y consulta periódica entre dispositivos.
 - EXPLORADOR: carpetas y acciones API/enlaces; archivos Windows integrados mediante bridge local HTTP (127.0.0.1:4821) y URI `anfeta://open` para ejecución directa en Windows Desktop. Renombrado inteligente masivo por lotes (prefijos, sufijos y reemplazo de texto con vista previa en vivo).
@@ -39,8 +40,9 @@ Actualizado: 2026-10-07. Implementado significa presente en el código; no impli
 - GOOGLE CALENDAR: FUERA DEL ALCANCE por petición del usuario.
 
 ## PUBLICACIÓN Y VERIFICACIÓN
+- Prioridad: publicar las correcciones de estabilidad y verificar acceso común, cambio de persona, diagnóstico Notion, carga de resultados y regreso tras inactividad. No se ha comprobado la configuración ni los logs de Vercel.
 - Publicar el código local y comprobar los flujos con usuarios/dispositivos reales.
-- Migraciones del proyecto: hasta SQL 12; no repetir la instalación completa sobre un proyecto existente. Aplicar solo actualizaciones que falten. Posponer requiere RECORDATORIOS_POSPONER.sql.
+- Migraciones disponibles en el repositorio: hasta SQL 13; verificar cuáles están aplicadas antes de ejecutar alguna. No repetir la instalación completa sobre un proyecto existente. El bloque de estabilidad del 12 de octubre no requiere SQL nuevo.
 - Detalles fijados y filtros de recordatorios no requieren SQL nuevo.
 - Quedan avisos de compilación existentes sobre acceso al disco Dropbox; no son errores de TypeScript.
 - No se afirma paridad total ni que estos cambios estén desplegados.

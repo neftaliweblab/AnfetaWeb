@@ -1,4 +1,5 @@
 "use client";
+import {indexAvailability} from '@/lib/indexAvailability';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {loadCachedIndex,saveCachedIndex} from '@/lib/clientIndexCache';
@@ -34,8 +35,8 @@ import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 
 export default function AnfetaApp() {
   const [sharedMode,setSharedMode]=useState(false),[personPickerOpen,setPersonPickerOpen]=useState(false);
-  const [isAuthenticated,setIsAuthenticated]=useState(false);
-  useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');}).catch(()=>setIsAuthenticated(false));},[]);
+  const [isAuthenticated,setIsAuthenticated]=useState(false),[authChecking,setAuthChecking]=useState(true),[authError,setAuthError]=useState('');
+  useEffect(()=>{let stopped=false,busy=false,generation=0;const controller=new AbortController();const changed=()=>{generation++;};const refresh=async()=>{if(stopped||busy||document.hidden)return;busy=true;const request=++generation;try{const response=await fetch('/api/auth',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(stopped||request!==generation)return;if([400,401,403].includes(response.status))setIsAuthenticated(false);const data=await readApiJson(response);if(stopped||request!==generation)return;setIsAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.authenticated)setCurrentUser(data.user||'');setAuthError('');}catch(error){if(!stopped&&request===generation)setAuthError(error instanceof Error?error.message:'No se pudo verificar la sesión.');}finally{busy=false;if(!stopped)setAuthChecking(false);}};void refresh();const timer=setInterval(refresh,120000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('anfeta_auth_changed',changed);return()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_auth_changed',changed);};},[]);
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
@@ -52,21 +53,9 @@ export default function AnfetaApp() {
   const [searchQuery, setSearchQuery] = useState("");
   const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
   useEffect(()=>{
-    loadCachedIndex().then((cached)=>{
-      if(cached?.items?.length){
-        setSearchIndex(cached.items);
-        setIndexSyncLabel(`${cached.items.length.toLocaleString()} elementos listos`);
-      }
-    });
     const update=(event:Event)=>{
       const data=(event as CustomEvent).detail||{};
-      setIndexSyncLabel(
-        data.warning||data.cacheMeta?.lastError?'Catálogo local activo (Sincronización pendiente)':
-        data.cacheMeta?.syncing?'Sincronizando Notion...':
-        data.cacheMeta?.source==='supabase'?'En línea (Supabase)':
-        data.items?.length?`${data.items.length.toLocaleString()} elementos listos`:
-        'Catálogo listo'
-      );
+      setIndexSyncLabel(indexAvailability(data));
     };
     window.addEventListener('anfeta_index_status',update);
     return()=>window.removeEventListener('anfeta_index_status',update);
@@ -92,6 +81,7 @@ export default function AnfetaApp() {
 
   // Data states
   const [searchIndex, setSearchIndex] = useState<SearchResultRow[]>([]);
+  useEffect(()=>{let stopped=false;setSearchIndex([]);if(isAuthenticated&&currentUser)void loadCachedIndex(currentUser).then(cached=>{if(!stopped&&cached?.items){setSearchIndex(old=>old.length?old:cached.items);setIndexSyncLabel(indexAvailability(cached));}});return()=>{stopped=true;};},[isAuthenticated,currentUser]);
   const [calendarCacheMeta,setCalendarCacheMeta]=useState<any>(null);
   const [calendarLoadError, setCalendarLoadError] = useState("");
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
@@ -121,7 +111,7 @@ export default function AnfetaApp() {
 
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:searchIndex.length>0?indexVersion:undefined,token:userToken||undefined,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(data.items?.length){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){if(searchIndex.length===0){try{const fallbackData=await loadSearchIndex({signal:initialController.signal,fresh:true,token:userToken||undefined});if(fallbackData?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,fallbackData));void saveCachedIndex(fallbackData);window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:fallbackData}));return;}}catch{}}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,token:userToken||undefined,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),3000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
         void loadIndex();indexFocus=()=>void loadIndex();indexInterval=setInterval(indexFocus,60000);window.addEventListener('focus',indexFocus);
 
         // Calendar dates and today's activities
@@ -169,7 +159,7 @@ export default function AnfetaApp() {
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
 
-        const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length){setSearchIndex(prev=>retainSearchResults(prev,p));setIndexSyncLabel(`Cargando catálogo (${p.items.length.toLocaleString()}...`);}} });if(idxData.items?.length){setSearchIndex(previous=>retainSearchResults(previous,idxData));void saveCachedIndex(idxData);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
+        const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length){setSearchIndex(prev=>retainSearchResults(prev,p));setIndexSyncLabel(`Cargando catálogo (${p.items.length.toLocaleString()}...`);}} });if(Array.isArray(idxData.items)){setSearchIndex(previous=>retainSearchResults(previous,idxData));void saveCachedIndex(idxData,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
         const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}${token ? `&token=${encodeURIComponent(token)}` : ""}`, {
           headers: token ? { "x-notion-token": token } : {},
         });
@@ -525,12 +515,14 @@ export default function AnfetaApp() {
   const handleDeletePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.filter(t=>t.id!==id)),[persistPendingTasks]);
   const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
 
-  if (!isAuthenticated) return <LoginModal onSuccess={(userTag,options)=>{setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setIsAuthenticated(true);}} />;
+  if(authChecking)return <main className="grid min-h-screen place-items-center bg-[#080B0F] text-cyan-200" role="status">Verificando acceso…</main>;
+  if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100">{authError} <button onClick={()=>window.location.reload()} className="ml-2 underline">Reintentar conexión</button></p>}</div><LoginModal onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
 
   if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
+      {authError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm">{authError} <button className="ml-2 underline" onClick={()=>window.location.reload()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}
       {/* Top Bar with Navigation and Global Search */}
       <TopBar
@@ -553,7 +545,7 @@ export default function AnfetaApp() {
           } catch {}
           setSearchIndex([]);
           setCalendarActivities([]);
-          setIsAuthenticated(false);
+          setIsAuthenticated(false);window.dispatchEvent(new Event("anfeta_auth_changed"));
           window.location.reload();
         }}
         unreadCount={pendingTasks.filter((p) => !p.isCompleted).length}

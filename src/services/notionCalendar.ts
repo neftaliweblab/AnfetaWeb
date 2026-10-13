@@ -4,7 +4,7 @@ import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 
-export type CalendarSettings = { notionToken: string; currentUser: string; notionDataSourceId?: string };
+export type CalendarSettings = { notionToken: string; currentUser: string; notionDataSourceId?: string; notionSignal?: AbortSignal };
 export const REVIEW_PREFIX = '[ANFETA_REVIEW_FLOW_V1]';
 export const ASSIGNEE = /assignee|asignee|ejecutor|equipo weblab|persona|responsable|asignad/i;
 export function calendarStatusField(page: any): [string, any] | undefined {

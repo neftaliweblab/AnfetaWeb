@@ -40,12 +40,6 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!error) return;
-    const timer = setTimeout(() => setError(''), 6000);
-    return () => clearTimeout(timer);
-  }, [error]);
-
   const handleSubmit = async (e:React.FormEvent) => {
     e.preventDefault();setError('');setLoading(true);
     try{

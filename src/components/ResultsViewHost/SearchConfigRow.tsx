@@ -1,5 +1,6 @@
 "use client";
 
+import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 import React, { useState, useRef, useEffect } from "react";
 import { Check, Columns, RefreshCw, User, Loader2, Cloud } from "lucide-react";
 
@@ -180,10 +181,10 @@ export function SearchConfigRow({
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#38BDF8] font-semibold flex items-center gap-1">
             <User style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} className="text-[#38BDF8]" />
-            Usuario:
+            Filtrar persona:
           </span>
           <select
-            value={currentUser || "nneft"}
+            value={currentUser==="__all__"?"__all__":PERSON_ALIASES[normalizePerson(currentUser||"")]?.[0]||""}
             onChange={(e) => onChangeCurrentUser?.(e.target.value)}
             style={{
               fontSize: `${(10.5 * scale).toFixed(1)}px`,
@@ -191,7 +192,7 @@ export function SearchConfigRow({
               padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
             }}
             className="bg-[#141B26] text-[#38BDF8] font-bold border border-[#38BDF8]/60 hover:border-[#38BDF8] rounded focus:outline-none cursor-pointer"
-            title="Seleccionar usuario activo del sistema"
+            title="Filtrar resultados por persona; no cambia la sesión activa"
           >
             {TEAM_USERS.map((u) => (
               <option key={u.code} value={u.code}>

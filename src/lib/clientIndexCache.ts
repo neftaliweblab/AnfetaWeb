@@ -27,23 +27,25 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function loadCachedIndex(): Promise<CachedSearchIndex | null> {
+export async function loadCachedIndex(owner?:string): Promise<CachedSearchIndex | null> {
   if (typeof window === "undefined" || !("indexedDB" in window)) return null;
+  if(!owner)return null;
   try {
     const db = await openDB();
     return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, "readonly");
       const store = tx.objectStore(STORE_NAME);
-      const req = store.get(CACHE_KEY);
+      const req = store.get(CACHE_KEY+':'+owner);
       req.onsuccess = () => {
+        db.close();
         const val = req.result;
-        if (val && Array.isArray(val.items) && val.items.length > 0 && typeof val.indexVersion === "string") {
+        if (val && Array.isArray(val.items) &&  typeof val.indexVersion === "string") {
           resolve(val as CachedSearchIndex);
         } else {
           resolve(null);
         }
       };
-      req.onerror = () => resolve(null);
+      req.onerror = () => {db.close();resolve(null);};
     });
   } catch {
     return null;
@@ -55,9 +57,9 @@ export async function saveCachedIndex(data: {
   indexVersion: string;
   total?: number;
   cacheMeta?: any;
-}): Promise<boolean> {
+},owner?:string): Promise<boolean> {
   if (typeof window === "undefined" || !("indexedDB" in window)) return false;
-  if (!Array.isArray(data.items) || data.items.length === 0 || !data.indexVersion) return false;
+  if (!owner || !Array.isArray(data.items) || !data.indexVersion) return false;
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -70,9 +72,10 @@ export async function saveCachedIndex(data: {
         savedAt: Date.now(),
         cacheMeta: data.cacheMeta,
       };
-      const req = store.put(record, CACHE_KEY);
-      req.onsuccess = () => resolve(true);
-      req.onerror = () => resolve(false);
+      const req = store.put(record, CACHE_KEY+':'+owner);
+      tx.oncomplete = () => {db.close();resolve(true);};
+      tx.onabort = () => {db.close();resolve(false);};
+      req.onerror = () => {db.close();resolve(false);};
     });
   } catch {
     return false;
