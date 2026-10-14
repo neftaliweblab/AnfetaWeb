@@ -88,7 +88,7 @@ export async function queryCalendarPages(settings: CalendarSettings, start: stri
   const cached=calendarQueries.get(key);if(!fresh&&cached && cached.expires>Date.now())return cached.promise;
   const promise=queryCalendarPagesUncached(settings,start,end).catch(error=>{calendarQueries.delete(key);throw error;});
   if(calendarQueries.size>=128)calendarQueries.delete(calendarQueries.keys().next().value!);
-  calendarQueries.set(key,{expires:Date.now()+15000,promise});return promise;
+  calendarQueries.set(key,{expires:Date.now()+3000,promise});return promise;
 }
 async function queryCalendarPagesUncached(settings: CalendarSettings, start: string, end: string) {
   const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';

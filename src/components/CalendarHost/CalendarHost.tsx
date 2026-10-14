@@ -203,35 +203,49 @@ export function CalendarHost({
 
   useEffect(() => {
     if(!active)return;
-    let stopped = false, busy = false, enrichOffset=0, basic=true;
+    let stopped = false, busy = false, lightBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0;
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
     const controller = new AbortController();
-    const refresh = async () => {
-      if (stopped || busy || document.hidden || pending.current.size) return;
-      busy = true;
+    const refresh = async (light=false) => {
+      if (stopped || (light?lightBusy:busy) || document.hidden || pending.current.size) return;
+      if(light)lightBusy=true;else busy = true;
       const version = mutationVersion.current;
+      const requestSequence=++sequence;
       try {
-        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + (basic?'&basic=1':'&enrichOffset=' + enrichOffset), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
+        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + (light||basic?'&basic=1':'&enrichOffset=' + enrichOffset), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
         const data = await readApiJson(response);
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
+        // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
+        if(requestSequence<appliedSequence){
+          if(!light){
+            setActivitiesList(prev=>prev.map(old=>{const read=(data.activities||[]).find((a:NotionCalendarActivity)=>a.pageId===old.pageId);if(!read?.checklistScanned||confirmedCalendarActivity(read,old)!==read)return old;return {...old,checklistScanned:read.checklistScanned,checklistTotal:read.checklistTotal,checklistCompleted:read.checklistCompleted,todayChecklistCompleted:read.todayChecklistCompleted,completedChecks:read.completedChecks,checklistItems:read.checklistItems};}));
+            const wasBasic=basic;basic=false;enrichOffset=data.nextEnrichOffset||0;
+            if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
+          }
+          return;
+        }
+        appliedSequence=requestSequence;
         setActivitiesList(prev=>{
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
           const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
-        const wasBasic=basic;basic=false;
-        enrichOffset=data.nextEnrichOffset || 0;
-        if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(refresh,1000);
+        if(!light){const wasBasic=basic;basic=false;
+          enrichOffset=data.nextEnrichOffset || 0;
+          if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
+        }
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setError(data.warning || '');
       } catch (e) { if (!stopped) setError(e instanceof Error && e.name==='TimeoutError'?'El calendario tardó demasiado en responder. Se conserva la vista; intenta actualizar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
-      finally {busy = false;}
+      finally {if(light)lightBusy=false;else busy = false;}
     };
     void refresh();
-    const timer = setInterval(refresh, 30000);
-    window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus', refresh); window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
-    return () => {stopped = true; controller.abort(); clearInterval(timer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh);};
+    const timer = setInterval(()=>void refresh(), 30000);
+    const fastRefresh=()=>{void refresh(true);};
+    const fastTimer=setInterval(fastRefresh,5000);
+    window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('focus', fastRefresh); window.addEventListener('online', fastRefresh); document.addEventListener('visibilitychange', fastRefresh);
+    return () => {stopped = true; controller.abort(); clearInterval(timer);clearInterval(fastTimer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('focus', fastRefresh); window.removeEventListener('online', fastRefresh); document.removeEventListener('visibilitychange', fastRefresh);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
