@@ -1,28 +1,26 @@
 "use client";
-import {useEffect,useState} from 'react';
-import {createPortal} from 'react-dom';
+import {useState} from 'react';
 import {quickActivitySchedule} from '@/lib/quickActivitySchedule';
 import {calendarTime,mexicoDate} from '@/services/calendarPresentation';
 import type {NotionCalendarActivity} from '@/types/anfeta';
-export function QuickScheduleModal({activity,onClose,onSave}:{activity:NotionCalendarActivity;onClose:()=>void;onSave:(updates:any)=>Promise<boolean|void>|void}){
+export function QuickScheduleActions({activity,onClose,onSave,disabled=false}:{activity:NotionCalendarActivity;onClose:()=>void;onSave:(updates:any)=>Promise<boolean|void>|void;disabled?:boolean}){
   const [baseline]=useState(activity);
-  useEffect(()=>{
-    const previous=document.activeElement as HTMLElement|null;
-    const dialog=document.querySelector<HTMLElement>('[aria-label="Mover fecha y duración"]');
-    dialog?.querySelector<HTMLButtonElement>('button')?.focus();
-    const trapFocus=(event:KeyboardEvent)=>{
-      if(event.key!=='Tab'||!dialog)return;
-      const controls=Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),[tabindex="0"]'));
-      const first=controls[0],last=controls[controls.length-1];
-      if(!first)return;
-      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
-      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
-    };
-    document.addEventListener('keydown',trapFocus);
-    return()=>{document.removeEventListener('keydown',trapFocus);if(previous?.isConnected)previous.focus();};
-  },[]);
   const [offset,setOffset]=useState(0),[duration,setDuration]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  let proposal:{start:string;end:string}|null=null,message='';try{proposal=quickActivitySchedule(baseline,offset,duration);}catch(e){message=e instanceof Error?e.message:'Horario inválido';}
-  async function save(){if(busy||!proposal)return;setBusy(true);setError('');try{const result=await onSave({...proposal,expectedTitle:baseline.title,expectedStart:baseline.start,expectedEnd:baseline.end});if(result===false)throw Error('No se confirmó el cambio. Revisa el aviso del calendario.');onClose();}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.');}finally{setBusy(false);}}
-  return createPortal(<div className="fixed inset-0 z-[350] bg-black/70 p-4 flex items-center justify-center" onKeyDown={e=>{if(e.key==='Escape'&&!busy)onClose();}}><section role="dialog" aria-modal="true" aria-label="Mover fecha y duración" className="w-full max-w-sm max-h-[90dvh] overflow-auto rounded-xl border border-cyan-900 bg-slate-950 p-4 text-sm text-slate-100 space-y-4"><h2>Mover fecha y duración</h2><p className="text-xs text-slate-400">Desde la fecha de esta actividad: {mexicoDate(activity.start)}. Se conserva la hora de inicio.</p><div className="flex gap-2 flex-wrap">{[[-1,'Enviar para ayer'],[1,'Enviar para mañana'],[0,'Conservar fecha']].map(([n,label])=><button key={n} disabled={busy} aria-pressed={offset===n} onClick={()=>setOffset(Number(n))} className="rounded border border-cyan-800 p-2 aria-pressed:bg-cyan-900">{label}</button>)}</div><label className="block">Enviar para… <select disabled={busy} value={offset>0?offset:0} onChange={e=>setOffset(Number(e.target.value))} className="bg-slate-800 p-2 rounded"><option value={0}>Seleccionar días</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>En {n} día{n===1?'':'s'}</option>)}</select></label><fieldset disabled={busy}><legend>Duración de la actividad</legend><div className="flex gap-2 mt-2">{[[null,'Conservar'],[60,'1 hora'],[120,'2 horas']].map(([n,label])=><button key={String(n)} aria-pressed={duration===n} onClick={()=>setDuration(n as number|null)} className="rounded border border-slate-600 p-2 aria-pressed:bg-cyan-900">{label}</button>)}</div></fieldset>{proposal&&<p role="status" className="rounded bg-cyan-950 p-3">Nueva fecha: {mexicoDate(proposal.start)}<br/>{calendarTime(proposal.start)}–{calendarTime(proposal.end)}</p>}{(error||message)&&<p role="alert" className="text-rose-300">{error||message}</p>}<div className="flex justify-end gap-3"><button disabled={busy} onClick={onClose}>Cancelar</button><button disabled={busy||!proposal||(offset===0&&duration===null)} onClick={save} className="rounded bg-cyan-800 p-2 disabled:opacity-40">{busy?'Guardando…':'Confirmar cambio'}</button></div></section></div>,document.body);
+  let proposal:{start:string;end:string}|null=null,message='';
+  try{proposal=quickActivitySchedule(baseline,offset,duration);}catch(e){message=e instanceof Error?e.message:'Horario inválido';}
+  async function save(){if(busy||disabled||!proposal)return;setBusy(true);setError('');try{const result=await onSave({...proposal,expectedTitle:baseline.title,expectedStart:baseline.start,expectedEnd:baseline.end});if(result===false)throw Error('No se confirmó el cambio. Revisa el aviso del calendario.');onClose();}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.');}finally{setBusy(false);}}
+  const buttonClass='rounded border border-slate-600 px-2 py-1.5 aria-pressed:bg-cyan-900 disabled:opacity-40';
+  return <section aria-label="Mover fecha y duración" className="border-t border-slate-700 px-3 py-2 space-y-2">
+    <p className="font-semibold text-cyan-200">Mover fecha / Duración</p>
+    <p className="text-[10px] text-slate-400">Desde {mexicoDate(baseline.start)}; conserva la hora de inicio.</p>
+    <fieldset disabled={busy||disabled} className="space-y-2">
+      <div className="flex flex-wrap gap-1">{[[-1,'Enviar para ayer'],[1,'Enviar para mañana'],[0,'Conservar fecha']].map(([n,label])=><button key={n} aria-pressed={offset===n} onClick={()=>setOffset(Number(n))} className={buttonClass}>{label}</button>)}</div>
+      <label className="flex items-center justify-between gap-2">Enviar para… <select aria-label="Días para mover la actividad" value={offset>0?offset:0} onChange={e=>setOffset(Number(e.target.value))} className="min-w-0 rounded bg-slate-800 p-1.5"><option value={0}>Seleccionar días</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>En {n} día{n===1?'':'s'}</option>)}</select></label>
+      <p>Duración de la actividad</p>
+      <div className="flex flex-wrap gap-1">{[[null,'Conservar'],[60,'1 hora'],[120,'2 horas']].map(([n,label])=><button key={String(n)} aria-pressed={duration===n} onClick={()=>setDuration(n as number|null)} className={buttonClass}>{label}</button>)}</div>
+    </fieldset>
+    {proposal&&<p role="status" className="rounded bg-cyan-950 p-2 text-cyan-100">Nueva fecha: {mexicoDate(proposal.start)}<br/>{calendarTime(proposal.start)}–{calendarTime(proposal.end)}</p>}
+    {(error||message)&&<p role="alert" className="text-rose-300">{error||message}</p>}
+    <button disabled={busy||disabled||!proposal||(offset===0&&duration===null)} onClick={save} className="w-full rounded bg-cyan-800 p-2 disabled:opacity-40">{busy?'Guardando…':'Confirmar cambio'}</button>
+  </section>;
 }

@@ -10,7 +10,7 @@ import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
 import {notionPageUrl} from '@/lib/notionPageUrl';
 import {ViewportMenu} from './ViewportMenu';
-import {QuickScheduleModal} from './QuickScheduleModal';
+import {QuickScheduleActions} from './QuickScheduleModal';
 import { ChecklistPopup } from "./ChecklistPopup";
 import { workflowState } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
@@ -108,7 +108,6 @@ export function ActivityCard({
   });
   const [showAllChecks, setShowAllChecks] = useState(false);
   const [showEditDateModal, setShowEditDateModal] = useState(false);
-  const [showQuickSchedule,setShowQuickSchedule]=useState(false);
   const [editDay, setEditDay] = useState(() => mexicoDate(activity.start || new Date()));
   const [editStart, setEditStart] = useState(() => calendarTime(activity.start || '08:00'));
   const [editEnd, setEditEnd] = useState(() => calendarTime(activity.end || '09:00'));
@@ -976,7 +975,7 @@ export function ActivityCard({
               <span>Editar fecha y horario...</span>
             </button>
           )}
-          {editable&&!isCompleted&&<button onClick={()=>{closeContextMenu();setShowQuickSchedule(true);}} className="w-full px-3 py-2 text-left hover:bg-slate-800 text-cyan-200">Mover fecha / Duración…</button>}
+          {editable&&!isCompleted&&<QuickScheduleActions activity={activity} disabled={isSaving} onClose={closeContextMenu} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
           <button
             onClick={() => {
               openNotionPage(notionPageUrl(activity));
@@ -991,7 +990,6 @@ export function ActivityCard({
       )}
 
       {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
-      {showQuickSchedule&&<QuickScheduleModal activity={activity} onClose={()=>setShowQuickSchedule(false)} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
       {showReviewModal && (
         <SendToReviewModal
           activity={activity}
