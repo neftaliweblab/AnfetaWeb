@@ -1,5 +1,8 @@
 "use client";
 import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
+import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
+import {calendarConflict,nextFreeCalendarSlot} from '@/services/calendarConflicts';
+import {planDurationCascade} from '@/services/calendarPlanner';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
 import {financeSlot} from '@/lib/financeColumnOptions';
@@ -86,12 +89,13 @@ export function CalendarHost({
   }, [error]);
   const [headerSummary,setHeaderSummary]=useState<{person:string|null}|null>(null),[previewTab,setPreviewTab]=useState<'checks'|'activities'>('checks'),[batchDefaults,setBatchDefaults]=useState<{person:string;day:string}|null>(null);const [showBatch,setShowBatch]=useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [durationProposal,setDurationProposal]=useState<any[]|undefined>();
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
   const [,setSaveRevision]=useState(0);
   const recentSaves=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
   const protectSaved=(incoming:NotionCalendarActivity[])=>{
-    const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}if(a.title===saved.activity.title&&a.person===saved.activity.person&&a.reviewFlow?.State===saved.activity.reviewFlow?.State){recentSaves.current.delete(a.pageId);return a;}return saved.activity;});
+    const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
     const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors];
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
@@ -164,7 +168,6 @@ export function CalendarHost({
 
   useEffect(() => {
     setActivitiesList(prev=>pending.current.size?[...initialActivities.filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:protectSaved(initialActivities));
-    setSelectedActivity(prev => prev ? initialActivities.find(a => a.pageId === prev.pageId) || null : null);
   }, [initialActivities]);
   useEffect(() => { if (loadError) setError(loadError); }, [loadError]);
 
@@ -220,7 +223,6 @@ export function CalendarHost({
         const wasBasic=basic;basic=false;
         enrichOffset=data.nextEnrichOffset || 0;
         if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(refresh,1000);
-        setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setError(data.warning || '');
       } catch (e) { if (!stopped) setError(e instanceof Error && e.name==='TimeoutError'?'El calendario tardó demasiado en responder. Se conserva la vista; intenta actualizar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
@@ -315,7 +317,7 @@ export function CalendarHost({
     });
   }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter]);
 
-  useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>old&&available.some(a=>a.pageId===old.pageId)?old:(available[0]||null));},[filteredActivities,visiblePeople]);
+  useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>(old&&available.find(a=>a.pageId===old.pageId))||available[0]||null);},[filteredActivities,visiblePeople]);
   const activitiesByPerson = useMemo(() => {
 
     const map: Record<string, NotionCalendarActivity[]> = {};
@@ -411,6 +413,9 @@ export function CalendarHost({
       // 56px es la altura del CalendarColHeader
       const y = Math.max(0, e.clientY - columnRect.top - 56 - offsetY);
       const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
+      const moving={...activity,...newSchedule,person:colPerson};
+      const conflict=calendarConflict(activitiesList,moving);
+      if(conflict){const free=nextFreeCalendarSlot(activitiesList,moving);setError('Se empalma con «'+conflict.title+'». '+(free?'Puedes moverla a '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio posterior en la jornada.')+' No se movió la actividad.');return;}
 
       void handleUpdateActivity(pageId, {...newSchedule,...(reassignment?{person:colPerson}:{})});
     } catch (error) {
@@ -453,7 +458,8 @@ export function CalendarHost({
         </div>
       )}
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
-      {showBatch && <CalendarBatchModal initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);}} onSaved={items=>{items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
+      {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
+      {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}

@@ -83,9 +83,9 @@ export async function resolveTeamPersonId(settings: CalendarSettings, person: st
   return ids?.values().next().value;
 }
 const calendarQueries=new Map<string,{expires:number;promise:Promise<any[]>}>();
-export async function queryCalendarPages(settings: CalendarSettings, start: string, end: string) {
+export async function queryCalendarPages(settings: CalendarSettings, start: string, end: string, fresh=false) {
   const key=settings.notionToken+':'+(process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '')+':'+start+':'+end;
-  const cached=calendarQueries.get(key);if(cached && cached.expires>Date.now())return cached.promise;
+  const cached=calendarQueries.get(key);if(!fresh&&cached && cached.expires>Date.now())return cached.promise;
   const promise=queryCalendarPagesUncached(settings,start,end).catch(error=>{calendarQueries.delete(key);throw error;});
   if(calendarQueries.size>=128)calendarQueries.delete(calendarQueries.keys().next().value!);
   calendarQueries.set(key,{expires:Date.now()+15000,promise});return promise;

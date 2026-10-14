@@ -8,6 +8,8 @@ import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { normalizeActivity } from './dataNormalizers';
 import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
+import {queryCalendarPages} from './notionCalendar';
+import {calendarConflict,nextFreeCalendarSlot, type CalendarSlot} from './calendarConflicts';
 
 type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string; notionSignal?: AbortSignal };
 type Property = { type: string; [key: string]: any };
@@ -48,14 +50,38 @@ export async function notionRequest(settings: Settings, endpoint: string, method
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
 const mutationLocks = new Set<string>();
+const scheduleLocks=new Set<string>();
+async function withCalendarSchedule<T>(settings:Settings,run:()=>Promise<T>):Promise<T>{
+  const key=operationKey(settings.notionToken,'calendar-schedule');
+  if(scheduleLocks.has(key))throw new Error('Se está guardando otro horario. Espera y vuelve a intentar.');
+  scheduleLocks.add(key);
+  try{return await withActivityLease(key,run);}finally{scheduleLocks.delete(key);}
+}
+async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot){
+  if(!Number.isFinite(Date.parse(moving.start))||!Number.isFinite(Date.parse(moving.end))||Date.parse(moving.end)<=Date.parse(moving.start))throw new Error('No se pudo verificar el horario de la actividad.');
+  const day=mexicoDate(moving.start),next=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
+  // Incluir el día anterior para detectar actividades que atraviesan medianoche.
+  const previous=new Date(Date.parse(day+'T12:00:00Z')-86400000).toISOString().slice(0,10);
+  const pages=await queryCalendarPages(settings,previous,next,true);
+  const slots:CalendarSlot[]=pages.flatMap(page=>{
+    const date:any=Object.entries(page.properties||{}).find(([n,p]:any)=>/^fecha por hacer$/i.test(n.trim())&&p.type==='date')?.[1];
+    if(!date?.date?.start)return [];
+    const title=titleOf(page),fallback=title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1]||'';
+    const start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;
+    return [{pageId:page.id,title,person:assignedPerson(page,fallback),start,end:date.date.end||new Date(Date.parse(start)+3600000).toISOString()}];
+  });
+  const conflict=calendarConflict(slots,moving);
+  if(conflict){const free=nextFreeCalendarSlot(slots,moving);throw new Error('El horario se empalma con «'+conflict.title+'» de '+moving.person+'. '+(free?'Horario libre sugerido: '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio posterior disponible antes de las 22:00.')+' No se guardaron cambios.');}
+}
 export async function mutateActivity(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   const key = settings.notionToken + ':' + id;
   if (mutationLocks.has(key)) throw new Error('La actividad se está guardando; espera antes de reenviarla.');
   mutationLocks.add(key);
-  try {const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};return await withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),()=>mutateActivityUnlocked(bounded, actor, id, updates, cached)); }
+  try {const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};const run=()=>withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),()=>mutateActivityUnlocked(bounded, actor, id, updates, cached));return await (updates.start||updates.person||updates.reviewer?withCalendarSchedule(bounded,run):run()); }
   finally {mutationLocks.delete(key);}
 }
 async function mutateActivityUnlocked(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
+  const checkSchedule=!!updates.start||!!updates.person&&!updates.reviewAction&&!updates.status&&!updates.reviewer;
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
   const title = titleOf(page);
@@ -212,6 +238,10 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
     };
   }
+  if(checkSchedule){
+    const schedule:any=fields.find(([n,p])=>p.type==='date'&&/^fecha por hacer$/i.test(n.trim()))?.[1]?.date;
+    if(schedule?.start){const start=updates.start||(schedule.start.length===10?schedule.start+'T08:00:00-06:00':schedule.start);await assertFreeCalendarSchedule(settings,{pageId:id,title:nextTitle,person:normalizePerson(updates.reviewer||updates.person||activity.person),start,end:updates.end||schedule.end||new Date(Date.parse(start)+3600000).toISOString()});}
+  }
   const updated = await notionRequest(settings, 'pages/' + id, 'PATCH', { properties });
   if (updates.start) {
     const old:any = fields.find(([name,p])=>p.type === 'date' && /^fecha por hacer$/i.test(name.trim()))?.[1]?.date;
@@ -255,10 +285,14 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   return updated;
 }
 export async function createActivity(settings: Settings, actor: string, payload: any) {
+  return payload.start?withCalendarSchedule(settings,()=>createActivityUnlocked(settings,actor,payload)):createActivityUnlocked(settings,actor,payload);
+}
+async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
   const { start, end, domain, person, title } = payload;
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
   if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
+  if(start)await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
   let databaseId = process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
   const referencedId = String(payload.body || '').match(/https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s]*?([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:[?\s/#]|$)/i)?.[1];
   if (!databaseId && referencedId) {

@@ -2105,12 +2105,13 @@ async function POSTLive(req: NextRequest) {
       } catch(error) {return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo ejecutar el robot.'},{status:400});}
     }
     if (action === 'calendar-batch-schedule') {
-      const settings=getSettings(), input=payload || body;
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)}, input=payload || body;
       if (!Array.isArray(input.changes) || !input.changes.length || input.changes.length>30) return NextResponse.json({error:'Selecciona entre 1 y 30 actividades.'},{status:400});
-      const results:any[]=[];
+      const results:any[]=[];let halted=false;
       for (const change of input.changes) {
+        if(halted){results.push({success:false,pageId:change.pageId,error:'Movimiento pendiente: el lote se detuvo tras un fallo. Actualiza los horarios antes de repetir.'});continue;}
         try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);persistCalendarActivity(activity);results.push({success:true,activity});}
-        catch(error){results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
+        catch(error){halted=true;results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
       }
       return NextResponse.json({success:results.every(result=>result.success),results});
     }
