@@ -4,7 +4,7 @@ Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))n
 Module._extensions['.ts']=(mod,file)=>mod._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,file);
 const load=Module._load;
 Module._load=function(name,parent,...rest){if(name==='./reliableOperations'&&parent.filename.endsWith('notionMutations.ts'))return {operationKey:(...p)=>p.join(':'),withActivityLease:async(_,fn)=>fn()};return load.call(this,name,parent,...rest);};
-const {calendarConflict,nextFreeCalendarSlot}=require(root+'/src/services/calendarConflicts.ts');
+const {calendarConflict,nextFreeCalendarSlot,nearbyFreeCalendarSlots}=require(root+'/src/services/calendarConflicts.ts');
 const id='11111111-1111-1111-1111-111111111111',other='22222222-2222-2222-2222-222222222222';
 const at=time=>'2026-10-14T'+time+':00-06:00';
 const moving={pageId:id,person:'Neftali',title:'Trabajo',start:at('10:00'),end:at('11:00')};
@@ -16,6 +16,11 @@ assert.equal(calendarConflict([{...occupied,start:at('11:00')}],moving),undefine
 assert.equal(calendarConflict([{...occupied,pageId:id.replace(/-/g,'')}],moving),undefined);
 assert.deepEqual(nextFreeCalendarSlot([occupied],moving),{start:at('12:00'),end:at('13:00')});
 assert.equal(nextFreeCalendarSlot([{...occupied,end:at('22:00')}],moving),null);
+assert.deepEqual(nearbyFreeCalendarSlots([occupied],moving),[{start:at('09:30'),end:at('10:30')},{start:at('12:00'),end:at('13:00')}]);
+assert.deepEqual(nearbyFreeCalendarSlots([{...occupied,start:at('10:00'),end:at('22:00')}],moving),[{start:at('09:00'),end:at('10:00')}]);
+assert.deepEqual(nearbyFreeCalendarSlots([{...occupied,start:at('08:00'),end:at('22:00')}],moving),[]);
+assert.deepEqual(nearbyFreeCalendarSlots([{...occupied,start:'2026-10-15T08:00:00-06:00',end:'2026-10-15T22:00:00-06:00'}],{...moving,start:'2026-10-15T10:00:00-06:00',end:'2026-10-15T12:00:00-06:00'}),[]);
+assert.deepEqual(nearbyFreeCalendarSlots([{...occupied,start:at('08:00'),end:at('21:00')}],moving),[{start:at('21:00'),end:at('22:00')}]);
 const {planDurationCascade}=require(root+'/src/services/calendarPlanner.ts');
 const first={...moving,status:'Por hacer'},second={...occupied,status:'Por hacer',start:at('11:00'),end:at('12:00')},third={...second,pageId:'third',start:at('12:00'),end:at('13:00')};
 const cascade=planDurationCascade([first,second,third],id,'Neftali',15);

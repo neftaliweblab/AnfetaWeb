@@ -2044,6 +2044,15 @@ async function POSTLive(req: NextRequest) {
       return NextResponse.json({success:true,path:target});
     }
 
+    if(action==='calendar-schedule-availability'){
+      const input=payload||body,settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      validateSchedule(input.start,input.end);
+      await assertChecklistAccess(settings,input.currentUser||settings.currentUser,input.pageId);
+      const {calendarScheduleAvailability}=await import('@/services/notionMutations');
+      const page=await notionRequest(settings,'pages/'+cleanPageId(input.pageId));
+      const live=extractNotionPageData(page);
+      return NextResponse.json(await calendarScheduleAvailability(settings,{pageId:page.id,person:live.person,title:live.title,start:input.start,end:input.end}));
+    }
     if (action === 'update-activity-status' || action === 'update-activity-schedule' || action === 'update-activity-assignee' || action === 'update-activity-details') {
       const input = payload || body;
       const id = input.id || input.pageId;

@@ -15,3 +15,13 @@ export function nextFreeCalendarSlot(slots:CalendarSlot[],moving:CalendarSlot){
   }
   return null;
 }
+export function nearbyFreeCalendarSlots(slots:CalendarSlot[],moving:CalendarSlot){
+  const wanted=Date.parse(moving.start),duration=Date.parse(moving.end)-wanted;
+  if(!Number.isFinite(wanted)||!Number.isFinite(duration)||duration<=0)return [];
+  const day=new Date(wanted-21600000).toISOString().slice(0,10),first=Date.parse(day+'T08:00:00-06:00'),last=Date.parse(day+'T22:00:00-06:00');
+  const local=(ms:number)=>new Date(ms-21600000).toISOString().slice(0,19)+'-06:00';
+  const free:{start:string;end:string}[]=[];
+  for(let at=first;at+duration<=last;at+=900000){const candidate={...moving,start:local(at),end:local(at+duration)};if(!calendarConflict(slots,candidate))free.push({start:candidate.start,end:candidate.end});}
+  const before=free.filter(a=>Date.parse(a.start)<wanted).pop(),after=free.find(a=>Date.parse(a.start)>=wanted);
+  return [before,after].filter((a):a is {start:string;end:string}=>!!a).sort((a,b)=>Math.abs(Date.parse(a.start)-wanted)-Math.abs(Date.parse(b.start)-wanted));
+}

@@ -9,7 +9,7 @@ import { normalizeActivity } from './dataNormalizers';
 import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 import {queryCalendarPages} from './notionCalendar';
-import {calendarConflict,nextFreeCalendarSlot, type CalendarSlot} from './calendarConflicts';
+import {calendarConflict,nearbyFreeCalendarSlots, type CalendarSlot} from './calendarConflicts';
 
 type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string; notionSignal?: AbortSignal };
 type Property = { type: string; [key: string]: any };
@@ -57,7 +57,7 @@ async function withCalendarSchedule<T>(settings:Settings,run:()=>Promise<T>):Pro
   scheduleLocks.add(key);
   try{return await withActivityLease(key,run);}finally{scheduleLocks.delete(key);}
 }
-async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot){
+export async function calendarScheduleAvailability(settings:Settings,moving:CalendarSlot){
   if(!Number.isFinite(Date.parse(moving.start))||!Number.isFinite(Date.parse(moving.end))||Date.parse(moving.end)<=Date.parse(moving.start))throw new Error('No se pudo verificar el horario de la actividad.');
   const day=mexicoDate(moving.start),next=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
   // Incluir el día anterior para detectar actividades que atraviesan medianoche.
@@ -71,7 +71,11 @@ async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot)
     return [{pageId:page.id,title,person:assignedPerson(page,fallback),start,end:date.date.end||new Date(Date.parse(start)+3600000).toISOString()}];
   });
   const conflict=calendarConflict(slots,moving);
-  if(conflict){const free=nextFreeCalendarSlot(slots,moving);throw new Error('El horario se empalma con «'+conflict.title+'» de '+moving.person+'. '+(free?'Horario libre sugerido: '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio posterior disponible antes de las 22:00.')+' No se guardaron cambios.');}
+  return {conflict:conflict?{title:conflict.title}:null,suggestions:conflict?nearbyFreeCalendarSlots(slots,moving):[]};
+}
+async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot){
+  const {conflict,suggestions}=await calendarScheduleAvailability(settings,moving),free=suggestions[0];
+  if(conflict)throw new Error('El horario se empalma con «'+conflict.title+'» de '+moving.person+'. '+(free?'Horario libre sugerido: '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio disponible entre las 08:00 y las 22:00.')+' No se guardaron cambios.');
 }
 export async function mutateActivity(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   const key = settings.notionToken + ':' + id;

@@ -1,7 +1,7 @@
 "use client";
 import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
-import {calendarConflict,nextFreeCalendarSlot} from '@/services/calendarConflicts';
+import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
 import {CalendarHourGrid} from './CalendarHourGrid';
 import {calendarThemes,parseCalendarTheme} from '@/lib/calendarTheme';
@@ -437,7 +437,7 @@ export function CalendarHost({
       const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
       const moving={...activity,...newSchedule,person:colPerson};
       const conflict=calendarConflict(activitiesList,moving);
-      if(conflict){const free=nextFreeCalendarSlot(activitiesList,moving);setError('Se empalma con «'+conflict.title+'». '+(free?'Puedes moverla a '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio posterior en la jornada.')+' No se movió la actividad.');return;}
+      if(conflict){const free=nearbyFreeCalendarSlots(activitiesList,moving)[0];setError('Se empalma con «'+conflict.title+'». '+(free?'Puedes moverla a '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio en la jornada.')+' No se movió la actividad.');return;}
 
       void handleUpdateActivity(pageId, {...newSchedule,...(reassignment?{person:colPerson}:{})});
     } catch (error) {

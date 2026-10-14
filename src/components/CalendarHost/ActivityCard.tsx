@@ -975,7 +975,7 @@ export function ActivityCard({
               <span>Editar fecha y horario...</span>
             </button>
           )}
-          {editable&&!isCompleted&&<QuickScheduleActions activity={activity} disabled={isSaving} onClose={closeContextMenu} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
+          {editable&&!isCompleted&&<QuickScheduleActions activity={activity} currentUser={currentUser} disabled={isSaving} onClose={closeContextMenu} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
           <button
             onClick={() => {
               openNotionPage(notionPageUrl(activity));
