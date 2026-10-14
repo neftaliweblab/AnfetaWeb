@@ -10,6 +10,6 @@ global.localStorage.getItem=()=>{throw Error('Storage unavailable');};mod.export
 console.log('OK apertura Notion: web, protocolo de app, dominio validado y almacenamiento no disponible. Navegador simulado.');
 let focused=0,navigated='';global.window={location:{origin:'https://anfeta.test',assign:url=>navigated=url},open:()=>({focus:()=>focused++})};
 assert.equal(mod.exports.openCalendarWindow('/calendar?date=2026-10-14'),'window');assert.equal(focused,1);
-window.open=()=>null;assert.equal(mod.exports.openCalendarWindow('/calendar?date=2026-10-14'),'same-tab');assert.equal(navigated,'https://anfeta.test/calendar?date=2026-10-14');
+window.open=()=>null;assert.equal(mod.exports.openCalendarWindow('/calendar?date=2026-10-14'),'blocked');assert.equal(navigated,'');
 assert.throws(()=>mod.exports.openCalendarWindow('https://other.test/'),/pertenecer/);
-console.log('OK ventana de calendario: enfoca ventana, alternativa ante bloqueo y origen correcto.');
+console.log('OK ventana de calendario: enfoca ventana, conserva la principal ante bloqueo y origen correcto.');

@@ -467,7 +467,7 @@ export function ResultsVirtualTable({
       <div
         key={item.id}
         onClick={() => onSelect(item)}
-        onDoubleClick={() => onDoubleClick(item)}
+        onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });
@@ -743,7 +743,7 @@ export function ResultsVirtualTable({
       <div
         key={item.id}
         onClick={() => onSelect(item)}
-        onDoubleClick={() => onDoubleClick(item)}
+        onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });

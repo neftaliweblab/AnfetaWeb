@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { workflowState } from "@/services/activityWorkflow";
 import { openNotionPage } from "@/services/windowsIntegration";
+import {notionPageUrl} from '@/lib/notionPageUrl';
 import { isReviewer, isDirection, canEditActivity } from "@/services/activityPermissions";
 import { CheckSquare, ExternalLink, Clock, User, Shield, Check, Loader2, ArrowRight, CheckCircle2, Send, ListChecks, Calendar as CalendarIcon } from "lucide-react";
 import { CalendarActivityTools } from './CalendarActivityTools';
@@ -420,7 +421,7 @@ export function CalendarDetailPanel({
       <div className="pt-3 border-t border-[#27272A] mt-3">
         <button
           onClick={() =>
-            openNotionPage(activity.pageUrl || (activity as any)?.PageUrl)
+            openNotionPage(notionPageUrl(activity))
           }
           className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#0C4A6E] hover:bg-[#0284C7] border border-[#38BDF8] py-2 px-3 text-xs font-bold text-[#38BDF8] hover:text-white transition-all shadow-lg shadow-cyan-950/40"
         >

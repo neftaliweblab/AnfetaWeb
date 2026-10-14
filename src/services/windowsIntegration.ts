@@ -122,7 +122,7 @@ export async function sendWindowsNotification(title: string, body: string, icon 
 export function openNotionPage(url: string) {
   if (!url || typeof window === "undefined") return;
   try {
-    const target = new URL(url);
+    const target = new URL(url.replace(/^notion:/,'https:'));
     if (!['https:', 'http:'].includes(target.protocol)) return;
     const link = document.createElement('a');
     let desktop=false;
@@ -140,7 +140,7 @@ export function openCalendarWindow(url:string){
   if(target.origin!==window.location.origin)throw new Error('La ventana de calendario debe pertenecer a ANFETA.');
   const popup=window.open(target.href,'AnfetaCalendarStandalone','width=1400,height=900,resizable=yes');
   if(popup){popup.focus();return 'window';}
-  window.location.assign(target.href);return 'same-tab';
+  return 'blocked';
 }
 
 export function openWindowsSoundSettings() {

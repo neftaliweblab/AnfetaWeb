@@ -2118,7 +2118,7 @@ async function POSTLive(req: NextRequest) {
     if(action==='get-notion-block-editor'||action==='edit-notion-block-text'||action==='append-notion-block'){try{const settings=getSettings();const block=action==='append-notion-block'?await appendEditableBlock(settings,actor,payload):action==='get-notion-block-editor'?await readEditableBlock(settings,actor,payload.pageId,payload.blockId):await saveEditableBlock(settings,actor,payload);if(action!=='get-notion-block-editor')previewMemoryCache.clear();return NextResponse.json({success:true,block},{headers:{'Cache-Control':'no-store'}});}catch(error){if(action==='append-notion-block')previewMemoryCache.clear();const message=error instanceof Error?error.message:'No se pudo editar el bloque.';return NextResponse.json({error:message},{status:message.includes('otro dispositivo')?409:400});}}
     if (action === 'get-checklist' || action === 'toggle-checklist') {
       const input = payload || body;
-      const settings = getSettings();
+      const settings = {...getSettings(),notionToken:resolveNotionToken(req)};
       const pageId = input.pageId;
       try {
         if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');

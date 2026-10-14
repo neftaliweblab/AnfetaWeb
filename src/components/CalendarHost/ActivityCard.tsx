@@ -2,10 +2,15 @@
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
+import {createPortal} from 'react-dom';
+import {offlineAwareFetch} from '@/services/offlineQueue';
 import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3 } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
+import {notionPageUrl} from '@/lib/notionPageUrl';
+import {ViewportMenu} from './ViewportMenu';
+import {QuickScheduleModal} from './QuickScheduleModal';
 import { ChecklistPopup } from "./ChecklistPopup";
 import { workflowState } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
@@ -67,6 +72,7 @@ interface ActivityCardProps {
   palette?: "web" | "desktop";
   isSelected?: boolean;
   isSaving?: boolean;
+  onChecklistUpdated?: (pageId:string,updates:Partial<NotionCalendarActivity>)=>void;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
 }
@@ -81,6 +87,7 @@ export function ActivityCard({
   palette = "web",
   isSelected,
   isSaving = false,
+  onChecklistUpdated,
   onSelectActivity,
   onUpdateActivity,
 }: ActivityCardProps) {
@@ -101,6 +108,7 @@ export function ActivityCard({
   });
   const [showAllChecks, setShowAllChecks] = useState(false);
   const [showEditDateModal, setShowEditDateModal] = useState(false);
+  const [showQuickSchedule,setShowQuickSchedule]=useState(false);
   const [editDay, setEditDay] = useState(() => mexicoDate(activity.start || new Date()));
   const [editStart, setEditStart] = useState(() => calendarTime(activity.start || '08:00'));
   const [editEnd, setEditEnd] = useState(() => calendarTime(activity.end || '09:00'));
@@ -128,10 +136,15 @@ export function ActivityCard({
   });
 
   const [loadingChecklist, setLoadingChecklist] = useState(false);
+  const checkBusy=useRef(false),[checkSaving,setCheckSaving]=useState(false),[checkMessage,setCheckMessage]=useState('');
 
   React.useEffect(() => {
+    if(checkBusy.current)return;
     const key = cleanCardId(activity.pageId);
-    if (checklistMemoryCache.has(key)) {
+    if (activity.checklistScanned && activity.checklistItems) {
+      const entry={total:activity.checklistTotal??0,completed:activity.checklistCompleted??0,today:activity.todayChecklistCompleted??0,items:activity.checklistItems,completedChecks:activity.completedChecks||[]};
+      checklistMemoryCache.set(key,entry);setChecklistData(entry);
+    } else if (checklistMemoryCache.has(key)) {
       setChecklistData(checklistMemoryCache.get(key)!);
     } else if (activity.checklistScanned || (activity.checklistTotal ?? 0) > 0 || (activity.checklistItems && activity.checklistItems.length > 0)) {
       const entry: ChecklistCardCacheEntry = {
@@ -147,6 +160,7 @@ export function ActivityCard({
   }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
 
   const fetchChecklistIfNeeded = React.useCallback(async () => {
+    if(checkBusy.current)return;
     const rawId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, "") : activity.pageId;
     if (!rawId || rawId.startsWith("act-")) return;
     const key = cleanCardId(rawId);
@@ -410,6 +424,20 @@ export function ActivityCard({
   const effectiveCompleted = checklistData ? checklistData.completed : (activity.checklistCompleted ?? 0);
   const effectiveToday = checklistData ? checklistData.today : (activity.todayChecklistCompleted ?? 0);
   const effectiveItems = checklistData ? checklistData.items : (activity.checklistItems || activity.completedChecks || []);
+  async function toggleCardCheck(chk:any){
+    if(!editable||isSaving||checkBusy.current||!(chk.blockId||chk.id))return;
+    checkBusy.current=true;setCheckSaving(true);setCheckMessage('');
+    const previous=checklistData,items=effectiveItems.map((i:any)=>(i.id||i.blockId)===(chk.id||chk.blockId)?{...i,isChecked:!chk.isChecked}:i);
+    const optimistic={total:effectiveTotal,completed:Math.max(0,effectiveCompleted+(chk.isChecked?-1:1)),today:effectiveToday,items,completedChecks:previous?.completedChecks||[]};
+    setChecklistData(optimistic);
+    try{const response=await offlineAwareFetch('/api/data',{action:'toggle-checklist',payload:{pageId:activity.pageId,blockId:chk.blockId||chk.id,checked:!chk.isChecked,expectedChecked:!!chk.isChecked,currentUser}});const data=await response.json();
+      if(data.queued){setChecklistData(previous);setCheckMessage('Pendiente local; se confirmará al recuperar conexión.');return;}
+      if(!response.ok||!data.success||data.checked!==!chk.isChecked)throw Error(data.error||'Notion no confirmó el check.');
+      const confirmed={...optimistic,items:data.stats?.checklistItems||items,total:data.stats?.checklistTotal??optimistic.total,completed:data.stats?.checklistCompleted??optimistic.completed,today:data.stats?.todayChecklistCompleted??effectiveToday,completedChecks:data.stats?.completedChecks||optimistic.completedChecks};
+      checklistMemoryCache.set(cleanCardId(activity.pageId),confirmed);setChecklistData(confirmed);
+      const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
+    }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
+  }
   const isScanned = !!(activity.checklistScanned || checklistData);
   const totalChecklist = effectiveTotal;
   const completedChecklist = effectiveCompleted;
@@ -456,7 +484,6 @@ export function ActivityCard({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!editable) return;
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
@@ -498,9 +525,7 @@ export function ActivityCard({
           e.stopPropagation();
           onSelectActivity?.(activity);
         }}
-        onDoubleClick={() =>
-          openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl)
-        }
+        onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;openNotionPage(notionPageUrl(activity));}}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
@@ -623,6 +648,8 @@ export function ActivityCard({
         <div
           onMouseEnter={handlePopoverMouseEnter}
           onMouseLeave={handlePopoverMouseLeave}
+          onClick={(event) => event.stopPropagation()}
+          data-activity-card="true"
           style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
           className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-4 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[88vh] overflow-y-auto scrollbar-thin ${
             popoverSize === "small"
@@ -763,6 +790,7 @@ export function ActivityCard({
                 </div>
 
                 {/* Desglose rápido de Checks con fecha de agregado y completado */}
+                {checkMessage&&<p role="status" className="text-xs text-amber-200">{checkMessage}</p>}
                 {effectiveItems.length > 0 && (
                   <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
                     showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
@@ -778,11 +806,7 @@ export function ActivityCard({
                           className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#0D1520]/70 border border-[#1E2A38]/60 text-[10.5px]"
                         >
                           <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                            {isDone ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                            ) : (
-                              <ListTodo className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
-                            )}
+                            <input type="checkbox" aria-label={'Completar '+(chk.text||'tarea')} checked={isDone} disabled={!editable||isSaving||checkSaving} onChange={()=>void toggleCardCheck(chk)} className="mt-0.5 shrink-0 accent-emerald-400"/>
                             <span className={`leading-tight ${isDone ? "text-slate-300 line-through opacity-80" : "text-slate-100"}`}>
                               {chk.text || "Tarea sin título"}
                             </span>
@@ -854,7 +878,7 @@ export function ActivityCard({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl);
+                openNotionPage(notionPageUrl(activity));
               }}
               className="text-sky-400 hover:underline font-medium cursor-pointer"
             >
@@ -864,10 +888,9 @@ export function ActivityCard({
         </div>
       )}
 
-      {showPopup && (
+      {showPopup && createPortal(
         <div
-          style={{ top: `${top + 10}px`, left: `calc(${leftPct}% + 10px)` }}
-          className="fixed z-50"
+          className="fixed inset-0 z-[350] bg-black/60 flex items-center justify-center p-4"
         >
           <ChecklistPopup
             activity={{
@@ -880,17 +903,16 @@ export function ActivityCard({
               completedChecks: checklistData?.completedChecks || activity.completedChecks || [],
             }}
             onClose={() => setShowPopup(false)}
+            onToggle={toggleCardCheck}
+            disabled={!editable||isSaving||checkSaving}
+            message={checkMessage}
           />
         </div>
-      )}
+      ,document.body)}
 
       {/* Right Click Context Menu */}
       {contextMenu && (
-        <div
-          className="fixed z-50 w-56 bg-[#111822] border border-[#253549] rounded-lg shadow-2xl py-1 text-xs text-[#E2E8F0] select-none"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <ViewportMenu position={contextMenu}>
           <div className="px-3 py-1 text-[10px] font-mono text-[#64748B] border-b border-[#1E2836]">
             ACCIONES DE ACTIVIDAD
           </div>
@@ -913,6 +935,7 @@ export function ActivityCard({
             </label>
           )}
           <button
+            disabled={!editable||isCompleted}
             onClick={() => {
               closeContextMenu();
               setShowReviewModal(true);
@@ -938,6 +961,7 @@ export function ActivityCard({
           </button>
           {editable && (
             <button
+              disabled={isCompleted||isSaving}
               onClick={() => {
                 closeContextMenu();
                 setEditDay(mexicoDate(activity.start || new Date()));
@@ -952,20 +976,22 @@ export function ActivityCard({
               <span>Editar fecha y horario...</span>
             </button>
           )}
+          {editable&&!isCompleted&&<button onClick={()=>{closeContextMenu();setShowQuickSchedule(true);}} className="w-full px-3 py-2 text-left hover:bg-slate-800 text-cyan-200">Mover fecha / Duración…</button>}
           <button
             onClick={() => {
-              openNotionPage(activity?.pageUrl || (activity as any)?.PageUrl);
+              openNotionPage(notionPageUrl(activity));
               closeContextMenu();
             }}
             className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-[#94A3B8] flex items-center gap-2 border-t border-[#1E2836] mt-1"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Abrir en Notion Web</span>
+            <span>Abrir en Notion (según preferencia)</span>
           </button>
-        </div>
+        </ViewportMenu>
       )}
 
       {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {showQuickSchedule&&<QuickScheduleModal activity={activity} onClose={()=>setShowQuickSchedule(false)} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
       {showReviewModal && (
         <SendToReviewModal
           activity={activity}

@@ -1,6 +1,8 @@
 "use client";
 import {QuickPendingCapture} from './QuickPendingCapture';
 import {openNotionPage} from '@/services/windowsIntegration';
+import {notionPageUrl} from '@/lib/notionPageUrl';
+import {parseSearchTabs} from '@/lib/searchTabsStorage';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
@@ -102,6 +104,15 @@ export function ResultsViewHost({
     { id: "tab_1", query: externalQuery ?? "", canClose: false },
   ]);
   const [activeTabId, setActiveTabId] = useState("tab_1");
+  const [tabsOwner,setTabsOwner]=useState('');
+  const tabsKey='anfeta_search_tabs_v1:'+normalizePerson(currentUser||'');
+  useEffect(()=>{
+    let saved=null;try{saved=parseSearchTabs(localStorage.getItem(tabsKey));}catch{}
+    const next=saved||{tabs:[{id:'tab_1',query:externalQuery||'',canClose:false}],activeTabId:'tab_1'};
+    setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
+    setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
+  },[tabsKey]);
+  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(tabsKey,JSON.stringify({tabs,activeTabId}));}catch{}},[tabs,activeTabId,tabsOwner,tabsKey]);
 
   // Search input & scopes
   const [query, setQuery] = useState(externalQuery || "");
@@ -361,6 +372,7 @@ export function ResultsViewHost({
   React.useEffect(() => {
     if (externalQuery !== undefined && externalQuery !== query) {
       setQuery(externalQuery);
+      setTabs(prev=>prev.map(t=>t.id===activeTabId?{...t,query:externalQuery}:t));
     }
   }, [externalQuery]);
 
@@ -393,7 +405,8 @@ export function ResultsViewHost({
   };
 
   const handleNewTab = () => {
-    const newId = `tab_${Date.now()}`;
+    if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas guardadas.');return;}
+    const newId = `tab_${crypto.randomUUID()}`;
     const newTab: SearchTab = { id: newId, query: "", canClose: true };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newId);
@@ -697,15 +710,12 @@ export function ResultsViewHost({
 
     // 1. Si es Notion: abrir en Notion
     if (!isDropbox || item.source === "Notion") {
-      const notionUrl =
-        item.externalUrl ||
-        item.pageUrl ||
-        item.url ||
-        (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
+      const notionUrl = notionPageUrl(item);
       if (notionUrl) {
         openNotionPage(notionUrl);
         return;
       }
+      setStatusError('Este registro no tiene un enlace o ID válido de Notion. Actualiza el catálogo.');return;
     }
 
     // 2. Si es carpeta de Dropbox: entrar en la carpeta
@@ -762,11 +772,7 @@ export function ResultsViewHost({
 
     // 1. Si es Notion: abrir la página en Notion
     if (!isDropbox || item.source === "Notion") {
-      const notionUrl =
-        item.externalUrl ||
-        item.pageUrl ||
-        item.url ||
-        (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
+      const notionUrl = notionPageUrl(item);
       if (notionUrl) {
         openNotionPage(notionUrl);
         return;

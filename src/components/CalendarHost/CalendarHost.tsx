@@ -4,6 +4,7 @@ import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nextFreeCalendarSlot} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
 import {CalendarHourGrid} from './CalendarHourGrid';
+import {calendarThemes,parseCalendarTheme} from '@/lib/calendarTheme';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
 import {financeSlot} from '@/lib/financeColumnOptions';
@@ -84,6 +85,10 @@ export function CalendarHost({
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
   const [refreshWarning,setRefreshWarning]=useState('');
+  const [gridTheme,setGridTheme]=useState(calendarThemes.soft),[themeOwner,setThemeOwner]=useState('');
+  const themeKey='anfeta_calendar_theme_v1:'+normalizePerson(currentUser);
+  useEffect(()=>{let raw=null;try{raw=localStorage.getItem(themeKey);}catch{}setGridTheme(parseCalendarTheme(raw));setThemeOwner(themeKey);},[themeKey]);
+  useEffect(()=>{if(themeOwner!==themeKey)return;try{localStorage.setItem(themeKey,JSON.stringify(gridTheme));}catch{}},[gridTheme,themeOwner,themeKey]);
   useEffect(() => {
     if (!error) return;
     const timer = setTimeout(() => setError(''), 6000);
@@ -450,7 +455,7 @@ export function CalendarHost({
 
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
       {refreshWarning&&<p role="status" className="px-3 py-1 text-xs text-amber-200 bg-amber-950/20">Actualización: {refreshWarning}</p>}
       {/* Notificación de Error / Alerta Visible y Elegante */}
       {error && (
@@ -544,12 +549,13 @@ export function CalendarHost({
       />
 
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
+      <details className="px-3 py-1 text-xs border-b border-slate-800"><summary className="cursor-pointer text-cyan-200">Diseño del calendario · fondo, líneas y horas</summary><div className="flex flex-wrap items-center gap-3 py-2">{Object.entries(calendarThemes).map(([key,value])=><button key={key} onClick={()=>setGridTheme(value)} className="rounded border border-slate-600 px-2 py-1">{key==='soft'?'Suave':key==='blue'?'Azul':'Alto contraste'}</button>)}{(['background','lines','hours'] as const).map(key=><label key={key} className="flex items-center gap-2">{key==='background'?'Fondo':key==='lines'?'Líneas':'Horas'}<input aria-label={'Color de '+key} type="color" value={gridTheme[key]} onChange={e=>setGridTheme(old=>({...old,[key]:e.target.value}))}/></label>)}</div></details>
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex overflow-auto scrollbar-thin relative select-none">
           {/* Sticky Left Time Rail */}
           <div
             className="w-16 bg-[#0F141A] border-r border-[#26323E] flex-shrink-0 sticky left-0 z-45"
-            style={{ height: `${canvasHeight + 56}px` }}
+            style={{ height: `${canvasHeight + 56}px`,backgroundColor:'var(--anfeta-calendar-bg)' }}
           >
             <div className="h-14 border-b-2 border-[#496278] flex items-center justify-center text-xs font-bold font-mono text-cyan-100">
               HORA
@@ -561,8 +567,8 @@ export function CalendarHost({
                 return (
                   <div key={hour}>
                     <div
-                      style={{ top: `${idx * pixelsPerHour}px` }}
-                      className={`absolute w-full text-right pr-2 text-xs font-semibold font-mono -translate-y-2 select-none z-10 ${
+                      style={{ top: `${idx * pixelsPerHour}px`,transform:idx===0?'translateY(0)':idx===hoursList.length-1?'translateY(-100%)':'translateY(-50%)',color:isCurrentHour?'#38BDF8':'var(--anfeta-hour-text)',backgroundColor:'var(--anfeta-calendar-bg)' }}
+                      className={`absolute w-full text-right pr-4 text-xs font-semibold font-mono select-none z-10 ${
                         isCurrentHour ? 'text-[#38BDF8] font-bold drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]' : 'text-cyan-100/90'
                       }`}
                     >
@@ -673,7 +679,7 @@ export function CalendarHost({
                     <div
                       onClick={(e) => handleColumnCanvasClick(e, person)}
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
-                      style={{ height: `${canvasHeight}px` }}
+                      style={{ height: `${canvasHeight}px`,backgroundColor:'var(--anfeta-calendar-bg)' }}
                     >
                       <CalendarHourGrid pixelsPerHour={pixelsPerHour}/>
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
@@ -681,6 +687,7 @@ export function CalendarHost({
                           key={act.pageId || idx}
                           activity={act}
                           isSaving={pending.current.has(act.pageId)}
+                          onChecklistUpdated={(pageId,updates)=>{mutationVersion.current++;setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?{...a,...updates}:a));const saved=recentSaves.current.get(pageId);if(saved)saved.activity={...saved.activity,...updates};}}
                           displayDate={currentDate}
                           currentUser={currentUser}
                           pixelsPerHour={pixelsPerHour}

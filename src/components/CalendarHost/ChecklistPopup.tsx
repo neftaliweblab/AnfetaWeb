@@ -9,9 +9,12 @@ import { NotionCalendarActivity } from "@/types/anfeta";
 interface ChecklistPopupProps {
   activity: NotionCalendarActivity;
   onClose: () => void;
+  onToggle?: (item:any)=>void;
+  disabled?:boolean;
+  message?:string;
 }
 
-export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
+export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,message='' }: ChecklistPopupProps) {
   const [size, setSize] = React.useState<"small" | "medium" | "large">("medium");
   const total = activity?.checklistTotal ?? 0;
   const completed = activity?.checklistCompleted ?? 0;
@@ -21,10 +24,12 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
 
   return (
     <div
-      className={`absolute z-50 bg-[#111822] border border-[#253549] rounded-xl shadow-2xl p-3.5 text-xs text-[#E2E8F0] space-y-2.5 animate-in fade-in zoom-in-95 duration-100 transition-all ${
+      role="dialog" aria-modal="true" aria-label="Checklist de actividad"
+      className={`relative z-50 max-h-[90dvh] overflow-y-auto bg-[#111822] border border-[#253549] rounded-xl shadow-2xl p-3.5 text-xs text-[#E2E8F0] space-y-2.5 animate-in fade-in zoom-in-95 duration-100 transition-all ${
         size === "small" ? "w-72 max-w-[90vw]" : size === "large" ? "w-[440px] max-w-[95vw]" : "w-80 max-w-[92vw]"
       }`}
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={e=>{if(e.key==='Escape')onClose();}}
     >
       <div className="flex items-start justify-between gap-2 border-b border-[#253549] pb-2">
         <div className="min-w-0 flex-1">
@@ -51,6 +56,8 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
             ))}
           </div>
           <button
+            autoFocus
+            aria-label="Cerrar checklist"
             onClick={onClose}
             className="text-[#64748B] hover:text-[#F1F5F9] text-xs font-mono p-1 rounded hover:bg-[#1A2634] cursor-pointer"
           >
@@ -87,9 +94,7 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
             const isDone = Boolean(chk.isChecked);
             return (
               <div key={chk.id || chk.blockId || idx} className="flex items-start gap-1.5 p-1 rounded bg-[#0E1520]/60 text-[10.5px]">
-                <span className={`shrink-0 mt-0.5 font-bold ${isDone ? "text-emerald-400" : "text-slate-500"}`}>
-                  {isDone ? "✓" : "○"}
-                </span>
+                <input type="checkbox" checked={isDone} disabled={disabled||!onToggle} onChange={()=>onToggle?.(chk)} aria-label={'Completar '+(chk.text||'tarea')} className="shrink-0 mt-0.5 accent-emerald-400"/>
                 <span className={`leading-tight ${isDone ? "text-slate-400 line-through opacity-80" : "text-slate-200"}`}>
                   {chk.text || "Tarea sin título"}
                 </span>
@@ -100,6 +105,7 @@ export function ChecklistPopup({ activity, onClose }: ChecklistPopupProps) {
       )}
 
       {/* Time and Status */}
+      {message&&<p role="status" className="text-amber-200">{message}</p>}
       <div className="flex items-center justify-between text-[10px] text-[#94A3B8] font-mono pt-1">
         <span className="flex items-center gap-1">
           <Clock className="w-3 h-3 text-[#38BDF8]" />

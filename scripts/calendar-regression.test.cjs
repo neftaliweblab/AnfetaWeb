@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict');
 const root=path.resolve(__dirname,'..').replace(/\\/g,'/');
 process.env.NOTION_TOKEN='TEST_ONLY';
-process.chdir(root);
+if(process.cwd().replace(/\\/g,'/')!==root)process.chdir(root);
 const ts=require(path.join(root,'node_modules/typescript'));
 const resolve=Module._resolveFilename;
 Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};

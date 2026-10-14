@@ -121,6 +121,7 @@ export default function AnfetaApp() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [calendarPopupBlocked,setCalendarPopupBlocked]=useState(false);
   const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
   useEffect(()=>{
     const update=(event:Event)=>{
@@ -397,7 +398,7 @@ export default function AnfetaApp() {
 
   const handleOpenStandaloneCalendar = useCallback(() => {
     const url = `/calendar?standalone=true&q=${encodeURIComponent(searchQuery)}&date=${encodeURIComponent(currentDate)}`;
-    openCalendarWindow(url);
+    setCalendarPopupBlocked(openCalendarWindow(url)==='blocked');
   }, [searchQuery, currentDate]);
 
   // Compute active projects today strictly from calendar (1:1 ANFETA WinUI)
@@ -590,6 +591,7 @@ export default function AnfetaApp() {
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
+      {calendarPopupBlocked&&<div role="alert" className="px-4 py-2 bg-amber-950 text-amber-100 text-sm">El navegador bloqueó la ventana del calendario. Permite ventanas emergentes para ANFETA. <a href={'/calendar?date='+encodeURIComponent(currentDate)} target="_blank" rel="noopener noreferrer" className="underline">Abrir en otra pestaña</a> <button onClick={()=>setCalendarPopupBlocked(false)}>Cerrar aviso</button></div>}
       {authError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between"><span>{authError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}
       {/* Top Bar with Navigation and Global Search */}
