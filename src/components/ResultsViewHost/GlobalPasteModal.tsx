@@ -1,9 +1,10 @@
 "use client";
+import {uploadBrowserFiles,uploadMetadata} from '@/lib/browserDropboxUpload';
 import {readUploadDraft,saveUploadDraft,clearUploadDraft,UploadDraft} from '@/lib/uploadDraft';
 import React,{useState,useEffect,useRef} from 'react';
 import {X,Upload,Loader2,Folder,ChevronRight,FolderPlus} from 'lucide-react';
 import {detectUpload,drxFolder,monthToken,projectCategories,softwareCategories,replaceUploadPrefix,uploadFilename} from '@/lib/drxUploadPlan';
-export interface GlobalPasteImagePayload {contentType?:string;dataUrl:string;base64:string;filename:string;sizeBytes:number;}
+export interface GlobalPasteImagePayload {contentType?:string;dataUrl:string;base64:string;filename:string;sizeBytes:number;blob?:Blob;cloudCursor?:string;cloudOffset?:number;cloudReceipt?:string;}
 interface Props {currentUser:string;initialFiles?:GlobalPasteImagePayload[];isOpen:boolean;onClose:()=>void;initialText?:string;initialImage?:GlobalPasteImagePayload|null;onSuccess:(item:any)=>void;initialDestination?:'both'|'dropbox'|'notion';initialDomain?:string;}
 const EMPTY:GlobalPasteImagePayload[]=[];
 const reviewers=[{name:'(Sin asignar)',tag:'',person:''},{name:'🚨 John 0000 (Urgente)',tag:'john0000',person:'jjohn00'},{name:'👤 Neftalí',tag:'nneft',person:'nneft'},{name:'👤 Andrade',tag:'aandr',person:'aandr'},{name:'👤 Genaro',tag:'ggena',person:'ggena'},{name:'👤 Karla',tag:'kkarl',person:'kkarl'}];
@@ -65,6 +66,7 @@ async function submit(e:React.FormEvent){
   e.preventDefault();
   if(busy||locked||!draftReady)return;
   setError('');
+  if(files.length>20){setError('Selecciona hasta 20 archivos por lote.');return;}
   if(mode!=='notion'&&!folder&&!customFolder){
     setError('Escribe el dominio para construir la ruta DRX o elige una carpeta.');
     return;
@@ -73,7 +75,7 @@ async function submit(e:React.FormEvent){
     setError('Agrega contenido o archivos.');
     return;
   }
-  if(files.reduce((n,f)=>n+f.sizeBytes,0)>2500000){
+  if(mode==='notion'&&files.reduce((n,f)=>n+f.sizeBytes,0)>2500000){
     setError('Este envío supera 2.5 MB. Reduce el lote para enviarlo por la web.');
     return;
   }
@@ -83,13 +85,14 @@ async function submit(e:React.FormEvent){
     const frozen=recovery.current.started?recovery.current.plan:{mode,domain,root,category,month,personTag:person,title:title.trim(),body,files,separatePages:separate,customFolder};
     recovery.current={...recovery.current,plan:frozen,started:true,updatedAt:Date.now()};
     await saveUploadDraft(recovery.current);setStarted(true);
+    if(frozen.files?.length)await uploadBrowserFiles(recovery.current,setStatus);
     const response=await fetch('/api/data',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       signal:AbortSignal.timeout(110000),
       body:JSON.stringify({
         action:'unified-upload',
-        payload:{...frozen,month:undefined,personTag:undefined,uploadId:recovery.current.id,person:reviewers.find(p=>p.tag===frozen.personTag)?.person||'',currentUser}
+        payload:{...uploadMetadata(frozen),month:undefined,personTag:undefined,uploadId:recovery.current.id,person:reviewers.find(p=>p.tag===frozen.personTag)?.person||'',currentUser}
       })
     });
     const raw=await response.text();
@@ -287,6 +290,6 @@ return <div role="dialog" aria-modal="true" aria-label="Subir archivo" className
       </div>
     )}
 
-    <details open={!count&&Boolean(initialText)}><summary className="cursor-pointer text-xs text-slate-400">Contenido y adjuntos</summary><textarea aria-label="Contenido" value={body} onChange={e=>setBody(e.target.value)} rows={3} className={style}/><input type="file" multiple disabled={busy} aria-label="Adjuntar archivos" onChange={async e=>{const selected=Array.from(e.target.files||[]);try{const batch=await Promise.all(selected.map(file=>new Promise<GlobalPasteImagePayload>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const dataUrl=String(reader.result);resolve({filename:file.name,base64:dataUrl.split(',')[1],dataUrl,sizeBytes:file.size,contentType:file.type});};reader.onerror=()=>reject(Error('No se pudo leer '+file.name));reader.readAsDataURL(file);})));setFiles(batch);}catch(err){setError(err instanceof Error?err.message:'No se pudieron leer los archivos.');}}} className="text-xs mt-2"/></details>
+    <details open={!count&&Boolean(initialText)}><summary className="cursor-pointer text-xs text-slate-400">Contenido y adjuntos</summary><textarea aria-label="Contenido" value={body} onChange={e=>setBody(e.target.value)} rows={3} className={style}/><input type="file" multiple disabled={busy} aria-label="Adjuntar archivos" onChange={async e=>{const selected=Array.from(e.target.files||[]);try{const batch:GlobalPasteImagePayload[]=selected.map(file=>({filename:file.name,base64:'',dataUrl:'',sizeBytes:file.size,contentType:file.type,blob:file}));setFiles(batch);}catch(err){setError(err instanceof Error?err.message:'No se pudieron leer los archivos.');}}} className="text-xs mt-2"/></details>
 </fieldset>
 {error&&<p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}{status&&<p role="status" className="text-sm text-cyan-200">{status}</p>}{started&&<p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó incierto, revísalo en Notion/Dropbox antes de repetirlo.</p>}<footer className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm">{locked?'Cerrar':'Cancelar'}</button><button disabled={busy||locked||!draftReady} className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2 font-bold text-white text-sm disabled:opacity-50">{busy&&<Loader2 size={16} className="animate-spin"/>}{busy?'Subiendo…':started?'Retomar lote':'Continuar y subir'}</button></footer></form></div>;}

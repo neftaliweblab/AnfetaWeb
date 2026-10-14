@@ -1,0 +1,3 @@
+const fs=require('fs'),vm=require('vm'),path=require('path');const filename=path.join(__dirname,'index-load-control.test.cjs');let source=fs.readFileSync(filename,'utf8');
+source=source.replace("lease=await claim();assert.equal((await unchanged(lease,'v2'))", "await db.exec('reset role');await db.exec(fs.readFileSync(__dirname+'/../supabase/migrations/202610130017_shared_index_payloads.sql','utf8'));await db.exec('set role service_role');assert.equal((await slice(0)).items.length,500);lease=await claim();assert.equal((await unchanged(lease,'v2'))");
+vm.runInThisContext('(function(require,__dirname){'+source+'})',{filename})(require,__dirname);

@@ -1,0 +1,12 @@
+import type {UploadDraft} from './uploadDraft';
+import {saveUploadDraft} from './uploadDraft';
+async function base64(blob:Blob){return new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('No se pudo leer el fragmento.'));reader.readAsDataURL(blob);});}
+function fileBlob(file:any):Blob{if(file.blob instanceof Blob)return file.blob;const value=atob(file.base64||'');const bytes=new Uint8Array(value.length);for(let i=0;i<value.length;i++)bytes[i]=value.charCodeAt(i);return new Blob([bytes],{type:file.contentType});}
+export async function uploadBrowserFiles(draft:UploadDraft,progress:(text:string)=>void){
+ const plan=draft.plan;if(plan.mode==='notion'){for(const file of plan.files)if(!file.base64&&file.blob instanceof Blob)file.base64=await base64(file.blob);return draft;}
+ for(let index=0;index<plan.files.length;index++){const file=plan.files[index];if(file.cloudReceipt)continue;const blob=fileBlob(file);let cursor=file.cloudCursor;let offset=file.cloudOffset||0;let done=false;
+ while(!done){progress('Subiendo '+file.filename+': '+Math.round(offset/Math.max(1,blob.size)*100)+'%');const chunk=blob.slice(offset,Math.min(blob.size,offset+1024*1024));const response=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(110000),body:JSON.stringify({action:'browser-dropbox-upload',payload:{uploadId:draft.id,index,filename:file.filename,size:blob.size,count:plan.files.length,title:plan.title,domain:plan.domain,root:plan.root,category:plan.category,customFolder:plan.customFolder,cursor,base64:await base64(chunk)}})});const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'El fragmento no se confirmó.');cursor=data.cursor;offset=data.offset;done=data.done;file.cloudCursor=cursor;file.cloudOffset=offset;if(done)file.cloudReceipt=cursor;draft.updatedAt=Date.now();await saveUploadDraft(draft);}
+ }
+ return draft;
+}
+export function uploadMetadata(plan:any){return {...plan,files:plan.files.map((file:any)=>file.cloudReceipt?{filename:file.filename,sizeBytes:file.sizeBytes,contentType:file.contentType,cloudReceipt:file.cloudReceipt}:file)};}

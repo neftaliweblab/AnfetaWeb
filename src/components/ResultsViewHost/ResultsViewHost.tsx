@@ -662,11 +662,8 @@ export function ResultsViewHost({
   // Arrastrar y soltar archivos directamente en la tabla (Drop Surface)
   const handleDropFiles = async (droppedFiles: File[]) => {
     if (!droppedFiles.length) return;
-    const files = await Promise.all(droppedFiles.map(file => new Promise<GlobalPasteImagePayload>((resolve, reject) => {
-      const reader = new FileReader(); reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
-      reader.onload = () => { const dataUrl = String(reader.result); resolve({ dataUrl, base64: dataUrl.split(',')[1], filename: file.name, sizeBytes: file.size, contentType: file.type }); };
-      reader.readAsDataURL(file);
-    })));
+    if(droppedFiles.length>20)throw new Error('Selecciona hasta 20 archivos por lote.');
+    const files:GlobalPasteImagePayload[] = droppedFiles.map(file=>({dataUrl:'',base64:'',filename:file.name,sizeBytes:file.size,contentType:file.type,blob:file}));
     setGlobalFiles(files); setGlobalPasteImage(null); setGlobalPasteText(''); setIsGlobalPasteOpen(true);
   };
   useEffect(() => {

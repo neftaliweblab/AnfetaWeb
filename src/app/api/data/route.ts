@@ -1,5 +1,6 @@
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
+import {browserDropboxUpload,verifiedDropboxReceipt} from '@/services/dropboxBrowserUpload';
 import {financeDateField,financeStatus} from '@/services/financeRules';
 import {replayMutation} from '@/services/replayMutation';
 import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
@@ -1413,9 +1414,10 @@ async function POSTLive(req: NextRequest) {
     }
     const payload={...(body.payload || {}),currentUser:actor};
 
+    if(action==='browser-dropbox-upload')return NextResponse.json(await browserDropboxUpload(actor,payload));
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
-      const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
+      const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
       if(mode!=='notion')drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
       if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))return NextResponse.json({error:'Actualiza la web para guardar el identificador del lote recuperable.'},{status:400});
       const batchKey=operationKey('upload',actor,input.uploadId,JSON.stringify({...input,currentUser:undefined}));
@@ -1423,6 +1425,7 @@ async function POSTLive(req: NextRequest) {
       const batch=files.length?files:[{filename:(input.title||'Contenido')+'.txt',base64:Buffer.from(String(input.body),'utf8').toString('base64'),contentType:'text/plain'}];
       try{
         if(mode!=='notion')for(const [index,file] of batch.entries()){
+          if(file.cloudReceipt){receipts.push({kind:'dropbox',...verifiedDropboxReceipt(file.cloudReceipt,actor,input.uploadId,index,file.filename)});continue;}
           const filename=uploadFilename(input.title||'',file.filename,index,batch.length);
           const data=await invoke('upload-to-dropbox',{
             domain:input.domain,
@@ -1888,7 +1891,7 @@ async function POSTLive(req: NextRequest) {
 
           // Paginación continua si hay más de 2000 archivos
           let iterations = 0;
-          while (hasMore && cursor && iterations < 5) {
+          while (hasMore && cursor) {
             iterations++;
             const continueRes = await fetch('https://api.dropboxapi.com/2/files/list_folder/continue', {
               method: 'POST',
@@ -1896,8 +1899,9 @@ async function POSTLive(req: NextRequest) {
               body: JSON.stringify({ cursor }),
               signal: AbortSignal.timeout(30000),
             });
-            if (!continueRes.ok) break;
+            if (!continueRes.ok) throw new Error('Dropbox no confirmó la siguiente página. Se conserva el índice anterior.');
             const contData = await continueRes.json();
+            if(contData.has_more&&contData.cursor===cursor)throw new Error('Dropbox repitió el cursor. Se conserva el índice anterior.');
             cursor = contData.cursor;
             hasMore = contData.has_more;
             for (const entry of contData.entries || []) {
