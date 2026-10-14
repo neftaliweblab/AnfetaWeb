@@ -108,7 +108,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
   if ((completed || returned) && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
   let reviewFlow: any;
-  if(updates.expectedTitle!==undefined&&updates.expectedTitle!==title)throw new Error('El nombre cambió desde que abriste el editor. Actualiza la actividad antes de guardar.');
+  // La lectura del calendario recorta los bordes del título; comparar con la misma regla.
+  if(updates.expectedTitle!==undefined&&String(updates.expectedTitle).trim()!==title.trim())throw new Error('El nombre cambió desde que abriste el editor. Actualiza la actividad antes de guardar.');
   if(updates.titleDescription!==undefined)updates={...updates,title:editActivityDescription(title,String(updates.titleDescription))};
   let nextTitle = title;
   const properties: Record<string, any> = {};
