@@ -561,10 +561,10 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         };
 
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
-        const result = await getDropboxFileContent(filePath, tokenOverride, true);
+        const result = await getDropboxFileContent(filePath, tokenOverride, true, searchParams.get('original')==='1');
         return new NextResponse(result.body, {
           headers: {
-            "Content-Type": mimeTypes[ext] || result.contentType || "application/octet-stream",
+            "Content-Type": result.contentType && result.contentType!=='application/octet-stream' ? result.contentType : mimeTypes[ext] || "application/octet-stream",
             "Cache-Control": "private, no-store",
           },
         });

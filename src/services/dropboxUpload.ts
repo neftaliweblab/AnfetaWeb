@@ -366,9 +366,9 @@ export function cloudFolder(domain: string | undefined, target: string | undefin
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }
 
-export function getDropboxFileContent(filePath:string,tokenOverride:string|undefined,stream:true):Promise<{body:ReadableStream<Uint8Array>;contentType:string}>;
+export function getDropboxFileContent(filePath:string,tokenOverride:string|undefined,stream:true,original?:boolean):Promise<{body:ReadableStream<Uint8Array>;contentType:string}>;
 export function getDropboxFileContent(filePath:string,tokenOverride?:string):Promise<{buffer:Buffer;contentType:string}>;
-export async function getDropboxFileContent(filePath: string, tokenOverride?: string, stream=false): Promise<any> {
+export async function getDropboxFileContent(filePath: string, tokenOverride?: string, stream=false,original=false): Promise<any> {
   let token = await getDropboxAccessToken(tokenOverride);
   let cleanPath = filePath.replace(/\\/g, '/').trim();
 
@@ -393,7 +393,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
   const uniquePaths = Array.from(new Set(candidatePaths));
 
   const tryFetchPath = async (targetPath: string) => {
-    const isImg = /\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(targetPath);
+    const isImg = !original && /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(targetPath);
     const endpoint = isImg
       ? 'https://content.dropboxapi.com/2/files/get_thumbnail_v2'
       : 'https://content.dropboxapi.com/2/files/download';
@@ -413,7 +413,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
 
     if (response.status === 401) {
       try {
-        token = await getDropboxAccessToken(undefined, true);
+        token = await getDropboxAccessToken(tokenOverride && !tokenOverride.startsWith('sl.') ? tokenOverride : undefined, true);
         response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -436,7 +436,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
 
       if (dlRes.status === 401) {
         try {
-          token = await getDropboxAccessToken(undefined, true);
+          token = await getDropboxAccessToken(tokenOverride && !tokenOverride.startsWith('sl.') ? tokenOverride : undefined, true);
           dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': dlArg },
@@ -454,9 +454,9 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
     }
 
     if (response.ok) {
-      if(stream&&response.body)return {body:response.body,contentType:response.headers.get('content-type')||(isImg?'image/jpeg':'application/octet-stream')};
+      if(stream&&response.body)return {body:response.body,contentType:isImg?'image/jpeg':response.headers.get('content-type')||'application/octet-stream'};
       const buffer = await boundedDownload(response);
-      const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
+      const contentType = isImg ? 'image/jpeg' : response.headers.get('content-type') || 'application/octet-stream';
       return { buffer, contentType };
     }
 

@@ -709,9 +709,9 @@ export function ResultsVirtualTable({
     const targetPath = (item.target || item.path || "").trim();
     const isImg =
       item.type === "IMAGE" ||
-      /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(targetPath) ||
-      /\.(png|jpe?g|gif|webp|bmp|ico|svg)($|\s|\.)/i.test(item.name || "") ||
-      /\.(png|jpe?g|gif|webp|bmp|ico|svg)/i.test(item.extension || "") ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg|tiff?)$/i.test(targetPath) ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg|tiff?)($|\s|\.)/i.test(item.name || "") ||
+      /\.(png|jpe?g|gif|webp|bmp|ico|svg|tiff?)/i.test(item.extension || "") ||
       Boolean(item.coverUrl || item.thumbnailUrl);
     const isDoc = /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?)$/i.test(item.name || targetPath);
     const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
@@ -843,13 +843,14 @@ export function ResultsVirtualTable({
               alt={item.name}
               loading="lazy"
               referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
               className="max-h-full max-w-full object-contain transition-transform group-hover/img:scale-105"
               onError={(e) => {
                 const imgEl = e.currentTarget as HTMLImageElement;
                 if (!imgEl.dataset.retried && item.id) {
                   imgEl.dataset.retried = "true";
-                  imgEl.src = `/api/data?type=image-proxy&blockId=${encodeURIComponent(item.externalId || item.id || "")}&url=${encodeURIComponent(imgSrc)}`;
+                  imgEl.src = item.source==='Dropbox'||item.sourceName==='Dropbox'||imgSrc.startsWith('/api/data?type=file-preview')
+                    ? `/api/data?type=file-preview&path=${encodeURIComponent(activePath)}${tokenQuery}&original=1`
+                    : `/api/data?type=image-proxy&blockId=${encodeURIComponent(item.externalId || item.id || "")}&url=${encodeURIComponent(imgSrc)}`;
                   return;
                 }
                 imgEl.style.display = "none";
