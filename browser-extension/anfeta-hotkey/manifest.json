@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "ANFETA Web — Atajo global",
+  "version": "1.0.0",
+  "description": "Abre, enfoca o minimiza la ventana de ANFETA Web mediante un atajo global.",
+  "minimum_chrome_version": "110",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://anfeta-web.vercel.app/*",
+    "http://localhost:3000/*",
+    "http://localhost:3001/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Mostrar u ocultar ANFETA Web"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "toggle-anfeta": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+8"
+      },
+      "description": "Mostrar u ocultar ANFETA Web",
+      "global": true
+    }
+  }
+}

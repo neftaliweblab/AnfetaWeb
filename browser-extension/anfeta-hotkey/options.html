@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Atajo global ANFETA Web</title>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font: 15px/1.5 system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 24px; }
+    h1 { font-size: 1.5rem; color: #38bdf8; margin-bottom: 8px; }
+    .badge { display: inline-block; padding: 4px 10px; background: #082f49; border: 1px solid #0284c7; border-radius: 6px; font-weight: 600; font-family: monospace; color: #7dd3fc; margin: 8px 0; }
+    a { color: #38bdf8; }
+    button { padding: 10px 16px; background: #0284c7; color: white; border: 0; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    button:hover { background: #0369a1; }
+    input[type="url"], input[type="text"] { width: 100%; box-sizing: border-box; padding: 8px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #f8fafc; font-size: 14px; margin-top: 4px; }
+    input:focus { outline: none; border-color: #38bdf8; }
+    ol { padding-left: 20px; line-height: 1.7; }
+    li { margin: 8px 0; }
+    .box { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    #error { color: #f87171; font-weight: 500; }
+    .save-status { color: #4ade80; font-size: 13px; margin-left: 10px; }
+    .hint { font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>Atajo global de ANFETA Web</h1>
+  <p>Con el navegador en ejecución (incluso minimizado o en segundo plano), este atajo permite abrir o enfocar ANFETA Web al instante desde cualquier otra aplicación de Windows.</p>
+
+  <div class="box">
+    <strong>Estado del atajo:</strong>
+    <div><span id="shortcut" class="badge">Consultando atajo…</span></div>
+    <p class="hint">El atajo predeterminado sugerido es <kbd>Ctrl+Shift+8</kbd>. Si está en conflicto o deseas cambiarlo:</p>
+    <button id="configure">Abrir configuración de atajos del navegador</button>
+    <p id="error" role="alert"></p>
+  </div>
+
+  <div class="box">
+    <strong>URL de ANFETA:</strong>
+    <p class="hint">Por defecto apunta a producción. Puedes modificarlo si usas un entorno local o dominio personalizado.</p>
+    <input id="appUrl" type="url" placeholder="https://anfeta-web.vercel.app/" />
+    <div style="margin-top: 10px;">
+      <button id="saveUrl">Guardar URL</button>
+      <button id="resetUrl" style="background: #334155; margin-left: 8px;">Restablecer</button>
+      <span id="saveStatus" class="save-status"></span>
+    </div>
+  </div>
+
+  <h2>Instrucciones y funcionamiento</h2>
+  <ol>
+    <li>Usa el mismo navegador y perfil en el que iniciaste sesión en ANFETA.</li>
+    <li>En la configuración de atajos del navegador, comprueba que la combinación tenga alcance <strong>Global</strong> (no solo "En Chrome").</li>
+    <li><strong>Minimizar / Restaurar:</strong> Si ANFETA está en una ventana dedicada y activa al frente, pulsar el atajo la minimiza. Volver a pulsarlo la restaura y enfoca.</li>
+    <li><strong>Seguridad de pestañas:</strong> Si ANFETA está en una pestaña normal compartida con otras webs, el atajo la enfoca directamente sin minimizar las demás pestañas.</li>
+    <li>Esta extensión no lee contraseñas, tokens ni notas privadas. Solo gestiona la ventana de la aplicación.</li>
+  </ol>
+
+  <script src="options.js"></script>
+</body>
+</html>

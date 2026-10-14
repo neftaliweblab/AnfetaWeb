@@ -1,0 +1,5 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict'),ts=require('typescript');
+const code=ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/components/CalendarHost/CalendarHourGrid.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const mod={exports:{}};new Function('require','exports','module',code)(require,mod.exports,mod);
+for(const zoom of [48,72,120]){const layers=mod.exports.calendarHourGridBackground(zoom);assert.ok(layers.includes(`transparent ${zoom}px`));assert.ok(layers.includes(`transparent ${zoom/2}px`));assert.ok(layers.includes(`transparent ${zoom/4}px`));assert.ok(layers.includes(`transparent ${zoom*2}px`));const grid=mod.exports.CalendarHourGrid({pixelsPerHour:zoom});assert.equal(grid.props['aria-hidden'],true);assert.ok(grid.props.className.includes('pointer-events-none'));}
+console.log('OK franjas: alineación a distintos niveles de zoom, horas/medias/cuarto y fondo decorativo sin bloquear el arrastre.');

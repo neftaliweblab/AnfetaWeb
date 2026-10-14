@@ -1,4 +1,5 @@
 "use client";
+import {CalendarHourGrid} from './CalendarHourGrid';
 import {useState} from 'react';
 import {FinanceStatusBadge} from './FinanceStatusBadge';
 import {filterFinance,financeCsv} from '@/lib/financeColumnOptions';
@@ -16,7 +17,7 @@ export function CalendarFinanceColumn({kind,items,warning,loading=false,width,he
       {warning && <span title={warning} aria-label={warning}>ⓘ</span>}
     </div>
     <div className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[#080B0F]" style={{height}}>
-      {Array.from({length:Math.ceil(height/pixelsPerHour)+1},(_,i)=><div key={i} className="absolute w-full h-px bg-[#161F2B]" style={{top:i*pixelsPerHour}}/>)}
+      <CalendarHourGrid pixelsPerHour={pixelsPerHour}/>
       {warning&&<p role="alert" className="relative z-10 m-2 rounded border border-amber-800 bg-slate-950 p-2 text-xs text-amber-200">{warning}</p>}{loading&&<p role="status" className="relative p-3 text-xs text-cyan-200">Cargando {kind==='cobro'?'cobros':'pagos'}…</p>}{!loading&&!warning&&!visible.length && <p className="relative p-3 text-xs text-slate-500">Sin registros para esta fecha y filtros.</p>}
       {view==='list'?<div className="absolute inset-0 overflow-y-auto pt-1 px-2 pb-3">{warning&&<p className="mb-2 rounded border border-amber-900 bg-slate-950 p-2 text-xs text-amber-200">{warning}</p>}{visible.map(item=><a key={item.id} href={item.url||undefined} target="_blank" rel="noopener noreferrer" title={item.title} style={laneStyle} className="mb-2 block rounded-lg border p-2 text-xs text-slate-200"><p className="text-[10px] text-cyan-300">{new Intl.DateTimeFormat('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(item.start))}</p><FinanceStatusBadge status={item.status}/><strong className="block break-words">{item.domain}</strong><p className="break-words">{item.concept||item.title}</p><p className="mt-1 text-[10px] text-slate-400">{item.person}</p></a>)}</div>:financeCardLayout(visible,date,pixelsPerHour).map(({item,start,top,height:cardHeight})=>{return <a key={item.id} href={item.url || undefined} target="_blank" rel="noopener noreferrer" className="absolute rounded border border-cyan-800/50 bg-[#122128] px-2 py-1 text-xs text-slate-200 overflow-hidden" style={{...laneStyle,top,height:cardHeight,left:3,right:3}} title={item.title}><div className="flex justify-between gap-1 text-[9px]"><strong className="min-w-0 truncate">{kind==='cobro'?'COBRO':'PAGO'} · {String(Math.floor(start/60)).padStart(2,'0')}:{String(start%60).padStart(2,'0')}</strong><FinanceStatusBadge status={item.status}/></div>{item.domain&&<div className="truncate text-[10px] text-cyan-300">{item.domain}</div>}<div className="font-medium line-clamp-2">{item.concept||item.title}</div><div className="text-[9px] text-slate-400 truncate">{item.person}</div></a>;})}
     </div>

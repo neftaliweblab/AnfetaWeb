@@ -375,6 +375,12 @@ export function SettingsModal({
           </div>
 
           {/* Dropbox & Notion Config */}
+          <section className="rounded border border-cyan-900 bg-slate-900 p-3 space-y-2" aria-label="Atajo global de ANFETA Web">
+            <h3 className="font-semibold text-cyan-200">Atajo global para Web/PWA</h3>
+            <p><strong>Ctrl+Shift+8</strong> abre o enfoca ANFETA; si está al frente en una ventana sin otras pestañas, la minimiza. Requiere instalar la extensión y mantener el navegador ejecutándose.</p>
+            <a href="/downloads/anfeta-hotkey.zip" download className="inline-block rounded bg-cyan-900 px-3 py-2 text-white">Descargar extensión</a>
+            <details className="text-slate-300"><summary className="cursor-pointer">Cómo instalarla</summary><ol className="list-decimal pl-5 space-y-1 mt-2"><li>Descomprime el ZIP en una carpeta permanente.</li><li>Abre la página de extensiones de Chrome, Edge o Brave y activa Modo de desarrollador.</li><li>Pulsa Cargar descomprimida y selecciona la carpeta que contiene manifest.json.</li><li>En Atajos de extensiones, verifica la combinación asignada y el alcance Global.</li><li>Usa el mismo perfil que tu sesión de ANFETA. Si la PWA no se puede detectar, se abrirá una ventana Web dedicada.</li></ol></details>
+          </section>
           <div className="space-y-2.5 pt-2 border-t border-[#1C2735]">
             <span className="font-semibold text-[#F1F5F9] flex items-center gap-2">
               <Database className="w-3.5 h-3.5 text-[#A855F7]" />

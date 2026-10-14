@@ -3,6 +3,7 @@ import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nextFreeCalendarSlot} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
+import {CalendarHourGrid} from './CalendarHourGrid';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
 import {financeSlot} from '@/lib/financeColumnOptions';
@@ -550,26 +551,51 @@ export function CalendarHost({
             className="w-16 bg-[#0F141A] border-r border-[#26323E] flex-shrink-0 sticky left-0 z-45"
             style={{ height: `${canvasHeight + 56}px` }}
           >
-            <div className="h-14 border-b border-[#26323E] flex items-center justify-center text-[10px] font-mono text-[#64748B]">
+            <div className="h-14 border-b-2 border-[#496278] flex items-center justify-center text-xs font-bold font-mono text-cyan-100">
               HORA
             </div>
-            <div className="relative" style={{ height: `${canvasHeight}px` }}>
-              {hoursList.map((hour, idx) => (
-                <div
-                  key={hour}
-                  style={{ top: `${idx * pixelsPerHour}px` }}
-                  className="absolute w-full text-right pr-2 text-[10px] font-mono text-[#64748B] -translate-y-2"
-                >
-                  {hour}
-                </div>
-              ))}
+            <div className="relative overflow-hidden" style={{ height: `${canvasHeight}px` }}>
+              <CalendarHourGrid pixelsPerHour={pixelsPerHour} />
+              {hoursList.map((hour, idx) => {
+                const isCurrentHour = currentTimeTop !== null && currentDateMinutes !== null && Math.floor(currentDateMinutes / 60) === idx;
+                return (
+                  <div key={hour}>
+                    <div
+                      style={{ top: `${idx * pixelsPerHour}px` }}
+                      className={`absolute w-full text-right pr-2 text-xs font-semibold font-mono -translate-y-2 select-none z-10 ${
+                        isCurrentHour ? 'text-[#38BDF8] font-bold drop-shadow-[0_0_6px_rgba(56,189,248,0.7)]' : 'text-cyan-100/90'
+                      }`}
+                    >
+                      {hour}
+                    </div>
+                    {/* Tick conector de hora completa */}
+                    <div
+                      style={{ top: `${idx * pixelsPerHour}px` }}
+                      className="absolute right-0 w-2.5 h-[2px] bg-[#496278] pointer-events-none z-10"
+                    />
+                    {/* Tick de media hora */}
+                    {idx < hoursList.length - 1 && (
+                      <div
+                        style={{ top: `${idx * pixelsPerHour + pixelsPerHour / 2}px` }}
+                        className="absolute right-0 w-1.5 h-px bg-[#293e52] pointer-events-none flex items-center justify-end z-10"
+                      >
+                        {pixelsPerHour >= 72 && (
+                          <span className="text-[9px] text-cyan-400/50 font-mono pr-2 select-none -translate-y-0.5">
+                            :30
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {/* Current time red tag on time rail */}
               {currentTimeTop !== null && (
                 <div
                   style={{ top: `${currentTimeTop}px` }}
                   className="absolute right-0 -translate-y-1/2 z-50 flex items-center"
                 >
-                  <span className="bg-[#EF4444] text-white text-[8.5px] font-bold px-1 rounded-l shadow-sm font-mono">
+                  <span className="bg-[#EF4444] text-white text-[11px] font-bold px-1 rounded-l shadow-sm font-mono">
                     {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                   </span>
                 </div>
@@ -649,13 +675,7 @@ export function CalendarHost({
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px` }}
                     >
-                      {hoursList.map((_, idx) => (
-                        <div
-                          key={idx}
-                          style={{ top: `${idx * pixelsPerHour}px` }}
-                          className="absolute w-full h-px bg-[#161F2B] pointer-events-none"
-                        />
-                      ))}
+                      <CalendarHourGrid pixelsPerHour={pixelsPerHour}/>
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
                         <ActivityCard
                           key={act.pageId || idx}

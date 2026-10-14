@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test:calendar": "node scripts/calendar-regression.test.cjs",
-    "test:supabase": "node scripts/supabase-tests.cjs"
+    "test:supabase": "node scripts/supabase-tests.cjs",
+    "test:hotkey": "node scripts/anfeta-hotkey.test.cjs && node scripts/calendar-grid.test.cjs",
+    "pack:extension": "node scripts/pack-extension.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
