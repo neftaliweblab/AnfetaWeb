@@ -322,7 +322,7 @@ export function CalendarDetailPanel({
         {activeTab === "checklist" && (
 
           <div className="rounded-lg border border-[#27272A] bg-[#18181B] p-3 space-y-2">
-            <ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[...old,item]);}}/>
+            <ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[item,...old]);}}/>
             {checklistError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"><p>{checklistError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 underline font-semibold">Volver a cargar</button></div>}
             {loading ? (
               <div className="flex items-center gap-2 py-4 text-xs text-slate-400 italic">
