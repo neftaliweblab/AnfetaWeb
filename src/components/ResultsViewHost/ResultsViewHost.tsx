@@ -27,7 +27,6 @@ import { QuickFiltersColumn } from "./QuickFiltersColumn";
 import { ResultsVirtualTable } from "./ResultsVirtualTable";
 import { DetailsPane } from "./DetailsPane";
 import { SearchBottomBar } from "./SearchBottomBar";
-import { SearchFloatingAiButton } from "./SearchFloatingAiButton";
 import { PendingTaskModal } from "./PendingTaskModal";
 import { NotionTemplatesModal } from "./NotionTemplatesModal";
 import {detectUpload} from '@/lib/drxUploadPlan';
@@ -1238,7 +1237,6 @@ export function ResultsViewHost({
       />
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 px-3 py-1"><ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{if(await readUploadDraft(currentUser))throw Error('Hay una subida pendiente. Abre el panel de subida y resuélvela primero; tu video permanece aquí.');onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/><span className="text-[10px] text-slate-400">Tab: resultados · Shift+Tab: anterior · Enter: abrir</span></div>
       <SearchInputBar
         onSubmitSearch={()=>setSettledQuery(query)}
         query={query}
@@ -1520,8 +1518,8 @@ export function ResultsViewHost({
         textScale={textScale}
       />
 
-      {/* Botón Flotante Asistente IA */}
-      <SearchFloatingAiButton onClick={() => alert("Asistente ANFETA IA listo.")} />
+      {/* Grabador flotante persistente entre módulos */}
+      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{if(await readUploadDraft(currentUser))throw Error('Hay una subida pendiente. Abre el panel de subida y resuélvela primero; tu video permanece aquí.');onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
       <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>
