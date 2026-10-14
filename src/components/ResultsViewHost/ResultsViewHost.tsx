@@ -1,4 +1,5 @@
 "use client";
+import {QuickPendingCapture} from './QuickPendingCapture';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {newestFirst} from '@/lib/searchResultOrder';
@@ -102,7 +103,9 @@ export function ResultsViewHost({
 
   // Search input & scopes
   const [query, setQuery] = useState(externalQuery || "");
-  const deferredQuery = useDeferredValue(query);
+  const [settledQuery,setSettledQuery]=useState(query);
+  useEffect(()=>{const timer=setTimeout(()=>setSettledQuery(query),400);return()=>clearTimeout(timer);},[query]);
+  const deferredQuery = useDeferredValue(settledQuery);
   const [resultPerson,setResultPerson]=useState("__all__");
   const [selectedScope, setSelectedScope] = useState("Notion");
   const [filterFavorites, setFilterFavorites] = useState(false);
@@ -1182,6 +1185,7 @@ export function ResultsViewHost({
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, currentPage, pageSize]);
+  useEffect(()=>{setSelectedItem(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:(pagedItems[0]||filteredItems[0]||null));setPinnedDetail(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);},[filteredItems,pagedItems]);
 
   return (
     <div
@@ -1200,6 +1204,7 @@ export function ResultsViewHost({
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
       <SearchInputBar
+        onSubmitSearch={()=>setSettledQuery(query)}
         query={query}
         onChangeQuery={handleQueryChange}
         searchOptions={searchOptions}
@@ -1438,6 +1443,7 @@ export function ResultsViewHost({
         {/* Col 4: DETALLES (320px) */}
         {isDetailsOpen && (
           <DetailsPane
+            onSelectFirst={()=>setSelectedItem(pagedItems[0]||filteredItems[0]||null)}
             item={pinnedDetail||selectedItem}
             isPinned={!!pinnedDetail}
             onTogglePin={()=>setPinnedDetail(old=>old?null:selectedItem)}
@@ -1480,6 +1486,7 @@ export function ResultsViewHost({
       <SearchFloatingAiButton onClick={() => alert("Asistente ANFETA IA listo.")} />
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
+      <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>
       <PendingTaskModal
         isOpen={isNewTaskModalOpen}
         onClose={() => {

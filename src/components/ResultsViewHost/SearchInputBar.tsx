@@ -22,6 +22,7 @@ import { buildPredictiveData } from "@/lib/searchPredictiveService";
 import { SearchMatchOptions } from "@/services/advancedQuery";
 
 interface SearchInputBarProps {
+  onSubmitSearch?:()=>void;
   query: string;
   onChangeQuery: (q: string) => void;
   searchOptions?: SearchMatchOptions;
@@ -46,6 +47,7 @@ interface SearchInputBarProps {
 }
 
 export function SearchInputBar({
+  onSubmitSearch,
   query,
   onChangeQuery,
   searchOptions,
@@ -133,25 +135,26 @@ export function SearchInputBar({
         }}
         className="flex items-center bg-[#11161D] border border-[#1E2836] rounded-lg focus-within:border-[#38BDF8] shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-all"
       >
-        <Search
+        <button type="button" onClick={onSubmitSearch} aria-label="Buscar"><Search
           style={{ width: `${Math.round(15 * scale)}px`, height: `${Math.round(15 * scale)}px` }}
           className="text-[#64748B] shrink-0"
-        />
+        /></button>
         <input
           type="text"
           value={query}
-          onFocus={() => setIsPredictiveOpen(true)}
-          onClick={() => setIsPredictiveOpen(true)}
+          onFocus={() => setIsPredictiveOpen(false)}
+          onClick={() => setIsPredictiveOpen(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               setIsPredictiveOpen(false);
             } else if (e.key === "Enter") {
+              e.preventDefault();onSubmitSearch?.();
               setIsPredictiveOpen(false);
             }
           }}
           onChange={(e) => {
             onChangeQuery(e.target.value);
-            setIsPredictiveOpen(true);
+            setIsPredictiveOpen(false);
           }}
           placeholder="Buscar páginas, archivos, notas, etiquetas o comodines..."
           style={{ fontSize: `${(12.5 * scale).toFixed(1)}px` }}

@@ -100,6 +100,10 @@ export interface DailyProgressKPIs {
 }
 
 export interface PendingTaskItem {
+  person?: string;
+  priority?: number;
+  url?: string;
+  pageId?: string;
   id: string;
   title: string;
   scheduledDate: string;

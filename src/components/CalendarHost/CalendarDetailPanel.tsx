@@ -1,4 +1,5 @@
 "use client";
+import {ActivityQuickEntry} from './ActivityQuickEntry';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 
 import { calendarDisplayTitle, calendarTime } from "@/services/calendarPresentation";
@@ -319,7 +320,9 @@ export function CalendarDetailPanel({
 
         {/* Tab 1: Checklist To-Do Box */}
         {activeTab === "checklist" && (
+
           <div className="rounded-lg border border-[#27272A] bg-[#18181B] p-3 space-y-2">
+            <ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[...old,item]);}}/>
             {checklistError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"><p>{checklistError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 underline font-semibold">Volver a cargar</button></div>}
             {loading ? (
               <div className="flex items-center gap-2 py-4 text-xs text-slate-400 italic">
@@ -354,7 +357,7 @@ export function CalendarDetailPanel({
                     >
                       {item.isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                     </div>
-                    <span className="flex-1 break-words leading-tight">{item.text}</span>
+                    <span className={`flex-1 break-words leading-tight ${item.text.startsWith('⚡')?'font-bold text-amber-300':''}`}>{item.text}</span>
                     {item.isUpdating && (
                       <Loader2 className="w-3 h-3 animate-spin text-cyan-400 shrink-0" />
                     )}

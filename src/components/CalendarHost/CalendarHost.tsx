@@ -310,7 +310,9 @@ export function CalendarHost({
     });
   }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter]);
 
+  useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>old&&available.some(a=>a.pageId===old.pageId)?old:(available[0]||null));},[filteredActivities,visiblePeople]);
   const activitiesByPerson = useMemo(() => {
+
     const map: Record<string, NotionCalendarActivity[]> = {};
     visiblePeople.forEach((p) => {
       map[p] = [];

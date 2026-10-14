@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@keyframes pending-check { from {transform:scale(0);opacity:0;} to {transform:scale(1);opacity:1;} }
+@media (prefers-reduced-motion: reduce) { [role="checkbox"] svg {animation:none !important;} }
 
 :root {
   --anfeta-bg-start: #080B0F;

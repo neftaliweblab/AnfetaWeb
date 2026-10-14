@@ -1,6 +1,7 @@
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
 import {browserDropboxUpload,verifiedDropboxReceipt} from '@/services/dropboxBrowserUpload';
+import {activityQuickEntry} from '@/services/activityQuickEntry';
 import {financeDateField,financeStatus} from '@/services/financeRules';
 import {replayMutation} from '@/services/replayMutation';
 import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
@@ -1415,6 +1416,7 @@ async function POSTLive(req: NextRequest) {
     const payload={...(body.payload || {}),currentUser:actor};
 
     if(action==='browser-dropbox-upload')return NextResponse.json(await browserDropboxUpload(actor,payload));
+    if(action==='add-checklist-item'||action==='add-comment'){const item=await activityQuickEntry({...getSettings(),notionToken:resolveNotionToken(req)},actor,payload,action==='add-comment');previewMemoryCache.clear();return NextResponse.json({success:true,item});}
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
@@ -2328,7 +2330,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
  try{return await refreshSnapshot(context,req,row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
-async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
+async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){
  const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);

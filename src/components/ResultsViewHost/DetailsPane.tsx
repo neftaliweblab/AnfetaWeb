@@ -32,6 +32,7 @@ import { playCopyChime } from "@/services/windowsIntegration";
 import { ImageLightbox, LightboxImage } from "./ImageLightbox";
 
 interface DetailsPaneProps {
+  onSelectFirst?:()=>void;
   item: any | null;
   isPinned?: boolean;
   onTogglePin?:()=>void;
@@ -167,6 +168,7 @@ function NotionImageBlock({
 }
 
 export function DetailsPane({
+  onSelectFirst,
   item,
   isPinned=false,
   onTogglePin,
@@ -392,6 +394,7 @@ export function DetailsPane({
           />
         </div>
         <span className="text-xs font-semibold">Selecciona un elemento</span>
+        {onSelectFirst&&<button type="button" onClick={onSelectFirst} className="mt-3 rounded border border-cyan-800 bg-cyan-950 px-3 py-2 text-cyan-300">Seleccionar primer elemento visible</button>}
         <span className="text-[10px] text-[#475569]">Para visualizar detalles y contenido</span>
       </div>
     );
