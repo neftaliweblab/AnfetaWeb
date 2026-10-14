@@ -2047,7 +2047,7 @@ async function POSTLive(req: NextRequest) {
     if (action === 'update-activity-status' || action === 'update-activity-schedule' || action === 'update-activity-assignee' || action === 'update-activity-details') {
       const input = payload || body;
       const id = input.id || input.pageId;
-      const settings = getSettings(); const actor = input.currentUser || settings.currentUser;
+      const settings = {...getSettings(),notionToken:resolveNotionToken(req)}; const actor = input.currentUser || settings.currentUser;
       if (action === 'update-activity-schedule' && (!input.start || !input.end)) return NextResponse.json({ error: 'Completa inicio y fin.' }, { status: 400 });
       if (action === 'update-activity-assignee' && !input.person && !input.reviewer) return NextResponse.json({ error: 'Selecciona un responsable.' }, { status: 400 });
       const cached = Object.values(calendarSnapshot()).flat().map(normalizeActivity).find(a => cleanPageId(a.pageId) === cleanPageId(id));
@@ -2333,7 +2333,10 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){
- const url=new URL(req.url);if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);
+ const url=new URL(req.url);
+ // El día se consulta en Notion con cachés breves compartidas; el índice completo es independiente.
+ if(url.searchParams.get('type')==='calendar')return GETLive(req);
+ if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);
  const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;
  if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
  const started=Date.now();let context:any,actor:string|undefined;

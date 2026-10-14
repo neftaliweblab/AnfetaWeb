@@ -31,7 +31,9 @@ export async function notionRequest(settings: Settings, endpoint: string, method
   settings.notionSignal?.throwIfAborted();
   await paceNotion(settings.notionToken);
   settings.notionSignal?.throwIfAborted();
+  try {
   const res = await fetch(`https://api.notion.com/v1/${endpoint}`, { method, headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': settings.notionApiVersion || ((endpoint.startsWith('data_sources/') || body?.parent?.data_source_id) ? '2026-03-11' : '2022-06-28'), 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000) });
+  if(res.status===401)throw new Error('La credencial de Notion no es válida o fue revocada. Revisa la integración configurada en ANFETA.');
   if (res.status === 429 && attempt < 3) {
     const wait = Math.min(10, Math.max(1, Number(res.headers.get('retry-after')) || 1));
     nextRequestAt.set(settings.notionToken,Date.now()+wait*1000);
@@ -39,6 +41,10 @@ export async function notionRequest(settings: Settings, endpoint: string, method
     return notionRequest(settings, endpoint, method, body, attempt + 1);
   }
   const text = await res.text(); let data:any; try {data=JSON.parse(text);} catch {throw new Error('Notion devolvió una respuesta no válida (HTTP ' + res.status + '). Intenta de nuevo en unos segundos.');} if (!res.ok) throw new Error(data.message || `Notion respondió ${res.status}`); if(method === 'PATCH' || method === 'DELETE' || (method === 'POST' && endpoint === 'pages')) clearReadBlocksCache(settings); return data;
+  } catch(error) {
+    if(error instanceof Error && (error.name==='TimeoutError'||error.name==='AbortError'))throw new Error(method==='GET'||endpoint.endsWith('/query')?'Notion tardó demasiado en responder. Las actividades visibles se conservan; intenta actualizar.':'Notion no confirmó el guardado a tiempo. Actualiza la actividad antes de repetir para comprobar si el cambio se guardó.');
+    throw error;
+  }
 }
 function titleOf(page: any) { return Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join(''); }
 const mutationLocks = new Set<string>();
@@ -59,7 +65,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
-  if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable asignado puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
+  if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable, Dirección o un revisor puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
   if ((updates.start || updates.end) && /(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || ''))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';

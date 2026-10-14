@@ -26,7 +26,7 @@ import { AutomationReportModal } from "../DailyProgressPanel/AutomationReportMod
 import { normalizePerson } from "@/services/identityNormalizer";
 import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
-import { canEditActivity, scheduleAtDrop, isDirection } from '@/services/activityPermissions';
+import { canEditActivity, scheduleAtDrop, isDirection, isReviewer } from '@/services/activityPermissions';
 import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
@@ -88,6 +88,7 @@ export function CalendarHost({
   const [showCreate, setShowCreate] = useState(false);
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
+  const [,setSaveRevision]=useState(0);
   const recentSaves=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
   const protectSaved=(incoming:NotionCalendarActivity[])=>{
     const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}if(a.title===saved.activity.title&&a.person===saved.activity.person&&a.reviewFlow?.State===saved.activity.reviewFlow?.State){recentSaves.current.delete(a.pageId);return a;}return saved.activity;});
@@ -199,7 +200,7 @@ export function CalendarHost({
 
   useEffect(() => {
     if(!active)return;
-    let stopped = false, busy = false, enrichOffset=0;
+    let stopped = false, busy = false, enrichOffset=0, basic=true;
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
     const controller = new AbortController();
     const refresh = async () => {
@@ -207,7 +208,7 @@ export function CalendarHost({
       busy = true;
       const version = mutationVersion.current;
       try {
-        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + '&enrichOffset=' + enrichOffset, {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
+        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + (basic?'&basic=1':'&enrichOffset=' + enrichOffset), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
         const data = await readApiJson(response);
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
@@ -216,12 +217,13 @@ export function CalendarHost({
           const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
+        const wasBasic=basic;basic=false;
         enrichOffset=data.nextEnrichOffset || 0;
-        if(enrichOffset)enrichmentTimer=setTimeout(refresh,100);
+        if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(refresh,1000);
         setSelectedActivity(prev => prev ? (data.activities || []).find((a:NotionCalendarActivity) => a.pageId === prev.pageId) || null : null);
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setError(data.warning || '');
-      } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
+      } catch (e) { if (!stopped) setError(e instanceof Error && e.name==='TimeoutError'?'El calendario tardó demasiado en responder. Se conserva la vista; intenta actualizar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
       finally {busy = false;}
     };
     void refresh();
@@ -247,6 +249,8 @@ export function CalendarHost({
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
     pending.current.add(pageId); mutationVersion.current++; setError('');
     const originalMirror=activitiesList.find(a=>a.pageId==='review-mirror-'+pageId);
+    const restoreSchedule=()=>{if(updates.start){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?original:a));setSelectedActivity(prev=>prev?.pageId===pageId?original:prev);}};
+    if(updates.start){const moving={...original,...updates};setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?moving:a));setSelectedActivity(prev=>prev?.pageId===pageId?moving:prev);}
     if(updates.reviewer){
       try{const person=normalizePerson(updates.reviewer),owner=original.reviewFlow?.OriginalPerson||original.person;
         const optimistic={...original,person,status:'rtuzREVISION',title:reviewTitle(original.title,owner,person,'pending'),isCompletedForReview:true,isFinalized:false,isSuspended:false,reviewFlow:{...original.reviewFlow,OriginalPerson:owner,ReviewAssignee:person,State:'pending',LeaveVisualCopy:updates.leaveVisualCopy!==false}};
@@ -257,7 +261,7 @@ export function CalendarHost({
     try {
       const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction)?{expectedReviewUpdatedAt:original.reviewFlow?.UpdatedAt||null}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
-      if(data.queued){setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
+      if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
       const saved: NotionCalendarActivity = data.activity;
       recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
@@ -277,11 +281,12 @@ export function CalendarHost({
       onRefresh?.();
       return true;
     } catch (error) {
+      restoreSchedule();
       recentSaves.current.delete(pageId);
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
-    } finally { pending.current.delete(pageId); }
+    } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1); }
   };
 
   const startHour = 8;
@@ -397,14 +402,17 @@ export function CalendarHost({
       if (!dataStr) return;
       const { pageId, offsetY = 0 } = JSON.parse(dataStr);
       const activity = activitiesList.find(a => a.pageId === pageId);
-      if (!activity || !canEditActivity(currentUser, activity) || normalizePerson(activity.person) !== colPerson) return;
+      if (!activity || !canEditActivity(currentUser, activity)) {setError('No tienes permiso para mover esta actividad o está bloqueada.');return;}
+      if(workflowState(activity.status,activity.title)==='completed'){setError('Esta revisión es histórica. Reactívala antes de cambiar su horario.');return;}
+      const reassignment=normalizePerson(activity.person)!==colPerson;
+      if(reassignment&&!isReviewer(currentUser)){setError('Solo Dirección o un revisor puede mover actividades a otra persona.');return;}
 
       const columnRect = e.currentTarget.getBoundingClientRect();
       // 56px es la altura del CalendarColHeader
       const y = Math.max(0, e.clientY - columnRect.top - 56 - offsetY);
       const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
 
-      void handleUpdateActivity(pageId, newSchedule);
+      void handleUpdateActivity(pageId, {...newSchedule,...(reassignment?{person:colPerson}:{})});
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Movimiento inválido');
     }
@@ -629,6 +637,7 @@ export function CalendarHost({
                         <ActivityCard
                           key={act.pageId || idx}
                           activity={act}
+                          isSaving={pending.current.has(act.pageId)}
                           displayDate={currentDate}
                           currentUser={currentUser}
                           pixelsPerHour={pixelsPerHour}

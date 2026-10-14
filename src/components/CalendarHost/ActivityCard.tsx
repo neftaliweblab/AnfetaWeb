@@ -66,6 +66,7 @@ interface ActivityCardProps {
   overlapTotal: number;
   palette?: "web" | "desktop";
   isSelected?: boolean;
+  isSaving?: boolean;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
 }
@@ -79,6 +80,7 @@ export function ActivityCard({
   overlapTotal,
   palette = "web",
   isSelected,
+  isSaving = false,
   onSelectActivity,
   onUpdateActivity,
 }: ActivityCardProps) {
@@ -472,7 +474,9 @@ export function ActivityCard({
     <>
       <div
         ref={cardRef}
-        draggable={editable}
+        draggable={editable && !isSaving && !/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(activity.status+' '+activity.title)}
+        aria-busy={isSaving}
+        title={isSaving?'Guardando movimiento en Notion…':undefined}
         onDragStart={(e) => {
           if (!editable) {
             e.preventDefault();
@@ -519,6 +523,7 @@ export function ActivityCard({
         }`}
       >
         {/* Fila Superior: Badge P/R/T/S + Dominio + Overlap + Checklist Pill */}
+        {isSaving&&<span role="status" className="text-[10px] text-cyan-200 animate-pulse">Guardando en Notion…</span>}
         <div className="flex items-center justify-between gap-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
             {/* Badge circular con inicial oficial (P, R, T, S) */}
