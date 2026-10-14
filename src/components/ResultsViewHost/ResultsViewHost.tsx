@@ -1,5 +1,7 @@
 "use client";
 import {QuickPendingCapture} from './QuickPendingCapture';
+import {ScreenRecorder} from './ScreenRecorder';
+import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
 import {parseSearchTabs} from '@/lib/searchTabsStorage';
@@ -60,6 +62,7 @@ interface ResultsViewHostProps {
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   onOpenSettings?: () => void;
+  onShowResults?:()=>void;
   onToggleCalendarView?: () => void;
   isCalendarActive?: boolean;
   onOpenStandaloneCalendar?: () => void;
@@ -87,6 +90,7 @@ export function ResultsViewHost({
   searchQuery: externalQuery = "",
   onSearchChange,
   onOpenSettings,
+  onShowResults,
   onToggleCalendarView,
   isCalendarActive = false,
   onOpenStandaloneCalendar,
@@ -179,6 +183,8 @@ export function ResultsViewHost({
   const [isGlobalPasteOpen, setIsGlobalPasteOpen] = useState(false);
   const [isBatchRenameOpen, setIsBatchRenameOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
+  const [recordingUpload,setRecordingUpload]=useState(false);
+  const resultsRoot=useRef<HTMLDivElement>(null),keyboardStart=useRef(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [statusError, setStatusError] = useState('');
   useEffect(() => {
@@ -611,7 +617,7 @@ export function ResultsViewHost({
         return;
       }
 
-      if (e.key === "Enter" && !isInput && selectedItem) {
+      if (e.key === "Enter" && !isInput && !(document.activeElement as HTMLElement)?.closest('button,a,select,[role="dialog"],[contenteditable="true"]') && selectedItem) {
         e.preventDefault();
         handleOpenItem(selectedItem);
         return;
@@ -1195,10 +1201,29 @@ export function ResultsViewHost({
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, currentPage, pageSize]);
+  function focusResult(item:SearchResultRow){
+    setSelectedItem(item);setSelectedIds(new Set([item.id]));
+    requestAnimationFrame(()=>{const row=Array.from(resultsRoot.current?.querySelectorAll<HTMLElement>('[data-search-result]')||[]).find(el=>el.dataset.searchResult===item.id);row?.focus({preventScroll:true});row?.scrollIntoView({block:'nearest'});});
+  }
+  function focusFirstResult(){const first=resultsRoot.current?.querySelector<HTMLElement>('[data-search-result]');const item=pagedItems.find(item=>item.id===first?.dataset.searchResult);if(item)focusResult(item);else setStatusError('No hay resultados para recorrer.');}
+  useEffect(()=>{if(!keyboardStart.current||deferredQuery!==query)return;keyboardStart.current=false;focusFirstResult();},[pagedItems,deferredQuery,query]);
+  useEffect(()=>{if(!isActive)return;const start=()=>{keyboardStart.current=true;setSettledQuery(query);if(deferredQuery===query){keyboardStart.current=false;focusFirstResult();}};window.addEventListener('anfeta_focus_first_result',start);return()=>window.removeEventListener('anfeta_focus_first_result',start);},[isActive,query,deferredQuery,pagedItems]);
+  function handleResultKeys(event:React.KeyboardEvent){
+    if(!isActive||event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey||event.nativeEvent.isComposing)return;
+    const target=event.target as HTMLElement;
+    if(event.key==='Tab'&&target.matches('[data-search-query]')&&!event.shiftKey){event.preventDefault();keyboardStart.current=true;setSettledQuery(query);if(deferredQuery===query){keyboardStart.current=false;focusFirstResult();}return;}
+    if(event.key==='Enter'&&target.matches('[data-search-result]')){const item=pagedItems.find(item=>item.id===target.dataset.searchResult);if(item){event.preventDefault();event.stopPropagation();handleOpenItem(item);}return;}
+    if(event.key!=='Tab'||!target.matches('[data-search-result]'))return;
+    const rows=Array.from(resultsRoot.current?.querySelectorAll<HTMLElement>('[data-search-result]')||[]),index=rows.indexOf(target),next=rows[index+(event.shiftKey?-1:1)];
+    if(next){const item=pagedItems.find(item=>item.id===next.dataset.searchResult);if(item){event.preventDefault();focusResult(item);}}
+    else if(event.shiftKey){event.preventDefault();resultsRoot.current?.querySelector<HTMLInputElement>('[data-search-query]')?.focus();}
+  }
   useEffect(()=>{setSelectedItem(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);setPinnedDetail(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);},[filteredItems]);
 
   return (
     <div
+      ref={resultsRoot}
+      onKeyDownCapture={handleResultKeys}
       className="flex-1 flex flex-col h-full text-[#F1F5F9] select-none overflow-hidden transition-colors duration-200"
       style={{ backgroundColor: themeBg }}
     >
@@ -1213,6 +1238,7 @@ export function ResultsViewHost({
       />
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 px-3 py-1"><ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{if(await readUploadDraft(currentUser))throw Error('Hay una subida pendiente. Abre el panel de subida y resuélvela primero; tu video permanece aquí.');onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/><span className="text-[10px] text-slate-400">Tab: resultados · Shift+Tab: anterior · Enter: abrir</span></div>
       <SearchInputBar
         onSubmitSearch={()=>setSettledQuery(query)}
         query={query}
@@ -1574,9 +1600,11 @@ export function ResultsViewHost({
           setIsGlobalPasteOpen(false);
           setGlobalPasteImage(null);
           setGlobalFiles([]);
+          setRecordingUpload(false);
         }}
         currentUser={currentUser}
         initialFiles={globalFiles}
+        initialDestination={recordingUpload?'both':undefined}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
         onSuccess={(newRow) => {

@@ -135,7 +135,8 @@ export function TopBar({
               if (activeView !== "calendar") setIsPredictiveOpen(true);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              if(e.key==='Tab'&&!e.shiftKey&&activeView==='results'&&!e.nativeEvent.isComposing){e.preventDefault();setIsPredictiveOpen(false);window.dispatchEvent(new Event('anfeta_focus_first_result'));}
+              else if (e.key === "Escape") {
                 setIsPredictiveOpen(false);
               } else if (e.key === "Enter") {
                 setIsPredictiveOpen(false);

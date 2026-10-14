@@ -633,6 +633,7 @@ export default function AnfetaApp() {
           }`}
         >
           <ResultsViewHost
+            onShowResults={()=>setActiveView('results')}
             isActive={activeView === "results"}
             items={searchIndex}
             pendingTasks={pendingTasks}

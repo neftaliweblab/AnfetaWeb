@@ -466,6 +466,9 @@ export function ResultsVirtualTable({
     return (
       <div
         key={item.id}
+        data-search-result={item.id}
+        tabIndex={-1}
+        aria-label={item.name}
         onClick={() => onSelect(item)}
         onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
         onContextMenu={(e) => {
@@ -742,6 +745,9 @@ export function ResultsVirtualTable({
     return (
       <div
         key={item.id}
+        data-search-result={item.id}
+        tabIndex={-1}
+        aria-label={item.name}
         onClick={() => onSelect(item)}
         onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
         onContextMenu={(e) => {

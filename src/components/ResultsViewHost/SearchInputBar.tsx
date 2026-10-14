@@ -140,6 +140,8 @@ export function SearchInputBar({
           className="text-[#64748B] shrink-0"
         /></button>
         <input
+          data-search-query="true"
+          aria-label="Buscar páginas y archivos. Tab selecciona el primer resultado"
           type="text"
           value={query}
           onFocus={() => setIsPredictiveOpen(false)}
