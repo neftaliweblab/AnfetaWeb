@@ -78,7 +78,7 @@ export const maxDuration = 120;
 const previewMemoryCache = new BoundedCache<{timestamp:number;payload:any}>(100,8*1024*1024,15*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
-const calendarMemoryUpdates = new Map<string, any>();
+const calendarMemoryUpdates = new BoundedCache<any>(2000,8*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
 function calendarSnapshot() {
   const cache = readLocalJson<Record<string, any[]>>('notion_calendar_cache_v13.json', {});
@@ -120,7 +120,7 @@ interface LiveNotionPage {
   sourceName?:string;
 }
 
-const liveNotionOverrides = new Map<string, LiveNotionPage>();
+const liveNotionOverrides = new BoundedCache<LiveNotionPage>(10000,16*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 let liveDropboxCache: any[] | null = null;
 
 function extractNotionPageData(page: any): LiveNotionPage {

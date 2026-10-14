@@ -1,4 +1,5 @@
 import {drxFolder} from '@/lib/drxUploadPlan';
+import {boundedDownload} from './boundedDownload';
 import {getSettings} from '@/services/serverSettings';
 import {DEFAULT_DROPBOX_APP_KEY, getDropboxAuthorizeUrl} from '@/lib/dropboxConfig';
 export {DEFAULT_DROPBOX_APP_KEY, getDropboxAuthorizeUrl};
@@ -446,7 +447,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
 
       if (dlRes.ok) {
         if(stream&&dlRes.body)return {body:dlRes.body,contentType:dlRes.headers.get('content-type')||'image/jpeg'};
-        const buffer = Buffer.from(await dlRes.arrayBuffer());
+        const buffer = await boundedDownload(dlRes);
         const contentType = dlRes.headers.get('content-type') || 'image/jpeg';
         return { buffer, contentType };
       }
@@ -454,7 +455,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
 
     if (response.ok) {
       if(stream&&response.body)return {body:response.body,contentType:response.headers.get('content-type')||(isImg?'image/jpeg':'application/octet-stream')};
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const buffer = await boundedDownload(response);
       const contentType = response.headers.get('content-type') || (isImg ? 'image/jpeg' : 'application/octet-stream');
       return { buffer, contentType };
     }
