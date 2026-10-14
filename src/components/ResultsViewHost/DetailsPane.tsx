@@ -32,6 +32,7 @@ import { playCopyChime } from "@/services/windowsIntegration";
 import { ImageLightbox, LightboxImage } from "./ImageLightbox";
 
 interface DetailsPaneProps {
+  emptyContent?:React.ReactNode;
   onSelectFirst?:()=>void;
   item: any | null;
   isPinned?: boolean;
@@ -168,6 +169,7 @@ function NotionImageBlock({
 }
 
 export function DetailsPane({
+  emptyContent,
   onSelectFirst,
   item,
   isPinned=false,
@@ -375,6 +377,7 @@ export function DetailsPane({
   }, [item?.externalId, item?.id, item?.target, item?.path]);
 
   if (!item) {
+    if(emptyContent)return <>{emptyContent}</>;
     return (
       <div
         style={{ width: `${paneWidth}px` }}

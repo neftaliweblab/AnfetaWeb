@@ -1,5 +1,6 @@
 "use client";
 import {QuickPendingCapture} from './QuickPendingCapture';
+import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {newestFirst} from '@/lib/searchResultOrder';
@@ -349,6 +350,7 @@ export function ResultsViewHost({
   const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
   useEffect(()=>{setPinnedDetail(old=>old?items.find(row=>row.id===old.id)||null:null);},[items]);
   const [selectedItem, setSelectedItem] = useState<SearchResultRow | null>(null);
+  const [showPersonalAgenda,setShowPersonalAgenda]=useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Pagination
@@ -476,6 +478,7 @@ export function ResultsViewHost({
 
   // Selection logic: When row is selected, toggle check and update selection
   const handleSelectRow = (item: SearchResultRow) => {
+    setShowPersonalAgenda(false);
     playCheckChime();
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1185,7 +1188,7 @@ export function ResultsViewHost({
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, currentPage, pageSize]);
-  useEffect(()=>{setSelectedItem(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:(pagedItems[0]||filteredItems[0]||null));setPinnedDetail(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);},[filteredItems,pagedItems]);
+  useEffect(()=>{setSelectedItem(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);setPinnedDetail(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);},[filteredItems]);
 
   return (
     <div
@@ -1442,9 +1445,10 @@ export function ResultsViewHost({
 
         {/* Col 4: DETALLES (320px) */}
         {isDetailsOpen && (
+          <div className="shrink-0 h-full flex flex-col"><div className="flex gap-2 border-b border-slate-800 bg-[#0F141C] p-2 text-xs"><button type="button" aria-pressed={showPersonalAgenda||!(pinnedDetail||selectedItem)} className="text-cyan-300" onClick={()=>setShowPersonalAgenda(true)}>Calendario individual</button><button type="button" disabled={!(pinnedDetail||selectedItem)} aria-pressed={!showPersonalAgenda&&!!(pinnedDetail||selectedItem)} className="text-slate-300 disabled:opacity-40" onClick={()=>setShowPersonalAgenda(false)}>Detalles</button></div><div className="flex-1 min-h-0">
           <DetailsPane
-            onSelectFirst={()=>setSelectedItem(pagedItems[0]||filteredItems[0]||null)}
-            item={pinnedDetail||selectedItem}
+            emptyContent={<PersonalAgendaPane currentUser={currentUser} onOpenCalendar={onToggleCalendarView}/>}
+            item={showPersonalAgenda?null:(pinnedDetail||selectedItem)}
             isPinned={!!pinnedDetail}
             onTogglePin={()=>setPinnedDetail(old=>old?null:selectedItem)}
             onOpen={handleOpenItem}
@@ -1455,6 +1459,7 @@ export function ResultsViewHost({
             onDelete={handleDeleteItem}
             textScale={textScale}
           />
+          </div></div>
         )}
       </div>
 
