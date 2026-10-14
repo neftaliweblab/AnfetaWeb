@@ -1,0 +1,15 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict'),ts=require('typescript');
+const source=fs.readFileSync(path.join(__dirname,'../src/services/windowsIntegration.ts'),'utf8');
+const mod={exports:{}};new Function('exports','module',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(mod.exports,mod);
+let mode='web',opened=[];global.window={};global.localStorage={getItem:()=>mode};global.document={createElement:()=>{const link={click(){opened.push({...this});}};return link;}};
+mod.exports.openNotionPage('https://www.notion.so/123');assert.equal(opened.at(-1).href,'https://www.notion.so/123');assert.equal(opened.at(-1).target,'_blank');
+mode='desktop';mod.exports.openNotionPage('https://www.notion.so/123');assert.equal(opened.at(-1).href,'notion://www.notion.so/123');assert.equal(opened.at(-1).target,'_self');
+mod.exports.openNotionPage('https://notion.so.evil.example/a');assert.equal(opened.at(-1).href,'https://notion.so.evil.example/a');
+const count=opened.length;mod.exports.openNotionPage('javascript:alert(1)');assert.equal(opened.length,count);
+global.localStorage.getItem=()=>{throw Error('Storage unavailable');};mod.exports.openNotionPage('https://notion.com/123');assert.equal(opened.at(-1).target,'_blank');
+console.log('OK apertura Notion: web, protocolo de app, dominio validado y almacenamiento no disponible. Navegador simulado.');
+let focused=0,navigated='';global.window={location:{origin:'https://anfeta.test',assign:url=>navigated=url},open:()=>({focus:()=>focused++})};
+assert.equal(mod.exports.openCalendarWindow('/calendar?date=2026-10-14'),'window');assert.equal(focused,1);
+window.open=()=>null;assert.equal(mod.exports.openCalendarWindow('/calendar?date=2026-10-14'),'same-tab');assert.equal(navigated,'https://anfeta.test/calendar?date=2026-10-14');
+assert.throws(()=>mod.exports.openCalendarWindow('https://other.test/'),/pertenecer/);
+console.log('OK ventana de calendario: enfoca ventana, alternativa ante bloqueo y origen correcto.');

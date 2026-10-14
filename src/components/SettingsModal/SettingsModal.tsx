@@ -80,6 +80,7 @@ export function SettingsModal({
   const [loadingCloudFolders, setLoadingCloudFolders] = useState(false);
   const [cloudFolderError, setCloudFolderError] = useState("");
   const [notionToken, setNotionToken] = useState("");
+  const [notionOpenMode,setNotionOpenMode]=useState('web');
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isTestingDropbox, setIsTestingDropbox] = useState(false);
@@ -99,6 +100,7 @@ export function SettingsModal({
       // 1. Leer inmediatamente de localStorage (para persistencia 100% confiable en la web/Vercel)
       try {
         const stored = localStorage.getItem("anfeta_settings");
+        setNotionOpenMode(localStorage.getItem('anfeta_notion_open_mode')==='desktop'?'desktop':'web');
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.notionToken) setNotionToken(parsed.notionToken);
@@ -379,6 +381,10 @@ export function SettingsModal({
               Integración Notion & Token Secreto
             </span>
             <div className="space-y-1">
+              <label className="block text-xs text-slate-300">Abrir actividades de Notion en
+                <select value={notionOpenMode} onChange={e=>{setNotionOpenMode(e.target.value);try{localStorage.setItem('anfeta_notion_open_mode',e.target.value);}catch{setTestStatus({ok:false,msg:'No se pudo guardar la preferencia de apertura.'});}}} className="ml-2 rounded bg-slate-800 p-1"><option value="web">Navegador web</option><option value="desktop">Aplicación de Notion</option></select>
+              </label>
+              <p className="text-[10px] text-slate-400">Se guarda como predeterminado en este dispositivo. La aplicación requiere Notion instalado y permitir su apertura en el navegador.</p>
               <label className="text-[10.5px] text-[#94A3B8] block">
                 Token de Integración Notion (Internal Integration Secret):
               </label>

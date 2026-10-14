@@ -451,6 +451,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
         const contentType = dlRes.headers.get('content-type') || 'image/jpeg';
         return { buffer, contentType };
       }
+      response=dlRes;
     }
 
     if (response.ok) {
@@ -460,6 +461,10 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
       return { buffer, contentType };
     }
 
+    const detail=await response.json().catch(()=>null);
+    if(response.status===401)throw new Error('Dropbox rechazó la sesión. Vuelve a conectar Dropbox.');
+    if(response.status===403)throw new Error('La integración de Dropbox no tiene permiso para leer este archivo.');
+    lastError=detail?.error_summary||'Dropbox respondió HTTP '+response.status;
     return null;
   };
 
@@ -470,7 +475,19 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
       if (result) return result;
     } catch (err: any) {
       lastError = err?.message || String(err);
+      if(/sesión|permiso/i.test(lastError))throw err;
     }
+  }
+
+  if(/not_found|Archivo no encontrado/i.test(lastError)){
+    const filename=cleanPath.split('/').pop()||'';
+    const found=await fetch('https://api.dropboxapi.com/2/files/search_v2',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({query:filename,options:{filename_only:true,max_results:100}}),signal:AbortSignal.timeout(15000)});
+    if(!found.ok)throw new Error('Dropbox no encontró la ruta del índice y no permitió buscar el archivo. Revisa permisos y sincroniza Dropbox.');
+    const data=await found.json();
+    const matches=(data.matches||[]).map((m:any)=>m.metadata?.metadata||m.metadata).filter((m:any)=>m?.['.tag']==='file'&&m.name?.normalize('NFC').toLowerCase()===filename.normalize('NFC').toLowerCase());
+    const paths=[...new Set<string>(matches.map((m:any)=>m.path_display||m.path_lower).filter(Boolean))];
+    if(data.has_more||paths.length>1)throw new Error('Hay varios archivos con ese nombre. Sincroniza Dropbox para recuperar la ruta correcta.');
+    if(paths.length===1){const recovered=await tryFetchPath(paths[0]);if(recovered)return recovered;}
   }
 
   throw new Error(`No se pudo obtener la vista previa desde Dropbox API (${cleanPath}): ${lastError || 'Archivo no encontrado'}`);

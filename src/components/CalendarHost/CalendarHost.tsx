@@ -82,6 +82,7 @@ export function CalendarHost({
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const [error, setError] = useState('');
+  const [refreshWarning,setRefreshWarning]=useState('');
   useEffect(() => {
     if (!error) return;
     const timer = setTimeout(() => setError(''), 6000);
@@ -169,7 +170,7 @@ export function CalendarHost({
   useEffect(() => {
     setActivitiesList(prev=>pending.current.size?[...initialActivities.filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:protectSaved(initialActivities));
   }, [initialActivities]);
-  useEffect(() => { if (loadError) setError(loadError); }, [loadError]);
+  useEffect(() => {setRefreshWarning(loadError||'');}, [loadError]);
 
   // Listener en tiempo real multi-ventana y multi-pestaña
   useEffect(() => {
@@ -226,6 +227,7 @@ export function CalendarHost({
           return;
         }
         appliedSequence=requestSequence;
+        setRefreshWarning('');
         setActivitiesList(prev=>{
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
           const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:combined}));return combined;
@@ -236,8 +238,8 @@ export function CalendarHost({
           if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
         }
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
-        if (!isBgSyncWarning) setError(data.warning || '');
-      } catch (e) { if (!stopped) setError(e instanceof Error && e.name==='TimeoutError'?'El calendario tardó demasiado en responder. Se conserva la vista; intenta actualizar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.'); }
+        if (!isBgSyncWarning) setRefreshWarning(data.warning || '');
+      } catch (e) { if (!stopped) {const message=e instanceof Error && e.name==='TimeoutError'?'Actualización demorada; se conserva el calendario y se volverá a intentar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.';setRefreshWarning(message);} }
       finally {if(light)lightBusy=false;else busy = false;}
     };
     void refresh();
@@ -306,7 +308,7 @@ export function CalendarHost({
   };
 
   const startHour = 8;
-  const endHour = extraHours ? 22 : 21;
+  const endHour = 22;
   const totalHours = endHour - startHour;
   const canvasHeight = totalHours * pixelsPerHour;
 
@@ -448,6 +450,7 @@ export function CalendarHost({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative">
+      {refreshWarning&&<p role="status" className="px-3 py-1 text-xs text-amber-200 bg-amber-950/20">Actualización: {refreshWarning}</p>}
       {/* Notificación de Error / Alerta Visible y Elegante */}
       {error && (
         <div

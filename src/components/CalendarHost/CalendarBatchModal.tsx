@@ -3,9 +3,10 @@ import React,{useMemo,useState} from 'react';
 import {NotionCalendarActivity} from '@/types/anfeta';
 import {canEditActivity} from '@/services/activityPermissions';
 import {planOneClick} from '@/services/calendarPlanner';
+import {workflowState} from '@/services/activityWorkflow';
 import {calendarTime,mexicoDate,mexicoMinutes} from '@/services/calendarPresentation';
 export function CalendarBatchModal({activities,currentUser,date,onClose,onSaved,initialPerson,initialDay,initialChanges}:{activities:NotionCalendarActivity[];currentUser:string;date:string;initialPerson?:string;initialDay?:string;initialChanges?:any[];onClose:()=>void;onSaved:(items:NotionCalendarActivity[])=>void}) {
-  const eligible=activities.filter(a=>!a.isReviewMirror&&(!initialPerson||a.person===initialPerson)&&canEditActivity(currentUser,a));
+  const eligible=activities.filter(a=>!a.isReviewMirror&&workflowState(a.status,a.title)!=='completed'&&(!initialPerson||a.person===initialPerson)&&canEditActivity(currentUser,a));
   const [confirmedIds,setConfirmedIds]=useState<string[]>([]);
   const [selected,setSelected]=useState<string[]>(initialPerson?eligible.filter(a=>!a.isLocked&&!/^(z|terminad|complet)/i.test(a.status||'')).slice(0,30).map(a=>a.pageId):[]),[day,setDay]=useState(initialDay||date),[person,setPerson]=useState(eligible[0]?.person || ''),[mode,setMode]=useState('date'),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const proposal=useMemo(()=>{

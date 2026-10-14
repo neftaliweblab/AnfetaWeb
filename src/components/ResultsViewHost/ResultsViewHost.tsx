@@ -1,5 +1,6 @@
 "use client";
 import {QuickPendingCapture} from './QuickPendingCapture';
+import {openNotionPage} from '@/services/windowsIntegration';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
@@ -702,7 +703,7 @@ export function ResultsViewHost({
         item.url ||
         (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
       if (notionUrl) {
-        window.open(notionUrl, "_blank");
+        openNotionPage(notionUrl);
         return;
       }
     }
@@ -767,7 +768,7 @@ export function ResultsViewHost({
         item.url ||
         (item.id && !String(item.id).startsWith("dropbox-") ? `https://notion.so/${String(item.id).replace(/-/g, "")}` : "");
       if (notionUrl) {
-        window.open(notionUrl, "_blank");
+        openNotionPage(notionUrl);
         return;
       }
     }

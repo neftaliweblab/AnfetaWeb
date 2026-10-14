@@ -1,4 +1,5 @@
 "use client";
+import {openCalendarWindow} from '@/services/windowsIntegration';
 import {indexAvailability} from '@/lib/indexAvailability';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -396,7 +397,7 @@ export default function AnfetaApp() {
 
   const handleOpenStandaloneCalendar = useCallback(() => {
     const url = `/calendar?standalone=true&q=${encodeURIComponent(searchQuery)}&date=${encodeURIComponent(currentDate)}`;
-    window.open(url, "AnfetaCalendarStandalone", "width=1400,height=900,resizable=yes");
+    openCalendarWindow(url);
   }, [searchQuery, currentDate]);
 
   // Compute active projects today strictly from calendar (1:1 ANFETA WinUI)

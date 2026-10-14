@@ -286,7 +286,7 @@ export function CalendarTopControls({
         )}
 
         <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="min-w-0 max-w-[112px] rounded border border-slate-700 bg-slate-900 p-1 text-[10px] text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
-        <button onClick={onExtraHours} aria-pressed={!!extraHours} className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Mostrar tramo extra de 21:00 a 22:00">{extraHours?'08–22h':'08–21h'}</button>
+        <span className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Horario disponible de 08:00 a 22:00">08–22h</span>
 
         {/* People Picker */}
         <button

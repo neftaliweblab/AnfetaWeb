@@ -125,11 +125,22 @@ export function openNotionPage(url: string) {
     const target = new URL(url);
     if (!['https:', 'http:'].includes(target.protocol)) return;
     const link = document.createElement('a');
-    link.href = target.href;
-    link.target = '_blank';
+    let desktop=false;
+    try{desktop=localStorage.getItem('anfeta_notion_open_mode')==='desktop';}catch{}
+    const notionHost=/(^|\.)notion\.(so|com)$/.test(target.hostname);
+    link.href = desktop&&notionHost ? target.href.replace(/^https?:/,'notion:') : target.href;
+    link.target = desktop&&notionHost ? '_self' : '_blank';
     link.rel = 'noopener noreferrer';
     link.click();
   } catch { /* Los enlaces inválidos no abren protocolos del sistema. */ }
+}
+
+export function openCalendarWindow(url:string){
+  const target=new URL(url,window.location.origin);
+  if(target.origin!==window.location.origin)throw new Error('La ventana de calendario debe pertenecer a ANFETA.');
+  const popup=window.open(target.href,'AnfetaCalendarStandalone','width=1400,height=900,resizable=yes');
+  if(popup){popup.focus();return 'window';}
+  window.location.assign(target.href);return 'same-tab';
 }
 
 export function openWindowsSoundSettings() {
