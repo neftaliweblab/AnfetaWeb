@@ -56,6 +56,7 @@ export function GlobalPasteModal({
   const [files, setFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [mode, setMode] = useState<'both' | 'dropbox' | 'notion'>('both');
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
+  const [notionTarget,setNotionTarget]=useState('configured'),[notionTargetId,setNotionTargetId]=useState('');
   const [selectedCard, setSelectedCard] = useState<{ id: string; title: string; typeLabel: string; type: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -136,6 +137,7 @@ export function GlobalPasteModal({
   }, []);
 
   const initFormFromFiles = useCallback((filesToUse: GlobalPasteImagePayload[]) => {
+    setNotionTarget('configured');setNotionTargetId('');
     const detected = detectUpload([initialDomain, initialText, ...filesToUse.map(f => f.filename)].join(' '));
     const d = initialDomain || detected.domain;
     const m = monthToken();
@@ -166,6 +168,7 @@ export function GlobalPasteModal({
     recovery.current = draft;
     const p = draft.plan;
     setMode(p.mode || 'both');
+    setNotionTarget(p.notionTarget||'configured');setNotionTargetId(p.notionTargetId||'');
     setFiles(p.files || []);
     setDomain(p.domain || '');
     setRoot(p.root || 'proyecto');
@@ -293,7 +296,8 @@ export function GlobalPasteModal({
         body,
         files,
         separatePages: separate,
-        customFolder
+        customFolder,
+        notionTarget,notionTargetId
       },
       updatedAt: Date.now()
     };
@@ -302,7 +306,7 @@ export function GlobalPasteModal({
       saveUploadDraft(draft).catch(e => setError(e.message));
     }, 300);
     return () => clearTimeout(timer);
-  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder]);
+  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -356,7 +360,14 @@ export function GlobalPasteModal({
         separatePages: separate,
         customFolder
       };
-      recovery.current = { ...recovery.current, plan: frozen, started: true, updatedAt: Date.now() };
+      let resolvedTarget:any={};
+      if(frozen.mode!=='dropbox'){
+        const choice=notionTarget==='calendar'?{useCalendarSource:true}:notionTarget==='database'?{databaseId:notionTargetId}:notionTarget==='source'?{dataSourceId:notionTargetId}:{};
+        const check=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(45000),body:JSON.stringify({action:'validate-upload-notion-destination',payload:{...choice,targetPageId:actionType==='attach'?selectedCard?.id:undefined,currentUser}})});
+        const result=await check.json();if(!check.ok||!result.success)throw Error(result.error||'No se pudo verificar la base de Notion.');
+        resolvedTarget=notionTarget==='configured'?{}:{databaseId:result.databaseId,dataSourceId:result.sourceId||result.dataSourceId};
+      }
+      recovery.current = { ...recovery.current, plan: {...frozen,...resolvedTarget,notionTarget,notionTargetId}, started: true, updatedAt: Date.now() };
       await saveUploadDraft(recovery.current);
       setStarted(true);
 
@@ -370,6 +381,7 @@ export function GlobalPasteModal({
           action: 'unified-upload',
           payload: {
             ...uploadMetadata(frozen),
+            ...resolvedTarget,
             month: undefined,
             personTag: undefined,
             uploadId: recovery.current.id,
@@ -501,6 +513,11 @@ export function GlobalPasteModal({
           </div>
         )}
 
+        {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
+          <label className="flex flex-wrap items-center gap-2">Base para páginas nuevas<select aria-label="Base para páginas nuevas" value={notionTarget} onChange={e=>setNotionTarget(e.target.value)} className="rounded bg-slate-800 p-2"><option value="configured">Base configurada en el servidor</option><option value="calendar">Usar base del calendario</option><option value="database">Indicar ID o enlace de otra base</option><option value="source">Indicar ID de data source</option></select></label>
+          {(notionTarget==='database'||notionTarget==='source')&&<input aria-label="ID de la base de Notion" value={notionTargetId} onChange={e=>setNotionTargetId(e.target.value)} placeholder="ID de Notion o enlace de la base" className="w-full rounded bg-slate-800 p-2"/>}
+          <p className="text-slate-400">Se comprobará el destino antes de subir. Si Dropbox ya terminó, se conservará ese archivo al retomar.</p>
+        </fieldset>}
         <fieldset disabled={busy || started || !draftReady || Boolean(pendingConflict)} className="space-y-3">
           {/* Selector de Destino */}
           <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-800 p-1">

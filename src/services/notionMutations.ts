@@ -292,19 +292,14 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
 export async function createActivity(settings: Settings, actor: string, payload: any) {
   return payload.start?withCalendarSchedule(settings,()=>createActivityUnlocked(settings,actor,payload)):createActivityUnlocked(settings,actor,payload);
 }
-async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
-  const { start, end, domain, person, title } = payload;
-  if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
-  if (start) validateSchedule(start, end);
-  if (!title?.trim()) throw new Error('Escribe un título.');
-  if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
-  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
-
+export async function validateNotionCreationTarget(settings:Settings,payload:any={}){
+  if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion en el servidor.');
+  const start=payload.start;
   let databaseId = payload?.databaseId || process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
   let sourceId = payload?.dataSourceId;
   const referencedId = String(payload.body || '').match(/https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s]*?([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:[?\s/#]|$)/i)?.[1];
 
-  if (start) {
+  if (start || payload.useCalendarSource===true) {
     sourceId = sourceId || process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
   } else {
     if (!databaseId && !sourceId && referencedId) {
@@ -319,9 +314,10 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
         } catch {}
       }
     }
-    if (!sourceId && !databaseId) throw new Error('Falta configurar la base de Notion para crear páginas (configura NOTION_DATABASE_ID en el servidor o la ID de la base en Ajustes).');
+    if (!sourceId && !databaseId) throw new Error('Falta elegir la base para páginas nuevas. Selecciona «Usar base del calendario» o indica una base en este formulario.');
   }
-
+  const normalizeId=(value:string)=>{const input=String(value).trim();let id=input;if(/^https?:\/\//i.test(input)){const url=new URL(input);if(!/(^|\.)notion\.(so|site|com)$/i.test(url.hostname))throw new Error('El enlace de la base debe pertenecer a Notion.');id=url.pathname.match(/([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/?$/i)?.[1]||'';}if(!/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(id))throw new Error('El identificador de base de Notion tiene un formato inválido.');return id;};
+  if(sourceId)sourceId=normalizeId(sourceId);else if(databaseId)databaseId=normalizeId(databaseId);
   let database: any;
   try {
     database = await notionRequest(settings, sourceId ? 'data_sources/' + sourceId : 'databases/' + databaseId);
@@ -332,7 +328,17 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
     if (/validation_error|invalid.*uuid/i.test(msg)) throw new Error('El identificador de base de Notion (' + (sourceId || databaseId) + ') tiene un formato inválido.');
     throw err;
   }
-
+  if(!Object.values(database.properties||{}).some((p:any)=>p.type==='title'))throw new Error('La base de destino no tiene propiedad de título.');
+  return {database,databaseId,sourceId};
+}
+async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
+  const { start, end, domain, person, title } = payload;
+  if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
+  if (start) validateSchedule(start, end);
+  if (!title?.trim()) throw new Error('Escribe un título.');
+  if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
+  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
+  const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload);
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');
   if (!titleField) throw new Error('La base no tiene propiedad de título.');

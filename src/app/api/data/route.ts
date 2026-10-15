@@ -1417,6 +1417,13 @@ async function POSTLive(req: NextRequest) {
 
     if(action==='browser-dropbox-upload')return NextResponse.json(await browserDropboxUpload(actor,payload));
     if(action==='add-checklist-item'||action==='add-comment'){const item=await activityQuickEntry({...getSettings(),notionToken:resolveNotionToken(req)},actor,payload,action==='add-comment');previewMemoryCache.clear();return NextResponse.json({success:true,item});}
+    if(action==='validate-upload-notion-destination'){
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      if(payload.targetPageId){await assertChecklistAccess(settings,actor,payload.targetPageId);return NextResponse.json({success:true});}
+      const {validateNotionCreationTarget}=await import('@/services/notionMutations');
+      const target=await validateNotionCreationTarget(settings,payload);
+      return NextResponse.json({success:true,databaseId:target.databaseId,dataSourceId:target.sourceId});
+    }
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
@@ -1468,7 +1475,7 @@ async function POSTLive(req: NextRequest) {
             const groups=input.separatePages?batch.map((file:any)=>[file]):[batch];for(const [index,group] of groups.entries()){
               const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
               const backups=receipts.filter(r=>r.kind==='dropbox');const references=(input.separatePages?backups.slice(index,index+1):backups).map(r=>'Dropbox: '+r.path).join('\n');
-              const data=await invoke('create-notion-page',{title,body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],currentUser:actor});receipts.push({kind:'notion',...data});
+              const data=await invoke('create-notion-page',{title,body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],databaseId:input.databaseId,dataSourceId:input.dataSourceId,useCalendarSource:input.useCalendarSource===true,currentUser:actor});receipts.push({kind:'notion',...data});
             }
           }
         }
@@ -1594,7 +1601,7 @@ async function POSTLive(req: NextRequest) {
     }
 
     if (action === 'create-activity' || action === 'create-notion-page') {
-      const settings = getSettings();
+      const settings = {...getSettings(),notionToken:resolveNotionToken(req)};
       const actor = payload?.currentUser || settings.currentUser;
       if (action === 'create-activity' && (!payload?.start || !payload?.end || !payload?.domain || !payload?.person)) return NextResponse.json({ error: 'Completa responsable, dominio, fecha y horario.' }, { status: 400 });
       const result = await createActivity(settings, actor, payload || {});

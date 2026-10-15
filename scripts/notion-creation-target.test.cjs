@@ -1,0 +1,25 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+require.extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,p);
+const previousDatabase=process.env.NOTION_DATABASE_ID,previousSource=process.env.NOTION_CALENDAR_DATA_SOURCE_ID;
+delete process.env.NOTION_DATABASE_ID;delete process.env.NOTION_CALENDAR_DATA_SOURCE_ID;
+const id='11111111-1111-4111-8111-111111111111',db='22222222-2222-4222-8222-222222222222';let calls=[],denied=false;
+global.fetch=async(url,options={})=>{calls.push({url:String(url),options});if(denied)return new Response(JSON.stringify({message:'Could not find database'}),{status:404});if(String(url).includes('/pages')&&options.method==='POST')return new Response(JSON.stringify({id:db,url:'https://notion.so/'+db,properties:{Name:{type:'title',title:[]}}}),{status:200});return new Response(JSON.stringify({id,properties:{Name:{type:'title'},'Fecha POR Hacer':{type:'date'}}}),{status:200});};
+(async()=>{
+  const {validateNotionCreationTarget,createActivity}=require('../src/services/notionMutations.ts'),settings={notionToken:'MOCK_TARGET_ONLY',notionDataSourceId:id,currentUser:'nneft'};
+  await assert.rejects(()=>validateNotionCreationTarget(settings,{}),/Falta elegir/);assert.equal(calls.length,0);
+  const result=await validateNotionCreationTarget(settings,{useCalendarSource:true});assert.equal(result.sourceId,id);assert.ok(calls.at(-1).url.endsWith('/data_sources/'+id));
+  await validateNotionCreationTarget(settings,{databaseId:'https://www.notion.so/'+db.replace(/-/g,'')+'?v=other'});assert.ok(calls.at(-1).url.endsWith('/databases/'+db.replace(/-/g,'')));
+  const before=calls.length;await assert.rejects(()=>validateNotionCreationTarget(settings,{databaseId:'https://evil.test/'+db}),/pertenecer a Notion/);assert.equal(calls.length,before);
+  await assert.rejects(()=>validateNotionCreationTarget(settings,{databaseId:'no-es-id'}),/formato inválido/);
+  await createActivity(settings,'nneft',{title:'Grabación',useCalendarSource:true});const page=calls.find(c=>c.url.endsWith('/pages')&&c.options.method==='POST');assert.ok(page);const body=JSON.parse(page.options.body);assert.equal(body.parent.data_source_id,id);assert.deepEqual(Object.keys(body.properties),['Name']);
+  denied=true;await assert.rejects(()=>validateNotionCreationTarget(settings,{useCalendarSource:true}),/No se tiene acceso/);
+  denied=false;
+  const load=Module._load;Module._load=function(name,parent,...rest){if(parent?.filename.replace(/\\/g,'/').endsWith('/src/app/api/data/route.ts')){if(name==='@/services/serverAuth')return {requireActor:async()=> 'nneft',assertSameOrigin:()=>{}};if(name==='@/services/serverSettings')return {getSettings:()=>settings,saveSettings:()=>{}};if(name==='@/services/supabaseServer')return {supabaseConfigured:()=>false};}return load.call(this,name,parent,...rest);};
+  const {NextRequest}=require('next/server'),api=require('../src/app/api/data/route.ts');
+  const writes=calls.filter(c=>c.options.method==='POST').length;
+  const checked=await api.POST(new NextRequest('https://anfeta.test/api/data',{method:'POST',body:JSON.stringify({action:'validate-upload-notion-destination',payload:{useCalendarSource:true}})}));
+  assert.equal(checked.status,200);assert.equal((await checked.json()).dataSourceId,id);assert.equal(calls.filter(c=>c.options.method==='POST').length,writes);
+  console.log('OK destino de Notion: configuración ausente, elección explícita de calendario, ID/enlace, lectura real de esquema, creación sin horario y errores de acceso. Notion simulado.');
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{if(previousDatabase===undefined)delete process.env.NOTION_DATABASE_ID;else process.env.NOTION_DATABASE_ID=previousDatabase;if(previousSource===undefined)delete process.env.NOTION_CALENDAR_DATA_SOURCE_ID;else process.env.NOTION_CALENDAR_DATA_SOURCE_ID=previousSource;});
