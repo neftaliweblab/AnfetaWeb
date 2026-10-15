@@ -1,3 +1,4 @@
+import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
@@ -1627,6 +1628,7 @@ async function POSTLive(req: NextRequest) {
       const page = await assertChecklistAccess(effectiveSettings, actor, pageId);
 
       const uploadId = payload?.uploadId;
+      if(uploadId&&!/^[a-f0-9-]{36}$/i.test(uploadId))throw Error('Identificador de subida inválido.');
       if (uploadId) {
         const existingBlocks = await readBlocks(effectiveSettings, pageId);
         const marker = `[UPLOAD_REF:${uploadId}]`;
@@ -1652,6 +1654,9 @@ async function POSTLive(req: NextRequest) {
       const attachmentFiles=Array.isArray(payload?.files)?payload.files:[];
       if(attachmentFiles.length>20)throw Error('Selecciona hasta 20 archivos.');
       const fileBlocks=await notionFileBlocks(effectiveSettings,attachmentFiles);
+      const hasVideo=attachmentFiles.some((f:any)=>String(f.contentType||'').startsWith('video/')||/\.(mp4|webm|mov|m4v)$/i.test(f.filename||''))||/Dropbox:.*\.(mp4|webm|mov|m4v)(?:\n|$)/i.test(String(payload?.body||''));
+      const playbackUrl=uploadId&&hasVideo?recordingPlaybackUrl(new URL(req.url).origin,pageId,uploadId):undefined;
+      const playbackEmbedUrl=uploadId&&hasVideo?recordingPlaybackUrl(new URL(req.url).origin,pageId,uploadId,true):undefined;
       const block = {
         object: 'block',
         type: 'callout',
@@ -1659,13 +1664,24 @@ async function POSTLive(req: NextRequest) {
           icon: { type: 'emoji', emoji: '📎' },
           rich_text: [
             { type: 'text', text: { content: `Adjunto ANFETA: ${payload?.title || 'Grabación / Archivo'}\n` }, annotations: { bold: true } },
-            ...detailRich
+            ...detailRich,
+            ...(playbackUrl?[{type:'text',text:{content:'\n▶ Ver grabación en ANFETA',link:{url:playbackUrl}},annotations:{bold:true}}]:[])
           ]
         }
       };
 
+      const embedBlock = playbackEmbedUrl ? {
+        object: 'block',
+        type: 'embed',
+        embed: {
+          url: playbackEmbedUrl
+        }
+      } : undefined;
+
+      const children = [block, ...fileBlocks, ...(embedBlock ? [embedBlock] : [])];
+
       const response = await notionRequest(effectiveSettings, `blocks/${pageId}/children`, 'PATCH', {
-        children: [block,...fileBlocks]
+        children
       });
       const saved = response.results?.[0];
       invalidateChecklist(effectiveSettings, pageId);

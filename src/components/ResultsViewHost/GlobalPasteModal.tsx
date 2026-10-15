@@ -90,6 +90,7 @@ export function GlobalPasteModal({
 
   const [confirmedDropbox, setConfirmedDropbox] = useState<string[]>([]);
   const [confirmedNotion, setConfirmedNotion] = useState<string[]>([]);
+  const [playbackPages,setPlaybackPages]=useState<{pageId:string;uploadId:string}[]>([]);
 
   // Dropbox folder selection via API
   const [customFolder, setCustomFolder] = useState('');
@@ -167,7 +168,7 @@ export function GlobalPasteModal({
     setSeparate(false);
     setError('');
     setStatus('');
-    setLocked(false);
+    setLocked(false);setPlaybackPages([]);
     setBusy(false);
     const prefix = [d, detected.root, m].filter(Boolean).join(' ');
     prefixRef.current = prefix;
@@ -436,6 +437,7 @@ export function GlobalPasteModal({
 
       const notionTitles = allReceipts.filter((r: any) => r.kind === 'notion' || r.kind === 'notion_attachment').map((r: any) => r.title || r.pageId);
       setConfirmedNotion(notionTitles);
+      if(files.some(f=>/^video\//.test(f.contentType||'')))setPlaybackPages(allReceipts.filter((r:any)=>r.kind==='notion_attachment').map((r:any)=>({pageId:r.pageId,uploadId:recovery.current!.id})));
 
       for (const [index, item] of allReceipts.entries()) {
         if (item.kind === 'event') continue;
@@ -883,7 +885,8 @@ export function GlobalPasteModal({
           </div>
         )}
 
-        {mode!=='dropbox'&&files.some(f=>/video\/webm/i.test(f.contentType||'')||/\.webm$/i.test(f.filename))&&<p role="status" className="rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 text-sm text-amber-200">Este video es WebM. En Notion se adjuntará como archivo descargable para evitar un reproductor incompatible. Para verlo dentro de Notion, usa una grabación MP4 o convierte el archivo a MP4 antes de subirlo.</p>}
+        {mode!=='dropbox'&&files.some(f=>/video\/webm/i.test(f.contentType||'')||/\.webm$/i.test(f.filename))&&<p role="status" className="rounded-lg border border-cyan-700/50 bg-cyan-950/30 p-3 text-sm text-cyan-200">Este video es WebM. En Notion se incrustará el reproductor para verlo directamente en la página, y se conservará el archivo descargable y el enlace a ANFETA.</p>}
+        {playbackPages.length>0&&<div className="flex flex-wrap gap-2">{playbackPages.map(p=><a key={p.pageId} href={'/recording?page='+encodeURIComponent(p.pageId)+'&upload='+encodeURIComponent(p.uploadId)} target="_blank" rel="noreferrer" className="rounded-lg bg-cyan-800 px-4 py-2 text-sm font-semibold text-white">▶ Ver grabación en ANFETA</a>)}</div>}
         {error && <p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}
         {status && <p role="status" className="break-words text-sm text-cyan-200">{status}</p>}
         {started && <p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó pendiente, puedes corregirlo y reintentar.</p>}
