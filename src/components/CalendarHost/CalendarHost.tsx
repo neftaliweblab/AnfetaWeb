@@ -1,4 +1,5 @@
 "use client";
+import {UpdateNotice} from '../UpdateNotice';
 import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
@@ -525,7 +526,7 @@ export function CalendarHost({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
-      {refreshWarning&&<p role="status" className="px-3 py-1 text-xs text-amber-200 bg-amber-950/20">Actualización: {refreshWarning}</p>}
+      <UpdateNotice message={refreshWarning}/>
       {/* Notificación de Error / Alerta Visible y Elegante */}
       {error && (
         <div

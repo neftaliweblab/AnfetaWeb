@@ -47,6 +47,7 @@ interface SearchConfigRowProps {
   onOpenSettings?: () => void;
   onOpenDropboxConnect?: () => void;
   notification?: { type: 'info' | 'success' | 'warning' | 'error'; text: string } | null;
+  onDismissNotification?: () => void;
 }
 
 const MONTHS = [
@@ -114,6 +115,7 @@ export function SearchConfigRow({
   onOpenSettings,
   onOpenDropboxConnect,
   notification,
+  onDismissNotification,
 }: SearchConfigRowProps) {
   const [showColsMenu, setShowColsMenu] = useState(false);
   const colsRef = useRef<HTMLDivElement>(null);
@@ -625,7 +627,7 @@ export function SearchConfigRow({
       {notification && (
         <div
           role="status"
-          className={`mt-1.5 px-3 py-1.5 rounded text-xs font-medium flex items-center justify-between transition-all animate-in fade-in duration-200 ${
+          className={`mt-1.5 px-3 py-1.5 rounded text-xs font-medium flex items-center justify-between gap-2 transition-all animate-in fade-in duration-200 ${
             notification.type === 'error'
               ? 'bg-rose-950/90 border border-rose-500/50 text-rose-200'
               : notification.type === 'warning'
@@ -635,18 +637,53 @@ export function SearchConfigRow({
               : 'bg-sky-950/90 border border-sky-500/50 text-sky-200'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <span>{notification.text}</span>
-          </div>
-          {notification.type === 'warning' && onOpenSettings && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="underline hover:text-white ml-2 text-[11px] cursor-pointer"
-            >
-              Abrir Configuración ⚙️
-            </button>
+          {notification.type === 'warning' ? (
+            <div className="flex-1 min-w-0">
+              {(() => {
+                const parts = [...new Set(notification.text.split(' · ').map(t => t.trim()).filter(Boolean))];
+                if (parts.length > 1) {
+                  return (
+                    <details className="min-w-0">
+                      <summary className="cursor-pointer select-none font-semibold">
+                        Avisos de sincronización · Ver detalles ({parts.length})
+                      </summary>
+                      <ul className="mt-1.5 max-h-32 overflow-y-auto space-y-1 text-[11px] font-normal break-words">
+                        {parts.map((p, idx) => (
+                          <li key={idx}>• {p}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                }
+                return <span>{notification.text}</span>;
+              })()}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span>{notification.text}</span>
+            </div>
           )}
+          <div className="flex items-center gap-2 shrink-0">
+            {notification.type === 'warning' && onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="underline hover:text-white text-[11px] cursor-pointer"
+              >
+                Abrir Configuración ⚙️
+              </button>
+            )}
+            {onDismissNotification && (
+              <button
+                type="button"
+                aria-label="Cerrar aviso"
+                onClick={onDismissNotification}
+                className="hover:text-white px-1 text-sm cursor-pointer"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -149,6 +149,13 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
       const text = (content.rich_text || []).map((x: any) => x.plain_text || x.text?.content || '').join('');
 
       if (/\[ANFETA_|Datos internos de ANFETA/i.test(text)) continue;
+      if(type==='synced_block'){
+        if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
+        const original=content.synced_from?.block_id||source.id;
+        if(!original)throw Error('El synced_block de la plantilla no tiene un origen válido.');
+        try{nodes.push(...await read(original,depth+1));}catch(error){throw Error('No se pudo copiar el synced_block; revisa el acceso al bloque original. '+(error instanceof Error?error.message:''));}
+        continue;
+      }
       if (!fields[type]) {
         throw new Error('La plantilla contiene un bloque que aún no se puede copiar: ' + type + '. No se creó una página incompleta.');
       }
@@ -164,6 +171,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         }
       }
 
+      if(body.icon?.type==='file'&&body.icon.file?.url){const iconId=await transferNotionInternalFile(settings,body.icon.file.url,'image');body.icon={type:'file_upload',file_upload:{id:iconId}};}
       if (['image', 'video', 'audio', 'pdf', 'file'].includes(type)) {
         if (content.type === 'file_upload' && content.file_upload?.id) {
           body.type = 'file_upload';
@@ -211,6 +219,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
       });
     }
 
+    seen.delete(id);
     return nodes;
   }
 

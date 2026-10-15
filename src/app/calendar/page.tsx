@@ -1,5 +1,6 @@
 "use client";
 import {PersonSelector} from '@/components/LoginModal/PersonSelector';
+import {CalendarRecordingWorkspace} from '@/components/CalendarHost/CalendarRecordingWorkspace';
 import {LoginModal} from '@/components/LoginModal/LoginModal';
 import { mexicoDate } from "@/services/calendarPresentation";
 
@@ -172,6 +173,7 @@ export default function StandaloneCalendarPage() {
 
       {/* Canvas del Calendario */}
       <main className="flex-1 relative overflow-hidden">
+        <CalendarRecordingWorkspace currentUser={currentUser}/>
         <CalendarHost
                 loadError={calendarLoadError} initialCacheMeta={calendarCacheMeta}
           currentUser={currentUser}

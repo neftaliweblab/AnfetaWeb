@@ -1,4 +1,6 @@
 "use client";
+import {SoftwareTemplatePhases} from './SoftwareTemplatePhases';
+import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -79,6 +81,7 @@ export function NotionTemplatesModal({
     CALENDAR_QUICK_TEMPLATES[0] // "todas"
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [softwarePhase,setSoftwarePhase]=useState<number|null>(null);
 
   // Selección múltiple
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -126,8 +129,8 @@ export function NotionTemplatesModal({
   }, [isOpen, currentDate]);
 
   const filtered = useMemo(() => {
-    return filterTemplatesByCategory(templates, selectedCategory, search);
-  }, [templates, selectedCategory, search]);
+    const rows=filterTemplatesByCategory(templates, selectedCategory, search);return selectedCategory.key==='programas'&&softwarePhase!==null?rows.filter(row=>softwareTemplatePhase(row)===softwarePhase):rows;
+  }, [templates, selectedCategory, search,softwarePhase]);
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -259,7 +262,7 @@ export function NotionTemplatesModal({
         }
 
         setCreationSuccessMsg(
-          `¡Se ${created.length === 1 ? "creó 1 actividad" : `crearon ${created.length} actividades`} con éxito en Notion y Calendario! (Estructura duplicada sin contenido)`
+          `¡Se ${created.length === 1 ? "creó 1 actividad" : `crearon ${created.length} actividades`} con éxito en Notion y Calendario!`
         );
         setTimeout(() => {
           onClose();
@@ -377,6 +380,7 @@ export function NotionTemplatesModal({
               })}
             </div>
 
+            {selectedCategory.key==='programas'&&<SoftwareTemplatePhases templates={templates} value={softwarePhase} onChange={setSoftwarePhase}/>}
             {/* Buscador y Controles de Selección */}
             <div className="p-3 border-b border-[#1E2836] bg-[#0B0F15] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
               <div className="flex-1 flex items-center gap-2 bg-[#141B26] border border-[#26354A] rounded px-3 py-1.5 focus-within:border-[#38BDF8]">
@@ -496,7 +500,7 @@ export function NotionTemplatesModal({
                           type="button"
                           onClick={() => handleOpenConfigSingle(t)}
                           className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#0284C7] hover:bg-[#0369A1] text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
-                          title="Duplicar estructura e instanciar en Notion (sin contenido de plantilla)"
+                          title="Crear una copia independiente con contenido de la plantilla"
                         >
                           <Zap className="w-3 h-3 text-white fill-white" />
                           <span>Usar</span>
@@ -710,9 +714,9 @@ export function NotionTemplatesModal({
               <div className="p-3 rounded-lg bg-[#0B2538] border border-[#0284C7]/50 text-xs text-[#7DD3FC] flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-white block mb-0.5">Duplicación exacta sin contenido (Paridad 1:1 ANFETA):</strong>
+                  <strong className="text-white block mb-0.5">Crear una copia independiente de la plantilla:</strong>
                   Se creará una nueva actividad en Notion heredando todas las propiedades de la plantilla seleccionada (asignación, estado, base de datos, Fecha POR Hacer).
-                  El <strong className="text-white">cuerpo/body</strong> de la página se creará limpio y vacío para que tú escribas tu contenido directamente.
+                  Se copiará el contenido compatible, incluidos checks y medios accesibles. Los bloques sincronizados se convertirán en contenido independiente.
                 </div>
               </div>
 

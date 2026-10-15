@@ -1,4 +1,6 @@
 "use client";
+import {SoftwareTemplatePhases} from '../ResultsViewHost/SoftwareTemplatePhases';
+import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
@@ -81,6 +83,7 @@ export function CalendarTemplatesModal({
 }: CalendarTemplatesModalProps) {
   // Estado general
   const [templates, setTemplates] = useState<any[]>([]);
+  const [softwarePhase,setSoftwarePhase]=useState<number|null>(null);
   const [creationError, setCreationError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CalendarQuickTemplateDefinition>(
@@ -130,8 +133,8 @@ export function CalendarTemplatesModal({
 
   // Lista filtrada según categoría y texto de búsqueda
   const filteredTemplates = useMemo(() => {
-    return filterTemplatesByCategory(templates, selectedCategory, searchQuery);
-  }, [templates, selectedCategory, searchQuery]);
+    const rows=filterTemplatesByCategory(templates, selectedCategory, searchQuery);return selectedCategory.key==='programas'&&softwarePhase!==null?rows.filter(row=>softwareTemplatePhase(row)===softwarePhase):rows;
+  }, [templates, selectedCategory, searchQuery,softwarePhase]);
 
   // Manejo de selecciones
   const handleToggleSelect = (pageId: string) => {
@@ -379,6 +382,7 @@ export function CalendarTemplatesModal({
               })}
             </div>
 
+            {selectedCategory.key==='programas'&&<SoftwareTemplatePhases templates={templates} value={softwarePhase} onChange={setSoftwarePhase}/>}
             {/* Barra de Búsqueda y Selección masiva */}
             <div className="p-3 bg-[#0E141E] border-b border-[#1E2836] flex items-center justify-between gap-3">
               <div className="flex-1 flex items-center gap-2 bg-[#121A26] border border-[#223348] rounded px-3 py-1.5 focus-within:border-[#38BDF8]">
@@ -605,9 +609,9 @@ export function CalendarTemplatesModal({
               <div className="p-3 rounded-lg bg-[#0B2538] border border-[#0284C7]/50 text-xs text-[#7DD3FC] flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-white block mb-0.5">Duplicación exacta sin contenido (Paridad 1:1 ANFETA):</strong>
+                  <strong className="text-white block mb-0.5">Crear una copia independiente de la plantilla:</strong>
                   Se creará una nueva actividad en Notion heredando toda la estructura y propiedades de la plantilla seleccionada.
-                  El <strong className="text-white">cuerpo/body</strong> de la página se creará limpio y vacío para que tú escribas tu contenido directamente.
+                  Se copiará el contenido compatible, incluidos checks y medios accesibles. Los bloques sincronizados se convertirán en contenido independiente.
                 </div>
               </div>
 

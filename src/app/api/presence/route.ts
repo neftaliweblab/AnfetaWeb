@@ -7,7 +7,7 @@ function formatLastSeen(lastSeen: string | null, isOnline: boolean): string {
   if (isOnline) return 'En linea';
   if (!lastSeen) return 'Sin conexion';
   const diffMs = Date.now() - new Date(lastSeen).getTime();
-  if (diffMs <= 0) return 'En linea';
+  if (diffMs <= 0) return 'Hora de conexión sin confirmar';
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return 'Hace un momento';
   if (mins < 60) return 'Hace ' + mins + ' min';
@@ -64,7 +64,8 @@ async function getTeamPresenceList() {
 
   const list = (((profiles.data as ProfileRow[] | null) || [])).map(prof => {
     const lastSeen = presenceMap.get(prof.id) || null;
-    const isOnline = Boolean(lastSeen && (Date.now() - new Date(lastSeen).getTime()) <= 150000);
+    const age=lastSeen?Date.now()-new Date(lastSeen).getTime():Infinity;
+    const isOnline = Number.isFinite(age)&&age>=-30000&&age<=150000;
     return {
       name: normalizePerson(prof.person_tag),
       tag: prof.person_tag,
@@ -82,17 +83,18 @@ async function getTeamPresenceList() {
     return a.name.localeCompare(b.name);
   });
 
-  return list;
+  return [...new Map(list.slice().reverse().map(person=>[person.name,person])).values()].sort((a,b)=>Number(b.isOnline)-Number(a.isOnline)||a.name.localeCompare(b.name));
 }
 
 export async function GET(req: Request) {
   try {
     assertSameOrigin(req);
+    await requireActor(req);
     if (!supabaseConfigured()) return NextResponse.json({configured: false, people: []});
     const people = await getTeamPresenceList();
     return NextResponse.json({configured: true, people}, {headers: {'Cache-Control': 'no-store'}});
   } catch {
-    return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
+    return NextResponse.json({error:'No se pudo consultar presencia.'}, {status:503,headers: {'Cache-Control': 'no-store'}});
   }
 }
 
@@ -104,11 +106,11 @@ export async function POST(req: Request) {
     const identity = await supabaseIdentity(), admin = supabaseAdmin();
     const result = await admin.from('team_presence').upsert({user_id: identity.id, last_seen: new Date().toISOString()});
     if (result.error) {
-      return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
+      return NextResponse.json({error:'No se pudo actualizar presencia.'}, {status:503,headers: {'Cache-Control': 'no-store'}});
     }
     const people = await getTeamPresenceList();
     return NextResponse.json({configured: true, people}, {headers: {'Cache-Control': 'no-store'}});
   } catch {
-    return NextResponse.json({configured: false, people: []}, {headers: {'Cache-Control': 'no-store'}});
+    return NextResponse.json({error:'No se pudo consultar presencia.'}, {status:503,headers: {'Cache-Control': 'no-store'}});
   }
 }

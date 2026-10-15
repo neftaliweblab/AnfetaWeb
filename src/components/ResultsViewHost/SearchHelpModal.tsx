@@ -60,7 +60,7 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
         { cmd: "revisiones", desc: "Limita la búsqueda a la base Revisiones." },
         { cmd: "zclientes", desc: "Limita a base Clientes." },
         { cmd: "zdominios", desc: "Limita a base Dominios." },
-        { cmd: "zproyectos", desc: "Limita a Programas y proyectos." },
+        { cmd: "zproyectos", desc: "Limita a Software y proyectos." },
         { cmd: "zcorreos", desc: "Limita a Correos / Contraseñas." },
         { cmd: "zpagar", desc: "Limita a registros de Pagar." },
         { cmd: "zcobrar", desc: "Limita a registros de Cobrar." },

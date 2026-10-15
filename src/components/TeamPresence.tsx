@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState,useRef} from 'react';
 import {readApiJson} from '@/lib/readApiJson';
+import {PERSON_METADATA,normalizePerson} from '@/services/identityNormalizer';
 
 interface TeamMember {
   name: string;
@@ -32,9 +33,8 @@ export function TeamPresence(){
         }
       }catch(e){
         if(!controller.signal.aborted){
-          setPeople([]);
-          setConfigured(false);
-          setError('');
+          setConfigured(true);
+          setError('No se pudo consultar la presencia; el último estado no está confirmado.');
         }
       }finally{
         busy=false;
@@ -68,6 +68,7 @@ export function TeamPresence(){
   if(!configured)return null;
 
   const onlineCount = people.filter(p=>p.isOnline).length;
+  const online=people.filter(p=>p.isOnline);
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
@@ -82,9 +83,10 @@ export function TeamPresence(){
         )}
       >
         <span className={'w-2 h-2 rounded-full '+(error?'bg-amber-400':onlineCount>0?'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]':'bg-slate-500')} />
-        <span className="whitespace-nowrap">{error?'Desconectado':`${onlineCount} en línea`}</span>
+        <span className="whitespace-nowrap">{error?'Presencia no disponible':`${onlineCount} en línea`}</span>
         <span className="text-[9px] opacity-60">▾</span>
       </button>
+      {!error&&online.length>0&&<div className="inline-flex max-w-28 sm:max-w-48 items-center -space-x-1 ml-1 align-middle" aria-label="Personas conectadas">{online.slice(0,4).map(person=>{const meta=PERSON_METADATA[normalizePerson(person.name)];return <button key={person.name} type="button" title={person.name+' · En línea'} aria-label={person.name+' está en línea'} onClick={()=>setOpen(value=>!value)} className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-900 text-[10px] font-bold text-white focus:z-10 focus:outline-2 focus:outline-cyan-400" style={{backgroundColor:meta?.color||'#475569'}}>{meta?.avatar||person.name.slice(0,2)}</button>;})}{online.length>4&&<button type="button" title="Ver todas las personas conectadas" onClick={()=>setOpen(value=>!value)} className="h-7 w-7 rounded-full bg-slate-700 text-[10px] text-white">+{online.length-4}</button>}</div>}
 
       {open && (
         <div className="absolute left-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-[#223848] bg-[#0C121B]/95 p-3.5 shadow-2xl backdrop-blur-md z-[100] text-slate-100 ring-1 ring-cyan-500/20">

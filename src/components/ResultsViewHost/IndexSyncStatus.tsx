@@ -23,7 +23,7 @@ export function IndexSyncStatus(){
     <details className="relative text-[10px] text-rose-300">
       <summary className="cursor-pointer select-none">Índice: actualización pendiente</summary>
       <div role="alert" className="absolute right-0 top-full z-[300] mt-2 w-80 max-w-[calc(100vw-24px)] rounded-lg border border-rose-800 bg-[#20111A] p-3 text-xs shadow-xl space-y-2">
-        <p className="leading-snug text-rose-200">{error}</p>
+        <p className="max-h-36 overflow-y-auto break-words leading-snug text-rose-200">{error}</p>
         <button
           type="button"
           disabled={isRetrying}

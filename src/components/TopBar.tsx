@@ -95,7 +95,7 @@ export function TopBar({
             alt="ANFETA"
             className="w-7 h-7 rounded-md object-contain shadow-[0_0_12px_rgba(0,168,255,0.45)] group-hover:scale-105 transition-transform"
           />
-          <div className="flex items-baseline gap-1.5">
+          <div className="hidden xl:flex items-baseline gap-1.5">
             <span className="text-xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#00A8FF] via-[#38BDF8] to-[#4ADE80] drop-shadow-[0_0_12px_rgba(0,168,255,0.45)]">
               ANFETA
             </span>

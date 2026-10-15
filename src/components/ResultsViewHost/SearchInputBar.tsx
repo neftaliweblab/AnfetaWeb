@@ -340,7 +340,7 @@ export function SearchInputBar({
                       }}
                       className="w-full text-left px-2.5 py-1 rounded hover:bg-[#1E2836] text-[#CBD5E1] hover:text-[#38BDF8] text-[11px] transition-colors"
                     >
-                      {v}
+                      {v==='Programas'?'Software':v}
                     </button>
                   )
                 )}

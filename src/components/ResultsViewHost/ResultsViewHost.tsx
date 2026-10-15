@@ -183,6 +183,7 @@ export function ResultsViewHost({
   const [isBatchRenameOpen, setIsBatchRenameOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [recordingUpload,setRecordingUpload]=useState(false);
+  const [recordingDestination,setRecordingDestination]=useState<SearchResultRow|null>(null);
   const resultsRoot=useRef<HTMLDivElement>(null),keyboardStart=useRef(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [statusError, setStatusError] = useState('');
@@ -199,6 +200,7 @@ export function ResultsViewHost({
 
   useEffect(() => {
     if (!appNotification) return;
+    if (appNotification.type === 'warning' || appNotification.type === 'error') return;
     const timer = setTimeout(() => setAppNotification(null), 5000);
     return () => clearTimeout(timer);
   }, [appNotification]);
@@ -1314,6 +1316,7 @@ export function ResultsViewHost({
         onOpenSettings={onOpenSettings}
         onOpenDropboxConnect={() => setIsDropboxConnectOpen(true)}
         notification={appNotification}
+        onDismissNotification={() => setAppNotification(null)}
       />
 
       {/* 4. Contenedor de 4 Columnas Dinámicas */}
@@ -1519,7 +1522,7 @@ export function ResultsViewHost({
       />
 
       {/* Grabador flotante persistente entre módulos */}
-      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
+      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async (file,target)=>{onShowResults?.();setRecordingDestination(target?{id:target.id,externalId:target.id,name:target.title,source:'Notion',type:'PAGE'} as SearchResultRow:null);setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
       <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>
@@ -1599,13 +1602,14 @@ export function ResultsViewHost({
           setGlobalPasteImage(null);
           setGlobalFiles([]);
           setRecordingUpload(false);
+          setRecordingDestination(null);
         }}
         currentUser={currentUser}
         initialFiles={globalFiles}
         initialDestination={recordingUpload?'both':undefined}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
-        suggestedTarget={selectedItem}
+        suggestedTarget={recordingUpload?recordingDestination:selectedItem}
         onSuccess={(newRow) => {
           setItems((prev) => [newRow, ...prev]);
           setSelectedItem(newRow);

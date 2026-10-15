@@ -90,6 +90,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
   const title = titleOf(page);
+  if(updates.automationMove){const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);if(!['pending','suspended'].includes(state)||/\b(?:zREVISION|FTF|ccale)\b/i.test(title)||Object.entries(page.properties||{}).some(([n,p]:any)=>/fij[oa]|fixed/i.test(n)&&p.checkbox))throw Error('La actividad ya no es un pendiente reprogramable. Actualiza su estado.');}
   if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
   if(updates.expectedStatus!==undefined && (calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'')!==updates.expectedStatus)throw new Error('El estado cambió en otro dispositivo. Actualiza antes de guardar.');
   const locks = Object.entries(page.properties || {}).some(([name, prop]: any) => /lock|bloquead/i.test(name) && prop.type === 'checkbox' && prop.checkbox);
@@ -97,7 +98,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable, Dirección o un revisor puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
-  if ((updates.start || updates.end) && /(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || ''))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
+  if ((updates.start || updates.end) && (workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name||'',title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || '')))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
   if (returned) updates = {...updates,status:'prtuzREVISION'};
@@ -291,7 +292,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   return updated;
 }
 export async function createActivity(settings: Settings, actor: string, payload: any) {
-  return payload.start?withCalendarSchedule(settings,()=>createActivityUnlocked(settings,actor,payload)):createActivityUnlocked(settings,actor,payload);
+  const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};
+  return payload.start?withCalendarSchedule(bounded,()=>createActivityUnlocked(bounded,actor,payload)):createActivityUnlocked(bounded,actor,payload);
 }
 export async function validateNotionCreationTarget(settings:Settings,payload:any={}){
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion en el servidor.');

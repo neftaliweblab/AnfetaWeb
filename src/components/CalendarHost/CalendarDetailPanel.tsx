@@ -1,5 +1,6 @@
 "use client";
 import {ActivityQuickEntry} from './ActivityQuickEntry';
+import {requestActivityRecording} from '@/lib/activityRecording';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 
 import { calendarDisplayTitle, calendarTime } from "@/services/calendarPresentation";
@@ -200,6 +201,7 @@ export function CalendarDetailPanel({
         </div>
 
         {/* Metadata Card */}
+        <button type="button" disabled={!editable} onClick={()=>{if(!requestActivityRecording({id:activity.pageId,title:activity.title,type:'actividad',typeLabel:'Actividad'}))setStatusMessage('No se pudo abrir el grabador. Vuelve a abrir ANFETA e intenta de nuevo.');}} className="w-full rounded border border-cyan-800 bg-cyan-950/40 p-2 text-xs text-cyan-200 disabled:opacity-40">● Grabar para esta actividad</button>
         <div className="rounded-lg bg-[#1F1F23] p-3 text-xs space-y-2 border border-[#2B2B30]">
           <div className="flex items-center justify-between">
             <span className="text-slate-400 flex items-center gap-1.5">

@@ -299,13 +299,13 @@ export default function AnfetaApp() {
       try {
         const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);},true);
         if(!stopped){setAutomationReport(report);window.dispatchEvent(new Event('anfeta_data_refreshed'));}
-        if(!report.failed)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
+        if(!report.failed&&!report.remaining)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
         if(report.failed&&!stopped)setCalendarLoadError(report.errors.join(' · '));
       }catch(e){if(!stopped)setCalendarLoadError('Robot 05:00: '+(e instanceof Error?e.message:'No se pudo preparar la jornada.'));}
       finally{running=false;}
     };
-    const timer=setInterval(check,60000);
-    return()=>{stopped=true;clearInterval(timer);};
+    void check();const timer=setInterval(check,60000);window.addEventListener('focus',check);document.addEventListener('visibilitychange',check);
+    return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check);};
   },[currentUser,isAuthenticated]);
 
   // Global hotkeys (Ctrl+Alt+B, Ctrl+Shift+K, Ctrl+Shift+J)

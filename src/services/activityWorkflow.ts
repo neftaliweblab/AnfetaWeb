@@ -1,5 +1,6 @@
 export function workflowState(status: string, title = ''): 'pending' | 'review' | 'completed' | 'suspended' | 'unknown' {
   const value = (status || '').trim().toUpperCase();
+  if(/^(?:PRTUZ\s+)?(?:TERMINAD[OA]|COMPLETAD[OA]|FINALIZAD[OA])(?:\s|$)/.test(value)||['COMPLETED','FINISHED'].includes(value))return 'completed';
   if (/^SUSPE(?:\s|$)/.test(value)) return 'suspended';
   if (/^REVISAR REVISIONES\b|\bRREVI\b/.test(value)) return 'review';
   if (/^TERMINADO REV\b|^Z\s*-\s*COBRADO/.test(value)) return 'completed';

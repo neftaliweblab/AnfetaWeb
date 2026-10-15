@@ -62,7 +62,7 @@ const PROYECTOS_ITEMS = [
   { label: "📍 Google Maps (mmaps)", tag: "mmaps" },
   { label: "📱 Redes Sociales (rrede)", tag: "rrede" },
   { label: "💻 Aplicaciones (aapli)", tag: "aapli" },
-  { label: "⚙ Programas (pprog)", tag: "pprog" },
+  { label: "⚙ Software (pprog)", tag: "pprog" },
   { label: "📚 Bibliotecas (bbibl)", tag: "bbibl" },
 ];
 

@@ -2306,9 +2306,10 @@ async function POSTLive(req: NextRequest) {
     }
     if (action === 'calendar-automation-preview' || action === 'calendar-automation-run') {
       try {
-        const settings=getSettings(), input=payload || body, actor=input.currentUser || settings.currentUser;
+        const settings={...getSettings(),notionToken:resolveNotionToken(req)}, input=payload || body, actor=input.currentUser || settings.currentUser;
         if (action === 'calendar-automation-preview') return NextResponse.json({success:true,report:await planDailyAutomation(settings,actor,input.date || mexicoDate())});
-        const report=await executeCoordinatedAutomation(settings,actor,input.date || mexicoDate(),input.automatic!==true);
+        const excluded=Array.isArray(input.excludedIds)?input.excludedIds.filter((id:any)=>typeof id==='string'&&/^[a-f0-9-]{32,36}$/i.test(id)).slice(0,1000):[];
+        const report=await executeCoordinatedAutomation(settings,actor,input.date || mexicoDate(),input.automatic!==true,excluded);
         report.pages.forEach(page=>{const live=extractNotionPageData(page);persistCalendarActivity(normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0));});
         const {pages,...publicReport}=report;
         return NextResponse.json({success:true,report:publicReport});

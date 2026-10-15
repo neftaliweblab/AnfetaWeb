@@ -57,6 +57,9 @@ export function CreateActivityModal({
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
   const [saving, setSaving] = useState(false);
+  const submitting=React.useRef(false);
+  const [retrySeconds,setRetrySeconds]=useState(0);
+  useEffect(()=>{if(!retrySeconds)return;const timer=setTimeout(()=>setRetrySeconds(seconds=>Math.max(0,seconds-1)),1000);return()=>clearTimeout(timer);},[retrySeconds]);
   const [error, setError] = useState('');
 
   // Selector de plantillas dentro del modal
@@ -212,12 +215,14 @@ export function CreateActivityModal({
           className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (saving) return;
+            if (submitting.current||retrySeconds) return;
+            submitting.current=true;
             setSaving(true);
             setError('');
             try {
               const response = await fetch('/api/data', {
                 method: 'POST',
+                signal:AbortSignal.timeout(115000),
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   action: 'create-activity',
@@ -237,8 +242,11 @@ export function CreateActivityModal({
               }
               onCreated(data.activity);
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'Error de conexión');
+              const message=err instanceof Error?err.message:'Error de conexión';
+              if(/otro horario|otro dispositivo|otra instalación/.test(message))setRetrySeconds(5);
+              setError(err instanceof Error&&err.name==='TimeoutError'?'No se confirmó el guardado a tiempo. Actualiza el calendario antes de repetir; el formulario conserva tus datos.':message);
             } finally {
+              submitting.current=false;
               setSaving(false);
             }
           }}
@@ -456,11 +464,11 @@ export function CreateActivityModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !title.trim() || !domain.trim()}
+              disabled={saving || retrySeconds>0 || !title.trim() || !domain.trim()}
               className="px-5 py-2 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-white shadow-[0_0_12px_rgba(2,132,199,0.3)] transition-colors cursor-pointer flex items-center gap-1.5"
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>{saving ? 'Guardando en Notion…' : 'Crear en Notion'}</span>
+              <span>{saving ? 'Guardando en Notion…' : retrySeconds?`Reintentar en ${retrySeconds}s`:'Crear en Notion'}</span>
             </button>
           </div>
         </form>

@@ -73,7 +73,7 @@ export function FoldersPane({ onSelectFilter, activeFilter }: FoldersPaneProps) 
               { id: "clientes", name: "zClientes", type: "notion" },
               { id: "dominios", name: "zDominios", type: "notion" },
               { id: "proyectos", name: "zProyectos", type: "notion" },
-              { id: "programas", name: "Programas", type: "notion" },
+              { id: "programas", name: "Software", type: "notion" },
               { id: "pagar", name: "zPAGAR", type: "notion" },
               { id: "cobrar", name: "zCOBRAR", type: "notion" },
               { id: "correos", name: "zCorreos", type: "notion" },

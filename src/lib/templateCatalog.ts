@@ -153,7 +153,7 @@ export const CALENDAR_QUICK_TEMPLATES: CalendarQuickTemplateDefinition[] = [
   },
   {
     key: "programas",
-    label: "Programas",
+    label: "Software",
     projectToken: "pprog",
     icon: "⚙️",
     defaultDurationMinutes: 60,

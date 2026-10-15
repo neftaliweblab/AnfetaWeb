@@ -23,7 +23,7 @@ const SCOPES = [
   { id: "zClientes", label: "zClientes", icon: null },
   { id: "zDominios", label: "zDominios", icon: null },
   { id: "zProyectos", label: "zProyectos", icon: null },
-  { id: "Programas", label: "Programas", icon: null },
+  { id: "Programas", label: "Software", icon: null },
   { id: "zPAGAR", label: "zPAGAR", icon: null },
   { id: "zCOBRAR", label: "zCOBRAR", icon: null },
   { id: "zCorreos", label: "zCorreos", icon: null },
