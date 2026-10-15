@@ -17,6 +17,7 @@ import {TeamPresence} from './TeamPresence';
 import { ActiveHostView } from "@/types/anfeta";
 import { SearchPredictiveFlyout } from "./ResultsViewHost/SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
+import { normalizePerson } from "@/services/identityNormalizer";
 
 interface TopBarProps {
   activeView: ActiveHostView;
@@ -25,6 +26,7 @@ interface TopBarProps {
   onSearchChange: (q: string) => void;
   onClearSearch: () => void;
   onOpenSettings: () => void;
+  onOpenAnnouncements?: () => void;
   onLogout?: () => void;
   onChangePerson?: () => void;
   currentUser?: string;
@@ -40,6 +42,7 @@ export function TopBar({
   onSearchChange,
   onClearSearch,
   onOpenSettings,
+  onOpenAnnouncements,
   onLogout,
   onChangePerson,
   currentUser,
@@ -272,6 +275,17 @@ export function TopBar({
           <Clock className="w-3 h-3 text-[#38BDF8]" />
           <span>{timeStr}</span>
         </div>
+
+        {normalizePerson(currentUser) === "Neftali" && onOpenAnnouncements && (
+          <button
+            onClick={onOpenAnnouncements}
+            title="Publicar novedades y ver lecturas del equipo (Solo visible para ti)"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-700/60 rounded-lg transition-colors shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden xl:inline">Novedades</span>
+          </button>
+        )}
 
         <button
           onClick={onOpenSettings}

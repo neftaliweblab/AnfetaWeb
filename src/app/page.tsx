@@ -17,6 +17,8 @@ import { DailyProgressPanel } from "@/components/DailyProgressPanel/DailyProgres
 import { MessagesHost } from "@/components/MessagesHost/MessagesHost";
 import { RemindersCalendarHost } from "@/components/RemindersCalendarHost/RemindersCalendarHost";
 import { SettingsModal } from "@/components/SettingsModal/SettingsModal";
+import { WhatsNewModal } from "@/components/Announcements/WhatsNewModal";
+import { PublishAnnouncementModal } from "@/components/Announcements/PublishAnnouncementModal";
 import { normalizePerson } from "@/services/identityNormalizer";
 import {PersonSelector} from '@/components/LoginModal/PersonSelector';
 import { LoginModal } from "@/components/LoginModal/LoginModal";
@@ -149,6 +151,8 @@ export default function AnfetaApp() {
   });
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAnnounceOpen, setIsAnnounceOpen] = useState(false);
+  const [previewAnnouncement, setPreviewAnnouncement] = useState<any>(null);
 
   // Data states
   const [searchIndex, setSearchIndex] = useState<SearchResultRow[]>([]);
@@ -602,6 +606,7 @@ export default function AnfetaApp() {
         onSearchChange={handleSearchChange}
         onClearSearch={() => handleSearchChange("")}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAnnouncements={() => setIsAnnounceOpen(true)}
         onChangePerson={sharedMode?()=>setPersonPickerOpen(true):undefined}
         currentUser={currentUser}
         onLogout={async () => {
@@ -768,6 +773,23 @@ export default function AnfetaApp() {
           }
         }}
       />
+
+      {/* Novedades / What's New Modal para el equipo */}
+      <WhatsNewModal
+        currentUser={currentUser}
+        previewData={previewAnnouncement}
+        onClosePreview={() => setPreviewAnnouncement(null)}
+      />
+
+      {/* Editor & Panel de Novedades (exclusivo para Neftalí) */}
+      {normalizePerson(currentUser) === "Neftali" && (
+        <PublishAnnouncementModal
+          isOpen={isAnnounceOpen}
+          onClose={() => setIsAnnounceOpen(false)}
+          currentUser={currentUser}
+          onPreview={(data) => setPreviewAnnouncement(data)}
+        />
+      )}
 
       {/* Login Corporativo Modal */}
       {!isAuthenticated && (
