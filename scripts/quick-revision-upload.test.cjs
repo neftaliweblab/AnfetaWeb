@@ -8,6 +8,9 @@ assert.equal(quickRevisionTitle(sample),'prtuzREVISION [Corrección de prueba] 2
 assert.match(quickRevisionTitle({...sample,person:'ggena'}),/ g-gena \[anfeta.com\]/);
 assert.match(quickRevisionTitle({...sample,person:'aandr'}),/ a-andr\s+\[anfeta.com\]/);
 assert.throws(()=>quickRevisionTitle({...sample,person:'desconocido'}),/responsable válido/);
+assert.throws(()=>quickRevisionTitle({...sample,month:'26-[99OCT]'}),/mes/);
+assert.throws(()=>quickRevisionTitle({...sample,month:'26-[08OCT]'}),/mes/);
+assert.match(quickRevisionTitle({...sample,type:'   '}),/\[Actividad rápida\]/);
 const previous=process.env.NOTION_PERSON_IDS;process.env.NOTION_PERSON_IDS=JSON.stringify({Neftali:'user-neft',Genaro:'user-gena'});
 let writes=[],schemas=0;
 global.fetch=async(url,options={})=>{const target=String(url).split('/v1/')[1];let data={};if(target.startsWith('data_sources/')){schemas++;data={properties:{Name:{type:'title'},Estado:{type:'status',status:{options:[{name:'prtuzREVISION'}]}},'Assignee/Ejecutor Principal':{type:'people'}}};}

@@ -23,7 +23,9 @@ export function getUploadDraftStatus(draft: UploadDraft | null): DraftStatus {
   if (confirmedCount > 0 || files.some((f: any) => f?.cloudReceipt)) {
     const dropboxFilesDone = files.length === 0 || files.every((f: any) => Boolean(f?.cloudReceipt));
     const dropboxDone = !plannedDropbox || (dropboxFilesDone && receipts.some(r => r.kind === 'dropbox'));
-    const notionDone = !plannedNotion || receipts.some(r => r.kind === 'notion' || r.pageId);
+    const expectedPages=draft.plan?.targetPageId?1:draft.plan?.separatePages?Math.max(1,files.length):1;
+    const confirmedPages=new Set(receipts.filter(r=>r.kind==='notion'||r.kind==='notion_attachment'||(!r.kind&&r.pageId)).map((r,index)=>r.pageId||r.pageUrl||'receipt-'+index)).size;
+    const notionDone = !plannedNotion || confirmedPages>=expectedPages;
     if (dropboxDone && notionDone) return 'completed';
     return 'partial';
   }

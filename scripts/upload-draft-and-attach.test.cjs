@@ -91,6 +91,10 @@ const completedDraft = {
   updatedAt: Date.now()
 };
 assert.equal(getUploadDraftStatus(completedDraft), 'completed');
+const separated={id:'separated',owner:'Neftali',started:true,updatedAt:Date.now(),plan:{mode:'notion',separatePages:true,files:[{filename:'one.webm'},{filename:'two.webm'}]},receipts:[{kind:'notion',pageId:'one'}]};
+assert.equal(getUploadDraftStatus(separated),'partial');
+assert.equal(getUploadDraftStatus({...separated,receipts:[...separated.receipts,{kind:'event',pageId:'event'}]}),'partial');
+assert.equal(getUploadDraftStatus({...separated,receipts:[...separated.receipts,{kind:'notion',pageId:'two'}]}),'completed');
 
 // 2. Test SSRF URL validation in Notion template body
 const { validateNotionInternalUrl } = require('../src/services/notionTemplateBody.ts');

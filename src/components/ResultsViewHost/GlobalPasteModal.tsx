@@ -171,6 +171,8 @@ export function GlobalPasteModal({
     recovery.current = draft;
     const p = draft.plan;
     setMode(p.mode || 'both');
+    setActionType(p.actionType|| (p.targetPageId?'attach':'create'));
+    setSelectedCard(p.targetCard|| (p.targetPageId?{id:p.targetPageId,title:'Tarjeta de la subida pendiente',typeLabel:'Notion',type:'PAGE'}:null));
     setQuickType(p.quickType||'Actividad rápida');setQuickTitle(p.quickTitle||p.title||'');setQuickDescription(p.quickDescription||'');
     setNotionTarget(p.notionTarget||'configured');setNotionTargetId(p.notionTargetId||'');
     setFiles(p.files || []);
@@ -227,6 +229,7 @@ export function GlobalPasteModal({
     const batch = initialFiles.length ? initialFiles : (initialImage ? [initialImage] : []);
 
     // Sugerir tarjeta si había un elemento seleccionado
+    setActionType('create');setSelectedCard(null);
     if (suggestedTarget) {
       const rawId = suggestedTarget.externalId || suggestedTarget.id;
       const clean = String(rawId || '').replace(/-/g, '');
@@ -302,7 +305,7 @@ export function GlobalPasteModal({
         separatePages: separate,
         customFolder,
         notionTarget,notionTargetId
-        ,quickType,quickTitle,quickDescription
+        ,quickType,quickTitle,quickDescription,actionType,targetPageId:actionType==='attach'?selectedCard?.id:undefined,targetCard:actionType==='attach'?selectedCard:null
       },
       updatedAt: Date.now()
     };
@@ -311,7 +314,7 @@ export function GlobalPasteModal({
       saveUploadDraft(draft).catch(e => setError(e.message));
     }, 300);
     return () => clearTimeout(timer);
-  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId,quickType,quickTitle,quickDescription]);
+  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId,quickType,quickTitle,quickDescription,actionType,selectedCard]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -366,14 +369,16 @@ export function GlobalPasteModal({
         files,
         separatePages: separate,
         customFolder,
-        quickRevision:actionType==='create',quickType,quickTitle,quickDescription,quickMonth:month
+        quickRevision:actionType==='create',quickType,quickTitle,quickDescription,quickMonth:month,
+        actionType,targetPageId:actionType==='attach'?selectedCard?.id:undefined,targetCard:actionType==='attach'?selectedCard:null,
+        assignedPerson:reviewers.find(p=>p.tag===person)?.person||(actionType==='create'?currentUser:'')
       };
       if(dropboxOnly){frozen={...frozen,mode:'dropbox'};setMode('dropbox');}
       else if(effectiveMode!=='dropbox'&&actionType==='create'&&!recovery.current.receipts.some(r=>r.kind==='notion')){frozen={...frozen,quickRevision:true,quickType,quickTitle,quickDescription,quickMonth:month};if(quickError)throw Error(quickError);}
       let resolvedTarget:any={};
       if(frozen.mode!=='dropbox'){
         const choice=frozen.quickRevision?{useCalendarSource:true,quickRevision:true}:notionTarget==='calendar'?{useCalendarSource:true}:notionTarget==='database'?{databaseId:notionTargetId}:notionTarget==='source'?{dataSourceId:notionTargetId}:{};
-        const check=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(45000),body:JSON.stringify({action:'validate-upload-notion-destination',payload:{...choice,targetPageId:actionType==='attach'?selectedCard?.id:undefined,currentUser}})});
+        const check=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(45000),body:JSON.stringify({action:'validate-upload-notion-destination',payload:{...choice,targetPageId:frozen.targetPageId||(actionType==='attach'?selectedCard?.id:undefined),currentUser}})});
         const result=await check.json();if(!check.ok||!result.success)throw Error(result.error||'No se pudo verificar la base de Notion.');
         resolvedTarget=notionTarget==='configured'&&!frozen.quickRevision?{}:{databaseId:result.databaseId,dataSourceId:result.sourceId||result.dataSourceId};
       }
@@ -395,8 +400,8 @@ export function GlobalPasteModal({
             month: undefined,
             personTag: undefined,
             uploadId: recovery.current.id,
-            person: reviewers.find(p => p.tag === frozen.personTag)?.person || (frozen.quickRevision?currentUser:''),
-            targetPageId: actionType === 'attach' && selectedCard ? selectedCard.id : undefined,
+            person: frozen.assignedPerson||reviewers.find(p => p.tag === frozen.personTag)?.person || (frozen.quickRevision?currentUser:''),
+            targetPageId: frozen.targetPageId||(actionType === 'attach' && selectedCard ? selectedCard.id : undefined),
             currentUser
           }
         })
