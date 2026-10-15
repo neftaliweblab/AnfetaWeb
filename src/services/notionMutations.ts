@@ -5,6 +5,7 @@ import { sendReviewNotification } from './reviewNotifications';
 import { resolveTeamPersonId, clearReadBlocksCache, calendarStatusField, assignedField, assignedPerson, readReviewFlow, saveReviewFlow, cacheReviewFlowMemory, clearReviewFlowMemory } from './notionCalendar';
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
+import {quickRevisionTitle} from '@/lib/quickRevisionTitle';
 import { normalizeActivity } from './dataNormalizers';
 import { mexicoDate } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
@@ -329,29 +330,31 @@ export async function validateNotionCreationTarget(settings:Settings,payload:any
     throw err;
   }
   if(!Object.values(database.properties||{}).some((p:any)=>p.type==='title'))throw new Error('La base de destino no tiene propiedad de título.');
+  if(payload.quickRevision){const status=calendarStatusField(database);const options=status?.[1]?.[status[1].type]?.options||[];if(!options.some((option:any)=>option.name==='prtuzREVISION'||workflowState(option.name)==='pending'))throw new Error('La base de Revisiones requiere un estado POR HACER para las actividades rápidas.');}
   return {database,databaseId,sourceId};
 }
 async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
-  const { start, end, domain, person, title } = payload;
+  const { start, end, domain, title } = payload;
+  const person=payload.quickRevision?payload.person||actor:payload.person;
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
   if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
   if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
-  const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload);
+  const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload.quickRevision?{...payload,useCalendarSource:true}:payload);
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');
   if (!titleField) throw new Error('La base no tiene propiedad de título.');
   const canonicalPerson = normalizePerson(person || actor);
   const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
-  const composed = start ? ['prtuzREVISION', domain, PERSON_ALIASES[canonicalPerson]?.[0], description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
+  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? ['prtuzREVISION', domain, PERSON_ALIASES[canonicalPerson]?.[0], description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
     const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));
     if (!dateField) throw new Error('La base no tiene fecha programada.');
     properties[dateField[0]] = { date: { start, end } };
   }
-  if(start){const status=calendarStatusField(database);if(!status)throw new Error('La base no tiene Estado editable para crear actividades.');const options=status[1][status[1].type]?.options||[];const pending=options.find((option:any)=>option.name==='prtuzREVISION')||options.find((option:any)=>workflowState(option.name)==='pending');if(!pending)throw new Error('Configura un estado POR HACER en la base antes de crear actividades.');properties[status[0]]={[status[1].type]:{name:pending.name}};}
+  if(start||payload.quickRevision){const status=calendarStatusField(database);if(!status)throw new Error('La base no tiene Estado editable para crear actividades.');const options=status[1][status[1].type]?.options||[];const pending=options.find((option:any)=>option.name==='prtuzREVISION')||options.find((option:any)=>workflowState(option.name)==='pending');if(!pending)throw new Error('Configura un estado POR HACER en la base antes de crear actividades.');properties[status[0]]={[status[1].type]:{name:pending.name}};}
   const personField = assignedField(database);
   if (person && !personField) throw new Error('La fuente no tiene persona asignada editable.');
   if (person && personField) {
@@ -372,11 +375,13 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   for(const content of chunks)children.push({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content}}]}});
   for (const file of payload.files || []) {
     if (!file.filename || !file.base64 || Buffer.byteLength(file.base64, 'base64') > 20 * 1024 * 1024) throw new Error('Cada adjunto de Notion debe tener nombre y pesar como máximo 20 MB.');
-    const upload = await notionRequest(settings, 'file_uploads', 'POST', { mode: 'single_part', filename: file.filename, content_type: file.contentType || /^data:([^;]+);/.exec(file.dataUrl || '')?.[1] || 'application/octet-stream' });
-    const form = new FormData(); form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: file.contentType || 'application/octet-stream' }), file.filename);
+    const contentType=String(file.contentType || /^data:([^;]+);/.exec(file.dataUrl || '')?.[1] || 'application/octet-stream').split(';')[0].trim();
+    const upload = await notionRequest(settings, 'file_uploads', 'POST', { mode: 'single_part', filename: file.filename, content_type: contentType });
+    const form = new FormData(); form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: contentType }), file.filename);
     const res = await fetch(`https://api.notion.com/v1/file_uploads/${upload.id}/send`, { method: 'POST', headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': '2022-06-28' }, body: form, signal: AbortSignal.timeout(60000) });
     if (!res.ok) throw new Error('Notion rechazó el archivo adjunto.');
-    children.push({ object: 'block', type: 'file', file: { type: 'file_upload', file_upload: { id: upload.id } } });
+    const type=String(file.contentType||'').startsWith('video/')?'video':'file';
+    children.push({ object: 'block', type, [type]: { type: 'file_upload', file_upload: { id: upload.id } } });
   }
   if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
   const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });

@@ -5,6 +5,7 @@ import React,{useState,useEffect,useRef,useCallback} from 'react';
 import {X,Upload,Loader2,Folder,ChevronRight,AlertTriangle,CheckCircle,Link2,Search} from 'lucide-react';
 import {detectUpload,drxFolder,monthToken,projectCategories,softwareCategories,replaceUploadPrefix,uploadFilename} from '@/lib/drxUploadPlan';
 import type {SearchResultRow} from '@/types/anfeta';
+import {quickRevisionTitle} from '@/lib/quickRevisionTitle';
 
 export interface GlobalPasteImagePayload {
   contentType?: string;
@@ -56,6 +57,7 @@ export function GlobalPasteModal({
   const [files, setFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [mode, setMode] = useState<'both' | 'dropbox' | 'notion'>('both');
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
+  const [quickType,setQuickType]=useState('Actividad rápida'),[quickTitle,setQuickTitle]=useState(''),[quickDescription,setQuickDescription]=useState('');
   const [notionTarget,setNotionTarget]=useState('configured'),[notionTargetId,setNotionTargetId]=useState('');
   const [selectedCard, setSelectedCard] = useState<{ id: string; title: string; typeLabel: string; type: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,6 +139,7 @@ export function GlobalPasteModal({
   }, []);
 
   const initFormFromFiles = useCallback((filesToUse: GlobalPasteImagePayload[]) => {
+    setQuickType('Actividad rápida');setQuickTitle(filesToUse.length===1?filesToUse[0].filename.replace(/\.[^.]+$/,''):'Nueva actividad');setQuickDescription('');
     setNotionTarget('configured');setNotionTargetId('');
     const detected = detectUpload([initialDomain, initialText, ...filesToUse.map(f => f.filename)].join(' '));
     const d = initialDomain || detected.domain;
@@ -168,6 +171,7 @@ export function GlobalPasteModal({
     recovery.current = draft;
     const p = draft.plan;
     setMode(p.mode || 'both');
+    setQuickType(p.quickType||'Actividad rápida');setQuickTitle(p.quickTitle||p.title||'');setQuickDescription(p.quickDescription||'');
     setNotionTarget(p.notionTarget||'configured');setNotionTargetId(p.notionTargetId||'');
     setFiles(p.files || []);
     setDomain(p.domain || '');
@@ -298,6 +302,7 @@ export function GlobalPasteModal({
         separatePages: separate,
         customFolder,
         notionTarget,notionTargetId
+        ,quickType,quickTitle,quickDescription
       },
       updatedAt: Date.now()
     };
@@ -306,7 +311,7 @@ export function GlobalPasteModal({
       saveUploadDraft(draft).catch(e => setError(e.message));
     }, 300);
     return () => clearTimeout(timer);
-  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId]);
+  }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId,quickType,quickTitle,quickDescription]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -322,13 +327,15 @@ export function GlobalPasteModal({
   try { folder = drxFolder(domain, root, category); } catch {}
   const count = files.length;
   const chosen = reviewers.find(p => p.tag === person);
+  let quickPreview='',quickError='';try{quickPreview=quickRevisionTitle({type:quickType,title:quickTitle,person:chosen?.person||currentUser,domain,description:quickDescription,month});}catch(e){quickError=e instanceof Error?e.message:'';}
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent,dropboxOnly=false) {
     e.preventDefault();
     if (busy || locked || !draftReady || pendingConflict) return;
     setError('');
     if (files.length > 20) { setError('Selecciona hasta 20 archivos por lote.'); return; }
-    if (mode !== 'notion' && !folder && !customFolder) {
+    const effectiveMode=dropboxOnly?'dropbox':mode;
+    if (effectiveMode !== 'notion' && !folder && !customFolder) {
       setError('Escribe el dominio para construir la ruta DRX o elige una carpeta.');
       return;
     }
@@ -336,19 +343,19 @@ export function GlobalPasteModal({
       setError('Agrega contenido o archivos.');
       return;
     }
-    if (actionType === 'attach' && mode !== 'dropbox' && !selectedCard) {
+    if (actionType === 'attach' && effectiveMode !== 'dropbox' && !selectedCard) {
       setError('Selecciona o busca una tarjeta existente para vincular la grabación.');
       return;
     }
-    if (mode === 'notion' && files.reduce((n, f) => n + f.sizeBytes, 0) > 2500000) {
+    if (effectiveMode === 'notion' && files.reduce((n, f) => n + f.sizeBytes, 0) > 2500000) {
       setError('Este envío supera 2.5 MB. Reduce el lote para enviarlo por la web.');
       return;
     }
     setBusy(true);
     try {
       if (!recovery.current) throw Error('No se preparó la recuperación del lote.');
-      const frozen = recovery.current.started ? recovery.current.plan : {
-        mode,
+      let frozen = recovery.current.started ? recovery.current.plan : {
+        mode:effectiveMode,
         domain,
         root,
         category,
@@ -358,14 +365,17 @@ export function GlobalPasteModal({
         body,
         files,
         separatePages: separate,
-        customFolder
+        customFolder,
+        quickRevision:actionType==='create',quickType,quickTitle,quickDescription,quickMonth:month
       };
+      if(dropboxOnly){frozen={...frozen,mode:'dropbox'};setMode('dropbox');}
+      else if(effectiveMode!=='dropbox'&&actionType==='create'&&!recovery.current.receipts.some(r=>r.kind==='notion')){frozen={...frozen,quickRevision:true,quickType,quickTitle,quickDescription,quickMonth:month};if(quickError)throw Error(quickError);}
       let resolvedTarget:any={};
       if(frozen.mode!=='dropbox'){
-        const choice=notionTarget==='calendar'?{useCalendarSource:true}:notionTarget==='database'?{databaseId:notionTargetId}:notionTarget==='source'?{dataSourceId:notionTargetId}:{};
+        const choice=frozen.quickRevision?{useCalendarSource:true,quickRevision:true}:notionTarget==='calendar'?{useCalendarSource:true}:notionTarget==='database'?{databaseId:notionTargetId}:notionTarget==='source'?{dataSourceId:notionTargetId}:{};
         const check=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(45000),body:JSON.stringify({action:'validate-upload-notion-destination',payload:{...choice,targetPageId:actionType==='attach'?selectedCard?.id:undefined,currentUser}})});
         const result=await check.json();if(!check.ok||!result.success)throw Error(result.error||'No se pudo verificar la base de Notion.');
-        resolvedTarget=notionTarget==='configured'?{}:{databaseId:result.databaseId,dataSourceId:result.sourceId||result.dataSourceId};
+        resolvedTarget=notionTarget==='configured'&&!frozen.quickRevision?{}:{databaseId:result.databaseId,dataSourceId:result.sourceId||result.dataSourceId};
       }
       recovery.current = { ...recovery.current, plan: {...frozen,...resolvedTarget,notionTarget,notionTargetId}, started: true, updatedAt: Date.now() };
       await saveUploadDraft(recovery.current);
@@ -385,7 +395,7 @@ export function GlobalPasteModal({
             month: undefined,
             personTag: undefined,
             uploadId: recovery.current.id,
-            person: reviewers.find(p => p.tag === frozen.personTag)?.person || '',
+            person: reviewers.find(p => p.tag === frozen.personTag)?.person || (frozen.quickRevision?currentUser:''),
             targetPageId: actionType === 'attach' && selectedCard ? selectedCard.id : undefined,
             currentUser
           }
@@ -514,9 +524,11 @@ export function GlobalPasteModal({
         )}
 
         {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
-          <label className="flex flex-wrap items-center gap-2">Base para páginas nuevas<select aria-label="Base para páginas nuevas" value={notionTarget} onChange={e=>setNotionTarget(e.target.value)} className="rounded bg-slate-800 p-2"><option value="configured">Base configurada en el servidor</option><option value="calendar">Usar base del calendario</option><option value="database">Indicar ID o enlace de otra base</option><option value="source">Indicar ID de data source</option></select></label>
-          {(notionTarget==='database'||notionTarget==='source')&&<input aria-label="ID de la base de Notion" value={notionTargetId} onChange={e=>setNotionTargetId(e.target.value)} placeholder="ID de Notion o enlace de la base" className="w-full rounded bg-slate-800 p-2"/>}
-          <p className="text-slate-400">Se comprobará el destino antes de subir. Si Dropbox ya terminó, se conservará ese archivo al retomar.</p>
+          <p className="font-semibold text-cyan-200">Se guardará en Revisiones como actividad rápida, sin horario automático.</p>
+          <div className="grid gap-2 sm:grid-cols-2"><label>Tipo de actividad<input value={quickType} onChange={e=>setQuickType(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Corrección de prueba"/></label><label>Título de actividad<input value={quickTitle} onChange={e=>setQuickTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Error al mover actividad"/></label></div>
+          <label className="block">Descripción breve<input value={quickDescription} onChange={e=>setQuickDescription(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Revisar el horario mostrado"/></label>
+          <p role="status" className="break-words rounded bg-slate-900 p-2 text-cyan-100">{quickPreview||quickError}</p>
+          <p className="text-slate-400">La etiqueta y la asignación corresponden a Persona / Revisor. Si no eliges otra persona, se asignará a tu cuenta. {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío: 2.5 MB.'}</p>
         </fieldset>}
         <fieldset disabled={busy || started || !draftReady || Boolean(pendingConflict)} className="space-y-3">
           {/* Selector de Destino */}
@@ -849,6 +861,7 @@ export function GlobalPasteModal({
         {started && <p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó pendiente, puedes corregirlo y reintentar.</p>}
 
         <footer className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          {error&&mode!=='dropbox'&&!recovery.current?.receipts.some(r=>r.kind==='notion'||r.kind==='notion_attachment')&&<button type="button" disabled={busy||locked||!draftReady||Boolean(pendingConflict)} onClick={e=>void submit(e,true)} className="rounded border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Continuar solo con Dropbox</button>}
           <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800 cursor-pointer">
             {locked ? 'Cerrar' : 'Cancelar'}
           </button>

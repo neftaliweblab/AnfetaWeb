@@ -1421,7 +1421,7 @@ async function POSTLive(req: NextRequest) {
       const settings={...getSettings(),notionToken:resolveNotionToken(req)};
       if(payload.targetPageId){await assertChecklistAccess(settings,actor,payload.targetPageId);return NextResponse.json({success:true});}
       const {validateNotionCreationTarget}=await import('@/services/notionMutations');
-      const target=await validateNotionCreationTarget(settings,payload);
+      const target=await validateNotionCreationTarget(settings,payload.quickRevision?{...payload,useCalendarSource:true}:payload);
       return NextResponse.json({success:true,databaseId:target.databaseId,dataSourceId:target.sourceId});
     }
     if(action==='unified-upload'){
@@ -1475,11 +1475,11 @@ async function POSTLive(req: NextRequest) {
             const groups=input.separatePages?batch.map((file:any)=>[file]):[batch];for(const [index,group] of groups.entries()){
               const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
               const backups=receipts.filter(r=>r.kind==='dropbox');const references=(input.separatePages?backups.slice(index,index+1):backups).map(r=>'Dropbox: '+r.path).join('\n');
-              const data=await invoke('create-notion-page',{title,body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],databaseId:input.databaseId,dataSourceId:input.dataSourceId,useCalendarSource:input.useCalendarSource===true,currentUser:actor});receipts.push({kind:'notion',...data});
+              const data=await invoke('create-notion-page',{title,domain:input.quickRevision?input.domain:undefined,person:input.quickRevision?input.person:undefined,...(input.quickRevision?{quickRevision:true,quickType:input.quickType,quickTitle:input.quickTitle||title,quickDescription:input.quickDescription,quickMonth:input.quickMonth}:{}),body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],databaseId:input.databaseId,dataSourceId:input.dataSourceId,useCalendarSource:input.useCalendarSource===true,currentUser:actor});receipts.push({kind:'notion',...data});
             }
           }
         }
-        if(mode==='both'&&!input.targetPageId){
+        if(mode==='both'&&!input.targetPageId&&!input.quickRevision){
           try{const now=new Date(),day=mexicoDate(now.toISOString());const minutes=Math.min(1305,Math.max(480,Math.ceil((Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}).format(now))*60+now.getMinutes())/15)*15));const at=(m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';const person=input.person?normalizePerson(input.person):actor;const event=await durableStep(operationKey(batchKey,'event'),()=>createActivity(getSettings(),actor,{title:input.title||batch[0].filename,domain:input.domain,person,start:at(minutes),end:at(minutes+15),body:receipts.map(r=>r.pageUrl||r.path).filter(Boolean).join('\n')}));receipts.push({kind:'event',pageId:event.page.id,pageUrl:event.page.url});}catch(error){warnings.push('Los archivos se guardaron, pero no se creó la actividad temporal: '+(error instanceof Error?error.message:''));}
         }
         return NextResponse.json({success:true,receipts,warnings});
