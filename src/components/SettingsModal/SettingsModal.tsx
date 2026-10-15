@@ -80,6 +80,7 @@ export function SettingsModal({
   const [loadingCloudFolders, setLoadingCloudFolders] = useState(false);
   const [cloudFolderError, setCloudFolderError] = useState("");
   const [notionToken, setNotionToken] = useState("");
+  const [notionDatabaseId, setNotionDatabaseId] = useState("");
   const [notionOpenMode,setNotionOpenMode]=useState('web');
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -104,6 +105,7 @@ export function SettingsModal({
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.notionToken) setNotionToken(parsed.notionToken);
+          if (parsed.notionDatabaseId) setNotionDatabaseId(parsed.notionDatabaseId);
           if (parsed.dropboxToken) setDropboxToken(parsed.dropboxToken);
           if (parsed.cloudFolder) setCloudFolder(parsed.cloudFolder);
           if (parsed.dropboxPath) setDropboxPath(parsed.dropboxPath);
@@ -121,12 +123,14 @@ export function SettingsModal({
             const stored = localStorage.getItem("anfeta_settings");
             if (stored) return; // Si el usuario ya tiene configuración guardada en su cliente, respetarla
             if (data.notionToken) setNotionToken(data.notionToken);
+            if (data.notionDatabaseId) setNotionDatabaseId(data.notionDatabaseId);
             if (data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (data.cloudFolder) setCloudFolder(data.cloudFolder);
             if (data.dropboxPath) setDropboxPath(data.dropboxPath);
             if (data.currentUser) setUserTag(toUserTag(data.currentUser));
           } catch {
             if (data.notionToken) setNotionToken(data.notionToken);
+            if (data.notionDatabaseId) setNotionDatabaseId(data.notionDatabaseId);
             if (data.dropboxToken) setDropboxToken(data.dropboxToken);
             if (data.cloudFolder) setCloudFolder(data.cloudFolder);
             if (data.dropboxPath) setDropboxPath(data.dropboxPath);
@@ -270,6 +274,7 @@ export function SettingsModal({
     try{if(normalizePerson(userTag)!==normalizePerson(currentUser))await onSaveCurrentUser(userTag);}catch(e){setSaveError(e instanceof Error?e.message:'No se pudo cambiar la persona.');setSaving(false);return;}
     const savedConfig = {
       notionToken: notionToken.trim(),
+      notionDatabaseId: notionDatabaseId.trim(),
       dropboxToken: dropboxToken.trim(),
       cloudFolder: cloudFolder.trim() || "/DRX",
       dropboxPath: dropboxPath.trim(),
@@ -431,6 +436,19 @@ export function SettingsModal({
                   {testStatus.msg}
                 </div>
               )}
+              <div className="pt-2">
+                <label className="text-[10.5px] text-[#94A3B8] block">
+                  Base de Datos Notion para Páginas y Subidas (NOTION_DATABASE_ID):
+                </label>
+                <input
+                  type="text"
+                  value={notionDatabaseId}
+                  onChange={(e) => setNotionDatabaseId(e.target.value)}
+                  placeholder="ID de base de datos (UUID o 32 caracteres hex)"
+                  className="w-full h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Requerido para crear páginas sin horario o subir lotes a Notion. También se puede configurar como NOTION_DATABASE_ID en el servidor.</p>
+              </div>
             </div>
 
             {/* Dropbox Cloud API (Predeterminado) */}

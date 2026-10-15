@@ -294,19 +294,45 @@ export async function createActivity(settings: Settings, actor: string, payload:
 }
 async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
   const { start, end, domain, person, title } = payload;
+  if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
   if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
-  if(start)await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
-  let databaseId = process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
+  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
+
+  let databaseId = payload?.databaseId || process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
+  let sourceId = payload?.dataSourceId;
   const referencedId = String(payload.body || '').match(/https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s]*?([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:[?\s/#]|$)/i)?.[1];
-  if (!databaseId && referencedId) {
-    try { const source = await notionRequest(settings, `pages/${referencedId}`); databaseId = source.parent?.database_id; }
-    catch { const source = await notionRequest(settings, `databases/${referencedId}`); databaseId = source.id; }
+
+  if (start) {
+    sourceId = sourceId || process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
+  } else {
+    if (!databaseId && !sourceId && referencedId) {
+      try {
+        const source = await notionRequest(settings, `pages/${referencedId}`);
+        databaseId = source.parent?.database_id;
+        sourceId = source.parent?.data_source_id;
+      } catch {
+        try {
+          const source = await notionRequest(settings, `databases/${referencedId}`);
+          databaseId = source.id;
+        } catch {}
+      }
+    }
+    if (!sourceId && !databaseId) throw new Error('Falta configurar la base de Notion para crear páginas (configura NOTION_DATABASE_ID en el servidor o la ID de la base en Ajustes).');
   }
-  const sourceId = start ? process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2' : undefined;
-  if (!sourceId && !databaseId) throw new Error('Configura la base de Notion para crear páginas.');
-  const database = await notionRequest(settings, sourceId ? 'data_sources/' + sourceId : 'databases/' + databaseId);
+
+  let database: any;
+  try {
+    database = await notionRequest(settings, sourceId ? 'data_sources/' + sourceId : 'databases/' + databaseId);
+  } catch (err: any) {
+    const msg = String(err?.message || '');
+    if (/401|unauthorized|invalid.*token/i.test(msg)) throw new Error('Token de Notion inválido o expirado. Revisa la integración en Ajustes.');
+    if (/404|403|restricted|could not find|not found/i.test(msg)) throw new Error('No se tiene acceso a la base de Notion (' + (sourceId ? 'data source ' + sourceId : 'base ' + databaseId) + '). Asegúrate de compartirla con la integración.');
+    if (/validation_error|invalid.*uuid/i.test(msg)) throw new Error('El identificador de base de Notion (' + (sourceId || databaseId) + ') tiene un formato inválido.');
+    throw err;
+  }
+
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');
   if (!titleField) throw new Error('La base no tiene propiedad de título.');

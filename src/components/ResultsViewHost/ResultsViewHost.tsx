@@ -1519,7 +1519,7 @@ export function ResultsViewHost({
       />
 
       {/* Grabador flotante persistente entre módulos */}
-      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{if(await readUploadDraft(currentUser))throw Error('Hay una subida pendiente. Abre el panel de subida y resuélvela primero; tu video permanece aquí.');onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
+      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async file=>{onShowResults?.();setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
       <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>
@@ -1605,6 +1605,7 @@ export function ResultsViewHost({
         initialDestination={recordingUpload?'both':undefined}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
+        suggestedTarget={selectedItem}
         onSuccess={(newRow) => {
           setItems((prev) => [newRow, ...prev]);
           setSelectedItem(newRow);

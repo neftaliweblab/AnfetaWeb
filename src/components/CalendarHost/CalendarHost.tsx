@@ -101,6 +101,74 @@ export function CalendarHost({
   const pending = React.useRef(new Set<string>());
   const [,setSaveRevision]=useState(0);
   const recentSaves=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
+
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const autoScrollRaf = React.useRef<number | null>(null);
+  const autoScrollSpeed = React.useRef<number>(0);
+
+  const stopAutoScroll = React.useCallback(() => {
+    if (autoScrollRaf.current !== null) {
+      cancelAnimationFrame(autoScrollRaf.current);
+      autoScrollRaf.current = null;
+    }
+    autoScrollSpeed.current = 0;
+  }, []);
+
+  const startAutoScroll = React.useCallback((speed: number) => {
+    autoScrollSpeed.current = speed;
+    if (autoScrollRaf.current !== null) return;
+
+    const scrollLoop = () => {
+      const container = scrollContainerRef.current;
+      if (!container || autoScrollSpeed.current === 0) {
+        autoScrollRaf.current = null;
+        return;
+      }
+      const prev = container.scrollTop;
+      container.scrollTop += autoScrollSpeed.current;
+      if (container.scrollTop === prev && ((autoScrollSpeed.current < 0 && container.scrollTop <= 0) || (autoScrollSpeed.current > 0 && container.scrollTop + container.clientHeight >= container.scrollHeight))) {
+        stopAutoScroll();
+        return;
+      }
+      autoScrollRaf.current = requestAnimationFrame(scrollLoop);
+    };
+    autoScrollRaf.current = requestAnimationFrame(scrollLoop);
+  }, [stopAutoScroll]);
+
+  const handleContainerDragOver = React.useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const clientY = e.clientY;
+    const threshold = 70;
+    const maxSpeed = 16;
+
+    const distTop = clientY - rect.top;
+    const distBottom = rect.bottom - clientY;
+
+    if (distTop >= 0 && distTop < threshold) {
+      const intensity = Math.max(0, Math.min(1, (threshold - distTop) / threshold));
+      const speed = -Math.round(intensity * maxSpeed + 2);
+      startAutoScroll(speed);
+    } else if (distBottom >= 0 && distBottom < threshold) {
+      const intensity = Math.max(0, Math.min(1, (threshold - distBottom) / threshold));
+      const speed = Math.round(intensity * maxSpeed + 2);
+      startAutoScroll(speed);
+    } else {
+      stopAutoScroll();
+    }
+  }, [startAutoScroll, stopAutoScroll]);
+
+  React.useEffect(() => {
+    const onDragEnd = () => stopAutoScroll();
+    window.addEventListener('dragend', onDragEnd);
+    return () => {
+      window.removeEventListener('dragend', onDragEnd);
+      stopAutoScroll();
+    };
+  }, [stopAutoScroll]);
   const protectSaved=(incoming:NotionCalendarActivity[])=>{
     const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
     const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors];
@@ -421,6 +489,7 @@ export function CalendarHost({
 
   const handleDropOnColumn = (e: React.DragEvent, colPerson: string) => {
     e.preventDefault();
+    stopAutoScroll();
     try {
       const dataStr = e.dataTransfer.getData('text/plain');
       if (!dataStr) return;
@@ -551,7 +620,16 @@ export function CalendarHost({
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
       <details className="px-3 py-1 text-xs border-b border-slate-800"><summary className="cursor-pointer text-cyan-200">Diseño del calendario · fondo, líneas y horas</summary><div className="flex flex-wrap items-center gap-3 py-2">{Object.entries(calendarThemes).map(([key,value])=><button key={key} onClick={()=>setGridTheme(value)} className="rounded border border-slate-600 px-2 py-1">{key==='soft'?'Suave':key==='blue'?'Azul':'Alto contraste'}</button>)}{(['background','lines','hours'] as const).map(key=><label key={key} className="flex items-center gap-2">{key==='background'?'Fondo':key==='lines'?'Líneas':'Horas'}<input aria-label={'Color de '+key} type="color" value={gridTheme[key]} onChange={e=>setGridTheme(old=>({...old,[key]:e.target.value}))}/></label>)}</div></details>
       <div className="flex-1 flex overflow-hidden relative">
-        <div className="flex-1 flex overflow-auto scrollbar-thin relative select-none">
+        <div
+          ref={scrollContainerRef}
+          onDragOver={handleContainerDragOver}
+          onDragLeave={(e) => {
+            if (!scrollContainerRef.current?.contains(e.relatedTarget as Node)) {
+              stopAutoScroll();
+            }
+          }}
+          className="flex-1 flex overflow-auto scrollbar-thin relative select-none"
+        >
           {/* Sticky Left Time Rail */}
           <div
             className="w-16 bg-[#0F141A] border-r border-[#26323E] flex-shrink-0 sticky left-0 z-45"

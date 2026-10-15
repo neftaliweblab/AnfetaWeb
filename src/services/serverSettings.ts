@@ -1,11 +1,15 @@
-import fs from 'node:fs';import path from 'node:path';
-const SETTINGS_FILE=path.join(process.cwd(),'settings.json');
-const WIN_SETTINGS_DIR=path.join(process.env.LOCALAPPDATA || 'C:/Users/nanoc/AppData/Local','AnfetaCalendarLab');const WIN_SETTINGS_FILE=path.join(WIN_SETTINGS_DIR,'settings.json');
+import fs from 'node:fs';
+import path from 'node:path';
+
+const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
+const WIN_SETTINGS_DIR = path.join(process.env.LOCALAPPDATA || 'C:/Users/nanoc/AppData/Local', 'AnfetaCalendarLab');
+const WIN_SETTINGS_FILE = path.join(WIN_SETTINGS_DIR, 'settings.json');
 let memorySettings: any = null;
 
 export function getSettings() {
   let settings = {
     notionToken: process.env.NOTION_TOKEN || "",
+    notionDatabaseId: process.env.NOTION_DATABASE_ID || "",
     dropboxToken: process.env.DROPBOX_ACCESS_TOKEN || "",
     dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
     currentUser: "nneft",
@@ -27,6 +31,7 @@ export function getSettings() {
     settings = { ...settings, ...memorySettings };
   }
   if (process.env.NOTION_TOKEN) settings.notionToken = process.env.NOTION_TOKEN;
+  if (process.env.NOTION_DATABASE_ID) settings.notionDatabaseId = process.env.NOTION_DATABASE_ID;
   if (process.env.DROPBOX_ACCESS_TOKEN) settings.dropboxToken = process.env.DROPBOX_ACCESS_TOKEN;
   return settings;
 }

@@ -1422,6 +1422,18 @@ async function POSTLive(req: NextRequest) {
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
       if(mode!=='notion')drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
       if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))return NextResponse.json({error:'Actualiza la web para guardar el identificador del lote recuperable.'},{status:400});
+
+      if(mode!=='dropbox'){
+        const settings=getSettings();
+        const notionToken=resolveNotionToken(req)||settings.notionToken||process.env.NOTION_TOKEN;
+        if(!notionToken){
+          return NextResponse.json({error:'Configura el token de Notion en Ajustes o variables de entorno antes de iniciar la subida.'},{status:400});
+        }
+        if(input.targetPageId&&!/^[a-f0-9-]{32,36}$/i.test(String(input.targetPageId).trim())){
+          return NextResponse.json({error:'El ID de la tarjeta de Notion no es válido.'},{status:400});
+        }
+      }
+
       const batchKey=operationKey('upload',actor,input.uploadId,JSON.stringify({...input,currentUser:undefined}));
       const receipts:any[]=[],warnings:string[]=[];const invoke=async(action:string,value:any)=>{return durableStep(operationKey(batchKey,action,JSON.stringify(value)),async()=>{const response=await POSTLive(new NextRequest(req.url,{method:'POST',headers:req.headers,body:JSON.stringify({action,payload:value})}));const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'No se confirmó la operación.');return data;});};
       const batch=files.length?files:[{filename:(input.title||'Contenido')+'.txt',base64:Buffer.from(String(input.body),'utf8').toString('base64'),contentType:'text/plain'}];
@@ -1440,13 +1452,27 @@ async function POSTLive(req: NextRequest) {
           receipts.push({kind:'dropbox',...data});
         }
         if(mode!=='dropbox'){
-          const groups=input.separatePages?batch.map((file:any)=>[file]):[batch];for(const [index,group] of groups.entries()){
-            const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
-            const backups=receipts.filter(r=>r.kind==='dropbox');const references=(input.separatePages?backups.slice(index,index+1):backups).map(r=>'Dropbox: '+r.path).join('\n');
-            const data=await invoke('create-notion-page',{title,body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],currentUser:actor});receipts.push({kind:'notion',...data});
+          if(input.targetPageId){
+            const backups=receipts.filter(r=>r.kind==='dropbox');
+            const references=backups.map(r=>'Dropbox: '+r.path).join('\n');
+            const attachBody=[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n');
+            const data=await invoke('attach-to-notion-page',{
+              pageId:input.targetPageId,
+              title:input.title||batch[0].filename,
+              body:attachBody,
+              uploadId:input.uploadId,
+              currentUser:actor
+            });
+            receipts.push({kind:'notion_attachment',pageId:input.targetPageId,...data});
+          }else{
+            const groups=input.separatePages?batch.map((file:any)=>[file]):[batch];for(const [index,group] of groups.entries()){
+              const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
+              const backups=receipts.filter(r=>r.kind==='dropbox');const references=(input.separatePages?backups.slice(index,index+1):backups).map(r=>'Dropbox: '+r.path).join('\n');
+              const data=await invoke('create-notion-page',{title,body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],currentUser:actor});receipts.push({kind:'notion',...data});
+            }
           }
         }
-        if(mode==='both'){
+        if(mode==='both'&&!input.targetPageId){
           try{const now=new Date(),day=mexicoDate(now.toISOString());const minutes=Math.min(1305,Math.max(480,Math.ceil((Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}).format(now))*60+now.getMinutes())/15)*15));const at=(m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';const person=input.person?normalizePerson(input.person):actor;const event=await durableStep(operationKey(batchKey,'event'),()=>createActivity(getSettings(),actor,{title:input.title||batch[0].filename,domain:input.domain,person,start:at(minutes),end:at(minutes+15),body:receipts.map(r=>r.pageUrl||r.path).filter(Boolean).join('\n')}));receipts.push({kind:'event',pageId:event.page.id,pageUrl:event.page.url});}catch(error){warnings.push('Los archivos se guardaron, pero no se creó la actividad temporal: '+(error instanceof Error?error.message:''));}
         }
         return NextResponse.json({success:true,receipts,warnings});
@@ -1575,6 +1601,173 @@ async function POSTLive(req: NextRequest) {
       if (result.activity.start) persistCalendarActivity(result.activity);
       const live = extractNotionPageData(result.page); liveNotionOverrides.set(live.id, live); previewMemoryCache.clear();
       return NextResponse.json({ success: true, pageId: result.page.id, pageUrl: result.page.url, activity: result.activity });
+    }
+
+    if (action === 'attach-to-notion-page') {
+      const settings = getSettings();
+      const token = resolveNotionToken(req) || settings.notionToken;
+      if (!token) return NextResponse.json({ error: 'Configura el token de Notion en Ajustes.' }, { status: 400 });
+      const actor = payload?.currentUser || settings.currentUser;
+      const pageId = String(payload?.pageId || '').trim();
+      if (!/^[a-f0-9-]{32,36}$/i.test(pageId)) {
+        return NextResponse.json({ error: 'ID de página de Notion inválido.' }, { status: 400 });
+      }
+      const effectiveSettings = { ...settings, notionToken: token };
+      const page = await assertChecklistAccess(effectiveSettings, actor, pageId);
+
+      const uploadId = payload?.uploadId;
+      if (uploadId) {
+        const existingBlocks = await readBlocks(effectiveSettings, pageId).catch(() => []);
+        const marker = `[UPLOAD_REF:${uploadId}]`;
+        const already = existingBlocks.find((b: any) => {
+          const rich = b[b.type]?.rich_text || [];
+          return rich.some((t: any) => (t.plain_text || t.text?.content || '').includes(marker));
+        });
+        if (already) {
+          return NextResponse.json({
+            success: true,
+            pageId,
+            pageUrl: page.url,
+            alreadyAttached: true,
+            blockId: already.id,
+            title: payload?.title
+          });
+        }
+      }
+
+      const uploadMarker = uploadId ? `\n[UPLOAD_REF:${uploadId}]` : '';
+      const detailText = `${payload?.body || ''}${uploadMarker}`.trim();
+      const block = {
+        object: 'block',
+        type: 'callout',
+        callout: {
+          icon: { type: 'emoji', emoji: '📎' },
+          rich_text: [
+            { type: 'text', text: { content: `Adjunto ANFETA: ${payload?.title || 'Grabación / Archivo'}\n` }, annotations: { bold: true } },
+            { type: 'text', text: { content: detailText } }
+          ]
+        }
+      };
+
+      const response = await notionRequest(effectiveSettings, `blocks/${pageId}/children`, 'PATCH', {
+        children: [block]
+      });
+      const saved = response.results?.[0];
+      invalidateChecklist(effectiveSettings, pageId);
+      previewMemoryCache.clear();
+
+      return NextResponse.json({
+        success: true,
+        pageId,
+        pageUrl: page.url,
+        blockId: saved?.id,
+        title: payload?.title
+      });
+    }
+
+    if (action === 'search-cards') {
+      const settings = getSettings();
+      const token = resolveNotionToken(req) || settings.notionToken;
+      if (!token) return NextResponse.json({ error: 'Configura el token de Notion en Ajustes.' }, { status: 400 });
+      const query = String(payload?.query || '').trim();
+      const effectiveSettings = { ...settings, notionToken: token };
+      const cards: any[] = [];
+      const seenIds = new Set<string>();
+
+      const formatPage = (page: any) => {
+        const id = page.id;
+        const cleanId = cleanPageId(id);
+        if (seenIds.has(cleanId)) return null;
+        seenIds.add(cleanId);
+
+        const props = page.properties || {};
+        const titleProp = Object.values(props).find((p: any) => p.type === 'title') as any;
+        const title = (titleProp?.title || []).map((t: any) => t.plain_text || t.text?.content || '').join('') || 'Sin título';
+        const titleLower = title.toLowerCase();
+
+        let type: 'actividad' | 'error' | 'sugerencia' | 'pagina' = 'pagina';
+        let typeLabel = '📄 Página';
+
+        if (/error|fallo|bug|⚠️/i.test(titleLower) || Object.keys(props).some(k => /error|bug/i.test(k))) {
+          type = 'error';
+          typeLabel = '⚠️ Error';
+        } else if (/sugerencia|propuesta|idea|💡/i.test(titleLower) || Object.keys(props).some(k => /sugerencia/i.test(k))) {
+          type = 'sugerencia';
+          typeLabel = '💡 Sugerencia';
+        } else if (Object.values(props).some((p: any) => p.type === 'date' && p.date?.start) || /actividad|📅/i.test(titleLower)) {
+          type = 'actividad';
+          typeLabel = '📅 Actividad';
+        }
+
+        const person = assignedPerson(page, '');
+        const dateProp = Object.values(props).find((p: any) => p.type === 'date') as any;
+        const date = dateProp?.date?.start || undefined;
+
+        return {
+          id: page.id,
+          title,
+          type,
+          typeLabel,
+          person: person || undefined,
+          date,
+          url: page.url
+        };
+      };
+
+      if (/^[a-f0-9-]{32,36}$/i.test(query)) {
+        try {
+          const page = await notionRequest(effectiveSettings, `pages/${query.replace(/-/g, '')}`);
+          if (page && !page.archived && !page.in_trash) {
+            const formatted = formatPage(page);
+            if (formatted) cards.push(formatted);
+          }
+        } catch {}
+      }
+
+      const snap = calendarSnapshot();
+      for (const day of Object.keys(snap)) {
+        for (const act of snap[day]) {
+          const titleLower = (act.title || '').toLowerCase();
+          if (!query || titleLower.includes(query.toLowerCase()) || cleanPageId(act.pageId).includes(query.toLowerCase().replace(/-/g, ''))) {
+            const cleanId = cleanPageId(act.pageId);
+            if (!seenIds.has(cleanId)) {
+              seenIds.add(cleanId);
+              let type: 'actividad' | 'error' | 'sugerencia' | 'pagina' = 'actividad';
+              let typeLabel = '📅 Actividad';
+              if (/error|fallo|bug/i.test(titleLower)) { type = 'error'; typeLabel = '⚠️ Error'; }
+              else if (/sugerencia|propuesta|idea/i.test(titleLower)) { type = 'sugerencia'; typeLabel = '💡 Sugerencia'; }
+              cards.push({
+                id: act.pageId,
+                title: act.title,
+                type,
+                typeLabel,
+                person: act.person || undefined,
+                date: act.start,
+                url: act.pageUrl
+              });
+              if (cards.length >= 25) break;
+            }
+          }
+        }
+        if (cards.length >= 25) break;
+      }
+
+      if (cards.length < 25) {
+        try {
+          const searchData = await notionRequest(effectiveSettings, 'search', 'POST', {
+            query,
+            filter: { property: 'object', value: 'page' },
+            page_size: Math.min(25 - cards.length, 25)
+          });
+          for (const page of (searchData.results || [])) {
+            if (page.archived || page.in_trash) continue;
+            const formatted = formatPage(page);
+            if (formatted) cards.push(formatted);
+          }
+        } catch {}
+      }
+
+      return NextResponse.json({ success: true, cards });
     }
 
     if (action === 'daily-ai-summary') {
@@ -2340,7 +2533,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
  try{return await refreshSnapshot(context,req,row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
-async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
+async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){
  const url=new URL(req.url);
