@@ -588,7 +588,14 @@ export function CalendarHost({
         extraHours={extraHours}
         onExtraHours={()=>setExtraHours(prev=>!prev)}
         onOpenBatch={()=>{setBatchDefaults(null);setShowBatch(true);}}
-        reviewNotifications={<CalendarReviewNotifications currentUser={currentUser} />}
+        reviewNotifications={
+          <CalendarReviewNotifications
+            currentUser={currentUser}
+            activities={activitiesList}
+            onSelectActivity={(act) => setSelectedActivity(act)}
+            onSelectDate={onSelectDate}
+          />
+        }
         onCreateActivity={() => {
           setCreateSlotSeed(null);
           setShowCreate(true);

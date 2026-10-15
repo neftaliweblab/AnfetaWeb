@@ -2279,7 +2279,7 @@ async function POSTLive(req: NextRequest) {
         const settings=getSettings(),input=payload || body, actor=input.currentUser || settings.currentUser;
         if(action === 'reply-review-thread')return NextResponse.json({success:true,entry:await replyNotification(settings,actor,input.pageId,input.text)});
         const thread=await readNotificationThread(settings,actor,input.pageId);
-        return NextResponse.json({success:true,title:thread.title,entries:thread.entries,url:thread.page.url});
+        return NextResponse.json({success:true,title:thread.title,entries:thread.entries,url:thread.page.url,sourceActivity:thread.sourceActivity});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo cargar el hilo.'},{status:400});}
     }
     if (action === 'calendar-movement-history') {
