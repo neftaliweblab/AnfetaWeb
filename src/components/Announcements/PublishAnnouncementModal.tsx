@@ -191,8 +191,11 @@ export function PublishAnnouncementModal({
       setSuccessMsg("¡Novedad publicada con éxito! Ya le aparecerá a todo el equipo.");
       setActiveAnnouncement(data.announcement);
       setTab("stats");
-      // Notify current window
+      // Notify current window and other tabs
       window.dispatchEvent(new Event("anfeta_announcement_published"));
+      try {
+        localStorage.setItem("anfeta_announcement_ping", String(Date.now()));
+      } catch {}
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al guardar.");
     } finally {
@@ -213,6 +216,10 @@ export function PublishAnnouncementModal({
       const data = await res.json();
       if (data.success) {
         setSuccessMsg("Actualización desactivada.");
+        window.dispatchEvent(new Event("anfeta_announcement_published"));
+        try {
+          localStorage.setItem("anfeta_announcement_ping", String(Date.now()));
+        } catch {}
         await fetchAnnouncement();
       } else {
         setError(data.error || "No se pudo desactivar.");

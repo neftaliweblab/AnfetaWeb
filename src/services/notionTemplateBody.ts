@@ -144,16 +144,29 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
 
     for (const source of await readBlocks(settings, id)) {
       if (++count > 300) throw new Error('La plantilla supera 300 bloques; divídela antes de copiar.');
-      const type = source.type;
+      let type = source.type;
       const content = source[type] || {};
       const text = (content.rich_text || []).map((x: any) => x.plain_text || x.text?.content || '').join('');
 
       if (/\[ANFETA_|Datos internos de ANFETA/i.test(text)) continue;
+      if (type === 'heading_4') {
+        type = 'heading_3';
+      }
       if(type==='synced_block'){
         if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
         const original=content.synced_from?.block_id||source.id;
         if(!original)throw Error('El synced_block de la plantilla no tiene un origen válido.');
-        try{nodes.push(...await read(original,depth+1));}catch(error){throw Error('No se pudo copiar el synced_block; revisa el acceso al bloque original. '+(error instanceof Error?error.message:''));}
+        try{
+          nodes.push(...await read(original,depth+1));
+        }catch(error){
+          if (original !== source.id) {
+            try {
+              nodes.push(...await read(source.id, depth+1));
+              continue;
+            } catch {}
+          }
+          throw Error('No se pudo copiar el synced_block; revisa que la página donde se creó el bloque sincronizado esté compartida con la integración de ANFETA en Notion. '+(error instanceof Error?error.message:''));
+        }
         continue;
       }
       if (!fields[type]) {
@@ -239,8 +252,26 @@ export async function appendTemplateBody(settings: CalendarSettings, pageId: str
     if (end === offset) throw new Error('Un bloque de la plantilla es demasiado grande.');
 
     const batch = nodes.slice(offset, end);
+    const sanitizedChildren = batch.map(n => {
+      if (n.block.type === 'column_list' && Array.isArray(n.block.column_list?.children)) {
+        return {
+          ...n.block,
+          column_list: {
+            ...n.block.column_list,
+            children: n.block.column_list.children.map((col: any) => {
+              if (col.type === 'column' && col.column) {
+                const { width_ratio, ...restCol } = col.column;
+                return { ...col, column: restCol };
+              }
+              return col;
+            })
+          }
+        };
+      }
+      return n.block;
+    });
     const response = await notionRequest(settings, 'blocks/' + pageId + '/children', 'PATCH', {
-      children: batch.map(n => n.block)
+      children: sanitizedChildren
     });
 
     if (response.results?.length !== batch.length) {

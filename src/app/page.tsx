@@ -44,6 +44,17 @@ export default function AnfetaApp() {
   const isAuthRef = useRef(false);
   isAuthRef.current = isAuthenticated;
   const refreshAuthRef = useRef<() => void>(() => {});
+  const [debouncedAuthError, setDebouncedAuthError] = useState('');
+  useEffect(() => {
+    if (!authError) {
+      setDebouncedAuthError('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedAuthError(authError);
+    }, 2800);
+    return () => clearTimeout(timer);
+  }, [authError]);
 
   useEffect(()=>{
     let stopped=false,busy=false,generation=0;
@@ -596,7 +607,7 @@ export default function AnfetaApp() {
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
       {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
       {calendarPopupBlocked&&<div role="alert" className="px-4 py-2 bg-amber-950 text-amber-100 text-sm">El navegador bloqueó la ventana del calendario. Permite ventanas emergentes para ANFETA. <a href={'/calendar?date='+encodeURIComponent(currentDate)} target="_blank" rel="noopener noreferrer" className="underline">Abrir en otra pestaña</a> <button onClick={()=>setCalendarPopupBlocked(false)}>Cerrar aviso</button></div>}
-      {authError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between"><span>{authError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
+      {debouncedAuthError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between animate-in fade-in duration-200"><span>{debouncedAuthError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}
       {/* Top Bar with Navigation and Global Search */}
       <TopBar

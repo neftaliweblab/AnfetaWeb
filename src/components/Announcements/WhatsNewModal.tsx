@@ -41,6 +41,10 @@ export function WhatsNewModal({
     }
 
     if (!currentUser) return;
+    if (!isPreview && normalizePerson(currentUser) === "Neftali") {
+      return;
+    }
+
     const checkAnnouncement = async () => {
       try {
         const res = await fetch(`/api/announcements?currentUser=${encodeURIComponent(currentUser)}`, {
@@ -78,11 +82,29 @@ export function WhatsNewModal({
     };
 
     void checkAnnouncement();
-    window.addEventListener("anfeta_announcement_published", checkAnnouncement);
-    return () => {
-      window.removeEventListener("anfeta_announcement_published", checkAnnouncement);
+    const interval = setInterval(checkAnnouncement, 30000);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "anfeta_announcement_ping") {
+        void checkAnnouncement();
+      }
     };
-  }, [currentUser, previewData]);
+    const onVisibility = () => {
+      if (!document.hidden) void checkAnnouncement();
+    };
+
+    window.addEventListener("anfeta_announcement_published", checkAnnouncement);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", checkAnnouncement);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("anfeta_announcement_published", checkAnnouncement);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", checkAnnouncement);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [currentUser, previewData, isPreview]);
 
   const handleMarkUnderstood = async () => {
     if (isPreview) {

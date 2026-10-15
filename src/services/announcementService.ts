@@ -99,7 +99,7 @@ export async function clearActiveAnnouncement(): Promise<boolean> {
 
 export function getTeamMembersList() {
   return Object.entries(PERSON_METADATA)
-    .filter(([name]) => name !== 'Sin asignar')
+    .filter(([name]) => name !== 'Sin asignar' && normalizePerson(name) !== 'Neftali')
     .map(([name, meta]) => ({
       name,
       avatar: meta.avatar,
