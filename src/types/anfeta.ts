@@ -80,6 +80,9 @@ export interface NotionCalendarActivity {
   isSuspended: boolean; // Tag 'sprtuzREVISION'
   isLocked: boolean; // Tag 'Bloqueada_ANFETA'
   isReviewMirror?: boolean;
+  isHandoffMirror?: boolean;
+  originalPageId?: string;
+  handoffNote?: string;
   reviewFlowScanned?: boolean;
   reviewFlow?: { OriginalPerson: string; ReviewAssignee: string; State: string; LeaveVisualCopy?: boolean; [key: string]: unknown };
   estimatedWorkMinutes: number;

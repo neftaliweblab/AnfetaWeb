@@ -169,7 +169,8 @@ export async function readReviewFlow(settings: CalendarSettings, pageId: string)
 }
 export async function saveReviewFlow(settings: CalendarSettings, pageId: string, flow: any) {
   const text = REVIEW_PREFIX + Buffer.from(JSON.stringify(flow)).toString('base64');
-  const rich_text = [{ type: 'text', text: { content: text } }];
+  const rich_text = [];
+  for(let offset=0;offset<text.length;offset+=1800)rich_text.push({type:'text',text:{content:text.slice(offset,offset+1800)}});
   await notionRequest(settings, `blocks/${pageId}/children`, 'PATCH', { children: [{ object:'block', type:'toggle', toggle: { rich_text:[{type:'text',text:{content:'Datos internos de ANFETA'}}], children:[{object:'block',type:'paragraph',paragraph:{rich_text}}] } }] });
 }
 export async function assertChecklistAccess(settings: CalendarSettings, actor: string, pageId: string) {

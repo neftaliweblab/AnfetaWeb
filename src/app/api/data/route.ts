@@ -1,3 +1,4 @@
+import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
 import {browserDropboxUpload,verifiedDropboxReceipt} from '@/services/dropboxBrowserUpload';
@@ -1041,7 +1042,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         pageId:'review-mirror-' + a.pageId, person:normalizePerson(a.reviewFlow.OriginalPerson), isReviewMirror:true,
         title:'[COPIA REVISIÓN] ' + a.title, shortTitle:a.title,
       }));
-      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, activities:[...unique,...mirrors], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
+      let historical:any[]=[];try{historical=await handoffMirrors({...settings,notionToken:token},type==='calendar-project'?'0000':first,type==='calendar-project'?'9999':shift(first,days.length));if(type==='calendar-project')historical=historical.filter(a=>a.domain===(searchParams.get('domain')||''));}catch(e){warning=[warning,e instanceof Error?e.message:'No se pudo leer el historial.'].filter(Boolean).join(' · ');}
+      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, activities:[...unique,...mirrors,...historical], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
     }
 
     if (type === "calendar-dates") {
@@ -2270,7 +2272,7 @@ async function POSTLive(req: NextRequest) {
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
-        return NextResponse.json({ success:true, activity, warning:[page.__notificationWarning,page.__historyWarning].filter(Boolean).join(' · ') || undefined });
+        return NextResponse.json({ success:true, activity, handoffCopies:input.handoff?await handoffMirrors(settings,mexicoDate(activity.start),new Date(Date.parse(mexicoDate(activity.start)+'T12:00:00Z')+86400000).toISOString().slice(0,10)).catch(()=>[]):undefined, warning:[page.__notificationWarning,page.__historyWarning].filter(Boolean).join(' · ') || undefined });
       } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
     }
 

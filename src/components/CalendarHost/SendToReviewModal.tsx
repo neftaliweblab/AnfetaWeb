@@ -63,7 +63,7 @@ export function SendToReviewModal({
               <Send className="w-4 h-4" />
             </div>
             <div>
-              <h3 id="review-modal-heading" className="text-sm font-bold text-white">Enviar a Revisión</h3>
+              <h3 id="review-modal-heading" className="text-sm font-bold text-white">Enviar a revisión final</h3>
               <p className="text-[11px] text-slate-400">Selecciona quién revisará la actividad</p>
             </div>
           </div>

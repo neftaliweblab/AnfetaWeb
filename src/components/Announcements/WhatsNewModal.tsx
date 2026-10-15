@@ -239,15 +239,7 @@ export function WhatsNewModal({
         {/* Footer Actions */}
         <div className="flex items-center justify-between border-t border-slate-800 bg-[#0C121A] px-5 py-3.5">
           {!isPreview ? (
-            <button
-              type="button"
-              onClick={() => handleSnooze(4)}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 py-1.5 px-2 rounded hover:bg-slate-800/60 transition-colors"
-              title="Volver a mostrar en 4 horas"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Recordarme en 4h</span>
-            </button>
+            <label className="flex items-center gap-2 text-xs text-slate-400"><Clock className="h-3.5 w-3.5"/>Recordarme en<select aria-label="Posponer aviso de actualización" defaultValue="" onChange={e=>{if(e.target.value)handleSnooze(Number(e.target.value));}} className="rounded bg-slate-800 p-2"><option value="">Elegir tiempo…</option><option value="0.08333333333333333">5 minutos</option><option value="0.25">15 minutos</option><option value="1">1 hora</option><option value="4">4 horas</option><option value="24">24 horas</option></select></label>
           ) : (
             <span className="text-[11px] text-amber-400 font-medium">Modo de vista previa</span>
           )}

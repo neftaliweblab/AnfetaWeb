@@ -1,4 +1,5 @@
 "use client";
+import {ReassignActivityModal} from './ReassignActivityModal';
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
@@ -95,6 +96,7 @@ export function ActivityCard({
   const [showPopup, setShowPopup] = useState(false);
   const [showHover, setShowHover] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showHandoff,setShowHandoff]=useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [popoverSize, setPopoverSize] = useState<"small" | "medium" | "large" | "xl">(() => {
@@ -159,7 +161,7 @@ export function ActivityCard({
   }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
 
   const fetchChecklistIfNeeded = React.useCallback(async () => {
-    if(checkBusy.current)return;
+    if(activity.isHandoffMirror||checkBusy.current)return;
     const rawId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, "") : activity.pageId;
     if (!rawId || rawId.startsWith("act-")) return;
     const key = cleanCardId(rawId);
@@ -626,7 +628,7 @@ export function ActivityCard({
         {/* Título de la actividad limpio y legible */}
         <div className="my-auto py-0.5 min-w-0">
           <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
-            {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con el revisor; esta copia no se puede mover ni editar.">COPIA REVISIÓN</span>}
+            {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.">{activity.isHandoffMirror?'TRANSFERIDA':'COPIA REVISIÓN'}</span>}
             {cleanTitle}
           </h5>
         </div>
@@ -915,24 +917,7 @@ export function ActivityCard({
           <div className="px-3 py-1 text-[10px] font-mono text-[#64748B] border-b border-[#1E2836]">
             ACCIONES DE ACTIVIDAD
           </div>
-          {isDirection(currentUser) && (
-            <label className="block px-3 py-2 text-[10px] text-cyan-300">
-              Reasignar responsable
-              <select
-                aria-label="Reasignar responsable"
-                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 p-1 text-xs"
-                value={normalizePerson(activity.person)}
-                onChange={(e) => {
-                  onUpdateActivity?.(activity.pageId, { person: e.target.value });
-                  closeContextMenu();
-                }}
-              >
-                {Object.keys(PERSON_ALIASES).map((person) => (
-                  <option key={person}>{person}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          <button disabled={!editable||isCompleted||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||activity.reviewFlow?.State==='pending'} onClick={()=>{closeContextMenu();setShowHandoff(true);}} className="w-full px-3 py-2 text-left text-cyan-200 hover:bg-slate-800">Reasignar actividad…</button>
           <button
             disabled={!editable||isCompleted}
             onClick={() => {
@@ -942,7 +927,7 @@ export function ActivityCard({
             className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-[#38BDF8] flex items-center gap-2"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Mover a Revisión (rtuz)...</span>
+            <span>Enviar a revisión final…</span>
           </button>
           <button
             disabled={!editable || !isReviewer(currentUser) || (activity.reviewFlow?.State === 'pending' && normalizePerson(currentUser) !== normalizePerson(activity.reviewFlow.ReviewAssignee))}
@@ -990,6 +975,7 @@ export function ActivityCard({
       )}
 
       {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onUpdateActivity?.(activity.pageId,updates)}/>}
       {showReviewModal && (
         <SendToReviewModal
           activity={activity}

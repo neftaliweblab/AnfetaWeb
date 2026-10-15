@@ -1,4 +1,8 @@
 import {withActivityLease,operationKey} from './reliableOperations';
+import {activeTeam} from './teamDirectory';
+import {handoffTitle} from './handoffTitle';
+import {prepareHandoff,confirmHandoff} from './activityHandoffs';
+import {readChecklist} from './notionCalendar';
 import {editActivityDescription} from './activityTitleEdit';
 import {reviewTitle} from './reviewTitle';
 import { sendReviewNotification } from './reviewNotifications';
@@ -7,7 +11,7 @@ import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './ac
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import {quickRevisionTitle} from '@/lib/quickRevisionTitle';
 import { normalizeActivity } from './dataNormalizers';
-import { mexicoDate } from './calendarPresentation';
+import { mexicoDate,calendarDomain } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 import {queryCalendarPages} from './notionCalendar';
 import {calendarConflict,nearbyFreeCalendarSlots, type CalendarSlot} from './calendarConflicts';
@@ -89,6 +93,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const checkSchedule=!!updates.start||!!updates.person&&!updates.reviewAction&&!updates.status&&!updates.reviewer;
   if (!id || !/^[a-f0-9-]{32,36}$/i.test(id)) throw new Error('Identificador de Notion inválido.');
   const page = await notionRequest(settings, `pages/${id}`);
+  if(page.archived||page.in_trash)throw Error('La actividad está archivada o en la papelera.');
   const title = titleOf(page);
   if(updates.automationMove){const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);if(!['pending','suspended'].includes(state)||/\b(?:zREVISION|FTF|ccale)\b/i.test(title)||Object.entries(page.properties||{}).some(([n,p]:any)=>/fij[oa]|fixed/i.test(n)&&p.checkbox))throw Error('La actividad ya no es un pendiente reprogramable. Actualiza su estado.');}
   if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
@@ -101,12 +106,26 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if ((updates.start || updates.end) && (workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name||'',title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || '')))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
+  const handoff=updates.handoff===true;
+  let handoffId:string|undefined;
+  if(handoff){
+    if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
+    const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);
+    if(!['pending','suspended'].includes(state))throw Error('Solo se pueden pasar actividades activas. Resuelve la revisión o reactívala primero.');
+    if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person))throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
+    const target=normalizePerson(updates.person);
+    if(target===normalizePerson(activity.person))throw Error('Selecciona a otro compañero.');
+    if(!(await activeTeam()).some(p=>p.name===target))throw Error('El nuevo responsable no tiene un perfil activo.');
+    if(typeof updates.note!=='string'||updates.note.length>1200)throw Error('La indicación debe tener como máximo 1200 caracteres.');
+  }
   if (returned) updates = {...updates,status:'prtuzREVISION'};
   if (reassigned) updates = {...updates,status:'prtuzREVISION'};
   if (updates.status && workflowState(updates.status) === 'review' && !updates.reviewer) throw new Error('Selecciona a quién enviar la actividad en el modal de revisión.');
   const completed = updates.status && workflowState(updates.status) === 'completed';
   if (completed && !isReviewer(actor)) throw new Error('Solo John, Isaías o Genaro pueden terminar una revisión.');
-  const previousFlow = updates.reviewer || completed || returned || reassigned ? await readReviewFlow(settings, id) : undefined;
+  if(handoff)clearReadBlocksCache(settings);
+  const previousFlow = updates.reviewer || completed || returned || reassigned || handoff ? await readReviewFlow(settings, id) : undefined;
+  if(handoff&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
   if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
   if (returned && (!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
@@ -125,7 +144,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (updates.person || updates.reviewer) {
     const target = updates.reviewer || updates.person;
     const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'EN REVISIÓN';
-    if (!isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
+    if (!handoff && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
     }
     const person = normalizePerson(target);
@@ -163,6 +182,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       const tag = PERSON_ALIASES[person]?.[0] || '';
       const baseTitle = isSendingToReview || completed || returned || reassigned ? title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '') : title;
       nextTitle = ownerToken?.test(baseTitle) ? baseTitle.replace(ownerToken, () => tag) : tag ? tag + ' ' + baseTitle : baseTitle;
+      if(handoff)nextTitle=handoffTitle(title,activity.person,person);
       if (isSendingToReview) {
         // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
         nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
@@ -249,6 +269,16 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const schedule:any=fields.find(([n,p])=>p.type==='date'&&/^fecha por hacer$/i.test(n.trim()))?.[1]?.date;
     if(schedule?.start){const start=updates.start||(schedule.start.length===10?schedule.start+'T08:00:00-06:00':schedule.start);await assertFreeCalendarSchedule(settings,{pageId:id,title:nextTitle,person:normalizePerson(updates.reviewer||updates.person||activity.person),start,end:updates.end||schedule.end||new Date(Date.parse(start)+3600000).toISOString()});}
   }
+  if(handoff){
+    const date:any=fields.find(([name,p])=>p.type==='date'&&/^fecha por hacer$/i.test(name.trim()))?.[1]?.date;
+    const snapshotStart=date?.start?.length===10?date.start+'T08:00:00-06:00':date?.start;
+    if(!snapshotStart||!Number.isFinite(Date.parse(snapshotStart)))throw Error('La actividad necesita un horario válido para conservar su historial.');
+    const checklistItems=await readChecklist(settings,id);
+    const snapshot=normalizeActivity({...cached,pageId:id,title,domain:calendarDomain(title,cached?.domain),person:activity.person,start:snapshotStart,end:date?.end||cached?.end||new Date(Date.parse(snapshotStart)+3600000).toISOString(),pageUrl:page.url,checklistScanned:true,checklistItems,checklistTotal:checklistItems.length,checklistCompleted:checklistItems.filter(c=>c.isChecked).length},0);
+    if(!snapshot.start||!snapshot.end)throw Error('La actividad necesita un horario válido para conservar su historial.');
+    handoffId=await prepareHandoff(settings,{pageId:id,from:normalizePerson(activity.person),to:normalizePerson(updates.person),actor,note:updates.note.trim(),copy:updates.leaveVisualCopy!==false,snapshot});
+    reviewFlow={OriginalPerson:normalizePerson(updates.person),ReviewAssignee:'',State:'handoff',UpdatedAt:new Date().toISOString(),UpdatedBy:actor,Note:updates.note.trim(),HandoffId:handoffId,FromPerson:activity.person};
+  }
   const updated = await notionRequest(settings, 'pages/' + id, 'PATCH', { properties });
   if (updates.start) {
     const old:any = fields.find(([name,p])=>p.type === 'date' && /^fecha por hacer$/i.test(name.trim()))?.[1]?.date;
@@ -289,6 +319,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
     updated.__reviewFlow = reviewFlow;
   }
+  if(handoffId){try{await confirmHandoff(settings,handoffId);}catch{updated.__notificationWarning='El responsable se guardó en Notion, pero no se confirmó la copia histórica. Actualiza y verifica antes de repetir la reasignación.';}}
   return updated;
 }
 export async function createActivity(settings: Settings, actor: string, payload: any) {

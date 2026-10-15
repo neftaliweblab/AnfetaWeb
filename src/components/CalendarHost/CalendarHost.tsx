@@ -65,6 +65,7 @@ const DEFAULT_COLLABORATORS = [
   "Brian",
   "Genaro",
   "Neftali",
+  "Emmanuel",
   "Sin asignar",
 ];
 
@@ -102,6 +103,7 @@ export function CalendarHost({
   const pending = React.useRef(new Set<string>());
   const [,setSaveRevision]=useState(0);
   const recentSaves=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
+  const recentHandoffs=React.useRef(new Map<string,{activity:NotionCalendarActivity,until:number}>());
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const autoScrollRaf = React.useRef<number | null>(null);
@@ -171,8 +173,10 @@ export function CalendarHost({
     };
   }, [stopAutoScroll]);
   const protectSaved=(incoming:NotionCalendarActivity[])=>{
+    const historical=new Map(incoming.filter(a=>a.isHandoffMirror).map(a=>[a.pageId,a]));
+    for(const [id,saved] of recentHandoffs.current){if(saved.until<Date.now()){recentHandoffs.current.delete(id);continue;}if(mexicoDate(saved.activity.start)===currentDate)historical.set(id,saved.activity);}
     const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
-    const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors];
+    const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
@@ -336,7 +340,7 @@ export function CalendarHost({
     setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
   };
 
-  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
+  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
@@ -352,15 +356,17 @@ export function CalendarHost({
       }catch(e){pending.current.delete(pageId);setError(e instanceof Error?e.message:'No se pudo preparar la revisión.');return false;}
     }
     try {
-      const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction)?{expectedReviewUpdatedAt:original.reviewFlow?.UpdatedAt||null}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
+      const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction||updates.handoff)?{expectedReviewUpdatedAt:original.reviewFlow?.UpdatedAt||null}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
       if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
       const saved: NotionCalendarActivity = data.activity;
+      if(updates.handoff){setVisiblePeople(prev=>prev.includes(saved.person)?prev:[...prev,saved.person]);if(Array.isArray(data.handoffCopies))for(const copy of data.handoffCopies)recentHandoffs.current.set(copy.pageId,{activity:copy,until:Date.now()+120000});}
       recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
       setActivitiesList(prev => {
         const next = prev.filter(a => a.pageId !== pageId && a.pageId !== 'review-mirror-' + pageId);
         next.push(saved);
+        if(Array.isArray(data.handoffCopies)){for(const copy of data.handoffCopies){if(!next.some(a=>a.pageId===copy.pageId))next.push(copy);}}
         if (saved.reviewFlow?.State === 'pending' && saved.reviewFlow.LeaveVisualCopy !== false && normalizePerson(saved.reviewFlow.OriginalPerson) !== normalizePerson(saved.person)) next.push({...saved, pageId:'review-mirror-' + pageId, person:normalizePerson(saved.reviewFlow.OriginalPerson), isReviewMirror:true, title:'[COPIA REVISIÓN] ' + saved.title});
         return next;
       });

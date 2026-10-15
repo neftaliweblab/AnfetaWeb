@@ -1,4 +1,5 @@
 "use client";
+import {RecordingTranscription} from './RecordingTranscription';
 import {uploadBrowserFiles,uploadMetadata} from '@/lib/browserDropboxUpload';
 import {readUploadDraft,saveUploadDraft,clearUploadDraft,UploadDraft,getUploadDraftStatus,summarizeDraftProgress} from '@/lib/uploadDraft';
 import React,{useState,useEffect,useRef,useCallback} from 'react';
@@ -77,6 +78,7 @@ export function GlobalPasteModal({
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [locked, setLocked] = useState(false);
+  const [transcription,setTranscription]=useState<{file:GlobalPasteImagePayload;pageIds:string[];folder:string}|null>(null);
 
   const [confirmedDropbox, setConfirmedDropbox] = useState<string[]>([]);
   const [confirmedNotion, setConfirmedNotion] = useState<string[]>([]);
@@ -219,6 +221,7 @@ export function GlobalPasteModal({
 
   useEffect(() => {
     if (!isOpen) {
+      setTranscription(null);
       setPendingConflict(null);
       setDraftReady(false);
       setStarted(false);
@@ -458,7 +461,9 @@ export function GlobalPasteModal({
         await clearUploadDraft(currentUser);
       } catch {}
 
-      if (!warnings.length) {
+      const recording=files.find(f=>f.blob&&/^video\//.test(f.contentType||f.blob.type));
+      if(recording)setTranscription({file:recording,pageIds:[...new Set<string>(allReceipts.filter((r:any)=>r.kind==='notion'||r.kind==='notion_attachment').map((r:any)=>r.pageId).filter(Boolean))],folder:dbxPaths[0]?.replace(/\/[^/]+$/,'')||''});
+      if (!warnings.length&&!recording) {
         setTimeout(() => onClose(), 1200);
       }
     } catch (e: any) {
@@ -473,6 +478,7 @@ export function GlobalPasteModal({
   return (
     <div role="dialog" aria-modal="true" aria-label="Subir archivo" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
       <form onSubmit={submit} className="w-full max-w-4xl max-h-[94dvh] overflow-auto rounded-2xl border border-cyan-600/50 bg-[#0C131D] shadow-2xl p-4 space-y-3 text-slate-200">
+        {transcription&&<RecordingTranscription file={transcription.file} pageIds={transcription.pageIds} folder={transcription.folder}/>}
         <header className="flex items-center gap-2">
           <Upload className="text-sky-400" size={22} />
           <h2 className="text-lg font-semibold">Subir archivo o grabación</h2>

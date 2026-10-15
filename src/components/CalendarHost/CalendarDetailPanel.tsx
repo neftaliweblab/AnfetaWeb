@@ -1,4 +1,5 @@
 "use client";
+import {ReassignActivityModal} from './ReassignActivityModal';
 import {ActivityQuickEntry} from './ActivityQuickEntry';
 import {requestActivityRecording} from '@/lib/activityRecording';
 import {offlineAwareFetch} from '@/services/offlineQueue';
@@ -52,6 +53,7 @@ export function CalendarDetailPanel({
   const [projectLoading,setProjectLoading]=useState(false);
   const [activeTab, setActiveTab] = useState<"checklist" | "project">("checklist");
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showHandoff,setShowHandoff]=useState(false);
 
   const title = activity.title || (activity as any)?.Title || "Sin título";
   const domain = activity.domain || (activity as any)?.ParsedDomain || "DOMINIO";
@@ -109,6 +111,7 @@ export function CalendarDetailPanel({
   const pct = checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : 0;
 
   useEffect(() => {
+    if(activity.isHandoffMirror){setItems((activity.checklistItems||[]) as any);setLoading(false);setChecklistError('');setStatusMessage(activity.handoffNote||'Copia histórica: no se puede editar.');return;}
     const controller = new AbortController();
     setItems([]); setLoading(true); setChecklistError(''); setStatusMessage('');
     let busy = false;
@@ -201,6 +204,8 @@ export function CalendarDetailPanel({
         </div>
 
         {/* Metadata Card */}
+        {activity.reviewFlow?.State==='handoff'&&<div className="rounded border border-cyan-900 bg-cyan-950/30 p-2 text-xs"><p>Transferida por {String(activity.reviewFlow.FromPerson||activity.reviewFlow.UpdatedBy||'el equipo')}</p>{!!activity.reviewFlow.Note&&<p className="mt-1 whitespace-pre-wrap break-words">{String(activity.reviewFlow.Note)}</p>}</div>}
+        <button type="button" disabled={!editable||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||wf==='completed'||wf==='review'||activity.reviewFlow?.State==='pending'} onClick={()=>setShowHandoff(true)} className="w-full rounded border border-cyan-800 p-2 text-xs text-cyan-200 disabled:opacity-40">Reasignar actividad…</button>
         <button type="button" disabled={!editable} onClick={()=>{if(!requestActivityRecording({id:activity.pageId,title:activity.title,type:'actividad',typeLabel:'Actividad'}))setStatusMessage('No se pudo abrir el grabador. Vuelve a abrir ANFETA e intenta de nuevo.');}} className="w-full rounded border border-cyan-800 bg-cyan-950/40 p-2 text-xs text-cyan-200 disabled:opacity-40">● Grabar para esta actividad</button>
         <div className="rounded-lg bg-[#1F1F23] p-3 text-xs space-y-2 border border-[#2B2B30]">
           <div className="flex items-center justify-between">
@@ -269,7 +274,7 @@ export function CalendarDetailPanel({
             className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Enviar a revisión...</span>
+            <span>Enviar a revisión final…</span>
           </button>
 
           <button
@@ -433,6 +438,7 @@ export function CalendarDetailPanel({
       </div>
 
       {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onActivityUpdated?.(updates)}/>}
       {showReviewModal && (
         <SendToReviewModal
           activity={activity}
