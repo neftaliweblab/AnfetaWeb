@@ -423,7 +423,10 @@ export async function notionFileBlocks(settings:Settings,files:any[]){
     const form = new FormData(); form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: contentType }), file.filename);
     const res = await fetch(`https://api.notion.com/v1/file_uploads/${upload.id}/send`, { method: 'POST', headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': '2022-06-28' }, body: form, signal: AbortSignal.timeout(60000) });
     if (!res.ok) throw new Error('Notion rechazó el archivo adjunto.');
-    const type=String(file.contentType||'').startsWith('video/')?'video':'file';
+    // WebM screen recordings can upload successfully while Notion cannot play them.
+    // Preserve the original as a downloadable file rather than a broken video player.
+    const webm=contentType==='video/webm'||/\.webm$/i.test(file.filename);
+    const type=contentType.startsWith('video/')&&!webm?'video':'file';
     children.push({ object: 'block', type, [type]: { type: 'file_upload', file_upload: { id: upload.id } } });
   }
   return children;

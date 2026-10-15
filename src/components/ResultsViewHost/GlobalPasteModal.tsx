@@ -883,6 +883,7 @@ export function GlobalPasteModal({
           </div>
         )}
 
+        {mode!=='dropbox'&&files.some(f=>/video\/webm/i.test(f.contentType||'')||/\.webm$/i.test(f.filename))&&<p role="status" className="rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 text-sm text-amber-200">Este video es WebM. En Notion se adjuntará como archivo descargable para evitar un reproductor incompatible. Para verlo dentro de Notion, usa una grabación MP4 o convierte el archivo a MP4 antes de subirlo.</p>}
         {error && <p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}
         {status && <p role="status" className="break-words text-sm text-cyan-200">{status}</p>}
         {started && <p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó pendiente, puedes corregirlo y reintentar.</p>}

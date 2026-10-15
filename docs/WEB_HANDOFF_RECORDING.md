@@ -36,6 +36,12 @@ Referencia del proveedor: [Groq Speech to Text](https://console.groq.com/docs/sp
 
 ## Subida directa desde una actividad
 
-El grabador abre un panel de adjunto con la actividad fija, vista previa y descripción opcional. No solicita dominio, mes, responsable ni título de otra página. En Notion se añade a la página existente; Solo Notion adjunta el archivo como bloque de video. Notion + Dropbox conserva el archivo en Dropbox y añade su referencia y descripción a la misma actividad. La carpeta automática de respaldo es `/DRX/Grabaciones/<ID de la actividad>` y no cambia al renombrarla. Solo Dropbox no modifica Notion.
+El grabador abre un panel de adjunto con la actividad fija, vista previa y descripción opcional. No solicita dominio, mes, responsable ni título de otra página. En Notion se añade a la página existente; Solo Notion adjunta MP4 como bloque de video; WebM se conserva como archivo descargable. Notion + Dropbox conserva el archivo en Dropbox y añade su referencia y descripción a la misma actividad. La carpeta automática de respaldo es `/DRX/Grabaciones/<ID de la actividad>` y no cambia al renombrarla. Solo Dropbox no modifica Notion.
 
 El formulario general conserva sus campos para nuevas páginas y otras subidas. El panel es más ancho, los textos largos se ajustan y los fieldsets tienen ancho mínimo cero para evitar scroll horizontal.
+
+## Compatibilidad del video en Notion
+
+El grabador prioriza MP4, primero H.264/AAC declarado como compatible por el navegador. Si solamente se puede generar WebM, lo mantiene sin renombrarlo ni fingir una conversión: advierte antes de grabar/subir y lo adjunta en Notion como archivo descargable, evitando un reproductor incompatible. La vista previa local continúa disponible. No se garantiza compatibilidad entre todos los navegadores/dispositivos; se debe verificar la reproducción real después de publicar.
+
+Los WebM subidos anteriormente no se modifican automáticamente. Para reproducirlos dentro de Notion deben convertirse realmente a MP4 compatible y adjuntarse de nuevo. Referencias: [Notion, archivos y multimedia](https://www.notion.com/es/help/images-files-and-media) y [MDN, MIME de MediaRecorder](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder/mimeType).
