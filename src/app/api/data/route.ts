@@ -1,3 +1,4 @@
+import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
@@ -1428,7 +1429,7 @@ async function POSTLive(req: NextRequest) {
     if(action==='unified-upload'){
       const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
-      if(mode!=='notion')drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
+      if(mode!=='notion'&&!input.customFolder)drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
       if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))return NextResponse.json({error:'Actualiza la web para guardar el identificador del lote recuperable.'},{status:400});
 
       if(mode!=='dropbox'){
@@ -1468,6 +1469,7 @@ async function POSTLive(req: NextRequest) {
               pageId:input.targetPageId,
               title:input.title||batch[0].filename,
               body:attachBody,
+              files:mode==='notion'?files:[],
               uploadId:input.uploadId,
               currentUser:actor
             });
@@ -1626,11 +1628,11 @@ async function POSTLive(req: NextRequest) {
 
       const uploadId = payload?.uploadId;
       if (uploadId) {
-        const existingBlocks = await readBlocks(effectiveSettings, pageId).catch(() => []);
+        const existingBlocks = await readBlocks(effectiveSettings, pageId);
         const marker = `[UPLOAD_REF:${uploadId}]`;
         const already = existingBlocks.find((b: any) => {
           const rich = b[b.type]?.rich_text || [];
-          return rich.some((t: any) => (t.plain_text || t.text?.content || '').includes(marker));
+          return rich.map((t: any) => t.plain_text || t.text?.content || '').join('').includes(marker);
         });
         if (already) {
           return NextResponse.json({
@@ -1646,6 +1648,10 @@ async function POSTLive(req: NextRequest) {
 
       const uploadMarker = uploadId ? `\n[UPLOAD_REF:${uploadId}]` : '';
       const detailText = `${payload?.body || ''}${uploadMarker}`.trim();
+      const detailRich=(detailText.match(/[\s\S]{1,1800}/g)||['']).map(content=>({type:'text',text:{content}}));
+      const attachmentFiles=Array.isArray(payload?.files)?payload.files:[];
+      if(attachmentFiles.length>20)throw Error('Selecciona hasta 20 archivos.');
+      const fileBlocks=await notionFileBlocks(effectiveSettings,attachmentFiles);
       const block = {
         object: 'block',
         type: 'callout',
@@ -1653,13 +1659,13 @@ async function POSTLive(req: NextRequest) {
           icon: { type: 'emoji', emoji: '📎' },
           rich_text: [
             { type: 'text', text: { content: `Adjunto ANFETA: ${payload?.title || 'Grabación / Archivo'}\n` }, annotations: { bold: true } },
-            { type: 'text', text: { content: detailText } }
+            ...detailRich
           ]
         }
       };
 
       const response = await notionRequest(effectiveSettings, `blocks/${pageId}/children`, 'PATCH', {
-        children: [block]
+        children: [block,...fileBlocks]
       });
       const saved = response.results?.[0];
       invalidateChecklist(effectiveSettings, pageId);

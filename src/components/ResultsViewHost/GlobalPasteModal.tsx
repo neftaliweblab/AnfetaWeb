@@ -1,7 +1,9 @@
 "use client";
+import {activityAttachmentPlan} from '@/lib/activityAttachmentPlan';
 import {RecordingTranscription} from './RecordingTranscription';
 import {uploadBrowserFiles,uploadMetadata} from '@/lib/browserDropboxUpload';
 import {readUploadDraft,saveUploadDraft,clearUploadDraft,UploadDraft,getUploadDraftStatus,summarizeDraftProgress} from '@/lib/uploadDraft';
+import {createPortal} from 'react-dom';
 import React,{useState,useEffect,useRef,useCallback} from 'react';
 import {X,Upload,Loader2,Folder,ChevronRight,AlertTriangle,CheckCircle,Link2,Search} from 'lucide-react';
 import {detectUpload,drxFolder,monthToken,projectCategories,softwareCategories,replaceUploadPrefix,uploadFilename} from '@/lib/drxUploadPlan';
@@ -30,6 +32,7 @@ interface Props {
   onSuccess: (item: any) => void;
   initialDestination?: 'both' | 'dropbox' | 'notion';
   initialDomain?: string;
+  attachmentOnly?: boolean;
   suggestedTarget?: SearchResultRow | null;
 }
 
@@ -53,9 +56,14 @@ export function GlobalPasteModal({
   onSuccess,
   initialDestination,
   initialDomain,
+  attachmentOnly=false,
   suggestedTarget
 }: Props) {
   const [files, setFiles] = useState<GlobalPasteImagePayload[]>([]);
+  const [videoPreview,setVideoPreview]=useState('');
+  const attachment=attachmentOnly?activityAttachmentPlan(suggestedTarget,files[0]?.filename||'Grabacion.webm'):null;
+  const videoBlob=files.find(f=>/^video\//.test(f.contentType||f.blob?.type||''))?.blob;
+  useEffect(()=>{if(!videoBlob){setVideoPreview('');return;}const url=URL.createObjectURL(videoBlob);setVideoPreview(url);return()=>URL.revokeObjectURL(url);},[videoBlob]);
   const [mode, setMode] = useState<'both' | 'dropbox' | 'notion'>('both');
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
   const [quickType,setQuickType]=useState('Actividad rápida'),[quickTitle,setQuickTitle]=useState(''),[quickDescription,setQuickDescription]=useState('');
@@ -167,7 +175,10 @@ export function GlobalPasteModal({
     if (/^(Captura_ANFETA|image|clipboard|tmp|codex-clipboard)/i.test(desc)) desc = '';
     if (d) desc = desc.split(d).join('').trim();
     setTitle([prefix, desc].filter(Boolean).join(' '));
-  }, [initialDomain, initialText, initialDestination]);
+    const direct=attachmentOnly?activityAttachmentPlan(suggestedTarget,filesToUse[0]?.filename||'Grabacion.webm'):null;
+    setCustomFolder(direct?.customFolder||'');
+    if(direct){setTitle(direct.title);setPerson('');setBody('');}
+  }, [initialDomain, initialText, initialDestination, attachmentOnly, suggestedTarget]);
 
   const applyDraft = useCallback((draft: UploadDraft) => {
     recovery.current = draft;
@@ -320,24 +331,26 @@ export function GlobalPasteModal({
   }, [isOpen, draftReady, started, pendingConflict, mode, domain, root, category, month, person, title, body, files, separate, customFolder,notionTarget,notionTargetId,quickType,quickTitle,quickDescription,actionType,selectedCard]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen||attachmentOnly) return;
     const prefix = [domain, root, month, person].filter(Boolean).join(' ');
     if (prefix === prefixRef.current) return;
     const previous = prefixRef.current;
     setTitle(old => replaceUploadPrefix(old, previous, prefix));
     prefixRef.current = prefix;
-  }, [domain, root, month, person, isOpen]);
+  }, [domain, root, month, person, isOpen, attachmentOnly]);
 
-  if (!isOpen) return null;
+  if (!isOpen||typeof document==='undefined') return null;
   let folder = '';
   try { folder = drxFolder(domain, root, category); } catch {}
   const count = files.length;
+  const directAttachment=!!attachment&&actionType==='attach'&&String(selectedCard?.id||'').replace(/-/g,'')===attachment.pageId;
   const chosen = reviewers.find(p => p.tag === person);
   let quickPreview='',quickError='';try{quickPreview=quickRevisionTitle({type:quickType,title:quickTitle,person:chosen?.person||currentUser,domain,description:quickDescription,month});}catch(e){quickError=e instanceof Error?e.message:'';}
 
   async function submit(e: React.FormEvent,dropboxOnly=false) {
     e.preventDefault();
     if (busy || locked || !draftReady || pendingConflict) return;
+    if(attachmentOnly&&!attachment){setError('No se pudo identificar la actividad de destino. Cierra este panel y vuelve a grabar desde la actividad.');return;}
     setError('');
     if (files.length > 20) { setError('Selecciona hasta 20 archivos por lote.'); return; }
     const effectiveMode=dropboxOnly?'dropbox':mode;
@@ -475,13 +488,13 @@ export function GlobalPasteModal({
 
   const style = 'min-w-0 w-full bg-[#131E2E] border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-sky-400';
 
-  return (
+  return createPortal(
     <div role="dialog" aria-modal="true" aria-label="Subir archivo" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
-      <form onSubmit={submit} className="w-full max-w-4xl max-h-[94dvh] overflow-auto rounded-2xl border border-cyan-600/50 bg-[#0C131D] shadow-2xl p-4 space-y-3 text-slate-200">
+      <form onSubmit={submit} className="w-full min-w-0 max-w-5xl max-h-[94dvh] overflow-y-auto overflow-x-hidden rounded-2xl border border-cyan-600/50 bg-[#0C131D] shadow-2xl p-5 sm:p-7 space-y-4 text-slate-200">
         {transcription&&<RecordingTranscription file={transcription.file} pageIds={transcription.pageIds} folder={transcription.folder}/>}
-        <header className="flex items-center gap-2">
+        <header className="flex flex-wrap items-center gap-2">
           <Upload className="text-sky-400" size={22} />
-          <h2 className="text-lg font-semibold">Subir archivo o grabación</h2>
+          <h2 className="text-lg font-semibold">{directAttachment?'Adjuntar grabación a la actividad':'Subir archivo o grabación'}</h2>
           {count > 0 && <span title={files.map(f => f.filename).join('\n')} className="text-xs text-cyan-300">📦 {count} archivos</span>}
           <button type="button" disabled={busy} aria-label="Cerrar" onClick={onClose} className="ml-auto cursor-pointer p-1 text-slate-400 hover:text-white"><X size={20} /></button>
         </header>
@@ -534,16 +547,16 @@ export function GlobalPasteModal({
           </div>
         )}
 
-        {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
+        {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="min-w-0 rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
           <p className="font-semibold text-cyan-200">Se guardará en Revisiones como actividad rápida, sin horario automático.</p>
           <div className="grid gap-2 sm:grid-cols-2"><label>Tipo de actividad<input value={quickType} onChange={e=>setQuickType(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Corrección de prueba"/></label><label>Título de actividad<input value={quickTitle} onChange={e=>setQuickTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Error al mover actividad"/></label></div>
           <label className="block">Descripción breve<input value={quickDescription} onChange={e=>setQuickDescription(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Revisar el horario mostrado"/></label>
           <p role="status" className="break-words rounded bg-slate-900 p-2 text-cyan-100">{quickPreview||quickError}</p>
           <p className="text-slate-400">La etiqueta y la asignación corresponden a Persona / Revisor. Si no eliges otra persona, se asignará a tu cuenta. {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío: 2.5 MB.'}</p>
         </fieldset>}
-        <fieldset disabled={busy || started || !draftReady || Boolean(pendingConflict)} className="space-y-3">
+        <fieldset disabled={busy || started || !draftReady || Boolean(pendingConflict)} className="min-w-0 space-y-4">
           {/* Selector de Destino */}
-          <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-800 p-1">
+          <div className="grid min-w-0 grid-cols-1 sm:grid-cols-3 gap-2 rounded-xl bg-slate-800 p-1">
             {([{ id: 'both', label: '🌐 Notion + Dropbox' }, { id: 'dropbox', label: '📦 Solo Dropbox' }, { id: 'notion', label: '📝 Solo Notion' }] as const).map(x =>
               <label key={x.id} className={'cursor-pointer rounded-lg p-2 text-center text-xs ' + (mode === x.id ? 'bg-sky-900 text-cyan-200 ring-1 ring-cyan-600' : 'text-slate-400')}>
                 <input type="radio" name="destination" checked={mode === x.id} onChange={() => setMode(x.id)} className="sr-only" />{x.label}
@@ -552,8 +565,8 @@ export function GlobalPasteModal({
           </div>
 
           {/* Selector Crear Nuevo vs Adjuntar a Existente */}
-          {mode !== 'dropbox' && (
-            <div className="flex items-center gap-3 rounded-lg bg-slate-900/80 border border-slate-800 p-2.5 text-xs">
+          {!directAttachment && mode !== 'dropbox' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-900/80 border border-slate-800 p-2.5 text-xs">
               <span className="text-slate-400 font-medium">Destino en Notion:</span>
               <div className="inline-flex rounded-lg bg-slate-800 p-0.5 border border-slate-700">
                 <button
@@ -578,14 +591,14 @@ export function GlobalPasteModal({
           )}
 
           {/* Panel de Selección y Búsqueda de Tarjeta Existente */}
-          {mode !== 'dropbox' && actionType === 'attach' && (
+          {(directAttachment||(mode !== 'dropbox' && actionType === 'attach')) && (
             <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/20 p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-cyan-200 flex items-center gap-1.5">
                   <Link2 size={15} />
                   <span>Tarjeta seleccionada:</span>
                 </span>
-                {selectedCard && (
+                {selectedCard && !directAttachment && (
                   <button
                     type="button"
                     onClick={() => { setShowCardPicker(true); searchCards(searchQuery); }}
@@ -600,8 +613,8 @@ export function GlobalPasteModal({
                 <div className="flex items-center justify-between rounded-lg bg-slate-900 border border-cyan-600/50 p-2.5 text-xs">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-200 text-[11px] font-semibold">{selectedCard.typeLabel}</span>
-                      <span className="font-medium text-slate-100 truncate">{selectedCard.title}</span>
+                      <span className="shrink-0 px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-200 text-[11px] font-semibold">{selectedCard.typeLabel}</span>
+                      <span className="min-w-0 flex-1 break-words font-medium leading-relaxed text-slate-100">{selectedCard.title}</span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">ID: {selectedCard.id}</p>
                   </div>
@@ -659,6 +672,7 @@ export function GlobalPasteModal({
             </div>
           )}
 
+          {!directAttachment&&<>
           {/* Configuración de Dominio y DRX */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <label className="text-xs">Dominio<input aria-label="Dominio" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="dominio.com" /></label>
@@ -815,7 +829,9 @@ export function GlobalPasteModal({
             </div>
           )}
 
-          <details open={!count && Boolean(initialText)}>
+          </>}
+          {directAttachment&&<div className="space-y-4"><p className="text-sm leading-relaxed text-slate-400">{mode==='dropbox'?'Se guardará solo en Dropbox; no se insertará en Notion.':'Se adjuntará a esta misma actividad sin crear otra página ni cambiar su responsable.'}</p>{videoPreview&&<video src={videoPreview} controls preload="metadata" className="max-h-[38dvh] w-full rounded-xl border border-slate-700 bg-black"/>}<label className="block text-sm font-medium text-slate-200">Descripción breve <span className="font-normal text-slate-500">(opcional)</span><textarea aria-label="Descripción de la grabación" value={body} onChange={e=>setBody(e.target.value)} maxLength={1200} rows={3} placeholder="Explica qué debe revisar o continuar el compañero…" className={style+' mt-2 resize-y'}/></label><p className="break-words text-xs text-slate-400">{files.map(f=>f.filename+' · '+(f.sizeBytes/1048576).toFixed(1)+' MB').join(' / ')}</p>{mode!=='notion'&&<p className="break-all text-xs text-slate-500">Respaldo automático: {customFolder}</p>}</div>}
+          {!directAttachment&&<details open={!count && Boolean(initialText)}>
             <summary className="cursor-pointer text-xs text-slate-400">Contenido y adjuntos</summary>
             <textarea aria-label="Contenido" value={body} onChange={e => setBody(e.target.value)} rows={3} className={style} />
             <input
@@ -841,7 +857,7 @@ export function GlobalPasteModal({
               }}
               className="text-xs mt-2"
             />
-          </details>
+          </details>}
         </fieldset>
 
         {/* Reporte separado de confirmaciones */}
@@ -868,16 +884,16 @@ export function GlobalPasteModal({
         )}
 
         {error && <p role="alert" className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-200">{error}</p>}
-        {status && <p role="status" className="text-sm text-cyan-200">{status}</p>}
+        {status && <p role="status" className="break-words text-sm text-cyan-200">{status}</p>}
         {started && <p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó pendiente, puedes corregirlo y reintentar.</p>}
 
-        <footer className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <footer className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-800">
           {error&&mode!=='dropbox'&&!recovery.current?.receipts.some(r=>r.kind==='notion'||r.kind==='notion_attachment')&&<button type="button" disabled={busy||locked||!draftReady||Boolean(pendingConflict)} onClick={e=>void submit(e,true)} className="rounded border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Continuar solo con Dropbox</button>}
           <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800 cursor-pointer">
             {locked ? 'Cerrar' : 'Cancelar'}
           </button>
           <button
-            disabled={busy || locked || !draftReady || Boolean(pendingConflict)}
+            disabled={busy || locked || !draftReady || Boolean(pendingConflict)||(attachmentOnly&&!attachment)}
             className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 hover:from-sky-600 hover:to-sky-400 px-4 py-2 font-bold text-white text-sm disabled:opacity-50 cursor-pointer"
           >
             {busy && <Loader2 size={16} className="animate-spin" />}
@@ -886,5 +902,5 @@ export function GlobalPasteModal({
         </footer>
       </form>
     </div>
-  );
+  ,document.body);
 }

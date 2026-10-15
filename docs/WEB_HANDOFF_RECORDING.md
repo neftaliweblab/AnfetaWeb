@@ -33,3 +33,9 @@ Referencia del proveedor: [Groq Speech to Text](https://console.groq.com/docs/sp
 3. Grabar desde distintas actividades en Chrome/Edge/Firefox con y sin micrófono; alternar módulos y detener desde el navegador. Revisar que el destino no cambie.
 4. Subir a Notion/Dropbox y Solo Dropbox. Elegir No a transcripción; después probar Sí, error/reintento y guardar TXT. Verificar que no se duplica video ni texto.
 5. Probar límites, permisos denegados y micrófono desconectado. Las pruebas automáticas simulan navegador/proveedores; no sustituyen estas comprobaciones reales.
+
+## Subida directa desde una actividad
+
+El grabador abre un panel de adjunto con la actividad fija, vista previa y descripción opcional. No solicita dominio, mes, responsable ni título de otra página. En Notion se añade a la página existente; Solo Notion adjunta el archivo como bloque de video. Notion + Dropbox conserva el archivo en Dropbox y añade su referencia y descripción a la misma actividad. La carpeta automática de respaldo es `/DRX/Grabaciones/<ID de la actividad>` y no cambia al renombrarla. Solo Dropbox no modifica Notion.
+
+El formulario general conserva sus campos para nuevas páginas y otras subidas. El panel es más ancho, los textos largos se ajustan y los fieldsets tienen ancho mínimo cero para evitar scroll horizontal.

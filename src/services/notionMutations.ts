@@ -408,7 +408,15 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   const chunks=Array.from(fullBody).reduce<string[]>((parts,char)=>{if(!parts.length||parts[parts.length-1].length+char.length>1900)parts.push('');parts[parts.length-1]+=char;return parts;},[]);
   if(chunks.length>80)throw new Error('El texto excede el límite de esta creación. Divide el contenido en varias páginas.');
   for(const content of chunks)children.push({object:'block',type:'paragraph',paragraph:{rich_text:[{type:'text',text:{content}}]}});
-  for (const file of payload.files || []) {
+  children.push(...await notionFileBlocks(settings,payload.files||[]));
+  if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
+  const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
+  return { page, activity: normalizeActivity({ pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
+}
+
+export async function notionFileBlocks(settings:Settings,files:any[]){
+  const children:any[]=[];
+  for (const file of files) {
     if (!file.filename || !file.base64 || Buffer.byteLength(file.base64, 'base64') > 20 * 1024 * 1024) throw new Error('Cada adjunto de Notion debe tener nombre y pesar como máximo 20 MB.');
     const contentType=String(file.contentType || /^data:([^;]+);/.exec(file.dataUrl || '')?.[1] || 'application/octet-stream').split(';')[0].trim();
     const upload = await notionRequest(settings, 'file_uploads', 'POST', { mode: 'single_part', filename: file.filename, content_type: contentType });
@@ -418,7 +426,5 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
     const type=String(file.contentType||'').startsWith('video/')?'video':'file';
     children.push({ object: 'block', type, [type]: { type: 'file_upload', file_upload: { id: upload.id } } });
   }
-  if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
-  const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
-  return { page, activity: normalizeActivity({ pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
+  return children;
 }

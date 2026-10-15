@@ -1609,6 +1609,7 @@ export function ResultsViewHost({
         initialDestination={recordingUpload?'both':undefined}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
+        attachmentOnly={recordingUpload&&!!recordingDestination}
         suggestedTarget={recordingUpload?recordingDestination:selectedItem}
         onSuccess={(newRow) => {
           setItems((prev) => [newRow, ...prev]);
