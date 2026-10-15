@@ -65,7 +65,6 @@ const DEFAULT_COLLABORATORS = [
   "Brian",
   "Genaro",
   "Neftali",
-  "Emmanuel",
   "Sin asignar",
 ];
 
@@ -460,8 +459,8 @@ export function CalendarHost({
     return () => clearInterval(interval);
   }, [currentDate, startHour]);
 
-  // Click on empty slot in column
-  const handleColumnCanvasClick = (e: React.MouseEvent<HTMLDivElement>, colPerson: string) => {
+  // Double click on an empty slot; one click must not open a modal.
+  const handleColumnCanvasDoubleClick = (e: React.MouseEvent<HTMLDivElement>, colPerson: string) => {
     // Only trigger if clicking on the background canvas, not a child card
     if ((e.target as HTMLElement).closest('[data-activity-card="true"]')) {
       return;
@@ -769,7 +768,7 @@ export function CalendarHost({
                       onSelectPerson={(p) => {setPreviewTab('activities');setSelectedPersonPreview(p);}}
                     />
                     <div
-                      onClick={(e) => handleColumnCanvasClick(e, person)}
+                      onDoubleClick={(e) => handleColumnCanvasDoubleClick(e, person)}
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px`,backgroundColor:'var(--anfeta-calendar-bg)' }}
                     >

@@ -19,7 +19,6 @@ const USERS = [
   { tag: "aandr", name: "Andrade", role: "ADS & Campañas" },
   { tag: "bbria", name: "Brian", role: "Desarrollo Web" },
   { tag: "ggena", name: "Genaro", role: "Desarrollo & Sistemas" },
-  { tag: "eemma", name: "Emmanuel", role: "Soporte & Web" },
 ];
 
 export function LoginModal({ onSuccess,sharedMode=true }: LoginModalProps) {

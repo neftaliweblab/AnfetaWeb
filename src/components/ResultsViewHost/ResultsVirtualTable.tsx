@@ -103,8 +103,6 @@ const PERSON_ALIASES: Record<string, string> = {
   eduardo: "Sotelo",
   aacal: "Acali",
   acalli: "Acali",
-  eemma: "Emmanuel",
-  emmanuel: "Emmanuel",
 };
 
 function getItemGroupKey(item: any, groupBy: string): string {

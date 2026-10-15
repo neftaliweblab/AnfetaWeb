@@ -130,7 +130,6 @@ export function SearchConfigRow({
     { code: "ssote", name: "Sotelo" },
     { code: "aacal", name: "Acalli" },
     { code: "aandr", name: "Andrade" },
-    { code: "eemma", name: "Emmanuel" },
   ];
 
   useEffect(() => {

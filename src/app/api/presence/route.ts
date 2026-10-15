@@ -1,7 +1,7 @@
 import {NextResponse} from 'next/server';
 import {assertSameOrigin,requireActor} from '@/services/serverAuth';
 import {supabaseConfigured,supabaseIdentity,supabaseAdmin} from '@/services/supabaseServer';
-import {normalizePerson} from '@/services/identityNormalizer';
+import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 
 function formatLastSeen(lastSeen: string | null, isOnline: boolean): string {
   if (isOnline) return 'En linea';
@@ -62,7 +62,7 @@ async function getTeamPresenceList() {
     presenceMap.set(row.user_id, row.last_seen);
   }
 
-  const list = (((profiles.data as ProfileRow[] | null) || [])).map(prof => {
+  const list = (((profiles.data as ProfileRow[] | null) || [])).filter(prof=>!!PERSON_ALIASES[normalizePerson(prof.person_tag)]).map(prof => {
     const lastSeen = presenceMap.get(prof.id) || null;
     const age=lastSeen?Date.now()-new Date(lastSeen).getTime():Infinity;
     const isOnline = Number.isFinite(age)&&age>=-30000&&age<=150000;

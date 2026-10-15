@@ -1269,7 +1269,7 @@ export function ResultsViewHost({
         onSelectScope={(scope) => {
           setSelectedScope(scope);
           // Si el usuario tenía su tag personal y selecciona una base global, limpiar el tag para ver todos los registros
-          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr", "eemma"];
+          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
           if (userTags.includes(query.trim().toLowerCase())) {
             handleQueryChange("");
           }

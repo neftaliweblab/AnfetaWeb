@@ -50,7 +50,6 @@ const PERSONAS_ITEMS = [
   { label: "👤 Sotelo (eedua)", tag: "eedua" },
   { label: "👤 Acalli (aacal)", tag: "aacal" },
   { label: "👤 Andrade (aandr)", tag: "aandr" },
-  { label: "👤 Emmanuel (eemma)", tag: "eemma" },
 ];
 
 // 3. Opciones de Proyectos (Tipos de Proyecto)

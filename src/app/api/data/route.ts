@@ -692,7 +692,6 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         { code: "ssote", name: "Sotelo", email: "ssote@pprin.com" },
         { code: "aacal", name: "Acalli", email: "aacal@pprin.com" },
         { code: "aandr", name: "Andrade", email: "aandr@pprin.com" },
-        { code: "eemma", name: "Emmanuel", email: "eedua@pprin.com" },
       ];
 
       const usersMap = new Map<string, { code: string; name: string; email?: string; avatarUrl?: string }>();

@@ -9,7 +9,10 @@
 ## Comportamiento
 
 - **Reasignar actividad:** el responsable actual o Dirección pasa una actividad activa a otro perfil habilitado. Actualiza propiedades/título de la misma página de Notion. No clona el cuerpo. Conserva el estado y comprueba empalmes del nuevo responsable. Las revisiones pendientes deben resolverse antes.
-- **Enviar a revisión final:** mantiene el circuito de revisión, aprobación/devolución y revisores autorizados.
+- **Enviar a revisión final:** permite seleccionar cualquier integrante activo del equipo. La persona asignada puede aprobar o devolver esa revisión; esto no le otorga permisos globales sobre otras actividades.
+- Emmanuel se retiró del directorio seleccionable, inicio de sesión, columnas, filtros y listas de equipo de la Web. No se borran páginas ni registros históricos de Notion.
+- Revisión y reasignación usan tarjetas de integrantes con búsqueda por nombre, usuario y función. Sus modales se muestran fuera del contenedor del calendario, centrados y con scroll interno en pantallas pequeñas.
+- Crear desde un hueco del calendario requiere doble clic. El botón Nueva mantiene su apertura con un clic.
 - La nota de transferencia se conserva en los datos internos de la misma página y se muestra al siguiente responsable. Las copias históricas son de solo lectura, con horario y checklist congelados; no ocupan espacio para empalmes ni suman trabajo en indicadores. Se cargan por su propia fecha aunque la página original cambie de día.
 - Si no se puede preparar el historial, la transferencia se rechaza antes de cambiar Notion. Si falla el guardado de metadatos se intenta restaurar la página; si falla la confirmación del snapshot, se informa explícitamente del cambio parcial.
 - El grabador permite elegir micrófono y la superficie que ofrezca el navegador. Detiene a los 10 minutos o al alcanzar 128 MB, avisa cerca del límite y conserva la vista previa. Un archivo final mayor de 128 MB solo puede descargarse; su subida queda bloqueada. La configuración de bitrate reduce tamaño, sin recompresión posterior.
@@ -21,7 +24,7 @@
 
 ## Verificación manual con cuentas reales
 
-La compilación de producción, TypeScript, las 63 regresiones del calendario y las pruebas de reasignación, grabación, subida, transcripción y migración pasaron localmente. Los proveedores externos se simularon. La compilación conserva siete avisos previos de acceso dinámico al filesystem en `/api/data`; no impidieron generar la aplicación.
+La compilación de producción, TypeScript, las 64 regresiones del calendario y las pruebas de reasignación, grabación, subida, transcripción y migración pasaron localmente. Los proveedores externos se simularon. La compilación conserva siete avisos previos de acceso dinámico al filesystem en `/api/data`; no impidieron generar la aplicación.
 
 Referencia del proveedor: [Groq Speech to Text](https://console.groq.com/docs/speech-to-text).
 

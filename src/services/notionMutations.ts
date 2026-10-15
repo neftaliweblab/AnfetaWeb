@@ -122,9 +122,10 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (reassigned) updates = {...updates,status:'prtuzREVISION'};
   if (updates.status && workflowState(updates.status) === 'review' && !updates.reviewer) throw new Error('Selecciona a quién enviar la actividad en el modal de revisión.');
   const completed = updates.status && workflowState(updates.status) === 'completed';
-  if (completed && !isReviewer(actor)) throw new Error('Solo John, Isaías o Genaro pueden terminar una revisión.');
+
   if(handoff)clearReadBlocksCache(settings);
   const previousFlow = updates.reviewer || completed || returned || reassigned || handoff ? await readReviewFlow(settings, id) : undefined;
+  if(completed&&!isReviewer(actor)&&!(previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee)&&PERSON_ALIASES[normalizePerson(actor)]))throw Error('Solo el revisor asignado puede terminar esta revisión.');
   if(handoff&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
   if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
@@ -144,11 +145,12 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (updates.person || updates.reviewer) {
     const target = updates.reviewer || updates.person;
     const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'EN REVISIÓN';
-    if (!handoff && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
+    const restoringAssignedReview=(completed||returned)&&previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee);
+    if (!handoff && !restoringAssignedReview && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
     }
     const person = normalizePerson(target);
-    if (updates.reviewer && !['John','Isaias','Genaro'].includes(person)) throw new Error('Selecciona a John, Isaías o Genaro como revisor.');
+    if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===person))throw Error('Selecciona un integrante activo del equipo como revisor.');
     const clearing = (completed || returned) && person === 'Sin asignar';
     const restoring = (completed || returned) && previousFlow?.OriginalAssigneeUserId;
     if (!PERSON_ALIASES[person] && !clearing && !restoring) throw new Error('Selecciona un responsable válido del equipo.');

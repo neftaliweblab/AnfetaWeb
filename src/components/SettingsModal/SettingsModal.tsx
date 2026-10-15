@@ -42,7 +42,6 @@ const USERS_LIST = [
   { tag: "ggena", name: "Genaro", role: "Operaciones & Medios" },
   { tag: "ssote", name: "Sotelo", role: "Diseño & Creativo" },
   { tag: "aacal", name: "Acalli", role: "Gestión & Contenido" },
-  { tag: "eemma", name: "Emmanuel", role: "Sistemas & Datos" },
 
 ];
 

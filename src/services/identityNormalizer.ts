@@ -8,7 +8,6 @@ export const PERSON_ALIASES: Record<string, string[]> = {
   John: ["jjohn", "john"],
   Sotelo: ["ssote", "sote", "eedua", "edua", "sotelo"],
   Acalli: ["aacal", "acal", "acalli"],
-  Emmanuel: ["eemma", "emma", "emmanuel"],
 };
 
 export const PERSON_METADATA: Record<
@@ -24,7 +23,6 @@ export const PERSON_METADATA: Record<
   Brian: { color: "#2DD4BF", avatar: "BR", role: "Desarrollo Web", notionUrl: "https://app.notion.com/p/36eabd7d91b780988946c81705570b78?source=copy_link" },
   Genaro: { color: "#E879F9", avatar: "GE", role: "Desarrollo & Sistemas", notionUrl: "https://app.notion.com/p/36eabd7d91b780bea0a4dc662d32b03a?source=copy_link" },
   Neftali: { color: "#60A5FA", avatar: "NE", role: "Desarrollo & Automatización", notionUrl: "https://app.notion.com/p/36eabd7d91b7809a982af00b04e17a93?source=copy_link" },
-  Emmanuel: { color: "#F87171", avatar: "EM", role: "Soporte & Web" },
   "Sin asignar": { color: "#94A3B8", avatar: "—", role: "Sin asignar" },
 };
 

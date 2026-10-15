@@ -917,7 +917,7 @@ export function ActivityCard({
           <div className="px-3 py-1 text-[10px] font-mono text-[#64748B] border-b border-[#1E2836]">
             ACCIONES DE ACTIVIDAD
           </div>
-          <button disabled={!editable||isCompleted||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||activity.reviewFlow?.State==='pending'} onClick={()=>{closeContextMenu();setShowHandoff(true);}} className="w-full px-3 py-2 text-left text-cyan-200 hover:bg-slate-800">Reasignar actividad…</button>
+          <button disabled={!editable||isCompleted||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||activity.reviewFlow?.State==='pending'} onClick={()=>{closeContextMenu();setShowHandoff(true);}} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs text-cyan-200 hover:bg-slate-800 disabled:opacity-40"><Tag className="h-3.5 w-3.5"/><span>Reasignar actividad…</span></button>
           <button
             disabled={!editable||isCompleted}
             onClick={() => {
@@ -930,7 +930,7 @@ export function ActivityCard({
             <span>Enviar a revisión final…</span>
           </button>
           <button
-            disabled={!editable || !isReviewer(currentUser) || (activity.reviewFlow?.State === 'pending' && normalizePerson(currentUser) !== normalizePerson(activity.reviewFlow.ReviewAssignee))}
+            disabled={!editable || (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)!==normalizePerson(activity.reviewFlow.ReviewAssignee):!isReviewer(currentUser))}
             onClick={() => {
               onUpdateActivity?.(activity.pageId, {
                 status: "zREVISION",
@@ -974,7 +974,7 @@ export function ActivityCard({
         </ViewportMenu>
       )}
 
-      {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {/* Modal de selección de integrante para revisión */}
       {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onUpdateActivity?.(activity.pageId,updates)}/>}
       {showReviewModal && (
         <SendToReviewModal

@@ -1,4 +1,5 @@
 'use client';
+import {createPortal} from 'react-dom';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { normalizePerson } from '@/services/identityNormalizer';
@@ -24,7 +25,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 
-const people = ['John', 'Neftali', 'Karla', 'Brian', 'Isaias', 'Andrade', 'Genaro', 'Sotelo', 'Acalli', 'Emmanuel'];
+const people = ['John', 'Neftali', 'Karla', 'Brian', 'Isaias', 'Andrade', 'Genaro', 'Sotelo', 'Acalli'];
 
 interface CreateActivityModalProps {
   currentUser: string;
@@ -141,20 +142,21 @@ export function CreateActivityModal({
     modalSize === 'xl'
       ? 'w-full max-w-4xl'
       : modalSize === 'large'
-      ? 'w-full max-w-2xl'
-      : 'w-full max-w-xl';
+      ? 'w-full max-w-3xl'
+      : 'w-full max-w-2xl';
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-[2px]">
-      <div className={`${modalWidthClass} flex flex-col max-h-[92vh] max-w-[96vw] rounded-2xl border border-[#1E2E40] bg-[#0A0E15] text-[#CBD5E1] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
+  if(typeof document==='undefined')return null;
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label="Crear actividad" onKeyDown={e=>{if(e.key==='Escape'&&!saving)onClose();}} className="fixed inset-0 z-[350] flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className={`${modalWidthClass} flex flex-col max-h-[92dvh] rounded-2xl border border-[#284358] bg-[#0c141e] text-[#CBD5E1] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
         {/* Header con botón para el asistente completo de plantillas */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-[#1E2836] bg-[#0E1520]">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-white/10 bg-gradient-to-r from-cyan-950/50 to-transparent">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#0284C7]/20 border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white tracking-wide">+ Nueva Actividad</h2>
+              <h2 className="text-base font-semibold text-white tracking-wide">+ Nueva Actividad</h2>
               <p className="text-[11px] text-[#64748B]">Crea en blanco o rellena rápido desde plantilla</p>
             </div>
           </div>
@@ -212,7 +214,7 @@ export function CreateActivityModal({
 
         {/* Formulario */}
         <form
-          className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin"
+          className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 scrollbar-thin"
           onSubmit={async (e) => {
             e.preventDefault();
             if (submitting.current||retrySeconds) return;
@@ -368,7 +370,7 @@ export function CreateActivityModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Ej. 1.00 · Revisión general de dominio"
-              className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-2 text-xs text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
+              className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
             />
           </div>
 
@@ -383,7 +385,7 @@ export function CreateActivityModal({
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="ejemplo.com"
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-2 text-xs text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
               />
             </div>
 
@@ -395,7 +397,7 @@ export function CreateActivityModal({
                 disabled={!isDirection(currentUser) && !isReviewer(currentUser)}
                 value={person}
                 onChange={(e) => setPerson(e.target.value)}
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-2 text-xs text-white focus:outline-none focus:border-[#38BDF8] transition-colors cursor-pointer disabled:opacity-60"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white focus:outline-none focus:border-[#38BDF8] transition-colors cursor-pointer disabled:opacity-60"
               >
                 {people.map((p) => (
                   <option key={p} value={p}>
@@ -412,14 +414,14 @@ export function CreateActivityModal({
               <Clock className="w-3.5 h-3.5 text-[#38BDF8]" />
               <span>Programación de Horario</span>
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 min-[440px]:grid-cols-3 gap-3">
               <input
                 aria-label="Fecha"
                 required
                 type="date"
                 value={day}
                 onChange={(e) => setDay(e.target.value)}
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
               />
               <input
                 aria-label="Inicio"
@@ -430,7 +432,7 @@ export function CreateActivityModal({
                 step={900}
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
               />
               <input
                 aria-label="Fin"
@@ -441,7 +443,7 @@ export function CreateActivityModal({
                 step={900}
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white font-mono focus:outline-none focus:border-[#38BDF8] [color-scheme:dark]"
               />
             </div>
           </div>
@@ -474,5 +476,5 @@ export function CreateActivityModal({
         </form>
       </div>
     </div>
-  );
+  ,document.body);
 }

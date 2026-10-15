@@ -63,7 +63,7 @@ export function CalendarDetailPanel({
   // Limpiar título de prefijos y tecnicismos repetitivos
   const cleanTitle = calendarDisplayTitle(title, domain);
   const editable = canEditActivity(currentUser, activity);
-  const userCanReview = isReviewer(currentUser) && editable && (activity.reviewFlow?.State !== 'pending' || normalizePerson(currentUser) === normalizePerson(activity.reviewFlow.ReviewAssignee));
+  const userCanReview = editable && (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser));
 
   // Actividades del mismo dominio (1:1 paridad con ANFETA WPF Actividades del Proyecto)
   const domainActivities = (projectActivities.length ? projectActivities : allActivities || []).filter((a) => {
@@ -282,7 +282,7 @@ export function CalendarDetailPanel({
             onClick={async () => {
               if (await onActivityUpdated?.({ status: "zREVISION" }) !== false) setStatusMessage("Actividad terminada y guardada en Notion.");
             }}
-            title={userCanReview ? "Terminar actividad (Revisores: John / Isaías / Genaro)" : "Solo John, Isaías o Genaro pueden terminar actividades en revisión"}
+            title={userCanReview ? "Terminar revisión asignada" : "Solo la persona asignada puede resolver esta revisión"}
             className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg border text-xs font-semibold transition-all shadow-sm ${
               userCanReview
                 ? "bg-[#10251B] hover:bg-[#163826] text-[#4ADE80] border-[#166534]"
@@ -437,7 +437,7 @@ export function CalendarDetailPanel({
         </button>
       </div>
 
-      {/* Modal de selección de Revisor (John, Isaías, Genaro) */}
+      {/* Modal de selección de integrante para revisión */}
       {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onActivityUpdated?.(updates)}/>}
       {showReviewModal && (
         <SendToReviewModal
