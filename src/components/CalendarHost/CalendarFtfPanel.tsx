@@ -1,6 +1,6 @@
 "use client";
 import React,{useEffect,useState} from 'react';
-import {normalizePerson} from '@/services/identityNormalizer';
+import {canViewFtfDashboard} from '@/services/ftfDashboard';
 import {calendarDisplayTitle,calendarDomain,calendarTime} from '@/services/calendarPresentation';
 import {NotionCalendarActivity} from '@/types/anfeta';
 import type {buildFtfDashboard} from '@/services/ftfDashboard';
@@ -10,7 +10,7 @@ export function CalendarFtfPanel({currentUser,date,onOpenActivity}:{currentUser:
   const [report,setReport]=useState<Report|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[revision,setRevision]=useState(0);
   useEffect(()=>{
     setReport(null);setError('');
-    if(normalizePerson(currentUser)!=='John')return;
+    if(!canViewFtfDashboard(currentUser))return;
     let stopped=false,busy=false;const controller=new AbortController();
     const refresh=async()=>{
       if(stopped||busy||document.hidden)return;busy=true;setLoading(true);
@@ -25,7 +25,7 @@ export function CalendarFtfPanel({currentUser,date,onOpenActivity}:{currentUser:
     window.addEventListener('anfeta_review_saved',refresh);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
     return ()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('anfeta_review_saved',refresh);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
   },[currentUser,date,revision]);
-  if(normalizePerson(currentUser)!=='John')return null;
+  if(!canViewFtfDashboard(currentUser))return null;
   return <details open className="shrink-0 border-b border-cyan-900/60 bg-slate-950/70 px-3 py-2">
     <summary className="cursor-pointer text-xs font-semibold text-cyan-200">Control FTF del equipo · {date}{report&&<span className="ml-3 font-normal text-slate-300">{report.completed} a tiempo · {report.pending} pendientes{report.unconfirmed>0?' · '+report.unconfirmed+' sin registro de hora':''}</span>}</summary>
     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400"><span>Actividades que empiezan antes de las 18:00 · hora de México · independiente del checklist.</span><button type="button" disabled={loading} onClick={()=>setRevision(v=>v+1)} className="rounded border border-slate-700 px-2 py-1 text-cyan-200 disabled:opacity-50">{loading?'Comprobando…':'Actualizar FTF'}</button></div>

@@ -2,7 +2,9 @@ const fs=require('fs'),path=require('path'),Module=require('module'),assert=requ
 const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
 Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
 Module._extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,p);
-const {buildFtfDashboard}=require(root+'/src/services/ftfDashboard.ts');
+const {buildFtfDashboard,canViewFtfDashboard}=require(root+'/src/services/ftfDashboard.ts');
+for(const actor of ['John','jjohn','Neftali','Neftalí','nneft','nnetf'])assert.equal(canViewFtfDashboard(actor),true);
+for(const actor of ['Genaro','Karla','Andrade',''])assert.equal(canViewFtfDashboard(actor),false);
 const day='2026-10-16',people=[{name:'Neftali',alias:'nneft'},{name:'John'},{name:'Karla'},{name:'Emmanuel'}],now=new Date(day+'T19:00:00-06:00');
 const base={pageId:'a',person:'Neftali',title:'Actividad',start:day+'T10:00:00-06:00',ftfAvailable:true,ftfVerified:true,checklistCompleted:0,checklistTotal:6};
 const receipt={person:'Neftali',date:day,updated:day+'T17:30:00-06:00'},records={['ftf:'+day+':Neftali']:receipt};
@@ -30,16 +32,17 @@ Module._load=function(name,parent,...rest){
     return [{id:'a',properties:{Name:{type:'title',title:[{plain_text:'prtuzREVISION nneft Trabajo'}]},Responsable:{type:'select',select:{name:'Neftali'}},'Fecha POR Hacer':{type:'date',date:{start:base.start}},'Check FTF Pasos Verificados Hoy':{type:'checkbox',checkbox:true}}}];
   }};
   if(name==='@/services/ftfNotifications')return {recordFtfCompletions:async()=>{}};
-  if(name==='@/services/userState')return {readUserState:async()=>({values:{receipts:{ftfCompletions:records}}})};
+  if(name==='@/services/userState')return {readUserState:async(_,owner)=>{assert.equal(owner,'John');return {values:{receipts:{ftfCompletions:records}}};}};
  }
  return load.call(this,name,parent,...rest);
 };
 global.fetch=async()=>{reads++;throw Error('No live calls in tests');};
 (async()=>{
  const {GET}=require(root+'/src/app/api/data/route.ts');
- for(const actor of ['Neftali','Genaro','Karla']){const response=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&person=John&date='+day,{headers:{'x-test-user':actor}}));assert.equal(response.status,403);}
+ for(const actor of ['Genaro','Karla','Andrade']){const response=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&person=John&date='+day,{headers:{'x-test-user':actor}}));assert.equal(response.status,403);}
  const anonymous=await GET(new Request('http://localhost/api/data?type=ftf-dashboard'));assert.equal(anonymous.status,401);assert.equal(reads,0);
  const authorized=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':'jjohn'}}));assert.equal(authorized.status,200);const data=await authorized.json();assert.equal(data.completed,1);assert.equal(data.people.length,3);assert.equal(data.people[0].total,1);
+ for(const actor of ['Neftali','Neftalí','nneft','nnetf']){const response=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':actor}}));assert.equal(response.status,200);const preview=await response.json();assert.deepEqual(preview.people,data.people);assert.equal(preview.completed,data.completed);}
  failQuery=true;const unavailable=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':'John'}}));assert.equal(unavailable.status,502);assert.match((await unavailable.json()).error,/Lectura no disponible/);
- console.log('OK: panel FTF solo John, API 403 y sesión obligatoria, corte 18:00, registro histórico, nuevas pendientes, sin actividades, sin registro, sin copias y contador independiente. Servicios simulados.');
+ console.log('OK: panel FTF John y Neftalí (incluidos aliases), mismo historial del equipo, otros usuarios 403, sesión obligatoria, corte 18:00 y pendientes independientes del checklist. Servicios simulados.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{global.Date=NativeDate;});

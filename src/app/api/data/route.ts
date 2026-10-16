@@ -1,7 +1,7 @@
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
-import {buildFtfDashboard} from '@/services/ftfDashboard';
+import {buildFtfDashboard,canViewFtfDashboard} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
@@ -534,7 +534,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       return fallback('Cobros/Pagos en caché: configura el acceso a Notion.');
     }
     if(type==='ftf-dashboard'){
-      if(normalizePerson(actor)!=='John')return NextResponse.json({error:'Este panel está disponible únicamente para John.'},{status:403});
+      if(!canViewFtfDashboard(actor))return NextResponse.json({error:'Este panel está disponible únicamente para John y Neftalí.'},{status:403});
       try{
         const day=searchParams.get('date')||mexicoDate();
         if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+'T12:00:00Z')))throw Error('Fecha inválida.');
@@ -544,7 +544,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page)},0);});
         let warning='';
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
-        const state=await readUserState(settings,actor);
+        const state=await readUserState(settings,'John');
         return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{}),warning},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
     }

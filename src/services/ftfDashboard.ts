@@ -2,8 +2,10 @@ import {mexicoDate,mexicoMinutes} from './calendarPresentation';
 import {normalizePerson} from './identityNormalizer';
 import {NotionCalendarActivity} from '@/types/anfeta';
 
+export function canViewFtfDashboard(user:string){return ['John','Neftali'].includes(normalizePerson(user));}
+
 export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date()) {
-  if(normalizePerson(actor)!=='John')throw Error('Este panel está disponible únicamente para John.');
+  if(!canViewFtfDashboard(actor))throw Error('Este panel está disponible únicamente para John y Neftalí.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
   const rows=team.filter(p=>normalizePerson(p.name)!=='Emmanuel'&&normalizePerson(p.name)!=='Sin asignar').map(person=>{
