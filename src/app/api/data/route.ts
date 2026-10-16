@@ -309,10 +309,12 @@ async function duplicateNotionPageWithoutBody({
   overridePerson?: string;
   copyBody?: boolean;
 }): Promise<{ page:any; pageId: string; pageUrl: string; title: string }> {
-  const bodySettings={notionToken:token,currentUser:overridePerson||getSettings().currentUser};
+  // Leave time to archive an incomplete copy before the route's 120s deadline.
+  const bodySettings={notionToken:token,currentUser:overridePerson||getSettings().currentUser,notionSignal:AbortSignal.timeout(85000)};
   const preparedBody=copyBody?await prepareTemplateBody(bodySettings,sourcePageId):[];
   const cleanId = sourcePageId.replace(/-/g, "");
   const pageRes = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
+    signal:bodySettings.notionSignal,
     headers: {
       Authorization: `Bearer ${token.trim()}`,
       "Notion-Version": "2022-06-28",
@@ -385,6 +387,7 @@ async function duplicateNotionPageWithoutBody({
   };
 
   const createRes = await fetch("https://api.notion.com/v1/pages", {
+    signal:bodySettings.notionSignal,
     method: "POST",
     headers: {
       Authorization: `Bearer ${token.trim()}`,
@@ -400,7 +403,7 @@ async function duplicateNotionPageWithoutBody({
   }
 
   const createdPage = await createRes.json();
-  if(copyBody){try{await appendTemplateBody(bodySettings,createdPage.id,preparedBody);}catch(error){try{await notionRequest(bodySettings,'pages/'+createdPage.id,'PATCH',{archived:true});}catch{throw new Error('La copia del cuerpo falló y no se pudo retirar la página incompleta: '+createdPage.url);}throw new Error('No se pudo copiar el cuerpo; se retiró la página incompleta. '+(error instanceof Error?error.message:''));}}
+  if(copyBody){try{await appendTemplateBody(bodySettings,createdPage.id,preparedBody);}catch(error){try{await notionRequest({...bodySettings,notionSignal:AbortSignal.timeout(20000)},'pages/'+createdPage.id,'PATCH',{archived:true});}catch{throw new Error('La copia del cuerpo falló y no se pudo retirar la página incompleta: '+createdPage.url);}throw new Error('No se pudo copiar el cuerpo; se retiró la página incompleta. '+(error instanceof Error?error.message:''));}}
   const newId = createdPage.id;
   const newUrl = createdPage.url || `https://notion.so/${newId.replace(/-/g, "")}`;
 

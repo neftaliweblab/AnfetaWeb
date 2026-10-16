@@ -81,7 +81,7 @@ export async function transferNotionInternalFile(
   validateNotionInternalUrl(fileUrl);
   let response: Response;
   try {
-    response = await fetch(fileUrl, {signal: AbortSignal.timeout(35000)});
+    response = await fetch(fileUrl, {signal: settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(35000)]):AbortSignal.timeout(35000)});
   } catch (err: any) {
     throw new Error(`Fallo de red en la transferencia del archivo interno «${type}»: ${err?.message || ''}`);
   }
@@ -120,7 +120,7 @@ export async function transferNotionInternalFile(
       'Notion-Version': '2022-06-28'
     },
     body: form,
-    signal: AbortSignal.timeout(60000)
+    signal: settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)
   });
 
   if (!sendRes.ok) {
@@ -135,20 +135,33 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
   let count = 0;
   const seen = new Set<string>();
 
-  async function read(id: string, depth: number): Promise<Node[]> {
-    if (depth > 10 || seen.has(id)) {
-      throw new Error('La plantilla supera la profundidad permitida o contiene referencias circulares.');
-    }
-    seen.add(id);
+  async function read(id: string, depth: number, fallbackId?:string): Promise<Node[]> {
+    const key=id.replace(/-/g,'').toLowerCase();
+    if (depth > 30) throw new Error('La plantilla supera 30 niveles de anidación.');
+    if (seen.has(key)) throw new Error('La plantilla contiene una referencia circular entre bloques.');
+    seen.add(key);
+    try {
     const nodes: Node[] = [];
-
-    for (const source of await readBlocks(settings, id)) {
-      if (++count > 300) throw new Error('La plantilla supera 300 bloques; divídela antes de copiar.');
+    let sources:any[];
+    try {sources=await readBlocks(settings,id);}
+    catch(error){
+      // Retry the local synced copy only when reading its origin fails, never
+      // when processing its content fails (limits, cycles or unsupported blocks).
+      if(!fallbackId||fallbackId.replace(/-/g,'').toLowerCase()===key)throw error;
+      try {
+        sources=await readBlocks(settings,fallbackId);
+        if(!sources.length)throw Error('La copia local no devolvió contenido.');
+      }catch{
+        throw Error('No se pudo leer el origen del bloque sincronizado ni su copia local. Revisa el acceso de la integración a la página original. Detalle: '+(error instanceof Error?error.message:''));
+      }
+    }
+    for (const source of sources) {
       let type = source.type;
       const content = source[type] || {};
       const text = (content.rich_text || []).map((x: any) => x.plain_text || x.text?.content || '').join('');
 
       if (/\[ANFETA_|Datos internos de ANFETA/i.test(text)) continue;
+      if (++count > 5000) throw new Error('La plantilla supera el límite de seguridad de ANFETA de 5000 bloques. No se creó la actividad.');
       if (type === 'heading_4') {
         type = 'heading_3';
       }
@@ -156,17 +169,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
         const original=content.synced_from?.block_id||source.id;
         if(!original)throw Error('El synced_block de la plantilla no tiene un origen válido.');
-        try{
-          nodes.push(...await read(original,depth+1));
-        }catch(error){
-          if (original !== source.id) {
-            try {
-              nodes.push(...await read(source.id, depth+1));
-              continue;
-            } catch {}
-          }
-          throw Error('No se pudo copiar el synced_block; revisa que la página donde se creó el bloque sincronizado esté compartida con la integración de ANFETA en Notion. '+(error instanceof Error?error.message:''));
-        }
+        nodes.push(...await read(original,depth+1,source.id));
         continue;
       }
       if (!fields[type]) {
@@ -220,33 +223,37 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
       }
 
       if (type === 'table') {
-        if (!children.length || children.length > 100 || children.some(n => n.block.type !== 'table_row')) {
+        if (!children.length || children.some(n => n.block.type !== 'table_row')) {
           throw new Error('La tabla de la plantilla no es compatible.');
         }
-        body.children = children.map(n => n.block);
+        // Notion requires an initial row. Append the remaining rows in batches
+        // rather than putting the entire table into a single request.
+        body.children = [children[0].block];
       }
 
       nodes.push({
         block: {object: 'block', type, [type]: body},
-        children: type === 'table' ? [] : children
+        children: type === 'table' ? children.slice(1) : children
       });
     }
 
-    seen.delete(id);
     return nodes;
+    } finally {seen.delete(key);}
   }
 
   return read(pageId, 0);
 }
 
 export async function appendTemplateBody(settings: CalendarSettings, pageId: string, nodes: Node[]) {
+  const blockCount=(block:any):number=>1+(block[block.type]?.children||[]).reduce((total:number,child:any)=>total+blockCount(child),0);
   for (let offset = 0; offset < nodes.length; ) {
     let end = offset;
-    let bytes = 0;
+    let bytes = 16, blocks=0;
     while (end < nodes.length && end - offset < 100) {
       const size = Buffer.byteLength(JSON.stringify(nodes[end].block));
-      if (bytes + size > 450000) break;
-      bytes += size;
+      const nested=blockCount(nodes[end].block);
+      if (bytes + size + 1 > 450000 || blocks+nested>1000) break;
+      bytes += size+1;blocks+=nested;
       end++;
     }
     if (end === offset) throw new Error('Un bloque de la plantilla es demasiado grande.');
