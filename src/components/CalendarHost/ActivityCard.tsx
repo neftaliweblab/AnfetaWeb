@@ -95,6 +95,9 @@ export function ActivityCard({
   const editable = canEditActivity(currentUser, activity);
   const [showPopup, setShowPopup] = useState(false);
   const [showHover, setShowHover] = useState(false);
+  const ftfBusy = useRef(false);
+  const [ftfSaving, setFtfSaving] = useState(false);
+  const [ftfMessage, setFtfMessage] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showHandoff,setShowHandoff]=useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
@@ -749,6 +752,46 @@ export function ActivityCard({
                 )}
               </div>
             </div>
+
+            <label className={`flex items-start gap-2 rounded-lg border p-2.5 ${activity.ftfVerified ? 'border-emerald-500/70 bg-emerald-950/40' : 'border-slate-700 bg-slate-900/40'}`}>
+              <input
+                type="checkbox"
+                aria-label="Pasos FTF verificados para hoy"
+                checked={!!activity.ftfVerified}
+                disabled={!editable || !activity.ftfAvailable || isSaving || ftfSaving || !onUpdateActivity}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-400"
+                onChange={async event => {
+                  if (ftfBusy.current || !onUpdateActivity) return;
+                  const checked = event.target.checked;
+                  ftfBusy.current = true;
+                  setFtfSaving(true);
+                  setFtfMessage('');
+                  try {
+                    const saved = await onUpdateActivity(activity.pageId, {
+                      ftfVerified: checked,
+                      expectedFtfVerified: !!activity.ftfVerified,
+                    });
+                    setFtfMessage(saved === false
+                      ? 'No se confirmó la verificación FTF. Revisa el aviso del calendario.'
+                      : checked ? 'Pasos verificados: la actividad ya está entendida.' : 'Se retiró la verificación FTF.');
+                  } catch (error) {
+                    setFtfMessage(error instanceof Error ? error.message : 'No se pudo guardar la verificación FTF.');
+                  } finally {
+                    ftfBusy.current = false;
+                    setFtfSaving(false);
+                  }
+                }}
+              />
+              <span>
+                <span className={`block font-semibold ${activity.ftfVerified ? 'text-emerald-300' : 'text-slate-200'}`}>
+                  {ftfSaving ? 'Guardando…' : 'Pasos revisados y actividad entendida'}
+                </span>
+                <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">
+                  {activity.ftfAvailable ? 'Activa la franja verde de verificación FTF.' : 'No se encontró la casilla “Check FTF Pasos Verificados Hoy” en esta página.'}
+                </span>
+              </span>
+            </label>
+            {ftfMessage && <p role="status" className="text-[11px] text-cyan-200">{ftfMessage}</p>}
 
             {/* Resumen de Checks e Historial Hoy (Anfeta Original Parity) */}
             {loadingChecklist && (
