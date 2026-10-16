@@ -412,7 +412,7 @@ export function GlobalPasteModal({
         body: JSON.stringify({
           action: 'unified-upload',
           payload: {
-            ...uploadMetadata(frozen),
+            ...uploadMetadata(recovery.current.plan || frozen),
             ...resolvedTarget,
             month: undefined,
             personTag: undefined,

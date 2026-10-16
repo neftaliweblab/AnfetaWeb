@@ -20,5 +20,8 @@ export async function captureFromBlob(source: Blob): Promise<GlobalPasteImagePay
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('No se pudo leer la captura.')); reader.readAsDataURL(blob);
   });
-  return { dataUrl, base64: dataUrl.split(',')[1], filename: captureFilename(), sizeBytes: blob.size, contentType: 'image/png' };
+  const marker = ';base64,';
+  const idx = dataUrl.indexOf(marker);
+  const base64 = idx !== -1 ? dataUrl.slice(idx + marker.length) : (dataUrl.indexOf(',') !== -1 ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl);
+  return { dataUrl, base64, filename: captureFilename(), sizeBytes: blob.size, contentType: 'image/png' };
 }

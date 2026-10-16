@@ -25,5 +25,15 @@ function harness({denyMic=false,denyScreen=false,supportsMp4=false,onlyMp4=false
   const e=harness();await e.start();e.recorder.ondataavailable({data:new Blob(['part'])});e.timer();assert.match(e.finished[0][1],/10 minutos/);
   const f=harness();await f.start();f.recorder.ondataavailable({data:{size:f.exports.RECORDING_MAX_BYTES}});assert.match(f.finished[0][1],/128 MB/);
   const g=harness();await g.start();g.recorder.ondataavailable({data:new Blob(['part'])});g.mic.listeners.ended();assert.match(g.finished[0][1],/micrófono/);
-  console.log('OK grabación: pantalla + micrófono sin audio interno, formato, límites, permisos denegados, detener, desconexiones y liberación de recursos. Navegador simulado.');
+  // Regression test: Data URLs with codecs=vp8,opus contain a comma before ;base64,
+  // Ensure that base64 extraction splits on ;base64, and does not return 'opus;base64' (7 bytes).
+  const sampleData = 'REAL_VIDEO_FRAME_BYTES_HERE_12345';
+  const dataUrlWithCodecs = 'data:video/webm;codecs=vp8,opus;base64,' + Buffer.from(sampleData).toString('base64');
+  const marker = ';base64,';
+  const idx = dataUrlWithCodecs.indexOf(marker);
+  const extractedBase64 = idx !== -1 ? dataUrlWithCodecs.slice(idx + marker.length) : dataUrlWithCodecs.split(',')[1];
+  assert.notEqual(extractedBase64, 'opus;base64');
+  assert.equal(Buffer.from(extractedBase64, 'base64').toString(), sampleData);
+  assert.ok(Buffer.from(extractedBase64, 'base64').length > 7);
+  console.log('OK grabación: pantalla + micrófono sin audio interno, formato, límites, permisos denegados, detener, desconexiones, extracción base64 sin corrupción por comas y liberación de recursos. Navegador simulado.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

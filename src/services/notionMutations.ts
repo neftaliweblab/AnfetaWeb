@@ -417,10 +417,21 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
 export async function notionFileBlocks(settings:Settings,files:any[]){
   const children:any[]=[];
   for (const file of files) {
-    if (!file.filename || !file.base64 || Buffer.byteLength(file.base64, 'base64') > 20 * 1024 * 1024) throw new Error('Cada adjunto de Notion debe tener nombre y pesar como máximo 20 MB.');
+    if (!file.filename || !file.base64) throw new Error('Cada adjunto de Notion debe tener nombre y contenido.');
+    let cleanBase64 = String(file.base64 || '');
+    const marker = ';base64,';
+    const markerIdx = cleanBase64.indexOf(marker);
+    if (markerIdx !== -1) cleanBase64 = cleanBase64.slice(markerIdx + marker.length);
+    else {
+      const commaIdx = cleanBase64.indexOf(',');
+      if (commaIdx !== -1 && cleanBase64.startsWith('data:')) cleanBase64 = cleanBase64.slice(commaIdx + 1);
+    }
+    const fileBytes = Buffer.from(cleanBase64, 'base64');
+    if (fileBytes.length === 0 || fileBytes.length > 20 * 1024 * 1024) throw new Error('Cada adjunto de Notion debe tener contenido válido y pesar como máximo 20 MB.');
     const contentType=String(file.contentType || /^data:([^;]+);/.exec(file.dataUrl || '')?.[1] || 'application/octet-stream').split(';')[0].trim();
+    if (contentType.startsWith('video/') && (cleanBase64 === 'opus;base64' || cleanBase64 === 'video/webm' || cleanBase64.includes(';base64') || cleanBase64.startsWith('codecs='))) throw new Error('El archivo de video contiene una cabecera inválida o datos dañados.');
     const upload = await notionRequest(settings, 'file_uploads', 'POST', { mode: 'single_part', filename: file.filename, content_type: contentType });
-    const form = new FormData(); form.append('file', new Blob([Buffer.from(file.base64, 'base64')], { type: contentType }), file.filename);
+    const form = new FormData(); form.append('file', new Blob([fileBytes], { type: contentType }), file.filename);
     const res = await fetch(`https://api.notion.com/v1/file_uploads/${upload.id}/send`, { method: 'POST', headers: { Authorization: `Bearer ${settings.notionToken.trim()}`, 'Notion-Version': '2022-06-28' }, body: form, signal: AbortSignal.timeout(60000) });
     if (!res.ok) throw new Error('Notion rechazó el archivo adjunto.');
     // WebM screen recordings can upload successfully while Notion cannot play them.
