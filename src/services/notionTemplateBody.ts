@@ -134,22 +134,35 @@ export async function transferNotionInternalFile(
 export async function prepareTemplateBody(settings: CalendarSettings, pageId: string): Promise<Node[]> {
   let count = 0;
   const seen = new Set<string>();
+  // One consistent snapshot per source for this duplication. A shared origin
+  // can appear in several columns; reuse its read, not the destination blocks.
+  const sourcesById=new Map<string,Promise<any[]>>();
+  const sourceKey=(id:string)=>id.replace(/-/g,'').toLowerCase();
+  const readSource=(id:string)=>{
+    const key=sourceKey(id);
+    let pending=sourcesById.get(key);
+    if(!pending){
+      pending=readBlocks(settings,id).catch(error=>{sourcesById.delete(key);throw error;});
+      sourcesById.set(key,pending);
+    }
+    return pending;
+  };
 
   async function read(id: string, depth: number, fallbackId?:string): Promise<Node[]> {
-    const key=id.replace(/-/g,'').toLowerCase();
+    const key=sourceKey(id);
     if (depth > 30) throw new Error('La plantilla supera 30 niveles de anidación.');
     if (seen.has(key)) throw new Error('La plantilla contiene una referencia circular entre bloques.');
     seen.add(key);
     try {
     const nodes: Node[] = [];
     let sources:any[];
-    try {sources=await readBlocks(settings,id);}
+    try {sources=await readSource(id);}
     catch(error){
       // Retry the local synced copy only when reading its origin fails, never
       // when processing its content fails (limits, cycles or unsupported blocks).
-      if(!fallbackId||fallbackId.replace(/-/g,'').toLowerCase()===key)throw error;
+      if(!fallbackId||sourceKey(fallbackId)===key)throw error;
       try {
-        sources=await readBlocks(settings,fallbackId);
+        sources=await readSource(fallbackId);
         if(!sources.length)throw Error('La copia local no devolvió contenido.');
       }catch{
         throw Error('No se pudo leer el origen del bloque sincronizado ni su copia local. Revisa el acceso de la integración a la página original. Detalle: '+(error instanceof Error?error.message:''));
