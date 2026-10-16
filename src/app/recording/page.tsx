@@ -59,7 +59,7 @@ export default function RecordingPage(){
        />
        {failed && (
          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-4 text-center text-xs text-amber-200 space-y-2">
-           <p>El formato WebM no se pudo reproducir en este visor.</p>
+           <p>No se pudo reproducir el archivo de video en este visor integrado.</p>
            <a href={item.url} target="_blank" rel="noreferrer" className="rounded bg-cyan-700 px-3 py-1.5 text-white font-medium hover:bg-cyan-600">
              Abrir video original ↗
            </a>

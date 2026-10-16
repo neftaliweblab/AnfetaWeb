@@ -38,7 +38,7 @@ export function recordingGroups(blocks:any[],uploadId?:string){
   for(let j=i+1;j<blocks.length;j++){
    if(/\[UPLOAD_REF:/.test(textOf(blocks[j])))break;
    const b=blocks[j],body=b[b.type];if(!['video','file'].includes(b.type))continue;
-   const url=body?.file?.url,name=body?.name||'';
+   const url=body?.file?.url||body?.external?.url,name=body?.name||'';
    if(typeof url==='string'&&(b.type==='video'||/\.(webm|mp4|mov|m4v)$/i.test(name)||/\.(webm|mp4|mov|m4v)(?:[?#]|$)/i.test(url))){media={url,name};break;}
   }
   const dropboxPath=text.split('\n').map(line=>/^Dropbox:\s*(\/.*\.(?:webm|mp4|mov|m4v))\s*$/i.exec(line)?.[1]).find(Boolean);

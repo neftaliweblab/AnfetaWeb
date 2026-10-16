@@ -40,18 +40,15 @@ El grabador abre un panel de adjunto con la actividad fija, vista previa y descr
 
 El formulario general conserva sus campos para nuevas páginas y otras subidas. El panel es más ancho, los textos largos se ajustan y los fieldsets tienen ancho mínimo cero para evitar scroll horizontal.
 
-## Compatibilidad del video en Notion
+## Compatibilidad del video en Notion y formatos admitidos
 
-El grabador prioriza MP4, primero H.264/AAC declarado como compatible por el navegador. Si solamente se puede generar WebM, lo mantiene sin renombrarlo ni fingir una conversión: advierte antes de grabar/subir y lo adjunta en Notion como archivo descargable, evitando un reproductor incompatible. La vista previa local continúa disponible. No se garantiza compatibilidad entre todos los navegadores/dispositivos; se debe verificar la reproducción real después de publicar.
-
-Los WebM subidos anteriormente no se modifican automáticamente. Para reproducirlos dentro de Notion deben convertirse realmente a MP4 compatible y adjuntarse de nuevo. Referencias: [Notion, archivos y multimedia](https://www.notion.com/es/help/images-files-and-media) y [MDN, MIME de MediaRecorder](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder/mimeType).
-
-## Reproductor web desde Notion
-
-Las nuevas grabaciones adjuntas a una actividad añaden un enlace **Ver grabación en ANFETA** al bloque de Notion. Abre `/recording?page=<página>&upload=<lote>` con el reproductor HTML del navegador, sin depender del reproductor nativo de Notion y sin fingir conversión del WebM.
-
-El detalle de la actividad también incluye **Ver grabaciones**, que abre la lista de lotes asociados por sus marcadores existentes. Permite localizar videos anteriores guardados como bloques video/file de Notion o referencias Dropbox, sin modificar ni volver a subir esos archivos. No puede recuperar un archivo que el proveedor ya haya eliminado ni garantizar códecs que el navegador no soporte.
-
-La API exige una sesión activa de ANFETA y acceso de la integración a la página. Solo resuelve medios de ese lote, renueva los enlaces temporales de Dropbox al abrir y acepta URLs HTTPS de almacenamiento de Notion/Dropbox. Los tokens OAuth y de Notion permanecen en el servidor; las respuestas con enlaces temporales llevan `Cache-Control: no-store`. No requiere servicios nuevos ni una migración adicional.
-
-Se usa un enlace que abre ANFETA, en lugar de una incrustación autenticada que podría fallar dentro de Notion por restricciones de cookies. MP4 compatible sigue disponible como video nativo de Notion. Comprobar reproducción, avance/retroceso y recarga de un WebM real después de publicar.
+1. **Bloque nativo de video de Notion:**
+   - Notion solo soporta de forma nativa archivos `.mp4` y `.mov` comprimidos con códecs H.264/AAC y con cabecera `moov` al inicio del archivo (faststart).
+   - Notion **rechaza explícitamente `.webm`** en bloques nativos de video (*"Este formato de video no es compatible o no se puede reproducir en este dispositivo"*).
+   - En navegadores Chromium/Brave, la API `MediaRecorder` con contenedor `video/mp4` genera streams fragmentados (fMP4) sin atom `moov` al inicio, produciendo archivos que ni Notion ni el propio navegador pueden reproducir desde almacenamiento estático (S3).
+2. **Estrategia estable WebM + Reproductor Embed e Iframe:**
+   - La grabación en ANFETA utiliza **WebM** (`video/webm;codecs=vp8,opus` o `video/webm`), que es el formato nativo, completo y confiable de Chromium para captura de pantalla y micrófono.
+   - En Notion, el archivo WebM se adjunta como bloque `file` (archivo adjunto descargable limpio, sin arrojar errores de reproductor).
+   - Se incrusta automáticamente un bloque **`embed`** apuntando al reproductor de ANFETA (`/recording?page=...&upload=...&token=...&embed=1`). Al ser un iframe, el propio navegador del usuario ejecuta su motor HTML5 para reproducir el WebM fluidamente dentro de la página de Notion.
+   - Se incluye un enlace destacado en el Callout: **`▶ Ver grabación en ANFETA`**, que permite abrir el reproductor completo en una pestaña dedicada.
+   - Las solicitudes del visor incrustado utilizan un token HMAC firmado en servidor (`verifyRecordingToken`), evitando bloqueos de cookies de terceros dentro del iframe de Notion.

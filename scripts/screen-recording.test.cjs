@@ -1,22 +1,21 @@
 const fs=require('fs'),ts=require('typescript'),vm=require('vm'),assert=require('assert/strict');
 const source=ts.transpileModule(fs.readFileSync(__dirname+'/../src/lib/screenRecording.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-function harness({denyMic=false,denyScreen=false,supportsMp4=false}={}){
+function harness({denyMic=false,denyScreen=false,supportsMp4=false,onlyMp4=false}={}){
   const track=kind=>({kind,readyState:'live',stops:0,listeners:{},stop(){this.stops++;this.readyState='ended';},addEventListener(name,fn){this.listeners[name]=fn;}});
   const video=track('video'),mic=track('audio'),system=track('audio');
   const stream=tracks=>({getTracks:()=>tracks,getVideoTracks:()=>tracks.filter(t=>t.kind==='video'),getAudioTracks:()=>tracks.filter(t=>t.kind==='audio')});
   let instance,timer,finished=[];
-  class Recorder{static isTypeSupported(type){return type==='video/webm'||supportsMp4&&type==='video/mp4';}constructor(input,options){this.input=input;this.options=options;this.mimeType=options.mimeType;this.state='inactive';instance=this;}start(interval){assert.equal(interval,1000);this.state='recording';}stop(){if(this.state==='inactive')return;this.state='inactive';this.onstop();}}
+  class Recorder{static isTypeSupported(type){return onlyMp4?type==='video/mp4':(type==='video/webm'||supportsMp4&&type==='video/mp4');}constructor(input,options){this.input=input;this.options=options;this.mimeType=options.mimeType;this.state='inactive';instance=this;}start(interval){assert.equal(interval,1000);this.state='recording';}stop(){if(this.state==='inactive')return;this.state='inactive';this.onstop();}}
   const exports={};const context={exports,Blob,MediaRecorder:Recorder,MediaStream:class{constructor(tracks){return stream(tracks);}},navigator:{mediaDevices:{getDisplayMedia:async options=>{assert.equal(options.audio,false);if(denyScreen)throw Error('screen denied');return stream([video,system]);},getUserMedia:async options=>{assert.ok(options.audio);if(denyMic)throw Error('mic denied');return stream([mic]);}}},setTimeout:fn=>{timer=fn;return 1;},clearTimeout:()=>{timer=null;}};
   vm.runInNewContext(source,context);
   return {exports,video,mic,system,get recorder(){return instance;},get timer(){return timer;},finished,start:options=>exports.startScreenRecording((...args)=>finished.push(args),options)};
 }
 (async()=>{
   const mime=harness().exports.recordingMime;
-  assert.equal(mime({isTypeSupported:type=>type==='video/mp4'||type==='video/webm'}),'video/mp4');
-  assert.equal(mime({isTypeSupported:type=>type.includes('avc1.424028')||type==='video/webm'}),'video/mp4;codecs=avc1.424028,mp4a.40.2');
-  assert.equal(mime({isTypeSupported:type=>type==='video/mp4;codecs=avc1'},false),'video/mp4;codecs=avc1');
-  assert.equal(mime({isTypeSupported:type=>type==='video/webm'}),'video/webm');
-  const mp4=harness({supportsMp4:true}),mp4Session=await mp4.start();mp4.recorder.ondataavailable({data:new Blob(['mp4'])});mp4Session.stop();assert.equal(mp4.finished[0][0].type,'video/mp4');assert.ok(!mp4.finished[0][1].includes('archivo descargable'));
+  assert.equal(mime({isTypeSupported:type=>type.includes('codecs=vp8,opus')||type==='video/mp4'}),'video/webm;codecs=vp8,opus');
+  assert.equal(mime({isTypeSupported:type=>type==='video/webm'||type==='video/mp4'}),'video/webm');
+  assert.equal(mime({isTypeSupported:type=>type==='video/mp4'}),'video/mp4');
+  const mp4=harness({onlyMp4:true}),mp4Session=await mp4.start();mp4.recorder.ondataavailable({data:new Blob(['mp4'])});mp4Session.stop();assert.equal(mp4.finished[0][0].type,'video/mp4');assert.ok(!mp4.finished[0][1].includes('archivo descargable'));
   const silent=harness({denyMic:true});const silentSession=await silent.start({microphone:false});assert.equal(silent.recorder.input.getAudioTracks().length,0);silentSession.stop();assert.equal(silent.exports.RECORDING_MAX_MS,10*60*1000);
   const a=harness(),session=await a.start();assert.equal(a.recorder.input.getAudioTracks().length,1);assert.equal(a.recorder.input.getAudioTracks()[0],a.mic);
   a.recorder.ondataavailable({data:new Blob(['video'])});session.stop();assert.equal(a.finished.length,1);assert.equal(await a.finished[0][0].text(),'video');assert.equal(a.video.stops,1);assert.equal(a.mic.stops,1);assert.equal(a.system.stops,1);assert.match(a.finished[0][1],/archivo descargable/);assert.equal(a.timer,null);
