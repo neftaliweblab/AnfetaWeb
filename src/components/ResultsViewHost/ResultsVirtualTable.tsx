@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import {workflowState} from '@/services/activityWorkflow';
+import {activeResultsFirst,activeGroupsFirst,isCompletedResult} from '@/lib/activeResultsFirst';
 import {
   Globe,
   Folder,
@@ -351,15 +352,15 @@ export function ResultsVirtualTable({
     return !isNaN(num) && num > 0 ? num / 100 : 1.0;
   })();
 
+  const orderedItems=React.useMemo(()=>activeResultsFirst(items),[items]);
   const groupedItems = React.useMemo(() => {
     if (!groupBy || groupBy === "none") return null;
 
     const map = new Map<string, any[]>();
-    for (const item of items) {
+    for (const item of orderedItems) {
       if (
         groupBy === "name_noterminated" &&
-        (item.updateStatus?.toLowerCase().includes("terminad") ||
-          item.name?.toLowerCase().includes("zrevision"))
+        isCompletedResult(item)
       ) {
         continue;
       }
@@ -380,11 +381,11 @@ export function ResultsVirtualTable({
       map.get(key)!.push(item);
     }
 
-    return Array.from(map.entries()).map(([key, groupRows]) => ({
+    return activeGroupsFirst(Array.from(map.entries()).map(([key, groupRows]) => ({
       key,
       items: groupRows,
-    }));
-  }, [items, groupBy]);
+    })));
+  }, [orderedItems, groupBy]);
 
   const renderIcon = (item: any) => {
     const ext = (item.extension || item.name?.split(".").pop() || "").toLowerCase();
@@ -1149,7 +1150,7 @@ export function ResultsVirtualTable({
               </div>
             ))
           ) : (
-            items.map(renderRow)
+            orderedItems.map(renderRow)
           )}
         </div>
       ) : (
@@ -1179,7 +1180,7 @@ export function ResultsVirtualTable({
               </React.Fragment>
             ))
           ) : (
-            items.map(renderCard)
+            orderedItems.map(renderCard)
           )}
         </div>
       )}

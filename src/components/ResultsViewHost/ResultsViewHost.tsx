@@ -9,6 +9,7 @@ import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {newestFirst} from '@/lib/searchResultOrder';
+import {activeResultsFirst} from '@/lib/activeResultsFirst';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {normalizePerson} from '@/services/identityNormalizer';
@@ -1184,15 +1185,15 @@ export function ResultsViewHost({
 
     res=[...res].sort(newestFirst);
     if (groupBy === "domain") {
-      return [...res].sort((a, b) => (a.domainChip || "").localeCompare(b.domainChip || ""));
+      res.sort((a, b) => (a.domainChip || "").localeCompare(b.domainChip || ""));
     }
     if (groupBy === "month") {
-      return [...res].sort((a, b) => (a.monthChip || "").localeCompare(b.monthChip || ""));
+      res.sort((a, b) => (a.monthChip || "").localeCompare(b.monthChip || ""));
     }
     if (groupBy === "person") {
-      return [...res].sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
+      res.sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
     }
-    return res;
+    return activeResultsFirst(res);
   }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson]);
 
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);
