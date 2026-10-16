@@ -64,6 +64,8 @@ export function CalendarDetailPanel({
   const cleanTitle = calendarDisplayTitle(title, domain);
   const editable = canEditActivity(currentUser, activity);
   const userCanReview = editable && (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser));
+  const [ftfBusy,setFtfBusy]=useState(false);
+  const ftfSaving=React.useRef(false);
 
   // Actividades del mismo dominio (1:1 paridad con ANFETA WPF Actividades del Proyecto)
   const domainActivities = (projectActivities.length ? projectActivities : allActivities || []).filter((a) => {
@@ -204,6 +206,10 @@ export function CalendarDetailPanel({
         </div>
 
         {/* Metadata Card */}
+        <label className={'flex items-start gap-3 rounded-xl border p-3 text-xs '+(activity.ftfVerified?'border-emerald-500/70 bg-emerald-950/40':'border-slate-700 bg-slate-900/40')}>
+          <input type="checkbox" aria-label="Pasos FTF verificados para hoy" checked={!!activity.ftfVerified} disabled={!editable||!activity.ftfAvailable||ftfBusy||!onActivityUpdated} className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-400" onChange={async e=>{if(ftfSaving.current)return;const checked=e.target.checked;ftfSaving.current=true;setFtfBusy(true);try{const saved=await onActivityUpdated?.({ftfVerified:checked,expectedFtfVerified:!!activity.ftfVerified});setStatusMessage(saved===false?'No se confirmó la verificación FTF. Revisa el aviso del calendario.':checked?'Pasos verificados: la actividad ya está entendida.':'Se retiró la verificación FTF.');}catch(error){setStatusMessage(error instanceof Error?error.message:'No se pudo guardar la verificación FTF.');}finally{ftfSaving.current=false;setFtfBusy(false);}}}/>
+          <span><span className={'block font-semibold '+(activity.ftfVerified?'text-emerald-300':'text-slate-200')}>{ftfBusy?'Guardando…':'Pasos revisados y actividad entendida'}</span><span className="mt-1 block leading-relaxed text-slate-400">{activity.ftfAvailable?'Activa la franja verde de verificación FTF.':'No se encontró la casilla “Check FTF Pasos Verificados Hoy” en esta página.'}</span></span>
+        </label>
         {activity.reviewFlow?.State==='handoff'&&<div className="rounded border border-cyan-900 bg-cyan-950/30 p-2 text-xs"><p>Transferida por {String(activity.reviewFlow.FromPerson||activity.reviewFlow.UpdatedBy||'el equipo')}</p>{!!activity.reviewFlow.Note&&<p className="mt-1 whitespace-pre-wrap break-words">{String(activity.reviewFlow.Note)}</p>}</div>}
         <button type="button" disabled={!editable||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||wf==='completed'||wf==='review'||activity.reviewFlow?.State==='pending'} onClick={()=>setShowHandoff(true)} className="w-full rounded border border-cyan-800 p-2 text-xs text-cyan-200 disabled:opacity-40">Reasignar actividad…</button>
         <a href={'/recording?page='+encodeURIComponent(activity.originalPageId||activity.pageId.replace(/^review-mirror-/,''))} target="_blank" rel="noreferrer" className="block w-full rounded border border-slate-700 p-2 text-center text-xs text-cyan-200 hover:bg-slate-800">▶ Ver grabaciones de esta actividad</a>

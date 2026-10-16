@@ -111,6 +111,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     isReviewMirror: !!(raw.IsReviewMirror ?? raw.isReviewMirror),
     reviewFlow: raw.ReviewFlow || raw.reviewFlow,
     reviewFlowScanned:raw.reviewFlowScanned,
+    ftfVerified:raw.ftfVerified===true,ftfAvailable:raw.ftfAvailable===true,
     isHandoffMirror:raw.isHandoffMirror,originalPageId:raw.originalPageId,handoffNote:raw.handoffNote,
     isCompletedForReview: workflow === 'review' || (workflow === 'unknown' && !!(raw.IsCompletedForReview ?? raw.isCompletedForReview)),
     isFinalized: workflow === 'completed' || (workflow === 'unknown' && !!(raw.IsFinalized ?? raw.isFinalized)),

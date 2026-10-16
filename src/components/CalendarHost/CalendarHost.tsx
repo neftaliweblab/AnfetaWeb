@@ -359,7 +359,7 @@ export function CalendarHost({
       const data = await response.json();
       if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
-      const saved: NotionCalendarActivity = data.activity;
+      const saved: NotionCalendarActivity = updates.ftfVerified!==undefined?{...data.activity,checklistTotal:original.checklistTotal,checklistCompleted:original.checklistCompleted,checklistScanned:original.checklistScanned,checklistItems:original.checklistItems,completedChecks:original.completedChecks,todayChecklistCompleted:original.todayChecklistCompleted}:data.activity;
       if(updates.handoff){setVisiblePeople(prev=>prev.includes(saved.person)?prev:[...prev,saved.person]);if(Array.isArray(data.handoffCopies))for(const copy of data.handoffCopies)recentHandoffs.current.set(copy.pageId,{activity:copy,until:Date.now()+120000});}
       recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
       setActivitiesList(prev => {

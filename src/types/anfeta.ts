@@ -79,6 +79,9 @@ export interface NotionCalendarActivity {
   isFinalized: boolean; // Tag 'zREVISION'
   isSuspended: boolean; // Tag 'sprtuzREVISION'
   isLocked: boolean; // Tag 'Bloqueada_ANFETA'
+  ftfVerified?: boolean;
+  ftfAvailable?: boolean;
+  expectedFtfVerified?: boolean;
   isReviewMirror?: boolean;
   isHandoffMirror?: boolean;
   originalPageId?: string;

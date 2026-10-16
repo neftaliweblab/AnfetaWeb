@@ -548,6 +548,7 @@ export function ActivityCard({
             : "hover:z-20 hover:border-slate-500 shadow-sm"
         }`}
       >
+        {activity.ftfVerified&&!activity.isReviewMirror&&<span role="img" aria-label="Pasos FTF verificados para hoy" className="pointer-events-none absolute right-0 top-1/2 h-2/3 min-h-3 w-1.5 -translate-y-1/2 rounded-l-full bg-emerald-400 shadow-[-3px_0_12px_rgba(52,211,153,0.7)]"/>}
         {/* Fila Superior: Badge P/R/T/S + Dominio + Overlap + Checklist Pill */}
         {isSaving&&<span role="status" className="text-[10px] text-cyan-200 animate-pulse">Guardando en Notion…</span>}
         <div className="flex items-center justify-between gap-1 min-w-0">

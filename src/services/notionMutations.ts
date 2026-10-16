@@ -1,4 +1,5 @@
 import {withActivityLease,operationKey} from './reliableOperations';
+import {ftfField,FTF_CHECKBOX} from './ftfVerification';
 import {activeTeam} from './teamDirectory';
 import {handoffTitle} from './handoffTitle';
 import {prepareHandoff,confirmHandoff} from './activityHandoffs';
@@ -139,6 +140,13 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(updates.titleDescription!==undefined)updates={...updates,title:editActivityDescription(title,String(updates.titleDescription))};
   let nextTitle = title;
   const properties: Record<string, any> = {};
+  if(updates.ftfVerified!==undefined){
+    const field=ftfField(page);
+    if(!field)throw Error('No se encontró la casilla de Notion “'+FTF_CHECKBOX+'”.');
+    if(typeof updates.ftfVerified!=='boolean'||typeof updates.expectedFtfVerified!=='boolean')throw Error('Actualiza la actividad antes de marcar su verificación FTF.');
+    if(field[1].checkbox!==updates.expectedFtfVerified)throw Error('La verificación FTF cambió en otra sesión. Actualiza antes de guardarla.');
+    properties[field[0]]={checkbox:updates.ftfVerified};
+  }
   const fields = Object.entries(page.properties || {}) as [string, Property][];
 
   // Reasignación o Envío a Revisión

@@ -6,6 +6,7 @@ export function confirmedCalendarActivity(incoming: NotionCalendarActivity, save
   const sameTime = (a: string, b: string) => a === b || (Number.isFinite(Date.parse(a)) && Date.parse(a) === Date.parse(b));
   return incoming.title === saved.title && incoming.person === saved.person &&
     incoming.status === saved.status && sameTime(incoming.start, saved.start) &&
-    sameTime(incoming.end, saved.end) && incoming.reviewFlow?.State === saved.reviewFlow?.State
+    sameTime(incoming.end, saved.end) && incoming.reviewFlow?.State === saved.reviewFlow?.State &&
+    incoming.ftfVerified===saved.ftfVerified && incoming.ftfAvailable===saved.ftfAvailable
     ? incoming : saved;
 }

@@ -1,4 +1,5 @@
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
+import {ftfState} from '@/services/ftfVerification';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
@@ -122,6 +123,8 @@ interface LiveNotionPage {
   domain: string;
   lastEdited: string;
   isLocked: boolean;
+  ftfVerified:boolean;
+  ftfAvailable:boolean;
   sourceName?:string;
 }
 
@@ -206,7 +209,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
   status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):statusProp?.[statusProp.type]?.name || '';
-  return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
+  return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, ...ftfState(page), isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
 const STRUCTURAL_CONTAINERS = new Set([
@@ -1022,7 +1025,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
                 reviewFlow, reviewFlowScanned, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
-                isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
+                ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
             }));
             activities.push(...batch.filter(Boolean));
           }
@@ -2289,7 +2292,7 @@ async function POSTLive(req: NextRequest) {
         const live = extractNotionPageData(page); liveNotionOverrides.set(live.id, live);
         const activity = normalizeActivity({ ...cached, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
-          person:live.person, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
+          person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
         persistCalendarActivity(activity);
         previewMemoryCache.clear();

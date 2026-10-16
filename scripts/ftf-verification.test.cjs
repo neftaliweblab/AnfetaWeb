@@ -1,0 +1,22 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+Module._extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,p);
+const load=Module._load;
+Module._load=function(name,parent,...rest){if(parent?.filename.endsWith('notionMutations.ts')&&name==='./reliableOperations')return {operationKey:(...a)=>a.join(':'),withActivityLease:async(_,run)=>run()};return load.call(this,name,parent,...rest);};
+const {FTF_CHECKBOX,ftfState}=require(root+'/src/services/ftfVerification.ts');
+const id='11111111-1111-4111-8111-111111111111';
+let page={id,properties:{Name:{type:'title',title:[{plain_text:'prtuzREVISION sseo neft Trabajo'}]},Responsable:{type:'select',select:{name:'Neftali'}},Estado:{type:'status',status:{name:'Por hacer'}},[FTF_CHECKBOX]:{type:'checkbox',checkbox:false}}},writes=[];
+global.fetch=async(url,opts={})=>{assert.equal(String(url),'https://api.notion.com/v1/pages/'+id);if(opts.method==='PATCH'){const body=JSON.parse(opts.body);writes.push(body);for(const [name,p] of Object.entries(body.properties))page.properties[name]={type:'checkbox',...p};}return Response.json(page);};
+(async()=>{
+ assert.deepEqual(ftfState(page),{ftfVerified:false,ftfAvailable:true});
+ const {mutateActivity}=require(root+'/src/services/notionMutations.ts'),settings={notionToken:'TEST_ONLY',currentUser:'Neftali'};
+ await mutateActivity(settings,'Neftali',id,{ftfVerified:true,expectedFtfVerified:false});assert.deepEqual(writes[0],{properties:{[FTF_CHECKBOX]:{checkbox:true}}});assert.deepEqual(ftfState(page),{ftfVerified:true,ftfAvailable:true});
+ await assert.rejects(()=>mutateActivity(settings,'Neftali',id,{ftfVerified:false,expectedFtfVerified:false}),/otra sesión/);assert.equal(writes.length,1);
+ await assert.rejects(()=>mutateActivity(settings,'Brian',id,{ftfVerified:false,expectedFtfVerified:true}),/responsable/);
+ await assert.rejects(()=>mutateActivity(settings,'Neftali',id,{ftfVerified:false,expectedFtfVerified:true},{isReviewMirror:true}),/bloqueadas/);
+ await mutateActivity(settings,'Neftali',id,{ftfVerified:false,expectedFtfVerified:true});assert.equal(page.properties[FTF_CHECKBOX].checkbox,false);
+ delete page.properties[FTF_CHECKBOX];assert.deepEqual(ftfState(page),{ftfVerified:false,ftfAvailable:false});await assert.rejects(()=>mutateActivity(settings,'Neftali',id,{ftfVerified:true,expectedFtfVerified:false}),/No se encontró/);assert.equal(writes.length,2);
+ const {normalizeActivity}=require(root+'/src/services/dataNormalizers.ts');const activity=normalizeActivity({title:'Actividad',ftfVerified:true,ftfAvailable:true,checklistTotal:6,checklistCompleted:0},0);assert.equal(activity.ftfVerified,true);assert.equal(activity.checklistTotal,6);assert.equal(activity.checklistCompleted,0);
+ console.log('OK FTF: propiedad exacta, marcar/desmarcar, concurrencia, permisos, copias bloqueadas, casilla ausente y contador 0/6 independiente. Notion simulado.');
+})().catch(e=>{console.error(e);process.exitCode=1;});
