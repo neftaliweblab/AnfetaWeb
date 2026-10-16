@@ -271,7 +271,7 @@ export function ActivityCard({
   const durationFormatted = hours > 0 ? (minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`) : `${minutes}m`;
 
   const top = Math.max(0, ((startMinute - 8 * 60) / 60) * pixelsPerHour);
-  const height = Math.max(34, (durationMinutes / 60) * pixelsPerHour);
+  const height = Math.max(8, (durationMinutes / 60) * pixelsPerHour);
 
   // Workflow, Letra Insignia y Estilos sobrios con colores balanceados (sin saturación chillona)
   const isUrgent = !!(activity?.isUrgent || calendarUrgent(title));
@@ -534,9 +534,11 @@ export function ActivityCard({
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
         data-activity-card="true"
+        data-activity-id={activity.pageId}
         style={{
-          top: `${top}px`,
-          height: `${height}px`,
+          top: `${top + 2}px`,
+          height: `${height - 4}px`,
+          padding: height < 34 ? '1px' : undefined,
           width: `calc(${widthPct}% - 4px)`,
           left: `calc(${leftPct}% + 2px)`,
           ...(palette === "desktop" ? { borderLeftWidth: "4px", borderLeftColor: priorityBorderColor } : {}),

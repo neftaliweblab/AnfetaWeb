@@ -1,4 +1,5 @@
 import {sendPwaPush} from './pwaPush';
+import {notificationPageId} from './ftfCompletion';
 import { notionRequest } from './notionMutations';
 import { CalendarSettings, readBlocks } from './notionCalendar';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
@@ -137,4 +138,13 @@ export async function replyNotification(settings:CalendarSettings,actor:string,i
   const entry={Kind:'Message',AuthorTag:tag,AuthorName:name,RecipientTag:last?.AuthorTag || '',RecipientName:last?.AuthorName || '',CreatedAt:new Date().toISOString(),Text:text.trim(),ReferenceEntryId:last?.id || '',Attachments:[]};
   await notionRequest(settings,'blocks/'+id+'/children','PATCH',{children:[paragraph(name+': '+text.trim()),hidden('[ANFETA_THREAD_V1]',entry)]});
   return entry;
+}
+
+export async function reviewNotificationActivity(settings:CalendarSettings,actor:string,id:string) {
+  const thread=await readNotificationThread(settings,actor,id);
+  const pageId=notificationPageId(thread.sourceActivity?.PageId||thread.sourceActivity?.PageUrl||'');
+  if(!pageId)throw Error('El aviso no tiene una actividad original identificable. Abre Original Notion.');
+  const page=await notionRequest(settings,'pages/'+pageId);
+  if(page.archived||page.in_trash)throw Error('La actividad original fue eliminada o archivada.');
+  return page;
 }

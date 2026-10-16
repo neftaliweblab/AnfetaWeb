@@ -244,6 +244,29 @@ export function CalendarHost({
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
+  const openNotificationActivity=(activity:NotionCalendarActivity)=>{
+    const day=mexicoDate(activity.start);
+    if(!day){setError('La actividad no tiene una fecha válida.');return;}
+    setPhaseFilter('');onClearSearchFilter?.();
+    const person=normalizePerson(activity.person);
+    setVisiblePeople(prev=>prev.includes(person)?prev:[...prev,person]);
+    setPeopleOrder(prev=>prev.includes(person)?prev:[...prev,person]);
+    if(day!==currentDate)onSelectDate(day);
+    setNotificationTarget(activity);
+  };
+  useEffect(()=>{
+    if(!notificationTarget||mexicoDate(notificationTarget.start)!==currentDate)return;
+    const target=notificationTarget;
+    setActivitiesList(prev=>prev.some(a=>a.pageId===target.pageId)?prev.map(a=>a.pageId===target.pageId?{...a,...target}:a):[...prev,target]);
+    setSelectedActivity(target);setIsDetailOpen(true);
+    const timer=setTimeout(()=>{
+      const card=Array.from(scrollContainerRef.current?.querySelectorAll<HTMLElement>('[data-activity-id]')||[]).find(el=>el.dataset.activityId===target.pageId);
+      card?.scrollIntoView({block:'center',inline:'center',behavior:'smooth'});
+      setNotificationTarget(null);
+    },250);
+    return ()=>clearTimeout(timer);
+  },[notificationTarget,currentDate]);
 
   useEffect(() => {
     setActivitiesList(prev=>pending.current.size?[...initialActivities.filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:protectSaved(initialActivities));
@@ -597,7 +620,7 @@ export function CalendarHost({
           <CalendarReviewNotifications
             currentUser={currentUser}
             activities={activitiesList}
-            onSelectActivity={(act) => setSelectedActivity(act)}
+            onSelectActivity={openNotificationActivity}
             onSelectDate={onSelectDate}
           />
         }
