@@ -635,7 +635,7 @@ export function ActivityCard({
         <div className="my-auto py-0.5 min-w-0">
           <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
             {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.">{activity.isHandoffMirror?'TRANSFERIDA':'COPIA REVISIÓN'}</span>}
-            {cleanTitle}
+            <span className={wf==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':''}>{cleanTitle}</span>
           </h5>
         </div>
 

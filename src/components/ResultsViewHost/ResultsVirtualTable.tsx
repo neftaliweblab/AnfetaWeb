@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
+import {workflowState} from '@/services/activityWorkflow';
 import {
   Globe,
   Folder,
@@ -545,7 +546,7 @@ export function ResultsVirtualTable({
           )}
           <span
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-            className="truncate font-semibold text-[#E2E8F0]"
+            className={'truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}
           >
             {highlightMatch(parsed.title)}
           </span>
@@ -910,7 +911,7 @@ export function ResultsVirtualTable({
 
         <div
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-          className="font-semibold text-[#E2E8F0] line-clamp-2 mb-2"
+          className={'font-semibold line-clamp-2 mb-2 '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}
         >
           {highlightMatch(parsed.title)}
         </div>
