@@ -4,7 +4,7 @@ import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Zap,
   X,
@@ -216,8 +216,10 @@ export function CalendarTemplatesModal({
   ]);
 
   // Crear actividades y persistir en backend
+  const submissionBusy=useRef(false);
   const handleExecuteCreation = async () => {
-    if (selectedTemplatesList.length === 0) return;
+    if (submissionBusy.current || selectedTemplatesList.length === 0) return;
+    submissionBusy.current=true;
     setIsSubmitting(true);
 
     try {
@@ -279,6 +281,7 @@ export function CalendarTemplatesModal({
       console.error("Error al aplicar plantillas:", err);
       setCreationError(err.message || "No se pudo conectar con Notion.");
     } finally {
+      submissionBusy.current=false;
       setIsSubmitting(false);
     }
   };

@@ -3,6 +3,38 @@ import {notionRequest} from './notionMutations';
 import type {CalendarSettings} from './notionCalendar';
 
 type Node = {block: any; children: Node[]};
+const MAX_FILE_BYTES=20*1024*1024;
+
+/** Preflight the entire materialized tree before creating a destination page. */
+export function validateTemplateBody(nodes:Node[]) {
+  let totalBytes=0;
+  const walk=(list:Node[],parent?:any)=>{
+    for(const node of list){
+      const block=node.block,body=block[block.type];
+      if(!body)throw Error('Bloque de plantilla sin contenido: '+block.type);
+      if(node.children.length&&!['paragraph','heading_1','heading_2','heading_3','bulleted_list_item','numbered_list_item','to_do','toggle','quote','callout','column','column_list','table'].includes(block.type))throw Error('El bloque '+block.type+' no admite contenido anidado.');
+      if(block.type==='column'&&parent?.type!=='column_list')throw Error('La plantilla contiene una columna fuera de su grupo.');
+      if(['bookmark','embed'].includes(block.type)){
+        try{const url=new URL(body.url);if(!/^https?:$/.test(url.protocol)||body.url.length>2000)throw Error();}
+        catch{throw Error('El bloque '+block.type+' no tiene una URL web válida.');}
+      }
+      const bytes=Buffer.byteLength(JSON.stringify(block));totalBytes+=bytes;
+      if(bytes>450000)throw Error('Un bloque de la plantilla es demasiado grande: '+block.type+'.');
+      if(totalBytes>20*1024*1024)throw Error('El contenido de la plantilla supera el límite de seguridad de 20 MB.');
+      for(const key of ['rich_text','caption'])if(body[key]&&body[key].length>100)throw Error('El bloque '+block.type+' supera 100 fragmentos de texto en '+key+'.');
+      if(block.type==='table_row'){
+        if(!parent||parent.type!=='table')throw Error('La plantilla contiene una fila fuera de una tabla.');
+        if(body.cells.length!==parent.table.table_width)throw Error('Una fila no coincide con el número de columnas de la tabla.');
+      }
+      if(block.type==='table'){
+        if(!Number.isInteger(body.table_width)||body.table_width<1)throw Error('La tabla no tiene un ancho válido.');
+        for(const row of body.children||[])if(row.table_row?.cells?.length!==body.table_width)throw Error('Una fila no coincide con el número de columnas de la tabla.');
+      }
+      walk(node.children,block);
+    }
+  };
+  walk(nodes);
+}
 
 const fields: Record<string, string[]> = {
   paragraph: ['rich_text', 'color'],
@@ -39,10 +71,12 @@ function rich(value: any[]): any[] {
     if (!['text', 'mention', 'equation'].includes(type)) {
       throw new Error('La plantilla contiene texto no compatible.');
     }
+    const payload=part[type]||(type==='text'&&typeof part.plain_text==='string'?{content:part.plain_text}:null);
+    if(!payload||typeof payload!=='object')throw Error('La plantilla contiene un fragmento de '+type+' sin contenido válido.');
     return {
       type,
-      [type]: structuredClone(part[type]),
-      ...(part.annotations ? {annotations: part.annotations} : {})
+      [type]: structuredClone(payload),
+      ...(part.annotations ? {annotations: structuredClone(part.annotations)} : {})
     };
   });
 }
@@ -78,6 +112,7 @@ export async function transferNotionInternalFile(
   type: string,
   originalName?: string
 ): Promise<string> {
+  settings.notionSignal?.throwIfAborted();
   validateNotionInternalUrl(fileUrl);
   let response: Response;
   try {
@@ -88,11 +123,14 @@ export async function transferNotionInternalFile(
   if (!response.ok) {
     throw new Error(`Error descargando medio interno «${type}» para transferencia (${response.status}).`);
   }
-  const arrayBuf = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuf);
-  if (buffer.byteLength > 20 * 1024 * 1024) {
-    throw new Error(`El archivo interno «${type}» supera el límite permitido de 20 MB.`);
-  }
+  if(Number(response.headers.get('content-length'))>MAX_FILE_BYTES){await response.body?.cancel();throw Error(`El archivo interno «${type}» supera el límite permitido de 20 MB.`);}
+  const chunks:Uint8Array[]=[];let size=0;
+  const reader=response.body?.getReader();
+  if(!reader)throw Error('El archivo interno no devolvió contenido.');
+  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>MAX_FILE_BYTES){await reader.cancel();throw Error(`El archivo interno «${type}» supera el límite permitido de 20 MB.`);}chunks.push(value);}}
+  finally{reader.releaseLock();}
+  if(!size)throw Error('El archivo interno está vacío.');
+  const buffer=Buffer.concat(chunks);
   const contentType = response.headers.get('content-type') || 'application/octet-stream';
   let filename = originalName;
   if (!filename) {
@@ -127,6 +165,8 @@ export async function transferNotionInternalFile(
     const errText = await sendRes.text().catch(() => '');
     throw new Error(`Notion rechazó la transferencia de «${filename}» (${sendRes.status}): ${errText}`);
   }
+  const sent=await sendRes.json();
+  if(sent.status!=='uploaded')throw Error('Notion no confirmó la carga completa de «'+filename+'».');
 
   return upload.id;
 }
@@ -134,11 +174,22 @@ export async function transferNotionInternalFile(
 export async function prepareTemplateBody(settings: CalendarSettings, pageId: string): Promise<Node[]> {
   let count = 0;
   const seen = new Set<string>();
+  const transfers:Array<()=>Promise<void>>=[];
+  const queueTransfer=(source:any,run:()=>Promise<void>)=>transfers.push(async()=>{
+    try{await run();}catch(error){throw Error('Archivo del bloque '+source.id+' ('+source.type+'): '+(error instanceof Error?error.message:'No se pudo transferir.'));}
+  });
+  const media=new Map<string,Promise<string>>();
+  const transfer=(url:string,type:string,name?:string)=>{
+    const key=JSON.stringify([url,type,name||'']);let pending=media.get(key);
+    if(!pending){pending=transferNotionInternalFile(settings,url,type,name);media.set(key,pending);}
+    return pending;
+  };
   // One consistent snapshot per source for this duplication. A shared origin
   // can appear in several columns; reuse its read, not the destination blocks.
   const sourcesById=new Map<string,Promise<any[]>>();
   const sourceKey=(id:string)=>id.replace(/-/g,'').toLowerCase();
   const readSource=(id:string)=>{
+    settings.notionSignal?.throwIfAborted();
     const key=sourceKey(id);
     let pending=sourcesById.get(key);
     if(!pending){
@@ -169,15 +220,18 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
       }
     }
     for (const source of sources) {
+      try {
       let type = source.type;
-      const content = source[type] || {};
+      let content = source[type] || {};
       const text = (content.rich_text || []).map((x: any) => x.plain_text || x.text?.content || '').join('');
 
-      if (/\[ANFETA_|Datos internos de ANFETA/i.test(text)) continue;
+      if (/^(?:\[ANFETA_[A-Z0-9_]+\]|Datos internos de ANFETA$)/i.test(text.trim())) continue;
       if (++count > 5000) throw new Error('La plantilla supera el límite de seguridad de ANFETA de 5000 bloques. No se creó la actividad.');
       if (type === 'heading_4') {
         type = 'heading_3';
       }
+      if(type==='template')type='toggle';
+      if(type==='link_preview'){type='bookmark';content={url:source.link_preview?.url};}
       if(type==='synced_block'){
         if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
         const original=content.synced_from?.block_id||source.id;
@@ -186,7 +240,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         continue;
       }
       if (!fields[type]) {
-        throw new Error('La plantilla contiene un bloque que aún no se puede copiar: ' + type + '. No se creó una página incompleta.');
+        throw new Error('La plantilla contiene un bloque que aún no se puede copiar: ' + type + (content.block_type?' ('+content.block_type+')':'') + '. No se creó una página incompleta.');
       }
 
       const body: any = {};
@@ -200,7 +254,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         }
       }
 
-      if(body.icon?.type==='file'&&body.icon.file?.url){const iconId=await transferNotionInternalFile(settings,body.icon.file.url,'image');body.icon={type:'file_upload',file_upload:{id:iconId}};}
+      if(body.icon?.type==='file'&&body.icon.file?.url){const url=body.icon.file.url;validateNotionInternalUrl(url);queueTransfer(source,async()=>{body.icon={type:'file_upload',file_upload:{id:await transfer(url,'image')}};});}
       if (['image', 'video', 'audio', 'pdf', 'file'].includes(type)) {
         if (content.type === 'file_upload' && content.file_upload?.id) {
           body.type = 'file_upload';
@@ -211,9 +265,10 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
           body.external = {url: content.external.url};
           if (type === 'file' && typeof content.name === 'string') body.name = content.name;
         } else if (content.type === 'file' && typeof content.file?.url === 'string') {
-          const uploadId = await transferNotionInternalFile(settings, content.file.url, type, content.name);
+          validateNotionInternalUrl(content.file.url);
           body.type = 'file_upload';
-          body.file_upload = {id: uploadId};
+          body.file_upload = {id:'pending'};
+          queueTransfer(source,async()=>{body.file_upload={id:await transfer(content.file.url,type,content.name)};});
           if (type === 'file' && typeof content.name === 'string') body.name = content.name;
         } else {
           throw new Error('El archivo de la plantilla requiere transferencia o URL válida: ' + type);
@@ -248,18 +303,24 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         block: {object: 'block', type, [type]: body},
         children: type === 'table' ? children.slice(1) : children
       });
+      }catch(error){throw Error('Bloque '+source.id+' ('+source.type+'): '+(error instanceof Error?error.message:'No se pudo preparar su contenido.'));}
     }
 
     return nodes;
     } finally {seen.delete(key);}
   }
 
-  return read(pageId, 0);
+  const nodes=await read(pageId, 0);
+  validateTemplateBody(nodes);
+  for(const run of transfers)await run();
+  validateTemplateBody(nodes);
+  return nodes;
 }
 
 export async function appendTemplateBody(settings: CalendarSettings, pageId: string, nodes: Node[]) {
   const blockCount=(block:any):number=>1+(block[block.type]?.children||[]).reduce((total:number,child:any)=>total+blockCount(child),0);
   for (let offset = 0; offset < nodes.length; ) {
+    settings.notionSignal?.throwIfAborted();
     let end = offset;
     let bytes = 16, blocks=0;
     while (end < nodes.length && end - offset < 100) {
@@ -294,7 +355,7 @@ export async function appendTemplateBody(settings: CalendarSettings, pageId: str
       children: sanitizedChildren
     });
 
-    if (response.results?.length !== batch.length) {
+    if (response.results?.length !== batch.length || response.results.some((block:any)=>!block.id) || new Set(response.results.map((block:any)=>block.id)).size!==batch.length) {
       throw new Error('Notion no confirmó todos los bloques copiados.');
     }
 

@@ -301,6 +301,7 @@ async function duplicateNotionPageWithoutBody({
   overrideDate,
   overridePerson,
   copyBody=false,
+  deadline,
 }: {
   token: string;
   sourcePageId: string;
@@ -308,10 +309,12 @@ async function duplicateNotionPageWithoutBody({
   overrideDate?: { start: string; end?: string; timeZone?: string };
   overridePerson?: string;
   copyBody?: boolean;
+  deadline?: number;
 }): Promise<{ page:any; pageId: string; pageUrl: string; title: string }> {
   // Leave time to archive an incomplete copy before the route's 120s deadline.
-  const bodySettings={notionToken:token,currentUser:overridePerson||getSettings().currentUser,notionSignal:AbortSignal.timeout(85000)};
-  const preparedBody=copyBody?await prepareTemplateBody(bodySettings,sourcePageId):[];
+  const budget=Math.min(85000,deadline?deadline-Date.now()-20000:85000);
+  if(budget<1000)throw Error('Esta plantilla quedó pendiente porque el lote alcanzó su tiempo disponible. Reintenta solo las pendientes.');
+  const bodySettings={notionToken:token,currentUser:overridePerson||getSettings().currentUser,notionSignal:AbortSignal.timeout(budget)};
   const cleanId = sourcePageId.replace(/-/g, "");
   const pageRes = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
     signal:bodySettings.notionSignal,
@@ -327,6 +330,7 @@ async function duplicateNotionPageWithoutBody({
   }
 
   const sourcePage = await pageRes.json();
+  if(sourcePage.archived||sourcePage.in_trash)throw Error('La plantilla original está archivada o eliminada.');
   const sourceProps = sourcePage.properties || {};
 
   const duplicateProperties: Record<string, any> = {};
@@ -375,7 +379,7 @@ async function duplicateNotionPageWithoutBody({
     const [name, prop] = field;
     if (prop.type === 'people') {
       const mapping = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
-      const id = mapping[person] || mapping[overridePerson] || await resolveTeamPersonId({notionToken:token,currentUser:person},person);
+      const id = mapping[person] || mapping[overridePerson] || await resolveTeamPersonId({...bodySettings,currentUser:person},person);
       if (!id) throw new Error('No se encontró la cuenta real de ' + person);
       duplicateProperties[name] = {people:[{id}]};
     } else duplicateProperties[name] = prop.type === 'select' ? {select:{name:person}} : {rich_text:[{text:{content:person}}]};
@@ -385,6 +389,7 @@ async function duplicateNotionPageWithoutBody({
     parent: sourcePage.parent,
     properties: duplicateProperties,
   };
+  const preparedBody=copyBody?await prepareTemplateBody(bodySettings,sourcePageId):[];
 
   const createRes = await fetch("https://api.notion.com/v1/pages", {
     signal:bodySettings.notionSignal,
@@ -2571,12 +2576,13 @@ async function POSTLive(req: NextRequest) {
       const requests = input.requests;
       if (!Array.isArray(requests) || !requests.length || requests.length > 30) return NextResponse.json({error:'Selecciona entre 1 y 30 plantillas.'},{status:400});
       const createdActivities:any[] = [], results:any[] = [];
+      const deadline=Date.now()+110000;
       for (const [index, item] of requests.entries()) {
         try {
           if (!item.sourcePageId || !item.person || !item.title) throw new Error('Completa plantilla, título y responsable.');
           if (!canEditActivity(actor,{person:normalizePerson(item.person)})) throw new Error('No puedes crear actividades para esa persona.');
           validateSchedule(item.start,item.end);
-          const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:{start:item.start,end:item.end},overridePerson:item.person,copyBody:true});
+          const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:{start:item.start,end:item.end},overridePerson:item.person,copyBody:true,deadline});
           const created = result.page;
           const live = extractNotionPageData(created);
           const activity = normalizeActivity({pageId:created.id,pageUrl:created.url,title:live.title,person:live.person,start:live.dateStart,end:live.dateEnd,domain:calendarDomain(live.title,item.domain),status:live.status},0);
