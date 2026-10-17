@@ -136,7 +136,13 @@ export function WhatsappDirectoryModal({
     if (group.inviteUrl) {
       window.open(group.inviteUrl, "_blank", "noopener,noreferrer");
     } else {
-      // Abre WhatsApp Web para buscar el grupo por nombre
+      // Abre WhatsApp Web copiando el nombre del grupo para pegarlo en el buscador
+      try {
+        navigator.clipboard.writeText(group.name);
+        playCopyChime?.();
+        setStatusMessage(`Copiado: "${group.name}". Pega con Ctrl+V en WhatsApp Web para abrirlo.`);
+        setTimeout(() => setStatusMessage(null), 4000);
+      } catch {}
       const searchUrl = `https://web.whatsapp.com/`;
       window.open(searchUrl, "_blank", "noopener,noreferrer");
     }
@@ -303,148 +309,244 @@ export function WhatsappDirectoryModal({
   try {
     const openReq = indexedDB.open('model-storage');
     openReq.onerror = () => alert('No se pudo abrir el almacenamiento de WhatsApp Web.');
-    openReq.onsuccess = () => {
+    openReq.onsuccess = async () => {
       const db = openReq.result;
       const metadataMap = new Map();
-      const readMetadataThenChats = () => {
+      const messageLinksMap = new Map();
+
+      const findInviteLink = (val) => {
+        if (!val) return undefined;
         try {
-          const tx = db.transaction('chat', 'readonly');
-          const store = tx.objectStore('chat');
-          const req = store.getAll();
-          req.onsuccess = () => {
-            const rows = req.result || [];
-            const groups = [];
-            for (const c of rows) {
-              const rawId = c.id;
-              const id = String(rawId?._serialized || (typeof rawId === 'string' ? rawId : '')).trim();
-              const isGroup = c.isGroup === true || id.endsWith('@g.us') || id.includes('@g.us');
-              if (isGroup) {
-                const name = String(c.formattedTitle || c.name || c.contact?.name || '').trim();
-                if (!name) continue;
-                const meta = metadataMap.get(id) || metadataMap.get(rawId?._serialized) || metadataMap.get(rawId?.user);
-                let inviteUrl = undefined;
-                if (meta && (meta.inviteCode || meta.groupMetadata?.inviteCode)) {
-                  inviteUrl = 'https://chat.whatsapp.com/' + (meta.inviteCode || meta.groupMetadata?.inviteCode);
-                } else {
-                  const descText = String(meta?.desc || meta?.description || c.desc || '');
-                  const linkMatch = descText.match(/https:\\/\\/chat\\.whatsapp\\.com\\/[a-zA-Z0-9_-]+/i);
-                  if (linkMatch) inviteUrl = linkMatch[0];
-                }
-                groups.push({
-                  id: id || ('group_' + Math.random().toString(36).slice(2, 8) + '@g.us'),
-                  name,
-                  inviteUrl,
-                  participantsCount: Array.isArray(meta?.participants) ? meta.participants.length : undefined,
-                  owner: meta?.owner ? String(meta.owner?._serialized || meta.owner) : undefined,
-                  unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
-                  lastSynced: new Date().toISOString()
-                });
-              }
-            }
-            const dataStr = JSON.stringify({ groups, total: groups.length }, null, 2);
-
-            // 1. Descarga automática del archivo JSON
-            try {
-              const blob = new Blob([dataStr], { type: 'application/json' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = 'anfeta-whatsapp-grupos.json';
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => a.remove(), 1000);
-            } catch {}
-
-            // 2. Copia real al portapapeles
-            try {
-              const ta = document.createElement('textarea');
-              ta.value = dataStr;
-              ta.style.position = 'fixed';
-              ta.style.left = '-9999px';
-              document.body.appendChild(ta);
-              ta.focus();
-              ta.select();
-              document.execCommand('copy');
-              ta.remove();
-            } catch {}
-            try { navigator.clipboard.writeText(dataStr); } catch {}
-            if (typeof copy === 'function') { try { copy(dataStr); } catch {} }
-
-            // 3. Tarjeta en pantalla en WhatsApp Web
-            const oldBox = document.getElementById('anfeta-sync-overlay');
-            if (oldBox) oldBox.remove();
-            const overlay = document.createElement('div');
-            overlay.id = 'anfeta-sync-overlay';
-            overlay.style.cssText = 'position:fixed;top:24px;right:24px;z-index:999999;background:#0B141A;border:2px solid #00A884;border-radius:12px;padding:18px;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.85);color:#E9EDEF;font-family:sans-serif;font-size:13px;';
-            overlay.innerHTML = \`
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <b style="color:#00A884;font-size:15px;">✅ ¡\${groups.length} grupos extraídos!</b>
-                <button id="anfeta-close-ov" style="background:transparent;border:none;color:#8696A0;cursor:pointer;font-size:18px;line-height:1;">✕</button>
-              </div>
-              <p style="margin:0 0 12px 0;font-size:12px;color:#AEBAC1;line-height:1.4;">
-                Se descargó <b>anfeta-whatsapp-grupos.json</b> automáticamente.<br>
-                O pulsa abajo para copiar y pegar directo en ANFETA.
-              </p>
-              <button id="anfeta-copy-btn" style="width:100%;padding:10px;background:#00A884;color:#111B21;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:13px;margin-bottom:8px;">
-                📋 Copiar datos al portapapeles
-              </button>
-              <button id="anfeta-down-btn" style="width:100%;padding:8px;background:#1E293B;color:#7DD3FC;border:1px solid #38BDF8;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px;">
-                💾 Volver a descargar archivo JSON
-              </button>
-            \`;
-            document.body.appendChild(overlay);
-
-            document.getElementById('anfeta-close-ov').onclick = () => overlay.remove();
-            document.getElementById('anfeta-down-btn').onclick = () => {
-              const blob = new Blob([dataStr], { type: 'application/json' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = 'anfeta-whatsapp-grupos.json';
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => a.remove(), 1000);
-            };
-            document.getElementById('anfeta-copy-btn').onclick = async () => {
-              try {
-                await navigator.clipboard.writeText(dataStr);
-              } catch {
-                const ta = document.createElement('textarea');
-                ta.value = dataStr;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                ta.remove();
-              }
-              const btn = document.getElementById('anfeta-copy-btn');
-              if (btn) btn.textContent = '✓ ¡Copiado!';
-              alert('✅ ¡Copiado al portapapeles!\n\nAhora ve a ANFETA y pulsa "Pegar Portapapeles" (o Ctrl+V).');
-            };
-
-            alert('✅ ¡' + groups.length + ' grupos extraídos exitosamente!\\n\\n1. Se descargó el archivo \"anfeta-whatsapp-grupos.json\".\\n2. Los datos se copiaron a tu portapapeles.\\n\\n👉 Ve a ANFETA y pulsa \"📋 Pegar Portapapeles\" o \"Importar JSON\".');
-          };
-        } catch (e) {
-          alert('Error leyendo chats: ' + e.message);
-        }
+          const text = typeof val === 'object' ? JSON.stringify(val) : String(val);
+          const match = text.match(/https:\\/\\/chat\\.whatsapp\\.com\\/[a-zA-Z0-9_-]+/i);
+          return match ? match[0] : undefined;
+        } catch { return undefined; }
       };
+
+      // 1. Scan message store for invite links shared in chats
+      if (db.objectStoreNames.contains('message')) {
+        try {
+          const msgTx = db.transaction('message', 'readonly');
+          const msgStore = msgTx.objectStore('message');
+          const msgReq = msgStore.getAll();
+          await new Promise((res) => {
+            msgReq.onsuccess = () => {
+              for (const m of msgReq.result || []) {
+                const rawRemote = m.id?.remote || m.chatId || m.to || m.from;
+                const remote = String(rawRemote?._serialized || (typeof rawRemote === 'string' ? rawRemote : '')).trim();
+                if (!remote.includes('@g.us')) continue;
+                const link = findInviteLink(m.body) || findInviteLink(m.caption) || findInviteLink(m.text) || findInviteLink(m.quotedMsg);
+                if (link && !messageLinksMap.has(remote)) {
+                  messageLinksMap.set(remote, link);
+                }
+              }
+              res();
+            };
+            msgReq.onerror = () => res();
+          });
+        } catch {}
+      }
+
+      // 2. Read group-metadata store
       if (db.objectStoreNames.contains('group-metadata')) {
         try {
           const metaTx = db.transaction('group-metadata', 'readonly');
           const metaStore = metaTx.objectStore('group-metadata');
           const metaReq = metaStore.getAll();
-          metaReq.onsuccess = () => {
-            for (const m of metaReq.result || []) {
-              if (m && m.id) {
-                const mid = String(m.id?._serialized || (typeof m.id === 'string' ? m.id : '')).trim();
-                if (mid) metadataMap.set(mid, m);
+          await new Promise((res) => {
+            metaReq.onsuccess = () => {
+              for (const m of metaReq.result || []) {
+                if (m && m.id) {
+                  const mid = String(m.id?._serialized || (typeof m.id === 'string' ? m.id : '')).trim();
+                  if (mid) metadataMap.set(mid, m);
+                }
               }
-            }
-            readMetadataThenChats();
-          };
-          metaReq.onerror = () => readMetadataThenChats();
-        } catch {
-          readMetadataThenChats();
+              res();
+            };
+            metaReq.onerror = () => res();
+          });
+        } catch {}
+      }
+
+      // 3. Try finding WhatsApp Web internal Webpack query function
+      let queryInviteFn = null;
+      try {
+        let wpRequire;
+        window.webpackChunkwhatsapp_web_client?.push?.([
+          [Symbol()],
+          {},
+          (r) => { wpRequire = r; }
+        ]);
+        if (wpRequire?.m) {
+          for (const id of Object.keys(wpRequire.m)) {
+            try {
+              const mod = wpRequire(id);
+              if (!mod) continue;
+              const candidates = [mod, mod.default].filter(Boolean);
+              for (const c of candidates) {
+                for (const k of Object.keys(c)) {
+                  if (/query.*invite.*code|sendQueryGroupInviteCode/i.test(k) && typeof c[k] === 'function') {
+                    queryInviteFn = c[k];
+                    break;
+                  }
+                }
+                if (queryInviteFn) break;
+              }
+              if (queryInviteFn) break;
+            } catch {}
+          }
         }
-      } else {
-        readMetadataThenChats();
+      } catch {}
+
+      // 4. Read chats and resolve invite links
+      try {
+        const tx = db.transaction('chat', 'readonly');
+        const store = tx.objectStore('chat');
+        const chatReq = store.getAll();
+        chatReq.onsuccess = async () => {
+          const rows = chatReq.result || [];
+          const groups = [];
+
+          for (const c of rows) {
+            const rawId = c.id;
+            const id = String(rawId?._serialized || (typeof rawId === 'string' ? rawId : '')).trim();
+            const isGroup = c.isGroup === true || id.endsWith('@g.us') || id.includes('@g.us');
+            if (!isGroup) continue;
+
+            const name = String(c.formattedTitle || c.name || c.contact?.name || '').trim();
+            if (!name) continue;
+
+            const meta = metadataMap.get(id) || metadataMap.get(rawId?._serialized) || metadataMap.get(rawId?.user);
+
+            // A) Direct inviteCode in metadata or chat
+            let inviteUrl = undefined;
+            const rawCode = meta?.inviteCode || meta?.groupMetadata?.inviteCode || meta?.invite || c?.inviteCode;
+            if (rawCode && typeof rawCode === 'string') {
+              inviteUrl = 'https://chat.whatsapp.com/' + rawCode.replace(/^https:\\/\\/chat\\.whatsapp\\.com\\//i, '');
+            }
+
+            // B) Description link
+            if (!inviteUrl) {
+              inviteUrl = findInviteLink(meta?.desc) || findInviteLink(meta?.description) || findInviteLink(c?.desc);
+            }
+
+            // C) Link found in message history
+            if (!inviteUrl) {
+              inviteUrl = messageLinksMap.get(id) || messageLinksMap.get(rawId?._serialized);
+            }
+
+            // D) Full object inspection
+            if (!inviteUrl && meta) {
+              inviteUrl = findInviteLink(meta);
+            }
+
+            // E) Query live from WhatsApp Web if admin
+            if (!inviteUrl && queryInviteFn && meta?.participants) {
+              try {
+                const code = await Promise.race([
+                  queryInviteFn(rawId || id),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500))
+                ]);
+                if (code && typeof code === 'string') {
+                  inviteUrl = 'https://chat.whatsapp.com/' + code.replace(/^https:\\/\\/chat\\.whatsapp\\.com\\//i, '');
+                }
+              } catch {}
+            }
+
+            groups.push({
+              id: id || ('group_' + Math.random().toString(36).slice(2, 8) + '@g.us'),
+              name,
+              inviteUrl,
+              participantsCount: Array.isArray(meta?.participants) ? meta.participants.length : undefined,
+              owner: meta?.owner ? String(meta.owner?._serialized || meta.owner) : undefined,
+              unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+              lastSynced: new Date().toISOString()
+            });
+          }
+
+          const withLinks = groups.filter(g => g.inviteUrl).length;
+          const dataStr = JSON.stringify({ groups, total: groups.length }, null, 2);
+
+          // 1. Descarga automática del archivo JSON
+          try {
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'anfeta-whatsapp-grupos.json';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 1000);
+          } catch {}
+
+          // 2. Copia real al portapapeles
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = dataStr;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+          } catch {}
+          try { navigator.clipboard.writeText(dataStr); } catch {}
+          if (typeof copy === 'function') { try { copy(dataStr); } catch {} }
+
+          // 3. Tarjeta en pantalla en WhatsApp Web
+          const oldBox = document.getElementById('anfeta-sync-overlay');
+          if (oldBox) oldBox.remove();
+          const overlay = document.createElement('div');
+          overlay.id = 'anfeta-sync-overlay';
+          overlay.style.cssText = 'position:fixed;top:24px;right:24px;z-index:999999;background:#0B141A;border:2px solid #00A884;border-radius:12px;padding:18px;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.85);color:#E9EDEF;font-family:sans-serif;font-size:13px;';
+          overlay.innerHTML = \`
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <b style="color:#00A884;font-size:15px;">✅ ¡\${groups.length} grupos extraídos!</b>
+              <button id="anfeta-close-ov" style="background:transparent;border:none;color:#8696A0;cursor:pointer;font-size:18px;line-height:1;">✕</button>
+            </div>
+            <p style="margin:0 0 12px 0;font-size:12px;color:#AEBAC1;line-height:1.4;">
+              Se detectaron <b>\${withLinks} grupos con enlace directo</b>.<br>
+              Se descargó <b>anfeta-whatsapp-grupos.json</b> automáticamente.
+            </p>
+            <button id="anfeta-copy-btn" style="width:100%;padding:10px;background:#00A884;color:#111B21;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:13px;margin-bottom:8px;">
+              📋 Copiar datos al portapapeles
+            </button>
+            <button id="anfeta-down-btn" style="width:100%;padding:8px;background:#1E293B;color:#7DD3FC;border:1px solid #38BDF8;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px;">
+              💾 Volver a descargar archivo JSON
+            </button>
+          \`;
+          document.body.appendChild(overlay);
+
+          document.getElementById('anfeta-close-ov').onclick = () => overlay.remove();
+          document.getElementById('anfeta-down-btn').onclick = () => {
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'anfeta-whatsapp-grupos.json';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 1000);
+          };
+          document.getElementById('anfeta-copy-btn').onclick = async () => {
+            try {
+              await navigator.clipboard.writeText(dataStr);
+            } catch {
+              const ta = document.createElement('textarea');
+              ta.value = dataStr;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              ta.remove();
+            }
+            const btn = document.getElementById('anfeta-copy-btn');
+            if (btn) btn.textContent = '✓ ¡Copiado con éxito!';
+            alert('✅ ¡Copiado al portapapeles!\n\nAhora ve a ANFETA y pulsa "Pegar Portapapeles" (o sube el archivo descargado).');
+          };
+
+          alert('✅ ¡' + groups.length + ' grupos extraídos (' + withLinks + ' con enlace directo)!\n\n1. Se descargó el archivo \"anfeta-whatsapp-grupos.json\".\n2. Los datos se copiaron al portapapeles.\n\n👉 Ve a ANFETA y pulsa \"📋 Pegar Portapapeles\" o \"Importar JSON\".');
+        };
+      } catch (e) {
+        alert('Error leyendo chats: ' + e.message);
       }
     };
   } catch (e) {
