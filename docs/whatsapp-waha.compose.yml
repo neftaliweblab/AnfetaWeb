@@ -1,0 +1,17 @@
+# Dedicated instance for John. Set WAHA_IMAGE to a tested, pinned image tag or digest.
+services:
+  waha:
+    image: ${WAHA_IMAGE:?Set a tested WAHA image tag or digest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+      WAHA_API_KEY: ${WAHA_API_KEY_HASH:?Set sha512 hash of the private API key}
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_DASHBOARD_ENABLED: "false"
+    volumes:
+      - waha_sessions:/app/.sessions
+    shm_size: 512mb
+volumes:
+  waha_sessions:
