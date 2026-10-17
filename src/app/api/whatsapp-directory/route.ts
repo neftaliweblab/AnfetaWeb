@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { WhatsappGroupItem, detectGroupDomain, cleanInviteUrl } from "@/lib/whatsappDirectory";
+import { supabaseConfigured, supabaseAdmin } from "@/services/supabaseServer";
 
 const DIRECTORY_FILE = path.join(process.cwd(), "data", "whatsapp_groups_directory.json");
 
@@ -62,8 +63,55 @@ function writeStoredGroups(groups: WhatsappGroupItem[], lastSynced?: string): vo
   }
 }
 
+async function backupToSupabase(groups: WhatsappGroupItem[], lastSynced: string): Promise<void> {
+  if (!supabaseConfigured()) return;
+  try {
+    const admin = supabaseAdmin();
+    const rows = groups
+      .filter((g) => g.id && (g.id.includes("@g.us") || /^[0-9]+(-[0-9]+)?@g\.us$/.test(g.id)))
+      .map((g) => ({
+        owner: "John",
+        group_id: g.id,
+        name: g.name.slice(0, 1024),
+        access_url: g.inviteUrl || null,
+        last_seen_at: g.lastSynced || lastSynced,
+      }));
+
+    if (rows.length > 0) {
+      await admin.from("whatsapp_groups").upsert(rows, { onConflict: "owner,group_id" });
+    }
+  } catch (err) {
+    console.warn("[whatsapp-directory] Supabase backup notice:", err);
+  }
+}
+
+async function fetchFromSupabase(): Promise<WhatsappGroupItem[]> {
+  if (!supabaseConfigured()) return [];
+  try {
+    const admin = supabaseAdmin();
+    const { data, error } = await admin.from("whatsapp_groups").select("group_id, name, access_url, last_seen_at");
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.group_id,
+        name: d.name,
+        domain: detectGroupDomain(d.name),
+        inviteUrl: cleanInviteUrl(d.access_url),
+        lastSynced: d.last_seen_at,
+      }));
+    }
+  } catch {}
+  return [];
+}
+
 export async function GET() {
-  const data = readStoredGroups();
+  let data = readStoredGroups();
+  if (data.groups.length === 0 && supabaseConfigured()) {
+    const remote = await fetchFromSupabase();
+    if (remote.length > 0) {
+      data = { groups: remote, lastSynced: remote[0]?.lastSynced };
+      writeStoredGroups(remote, data.lastSynced);
+    }
+  }
   return NextResponse.json(data, {
     headers: {
       ...getCorsHeaders(),
@@ -84,7 +132,6 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const mergedList: WhatsappGroupItem[] = [];
 
     // Process incoming groups
     for (const item of incoming) {
@@ -101,8 +148,12 @@ export async function POST(req: NextRequest) {
         domain: detectedDomain,
         inviteUrl: validInvite,
         lastSynced: now,
+        participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev?.participantsCount,
+        owner: item.owner || prev?.owner,
         unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev?.unreadCount,
         notes: item.notes || prev?.notes,
+        linkedActivityId: item.linkedActivityId || prev?.linkedActivityId,
+        linkedPageId: item.linkedPageId || prev?.linkedPageId,
       };
 
       existingMap.set(merged.id, merged);
@@ -123,6 +174,7 @@ export async function POST(req: NextRequest) {
     finalGroups.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 
     writeStoredGroups(finalGroups, now);
+    await backupToSupabase(finalGroups, now);
 
     return NextResponse.json(
       {

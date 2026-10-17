@@ -63,29 +63,72 @@
             resolve([]);
             return;
           }
-          const tx = db.transaction("chat", "readonly");
-          const store = tx.objectStore("chat");
-          const allReq = store.getAll();
-          allReq.onerror = () => resolve([]);
-          allReq.onsuccess = () => {
-            const rows = allReq.result || [];
-            const groups = [];
-            for (const c of rows) {
-              const id = String(c.id || "");
-              const isGroup = c.isGroup === true || id.endsWith("@g.us");
-              if (!isGroup) continue;
 
-              const name = String(c.formattedTitle || c.name || "").trim();
-              if (!name) continue;
+          const metadataMap = new Map();
+          const readMetadataThenChats = () => {
+            try {
+              const tx = db.transaction("chat", "readonly");
+              const store = tx.objectStore("chat");
+              const allReq = store.getAll();
+              allReq.onerror = () => resolve([]);
+              allReq.onsuccess = () => {
+                const rows = allReq.result || [];
+                const groups = [];
+                for (const c of rows) {
+                  const id = String(c.id || "");
+                  const isGroup = c.isGroup === true || id.endsWith("@g.us");
+                  if (!isGroup) continue;
 
-              groups.push({
-                id: id,
-                name: name,
-                unreadCount: typeof c.unreadCount === "number" ? c.unreadCount : 0,
-              });
+                  const name = String(c.formattedTitle || c.name || "").trim();
+                  if (!name) continue;
+
+                  const meta = metadataMap.get(id);
+                  let inviteUrl = undefined;
+                  if (meta && meta.inviteCode) {
+                    inviteUrl = `https://chat.whatsapp.com/${meta.inviteCode}`;
+                  } else {
+                    const descText = String(meta?.desc || c.desc || "");
+                    const linkMatch = descText.match(/https:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9_-]+/i);
+                    if (linkMatch) {
+                      inviteUrl = linkMatch[0];
+                    }
+                  }
+
+                  groups.push({
+                    id: id,
+                    name: name,
+                    inviteUrl: inviteUrl,
+                    participantsCount: Array.isArray(meta?.participants) ? meta.participants.length : undefined,
+                    owner: meta?.owner ? String(meta.owner) : undefined,
+                    unreadCount: typeof c.unreadCount === "number" ? c.unreadCount : 0,
+                    lastSynced: new Date().toISOString(),
+                  });
+                }
+                resolve(groups);
+              };
+            } catch {
+              resolve([]);
             }
-            resolve(groups);
           };
+
+          if (db.objectStoreNames.contains("group-metadata")) {
+            try {
+              const metaTx = db.transaction("group-metadata", "readonly");
+              const metaStore = metaTx.objectStore("group-metadata");
+              const metaReq = metaStore.getAll();
+              metaReq.onsuccess = () => {
+                for (const m of metaReq.result || []) {
+                  if (m && m.id) metadataMap.set(String(m.id), m);
+                }
+                readMetadataThenChats();
+              };
+              metaReq.onerror = () => readMetadataThenChats();
+            } catch {
+              readMetadataThenChats();
+            }
+          } else {
+            readMetadataThenChats();
+          }
         };
       } catch {
         resolve([]);

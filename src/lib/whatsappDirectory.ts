@@ -4,8 +4,12 @@ export interface WhatsappGroupItem {
   domain?: string;
   inviteUrl?: string;
   lastSynced?: string;
+  participantsCount?: number;
   unreadCount?: number;
+  owner?: string;
   notes?: string;
+  linkedActivityId?: string;
+  linkedPageId?: string;
 }
 
 const STORAGE_KEY = "anfeta_whatsapp_groups_v1";

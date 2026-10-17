@@ -229,30 +229,83 @@ export function WhatsappDirectoryModal({
   const copySyncScript = () => {
     const script = `(async()=>{
   try {
-    const chats = [];
+    const targetUrl = prompt('Ingresa la URL de ANFETA:', window.location.origin.includes('web.whatsapp.com') ? 'http://localhost:3000/' : window.location.origin);
+    if (!targetUrl) return;
+    const cleanUrl = targetUrl.replace(/\\/+$/, '') + '/api/whatsapp-directory';
     const openReq = indexedDB.open('model-storage');
+    openReq.onerror = () => alert('No se pudo abrir el almacenamiento de WhatsApp Web.');
     openReq.onsuccess = () => {
       const db = openReq.result;
-      const tx = db.transaction('chat', 'readonly');
-      const store = tx.objectStore('chat');
-      const req = store.getAll();
-      req.onsuccess = async () => {
-        const rows = req.result || [];
-        for (const c of rows) {
-          if (c.id && (c.id.includes('@g.us') || c.isGroup)) {
-            chats.push({ id: c.id, name: c.formattedTitle || c.name || 'Grupo sin nombre', unreadCount: c.unreadCount || 0 });
-          }
+      const metadataMap = new Map();
+      const readMetadataThenChats = () => {
+        try {
+          const tx = db.transaction('chat', 'readonly');
+          const store = tx.objectStore('chat');
+          const req = store.getAll();
+          req.onsuccess = async () => {
+            const rows = req.result || [];
+            const groups = [];
+            for (const c of rows) {
+              const id = String(c.id || '');
+              if (id.includes('@g.us') || c.isGroup) {
+                const name = String(c.formattedTitle || c.name || '').trim();
+                if (!name) continue;
+                const meta = metadataMap.get(id);
+                let inviteUrl = undefined;
+                if (meta && meta.inviteCode) {
+                  inviteUrl = 'https://chat.whatsapp.com/' + meta.inviteCode;
+                } else {
+                  const descText = String(meta?.desc || c.desc || '');
+                  const linkMatch = descText.match(/https:\\/\\/chat\\.whatsapp\\.com\\/[a-zA-Z0-9_-]+/i);
+                  if (linkMatch) inviteUrl = linkMatch[0];
+                }
+                groups.push({
+                  id,
+                  name,
+                  inviteUrl,
+                  participantsCount: Array.isArray(meta?.participants) ? meta.participants.length : undefined,
+                  owner: meta?.owner ? String(meta.owner) : undefined,
+                  unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+                  lastSynced: new Date().toISOString()
+                });
+              }
+            }
+            const res = await fetch(cleanUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groups })
+            });
+            if (res.ok) {
+              alert('✅ ¡' + groups.length + ' grupos sincronizados con ANFETA exitosamente!\\nYa puedes cerrar WhatsApp si lo deseas; los datos están guardados en ANFETA.');
+            } else {
+              alert('⚠️ Error enviando a ANFETA (' + res.status + '). Verifica que ANFETA esté encendido.');
+            }
+          };
+        } catch (e) {
+          alert('Error leyendo chats: ' + e.message);
         }
-        await fetch('http://localhost:3000/api/whatsapp-directory', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ groups: chats })
-        });
-        alert('✅ ' + chats.length + ' grupos sincronizados con ANFETA exitosamente!');
       };
+      if (db.objectStoreNames.contains('group-metadata')) {
+        try {
+          const metaTx = db.transaction('group-metadata', 'readonly');
+          const metaStore = metaTx.objectStore('group-metadata');
+          const metaReq = metaStore.getAll();
+          metaReq.onsuccess = () => {
+            for (const m of metaReq.result || []) {
+              if (m && m.id) metadataMap.set(String(m.id), m);
+            }
+            readMetadataThenChats();
+          };
+          metaReq.onerror = () => readMetadataThenChats();
+        } catch {
+          readMetadataThenChats();
+        }
+      } else {
+        readMetadataThenChats();
+      }
     };
-  } catch(e) {
-    alert('Error al leer grupos: ' + e.message);
+  } catch (e) {
+    alert('Error al sincronizar: ' + e.message);
   }
 })();`;
     navigator.clipboard.writeText(script.trim());
@@ -516,9 +569,9 @@ export function WhatsappDirectoryModal({
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400 flex-wrap">
                         {hasLink ? (
-                          <span className="text-[#34D399] flex items-center gap-1 font-mono text-[10px] truncate max-w-xs">
+                          <span className="text-[#34D399] flex items-center gap-1 font-mono text-[10.5px] truncate max-w-xs">
                             <Check className="w-3 h-3 shrink-0" />
                             <span className="truncate">{group.inviteUrl}</span>
                           </span>
@@ -526,6 +579,17 @@ export function WhatsappDirectoryModal({
                           <span className="text-amber-400/80 flex items-center gap-1 text-[10.5px]">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>Sin enlace directo guardado</span>
+                          </span>
+                        )}
+                        {typeof group.participantsCount === "number" && group.participantsCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-slate-400 text-[10.5px]">
+                            <Users className="w-2.5 h-2.5 text-slate-500" />
+                            <span>{group.participantsCount} miembros</span>
+                          </span>
+                        )}
+                        {group.id && (
+                          <span className="text-[10px] font-mono text-slate-600 truncate max-w-[140px]" title={`ID WhatsApp: ${group.id}`}>
+                            {group.id.replace(/@g\.us$/, "")}
                           </span>
                         )}
                       </div>

@@ -42,7 +42,7 @@ const testFile = path.join(root, "data", "whatsapp_groups_directory.test.json");
 if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
 
 const sampleGroups = [
-  { id: "g1@g.us", name: "Beta Corp - Proyecto", inviteUrl: "https://chat.whatsapp.com/Beta123" },
+  { id: "g1@g.us", name: "Beta Corp - Proyecto", inviteUrl: "https://chat.whatsapp.com/Beta123", participantsCount: 15, owner: "5215512345678@c.us", linkedActivityId: "act_123" },
   { id: "g2@g.us", name: "Alpha Tech · Web", inviteUrl: undefined },
 ];
 
@@ -51,6 +51,9 @@ const readBack = JSON.parse(fs.readFileSync(testFile, "utf8"));
 assert.equal(readBack.groups.length, 2);
 assert.equal(readBack.groups[0].name, "Beta Corp - Proyecto");
 assert.equal(readBack.groups[0].inviteUrl, "https://chat.whatsapp.com/Beta123");
+assert.equal(readBack.groups[0].participantsCount, 15);
+assert.equal(readBack.groups[0].owner, "5215512345678@c.us");
+assert.equal(readBack.groups[0].linkedActivityId, "act_123");
 fs.unlinkSync(testFile);
 
-console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces y almacenamiento de catálogo verificados.");
+console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces y almacenamiento de catálogo con metadatos verificados.");
