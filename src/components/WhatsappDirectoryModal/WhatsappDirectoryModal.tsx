@@ -29,6 +29,7 @@ import {
   persistWhatsappGroups,
   detectGroupDomain,
   cleanInviteUrl,
+  mergeWhatsappGroups,
 } from "@/lib/whatsappDirectory";
 import { playCopyChime } from "@/services/windowsIntegration";
 
@@ -214,24 +215,20 @@ export function WhatsappDirectoryModal({
         const parsed = JSON.parse(text);
         const incoming = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.groups) ? parsed.groups : [];
         if (incoming.length > 0) {
-          const map = new Map<string, WhatsappGroupItem>();
-          for (const g of groups) map.set(g.id || g.name, g);
-          for (const item of incoming) {
-            if (!item.name) continue;
-            const id = item.id || `imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-            map.set(id, {
-              id,
-              name: item.name,
-              domain: item.domain || detectGroupDomain(item.name),
-              inviteUrl: cleanInviteUrl(item.inviteUrl) || item.inviteUrl,
-              lastSynced: new Date().toISOString(),
-            });
-          }
-          const finalArr = Array.from(map.values());
-          setGroups(finalArr);
-          await persistWhatsappGroups(finalArr);
-          setStatusMessage(`Se importaron ${incoming.length} grupos.`);
-          setTimeout(() => setStatusMessage(null), 3000);
+          const result = mergeWhatsappGroups(groups, incoming);
+          setGroups(result.groups);
+          saveLocalWhatsappGroups(result.groups);
+          await persistWhatsappGroups(result.groups);
+          playCopyChime?.();
+
+          const parts: string[] = [];
+          if (result.addedCount > 0) parts.push(`${result.addedCount} nuevos`);
+          if (result.updatedCount > 0) parts.push(`${result.updatedCount} actualizados`);
+          if (result.unchangedCount > 0) parts.push(`${result.unchangedCount} sin cambios`);
+          const detail = parts.length > 0 ? parts.join(", ") : "sin novedades";
+
+          setStatusMessage(`¡Catálogo actualizado! (${detail}). Total: ${result.groups.length} grupos.`);
+          setTimeout(() => setStatusMessage(null), 4000);
         }
       } catch {
         alert("El archivo no tiene un formato JSON válido.");
@@ -270,34 +267,21 @@ export function WhatsappDirectoryModal({
         return;
       }
 
-      const map = new Map<string, WhatsappGroupItem>();
-      for (const g of groups) map.set(g.id || g.name, g);
-      for (const item of incoming) {
-        if (!item || !item.name) continue;
-        const id = item.id || `imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        const prev = map.get(id) || Array.from(map.values()).find((x) => x.name.trim().toLowerCase() === item.name.trim().toLowerCase());
-        const validInvite = cleanInviteUrl(item.inviteUrl) || prev?.inviteUrl;
-        map.set(id, {
-          id,
-          name: item.name,
-          domain: item.domain || detectGroupDomain(item.name) || prev?.domain,
-          inviteUrl: validInvite,
-          participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev?.participantsCount,
-          owner: item.owner || prev?.owner,
-          unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev?.unreadCount,
-          notes: item.notes || prev?.notes,
-          lastSynced: new Date().toISOString(),
-        });
-      }
-      const finalArr = Array.from(map.values());
-      finalArr.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
-      setGroups(finalArr);
-      saveLocalWhatsappGroups(finalArr);
-      await persistWhatsappGroups(finalArr);
+      const result = mergeWhatsappGroups(groups, incoming);
+      setGroups(result.groups);
+      saveLocalWhatsappGroups(result.groups);
+      await persistWhatsappGroups(result.groups);
       setShowManualPaste(false);
       setManualPasteText("");
       playCopyChime?.();
-      setStatusMessage(`¡Éxito! Se sincronizaron y guardaron ${incoming.length} grupos.`);
+
+      const parts: string[] = [];
+      if (result.addedCount > 0) parts.push(`${result.addedCount} nuevos`);
+      if (result.updatedCount > 0) parts.push(`${result.updatedCount} actualizados`);
+      if (result.unchangedCount > 0) parts.push(`${result.unchangedCount} sin cambios`);
+      const detail = parts.length > 0 ? parts.join(", ") : "sin novedades";
+
+      setStatusMessage(`¡Sincronización completada! (${detail}). Total: ${result.groups.length} grupos.`);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch {
       setShowManualPaste(true);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { WhatsappGroupItem, detectGroupDomain, cleanInviteUrl } from "@/lib/whatsappDirectory";
+import { WhatsappGroupItem, detectGroupDomain, cleanInviteUrl, mergeWhatsappGroups } from "@/lib/whatsappDirectory";
 import { supabaseConfigured, supabaseAdmin } from "@/services/supabaseServer";
 
 const DIRECTORY_FILE = path.join(process.cwd(), "data", "whatsapp_groups_directory.json");
@@ -126,62 +126,21 @@ export async function POST(req: NextRequest) {
     const incoming: any[] = Array.isArray(body?.groups) ? body.groups : Array.isArray(body) ? body : [];
 
     const current = readStoredGroups();
-    const existingMap = new Map<string, WhatsappGroupItem>();
-    for (const g of current.groups) {
-      existingMap.set(g.id || g.name, g);
-    }
-
+    const mergeResult = mergeWhatsappGroups(current.groups, incoming);
     const now = new Date().toISOString();
 
-    // Process incoming groups
-    for (const item of incoming) {
-      if (!item || !item.name) continue;
-      const key = item.id || item.name;
-      const prev = existingMap.get(key) || Array.from(existingMap.values()).find((x) => x.name.trim().toLowerCase() === item.name.trim().toLowerCase());
-
-      const validInvite = cleanInviteUrl(item.inviteUrl) || prev?.inviteUrl;
-      const detectedDomain = item.domain || detectGroupDomain(item.name) || prev?.domain;
-
-      const merged: WhatsappGroupItem = {
-        id: item.id || prev?.id || `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        name: String(item.name).trim(),
-        domain: detectedDomain,
-        inviteUrl: validInvite,
-        lastSynced: now,
-        participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev?.participantsCount,
-        owner: item.owner || prev?.owner,
-        unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev?.unreadCount,
-        notes: item.notes || prev?.notes,
-        linkedActivityId: item.linkedActivityId || prev?.linkedActivityId,
-        linkedPageId: item.linkedPageId || prev?.linkedPageId,
-      };
-
-      existingMap.set(merged.id, merged);
-      existingMap.set(merged.name, merged);
-    }
-
-    // Deduplicate by id and name
-    const seen = new Set<string>();
-    const finalGroups: WhatsappGroupItem[] = [];
-    for (const g of existingMap.values()) {
-      if (seen.has(g.id) || seen.has(g.name.toLowerCase())) continue;
-      seen.add(g.id);
-      seen.add(g.name.toLowerCase());
-      finalGroups.push(g);
-    }
-
-    // Sort alphabetically by name
-    finalGroups.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
-
-    writeStoredGroups(finalGroups, now);
-    await backupToSupabase(finalGroups, now);
+    writeStoredGroups(mergeResult.groups, now);
+    await backupToSupabase(mergeResult.groups, now);
 
     return NextResponse.json(
       {
         success: true,
-        count: finalGroups.length,
+        count: mergeResult.groups.length,
+        addedCount: mergeResult.addedCount,
+        updatedCount: mergeResult.updatedCount,
+        unchangedCount: mergeResult.unchangedCount,
         lastSynced: now,
-        groups: finalGroups,
+        groups: mergeResult.groups,
       },
       {
         headers: getCorsHeaders(),

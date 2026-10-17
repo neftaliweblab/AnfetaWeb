@@ -229,8 +229,14 @@
           { action: "SYNC_WHATSAPP_GROUPS", groups, targetUrl },
           (resp) => {
             if (resp && resp.ok) {
-              const count = resp.data?.count || groups.length;
-              createNotification(`✅ ¡${count} grupos sincronizados en ANFETA!`);
+              const d = resp.data;
+              const count = d?.count || groups.length;
+              const parts = [];
+              if (d?.addedCount > 0) parts.push(`${d.addedCount} nuevos`);
+              if (d?.updatedCount > 0) parts.push(`${d.updatedCount} actualizados`);
+              if (d?.unchangedCount > 0) parts.push(`${d.unchangedCount} sin cambios`);
+              const detail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+              createNotification(`✅ ¡${count} grupos sincronizados en ANFETA!${detail}`);
               if (btn) btn.textContent = "✓ Sincronizado";
               setTimeout(() => { if (btn) btn.textContent = "⚡ Sincronizar con ANFETA"; }, 3000);
             } else {

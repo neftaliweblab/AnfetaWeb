@@ -15,7 +15,7 @@ const mod = { exports: {} };
 const fn = new Function("exports", "module", "require", jsCode);
 fn(mod.exports, mod, require);
 
-const { detectGroupDomain, cleanInviteUrl } = mod.exports;
+const { detectGroupDomain, cleanInviteUrl, mergeWhatsappGroups } = mod.exports;
 
 // Test 1: detectGroupDomain
 assert.equal(detectGroupDomain("Apartallante - Web & Ads"), "Apartallante");
@@ -37,7 +37,42 @@ assert.equal(cleanInviteUrl("http://invalido.com/algo"), undefined);
 assert.equal(cleanInviteUrl("texto suelto"), undefined);
 assert.equal(cleanInviteUrl(null), undefined);
 
-// Test 3: API storage mock & persistence check
+// Test 3: mergeWhatsappGroups (incremental sync)
+const existing = [
+  { id: "g1@g.us", name: "Grupo Uno", inviteUrl: "https://chat.whatsapp.com/Old1", notes: "Nota importante", lastSynced: "2026-01-01T00:00:00.000Z" },
+  { id: "g2@g.us", name: "Grupo Dos", inviteUrl: undefined, lastSynced: "2026-01-01T00:00:00.000Z" },
+];
+
+const incoming = [
+  // 1. Unchanged group (incoming has no link, existing already had Old1 -> should preserve Old1 and mark unchanged)
+  { id: "g1@g.us", name: "Grupo Uno" },
+  // 2. Updated group (incoming has a newly discovered link -> should update and mark updated)
+  { id: "g2@g.us", name: "Grupo Dos", inviteUrl: "https://chat.whatsapp.com/New2" },
+  // 3. Brand new group
+  { id: "g3@g.us", name: "Grupo Tres", inviteUrl: "https://chat.whatsapp.com/New3" },
+];
+
+const mergeRes = mergeWhatsappGroups(existing, incoming);
+assert.equal(mergeRes.groups.length, 3);
+assert.equal(mergeRes.addedCount, 1, "Should add 1 new group");
+assert.equal(mergeRes.updatedCount, 1, "Should update 1 existing group");
+assert.equal(mergeRes.unchangedCount, 1, "Should keep 1 unchanged group");
+
+// Check group 1 preserved note and link
+const g1 = mergeRes.groups.find(g => g.id === "g1@g.us");
+assert.equal(g1.inviteUrl, "https://chat.whatsapp.com/Old1");
+assert.equal(g1.notes, "Nota importante");
+assert.equal(g1.lastSynced, "2026-01-01T00:00:00.000Z", "Unchanged group preserves original lastSynced");
+
+// Check group 2 updated with new link
+const g2 = mergeRes.groups.find(g => g.id === "g2@g.us");
+assert.equal(g2.inviteUrl, "https://chat.whatsapp.com/New2");
+
+// Check group 3 created
+const g3 = mergeRes.groups.find(g => g.id === "g3@g.us");
+assert.equal(g3.name, "Grupo Tres");
+
+// Test 4: API storage mock & persistence check
 const testFile = path.join(root, "data", "whatsapp_groups_directory.test.json");
 if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
 
@@ -56,4 +91,4 @@ assert.equal(readBack.groups[0].owner, "5215512345678@c.us");
 assert.equal(readBack.groups[0].linkedActivityId, "act_123");
 fs.unlinkSync(testFile);
 
-console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces y almacenamiento de catálogo con metadatos verificados.");
+console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces, merge incremental y almacenamiento de catálogo con metadatos verificados.");

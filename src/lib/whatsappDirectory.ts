@@ -33,13 +33,115 @@ export function detectGroupDomain(name: string): string | undefined {
   return undefined;
 }
 
-export function cleanInviteUrl(url: string): string | undefined {
+export function cleanInviteUrl(url?: string | null): string | undefined {
   if (!url || typeof url !== "string") return undefined;
   const trimmed = url.trim();
   if (/^https:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9_-]+/i.test(trimmed)) {
     return trimmed;
   }
   return undefined;
+}
+
+export interface MergeResult {
+  groups: WhatsappGroupItem[];
+  addedCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+}
+
+export function mergeWhatsappGroups(
+  existingList: WhatsappGroupItem[],
+  incomingList: WhatsappGroupItem[]
+): MergeResult {
+  const existingMap = new Map<string, WhatsappGroupItem>();
+  const nameToId = new Map<string, string>();
+
+  for (const g of existingList) {
+    if (g.id) existingMap.set(g.id, g);
+    if (g.name) nameToId.set(g.name.trim().toLowerCase(), g.id || g.name);
+  }
+
+  let addedCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+  const now = new Date().toISOString();
+
+  for (const item of incomingList) {
+    if (!item || !item.name) continue;
+
+    const trimmedName = String(item.name).trim();
+    if (!trimmedName) continue;
+
+    let prev: WhatsappGroupItem | undefined = undefined;
+    if (item.id && existingMap.has(item.id)) {
+      prev = existingMap.get(item.id);
+    } else {
+      const matchId = nameToId.get(trimmedName.toLowerCase());
+      if (matchId && existingMap.has(matchId)) {
+        prev = existingMap.get(matchId);
+      }
+    }
+
+    const detectedDomain = item.domain || detectGroupDomain(trimmedName) || prev?.domain;
+    const incomingInvite = cleanInviteUrl(item.inviteUrl);
+    // Never wipe out an existing valid invite URL
+    const effectiveInvite = incomingInvite || prev?.inviteUrl;
+
+    if (prev) {
+      // Check if there are real changes
+      const inviteChanged = Boolean(incomingInvite && incomingInvite !== prev.inviteUrl);
+      const nameChanged = trimmedName !== prev.name.trim();
+      const countChanged = typeof item.participantsCount === "number" && item.participantsCount !== prev.participantsCount;
+      const unreadChanged = typeof item.unreadCount === "number" && item.unreadCount !== prev.unreadCount;
+      const ownerChanged = Boolean(item.owner && item.owner !== prev.owner);
+
+      const hasUpdates = inviteChanged || nameChanged || countChanged || unreadChanged || ownerChanged;
+
+      if (hasUpdates) {
+        const updated: WhatsappGroupItem = {
+          ...prev,
+          name: trimmedName,
+          domain: detectedDomain,
+          inviteUrl: effectiveInvite,
+          participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev.participantsCount,
+          owner: item.owner || prev.owner,
+          unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev.unreadCount,
+          lastSynced: now,
+        };
+        existingMap.set(prev.id || updated.id, updated);
+        updatedCount++;
+      } else {
+        unchangedCount++;
+      }
+    } else {
+      // New group!
+      const newId = item.id || `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newItem: WhatsappGroupItem = {
+        id: newId,
+        name: trimmedName,
+        domain: detectedDomain,
+        inviteUrl: effectiveInvite,
+        participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : undefined,
+        owner: item.owner,
+        unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : 0,
+        notes: item.notes,
+        lastSynced: now,
+      };
+      existingMap.set(newId, newItem);
+      nameToId.set(trimmedName.toLowerCase(), newId);
+      addedCount++;
+    }
+  }
+
+  const finalGroups = Array.from(existingMap.values());
+  finalGroups.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+
+  return {
+    groups: finalGroups,
+    addedCount,
+    updatedCount,
+    unchangedCount,
+  };
 }
 
 export function getLocalWhatsappGroups(): WhatsappGroupItem[] {
