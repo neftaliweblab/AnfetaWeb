@@ -74,6 +74,7 @@ const chrome = {
   },
   runtime: {
     onInstalled: { addListener: () => {} },
+    onMessage: { addListener: () => {} },
     openOptionsPage: async () => {}
   }
 };

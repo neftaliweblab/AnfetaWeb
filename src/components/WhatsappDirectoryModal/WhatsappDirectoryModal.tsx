@@ -19,6 +19,7 @@ import {
   Upload,
   AlertCircle,
   Sparkles,
+  ClipboardPaste,
 } from "lucide-react";
 import {
   WhatsappGroupItem,
@@ -72,7 +73,7 @@ export function WhatsappDirectoryModal({
     }
   }, [isOpen, initialQuery]);
 
-  // Handle ESC key to close
+  // Handle ESC key to close and Ctrl+V to paste clipboard
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
@@ -87,10 +88,16 @@ export function WhatsappDirectoryModal({
           onClose();
         }
       }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
+        const target = e.target as HTMLElement | null;
+        if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+        e.preventDefault();
+        handlePasteClipboard();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, editingGroupId, isAddingNew, showSyncHelper, onClose]);
+  }, [isOpen, editingGroupId, isAddingNew, showSyncHelper, groups, onClose]);
 
   // Filtered and sorted groups
   const filteredGroups = useMemo(() => {
@@ -226,12 +233,64 @@ export function WhatsappDirectoryModal({
     e.target.value = "";
   };
 
+  const handlePasteClipboard = async (pastedText?: string) => {
+    try {
+      let text = pastedText;
+      if (!text) {
+        if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.readText) {
+          try {
+            text = await navigator.clipboard.readText();
+          } catch {
+            text = prompt("Pega aquí el JSON copiado desde WhatsApp Web:") || "";
+          }
+        } else {
+          text = prompt("Pega aquí el JSON copiado desde WhatsApp Web:") || "";
+        }
+      }
+      if (!text || !text.trim()) return;
+
+      const parsed = JSON.parse(text);
+      const incoming = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.groups) ? parsed.groups : [];
+      if (incoming.length === 0) {
+        alert("No se encontraron grupos válidos en el portapapeles. Primero ejecuta el script extractor en WhatsApp Web.");
+        return;
+      }
+
+      const map = new Map<string, WhatsappGroupItem>();
+      for (const g of groups) map.set(g.id || g.name, g);
+      for (const item of incoming) {
+        if (!item || !item.name) continue;
+        const id = item.id || `imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const prev = map.get(id) || Array.from(map.values()).find((x) => x.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+        const validInvite = cleanInviteUrl(item.inviteUrl) || prev?.inviteUrl;
+        map.set(id, {
+          id,
+          name: item.name,
+          domain: item.domain || detectGroupDomain(item.name) || prev?.domain,
+          inviteUrl: validInvite,
+          participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev?.participantsCount,
+          owner: item.owner || prev?.owner,
+          unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev?.unreadCount,
+          notes: item.notes || prev?.notes,
+          lastSynced: new Date().toISOString(),
+        });
+      }
+      const finalArr = Array.from(map.values());
+      finalArr.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+      setGroups(finalArr);
+      saveLocalWhatsappGroups(finalArr);
+      await persistWhatsappGroups(finalArr);
+      playCopyChime?.();
+      setStatusMessage(`¡Éxito! Se sincronizaron y guardaron ${incoming.length} grupos desde el portapapeles.`);
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch {
+      alert("El contenido del portapapeles no tiene un formato JSON de grupos válido. Ejecuta primero el script en WhatsApp Web.");
+    }
+  };
+
   const copySyncScript = () => {
     const script = `(async()=>{
   try {
-    const targetUrl = prompt('Ingresa la URL de ANFETA:', window.location.origin.includes('web.whatsapp.com') ? 'http://localhost:3000/' : window.location.origin);
-    if (!targetUrl) return;
-    const cleanUrl = targetUrl.replace(/\\/+$/, '') + '/api/whatsapp-directory';
     const openReq = indexedDB.open('model-storage');
     openReq.onerror = () => alert('No se pudo abrir el almacenamiento de WhatsApp Web.');
     openReq.onsuccess = () => {
@@ -242,7 +301,7 @@ export function WhatsappDirectoryModal({
           const tx = db.transaction('chat', 'readonly');
           const store = tx.objectStore('chat');
           const req = store.getAll();
-          req.onsuccess = async () => {
+          req.onsuccess = () => {
             const rows = req.result || [];
             const groups = [];
             for (const c of rows) {
@@ -270,16 +329,10 @@ export function WhatsappDirectoryModal({
                 });
               }
             }
-            const res = await fetch(cleanUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ groups })
-            });
-            if (res.ok) {
-              alert('✅ ¡' + groups.length + ' grupos sincronizados con ANFETA exitosamente!\\nYa puedes cerrar WhatsApp si lo deseas; los datos están guardados en ANFETA.');
-            } else {
-              alert('⚠️ Error enviando a ANFETA (' + res.status + '). Verifica que ANFETA esté encendido.');
-            }
+            const dataStr = JSON.stringify({ groups, total: groups.length }, null, 2);
+            if (typeof copy === 'function') copy(dataStr);
+            try { navigator.clipboard.writeText(dataStr); } catch {}
+            alert('✅ ¡' + groups.length + ' grupos extraídos exitosamente!\\n\\n📋 El catálogo y sus enlaces se han copiado a tu portapapeles.\\n\\n👉 Ve a ANFETA y haz clic en "📋 Pegar Portapapeles" (o pulsa Ctrl+V).\\n\\n¡Listo! No se bloquea por la seguridad (CSP) de WhatsApp.');
           };
         } catch (e) {
           alert('Error leyendo chats: ' + e.message);
@@ -305,12 +358,12 @@ export function WhatsappDirectoryModal({
       }
     };
   } catch (e) {
-    alert('Error al sincronizar: ' + e.message);
+    alert('Error al extraer grupos: ' + e.message);
   }
 })();`;
     navigator.clipboard.writeText(script.trim());
     playCopyChime?.();
-    alert("Script copiado al portapapeles. Abre WhatsApp Web, presiona F12 (Consola), pega el código y presiona Enter.");
+    alert("Script copiado al portapapeles.\n\n1. Ve a WhatsApp Web.\n2. Presiona F12 (Consola).\n3. Pega (Ctrl+V) y presiona Enter.\n4. Regresa a ANFETA y presiona 'Pegar Portapapeles' o Ctrl+V.");
   };
 
   if (!isOpen) return null;
@@ -341,6 +394,14 @@ export function WhatsappDirectoryModal({
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => handlePasteClipboard()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E3A5F] hover:bg-[#254A78] border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+              title="Pegar los grupos copiados desde WhatsApp Web (o pulsa Ctrl+V)"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5 text-[#38BDF8]" />
+              <span>Pegar Portapapeles</span>
+            </button>
+            <button
               onClick={() => setShowSyncHelper(!showSyncHelper)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-[#38BDF8] text-xs font-medium cursor-pointer transition-colors"
               title="Sincronizar o conectar con WhatsApp Web"
@@ -370,25 +431,36 @@ export function WhatsappDirectoryModal({
         {showSyncHelper && (
           <div className="bg-[#0D1826] border-b border-[#254160] px-5 py-3 text-xs text-slate-300 animate-in slide-in-from-top duration-200">
             <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1.5">
+              <div className="space-y-2 max-w-2xl">
                 <div className="flex items-center gap-2 font-semibold text-[#38BDF8]">
                   <Sparkles className="w-4 h-4" />
-                  <span>Sincronización segura desde WhatsApp Web (Cero riesgo de ban)</span>
+                  <span>Sincronización en 2 pasos (100% segura, sin bloqueos de seguridad CSP)</span>
                 </div>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Para obtener automáticamente todos tus grupos, puedes usar la extensión de ANFETA en tu navegador con WhatsApp Web abierto, o copiar el script rápido de 1 clic:
+                  WhatsApp Web bloquea peticiones de red externas desde su consola por seguridad (CSP). Por eso el extractor copia el catálogo al portapapeles y lo pegas aquí directamente:
                 </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={copySyncScript}
-                    className="px-3 py-1 rounded bg-[#25D366]/20 hover:bg-[#25D366]/30 border border-[#25D366]/40 text-[#4ADE80] font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copiar script de 1 clic para WhatsApp Web</span>
-                  </button>
-                  <span className="text-[10px] text-slate-500">
-                    (Se ejecuta directamente en tu sesión de WhatsApp Web en el navegador)
-                  </span>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#1E3A5F] border border-[#38BDF8]/40 text-[#38BDF8] flex items-center justify-center font-bold text-[10px]">1</span>
+                    <button
+                      onClick={copySyncScript}
+                      className="px-3 py-1 rounded bg-[#25D366]/20 hover:bg-[#25D366]/30 border border-[#25D366]/40 text-[#4ADE80] font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar script extractor</span>
+                    </button>
+                    <span className="text-[10px] text-slate-400">Pega en F12 de WhatsApp Web y da Enter</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#1E3A5F] border border-[#38BDF8]/40 text-[#38BDF8] flex items-center justify-center font-bold text-[10px]">2</span>
+                    <button
+                      onClick={() => handlePasteClipboard()}
+                      className="px-3 py-1 rounded bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#0284C7]/40 text-[#38BDF8] font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5" />
+                      <span>Pegar Portapapeles (Ctrl+V)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
               <button
@@ -527,7 +599,14 @@ export function WhatsappDirectoryModal({
                   : "Pulsa 'Sincronizar' o 'Nuevo Grupo' para agregar los grupos de tus empresas y proyectos."}
               </p>
               {!searchQuery && (
-                <div className="flex items-center gap-2 mt-4">
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                  <button
+                    onClick={() => handlePasteClipboard()}
+                    className="px-3 py-1.5 rounded-lg bg-[#1E3A5F] hover:bg-[#254A78] border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>Pegar Portapapeles (Ctrl+V)</span>
+                  </button>
                   <button
                     onClick={() => setShowSyncHelper(true)}
                     className="px-3 py-1.5 rounded-lg bg-[#25D366]/20 hover:bg-[#25D366]/30 border border-[#25D366]/40 text-[#4ADE80] text-xs font-semibold"

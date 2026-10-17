@@ -171,41 +171,43 @@
       }
 
       const targetUrl = await getTargetAnfetaUrl();
-      const endpoint = `${targetUrl}api/whatsapp-directory`;
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groups }),
-      });
-
-      if (!response.ok) {
-        // Try fallback to production url if localhost failed
-        if (targetUrl.includes("localhost")) {
-          const fallback = "https://anfeta-web.vercel.app/api/whatsapp-directory";
-          const res2 = await fetch(fallback, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ groups }),
-          });
-          if (res2.ok) {
-            createNotification(`✅ ¡${groups.length} grupos sincronizados en ANFETA Web!`);
-            if (btn) btn.textContent = "✓ Sincronizado";
-            setTimeout(() => { if (btn) btn.textContent = "⚡ Sincronizar con ANFETA"; }, 3000);
-            return;
+      // Delegate network request to background service worker to completely bypass page CSP
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage(
+          { action: "SYNC_WHATSAPP_GROUPS", groups, targetUrl },
+          (resp) => {
+            if (resp && resp.ok) {
+              const count = resp.data?.count || groups.length;
+              createNotification(`✅ ¡${count} grupos sincronizados en ANFETA!`);
+              if (btn) btn.textContent = "✓ Sincronizado";
+              setTimeout(() => { if (btn) btn.textContent = "⚡ Sincronizar con ANFETA"; }, 3000);
+            } else {
+              // Copy to clipboard fallback if extension background failed
+              try {
+                navigator.clipboard.writeText(JSON.stringify({ groups }));
+                createNotification(`📋 ${groups.length} grupos copiados. Pégalos en ANFETA.`);
+              } catch {}
+              createNotification("❌ Error conectando con ANFETA.", false);
+              if (btn) btn.textContent = "⚡ Reintentar sincronizar";
+            }
           }
-        }
-        throw new Error("No se pudo conectar con la API de ANFETA.");
+        );
+        return;
       }
 
-      const data = await response.json();
-      createNotification(`✅ ¡${data.count || groups.length} grupos sincronizados en ANFETA!`);
-      if (btn) btn.textContent = "✓ Sincronizado";
-      setTimeout(() => { if (btn) btn.textContent = "⚡ Sincronizar con ANFETA"; }, 3000);
+      // If chrome.runtime is not available (e.g. running in browser console directly), copy to clipboard
+      try {
+        navigator.clipboard.writeText(JSON.stringify({ groups, total: groups.length }, null, 2));
+        createNotification(`📋 ${groups.length} grupos copiados al portapapeles. Pégalos en ANFETA.`);
+        if (btn) btn.textContent = "✓ Copiado";
+      } catch {
+        createNotification("No se pudo copiar automáticamente.", false);
+      }
     } catch (err) {
       console.error("[ANFETA Sync]", err);
-      createNotification("❌ Error de sincronización. Verifica que ANFETA esté abierto.", false);
-      if (btn) btn.textContent = "⚡ Reintentar sincronizar";
+      createNotification("❌ Error de sincronización.", false);
+      if (btn) btn.textContent = "⚡ Reintentar";
     }
   }
 

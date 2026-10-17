@@ -54,6 +54,44 @@ chrome.action.onClicked.addListener(() => {
   void toggleAnfeta();
 });
 
-chrome.runtime.onInstalled.addListener(async details => {
-  if (details.reason === 'install') await chrome.runtime.openOptionsPage();
+chrome.runtime.onInstalled?.addListener?.(async details => {
+  if (details?.reason === 'install') await chrome.runtime.openOptionsPage?.();
 });
+
+if (chrome.runtime?.onMessage?.addListener) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.action === 'SYNC_WHATSAPP_GROUPS') {
+      (async () => {
+        try {
+          const appUrl = await getTargetUrl();
+          const targetUrl = message.targetUrl || appUrl;
+          const apiUrl = targetUrl.replace(/\/+$/, '') + '/api/whatsapp-directory';
+          let res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: message.groups }),
+          }).catch(() => null);
+
+          if (!res || !res.ok) {
+            const fallback = 'https://anfeta-web.vercel.app/api/whatsapp-directory';
+            res = await fetch(fallback, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groups: message.groups }),
+            });
+          }
+
+          if (res.ok) {
+            const data = await res.json();
+            sendResponse({ ok: true, data });
+          } else {
+            sendResponse({ ok: false, error: `HTTP ${res.status}` });
+          }
+        } catch (err) {
+          sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+        }
+      })();
+      return true;
+    }
+  });
+}
