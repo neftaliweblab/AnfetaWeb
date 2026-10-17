@@ -31,6 +31,7 @@ import { CalendarPeoplePickerModal } from "./CalendarPeoplePickerModal";
 import { CalendarPersonPreviewPanel } from "./CalendarPersonPreviewPanel";
 import { CalendarTemplatesModal } from "./CalendarTemplatesModal";
 import { AutomationReportModal } from "../DailyProgressPanel/AutomationReportModal";
+import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import { normalizePerson } from "@/services/identityNormalizer";
 import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
@@ -98,6 +99,7 @@ export function CalendarHost({
     return () => clearTimeout(timer);
   }, [error]);
   const [headerSummary,setHeaderSummary]=useState<{person:string|null}|null>(null),[previewTab,setPreviewTab]=useState<'checks'|'activities'>('checks'),[batchDefaults,setBatchDefaults]=useState<{person:string;day:string}|null>(null);const [showBatch,setShowBatch]=useState(false);
+  const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [durationProposal,setDurationProposal]=useState<any[]|undefined>();
   const mutationVersion = React.useRef(0);
@@ -653,6 +655,7 @@ export function CalendarHost({
         onOpenStandaloneWindow={onOpenStandaloneWindow}
         calendarPalette={calendarPalette}
         onTogglePalette={handleTogglePalette}
+        onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
       />
       {canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity}/>}
 
@@ -893,6 +896,13 @@ export function CalendarHost({
 
       {showReport && (
         <AutomationReportModal report={automationReport} onClose={() => setShowReport(false)} />
+      )}
+
+      {showWhatsappModal && (
+        <WhatsappDirectoryModal
+          isOpen={showWhatsappModal}
+          onClose={() => setShowWhatsappModal(false)}
+        />
       )}
     </div>
   );

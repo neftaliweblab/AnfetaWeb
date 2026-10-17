@@ -12,6 +12,7 @@ import {
   Calendar,
   ExternalLink,
   MessageSquare,
+  MessageCircle,
   Bell,
 } from "lucide-react";
 import {IndexSyncStatus} from './IndexSyncStatus';
@@ -44,6 +45,7 @@ interface SearchInputBarProps {
   onToggleRemindersView?: () => void;
   isRemindersActive?: boolean;
   remindersCount?: number;
+  onOpenWhatsappGroups?: () => void;
 }
 
 export function SearchInputBar({
@@ -69,6 +71,7 @@ export function SearchInputBar({
   onToggleRemindersView,
   isRemindersActive = false,
   remindersCount = 0,
+  onOpenWhatsappGroups,
 }: SearchInputBarProps) {
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -392,6 +395,19 @@ export function SearchInputBar({
                   {remindersCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Botón 💬 Grupos de WhatsApp */}
+          {onOpenWhatsappGroups && (
+            <button
+              type="button"
+              onClick={onOpenWhatsappGroups}
+              style={{ padding: `${Math.round(4 * scale)}px` }}
+              className="relative rounded border bg-[#161F2C] border-[#26354A] text-[#25D366] hover:bg-[#1A2E24] hover:border-[#25D366] transition-colors cursor-pointer"
+              title="💬 Directorio de Grupos de WhatsApp de proyectos"
+            >
+              <MessageCircle style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
             </button>
           )}
 

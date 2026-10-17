@@ -15,7 +15,7 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, Banknote, CreditCard,
+  X, Plus, CalendarRange, Banknote, CreditCard, MessageCircle,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 
@@ -50,6 +50,7 @@ interface CalendarTopControlsProps {
   onOpenStandaloneWindow?: () => void;
   calendarPalette?: "web" | "desktop";
   onTogglePalette?: () => void;
+  onOpenWhatsappGroups?: () => void;
 }
 
 export function CalendarTopControls({
@@ -57,6 +58,7 @@ export function CalendarTopControls({
   onSelectDate,
   availableDates,
   onOpenPeoplePicker,
+  onOpenWhatsappGroups,
   totalActivitiesCount,
   pixelsPerHour,
   onChangeZoom,
@@ -262,6 +264,18 @@ export function CalendarTopControls({
           <FileText className="w-3 h-3 text-[#38BDF8]" />
           <span className="hidden xl:inline">Reporte</span>
         </button>
+
+        {/* Botón WhatsApp Grupos */}
+        {onOpenWhatsappGroups && (
+          <button
+            onClick={onOpenWhatsappGroups}
+            className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#25D366] border border-[#1E382A] text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+            title="Directorio de Grupos de WhatsApp"
+          >
+            <MessageCircle className="w-3 h-3 text-[#25D366]" />
+            <span className="hidden xl:inline">WhatsApp</span>
+          </button>
+        )}
 
         {/* Botón ⏩ Robot 05:00 */}
         {onRunAutomation && (

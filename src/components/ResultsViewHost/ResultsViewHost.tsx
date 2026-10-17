@@ -39,6 +39,7 @@ import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
+import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import {
   playCheckChime,
   playCopyChime,
@@ -349,6 +350,7 @@ export function ResultsViewHost({
 
   // Action Dialogs state
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameTargetItem, setRenameTargetItem] = useState<any | null>(null);
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
@@ -1253,6 +1255,7 @@ export function ResultsViewHost({
         onToggleRemindersView={onToggleRemindersView}
         isRemindersActive={isRemindersActive}
         remindersCount={remindersCount}
+        onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
       />
 
       {/* 2. Pills de Ámbitos / Bases Notion */}
@@ -1677,6 +1680,14 @@ export function ResultsViewHost({
           });
         }}
       />
+
+      {/* Modal Directorio de Grupos de WhatsApp */}
+      {showWhatsappModal && (
+        <WhatsappDirectoryModal
+          isOpen={showWhatsappModal}
+          onClose={() => setShowWhatsappModal(false)}
+        />
+      )}
     </div>
   );
 }

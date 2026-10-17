@@ -1,18 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "ANFETA Web — Atajo global",
-  "version": "1.0.0",
-  "description": "Abre, enfoca o minimiza la ventana de ANFETA Web mediante un atajo global.",
+  "name": "ANFETA Web — Atajo global & WhatsApp Companion",
+  "version": "1.1.0",
+  "description": "Abre, enfoca o minimiza ANFETA Web y permite sincronizar grupos de proyectos desde WhatsApp Web.",
   "minimum_chrome_version": "110",
   "permissions": ["storage"],
   "host_permissions": [
     "https://anfeta-web.vercel.app/*",
     "http://localhost:3000/*",
-    "http://localhost:3001/*"
+    "http://localhost:3001/*",
+    "https://web.whatsapp.com/*"
   ],
   "background": {
     "service_worker": "service-worker.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["whatsapp-sync.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_title": "Mostrar u ocultar ANFETA Web"
   },

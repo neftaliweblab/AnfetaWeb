@@ -10,6 +10,7 @@
     "test:calendar": "node scripts/calendar-regression.test.cjs",
     "test:templates": "node --test scripts/template-body-regression.test.cjs scripts/template-large-synced.test.cjs scripts/template-two-synced-columns.test.cjs scripts/template-general-hardening.test.cjs",
     "test:supabase": "node scripts/supabase-tests.cjs",
+    "test:whatsapp-directory": "node scripts/whatsapp-directory.test.cjs",
     "test:hotkey": "node scripts/anfeta-hotkey.test.cjs && node scripts/calendar-grid.test.cjs",
     "pack:extension": "node scripts/pack-extension.cjs"
   },
