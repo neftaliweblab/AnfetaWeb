@@ -9,7 +9,7 @@ import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {newestFirst} from '@/lib/searchResultOrder';
-import {activeResultsFirst} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, orderSearchResults} from '@/lib/activeResultsFirst';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {normalizePerson} from '@/services/identityNormalizer';
@@ -1183,17 +1183,8 @@ export function ResultsViewHost({
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
 
-    res=[...res].sort(newestFirst);
-    if (groupBy === "domain") {
-      res.sort((a, b) => (a.domainChip || "").localeCompare(b.domainChip || ""));
-    }
-    if (groupBy === "month") {
-      res.sort((a, b) => (a.monthChip || "").localeCompare(b.monthChip || ""));
-    }
-    if (groupBy === "person") {
-      res.sort((a, b) => (a.assignedPerson || "").localeCompare(b.assignedPerson || ""));
-    }
-    return activeResultsFirst(res);
+    res = [...res].sort(newestFirst);
+    return orderSearchResults(res, groupBy);
   }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson]);
 
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);

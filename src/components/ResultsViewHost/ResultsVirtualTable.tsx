@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import {workflowState} from '@/services/activityWorkflow';
-import {activeResultsFirst,activeGroupsFirst,isCompletedResult} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, activeGroupsFirst, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
   Globe,
   Folder,
@@ -81,67 +81,6 @@ interface ResultsTableProps {
   onChangeViewZoom?: (zoom: "list" | "small" | "medium" | "large") => void;
   textScale?: string;
   groupBy?: string;
-}
-
-const PERSON_ALIASES: Record<string, string> = {
-  jjohn: "John",
-  john: "John",
-  aandr: "Andrade",
-  andrade: "Andrade",
-  nneft: "Neftali",
-  neftali: "Neftali",
-  bbria: "Brian",
-  brian: "Brian",
-  ggena: "Genaro",
-  genaro: "Genaro",
-  iisaia: "Isaias",
-  iisai: "Isaias",
-  isaias: "Isaias",
-  kkarl: "Karla",
-  karla: "Karla",
-  eedua: "Sotelo",
-  ssote: "Sotelo",
-  sotelo: "Sotelo",
-  eduardo: "Sotelo",
-  aacal: "Acali",
-  acalli: "Acali",
-};
-
-function getItemGroupKey(item: any, groupBy: string): string {
-  const name = (item.name || "").toLowerCase();
-  const parsed = parseVisualParts(item.name, item.updateStatus, item.contentSnippet);
-
-  if (groupBy === "name" || groupBy === "name_noterminated" || groupBy === "person") {
-    for (const [key, label] of Object.entries(PERSON_ALIASES)) {
-      if (name.includes(key)) {
-        return `👤 ${label}`;
-      }
-    }
-    return "👤 Sin persona asignada";
-  }
-
-  if (groupBy === "domain" || groupBy === "domain_nobilling") {
-    const dom = parsed.domain || item.domainChip || item.domain || item.sourceName || "General";
-    const status = parsed.workflow || item.updateStatus || "Activo";
-    return `🌐 ${dom} · ${status}`;
-  }
-
-  if (groupBy === "project_suffix") {
-    const dom = parsed.domain || item.domainChip || item.domain || "General";
-    const suffixMatch = name.match(/\.(webs|ads|seo|app|prog)\b/i);
-    const suffix = suffixMatch ? suffixMatch[0] : ".general";
-    return `📁 ${dom} · ${suffix}`;
-  }
-
-  if (groupBy === "month") {
-    return parsed.monthCode ? `📅 Mes: ${parsed.monthCode}` : "📅 Sin mes";
-  }
-
-  if (groupBy === "area" || groupBy === "area_nobilling") {
-    return parsed.area ? `🏷️ Área: ${parsed.area}` : "🏷️ Otros";
-  }
-
-  return "";
 }
 
 export function ResultsVirtualTable({
@@ -352,25 +291,17 @@ export function ResultsVirtualTable({
     return !isNaN(num) && num > 0 ? num / 100 : 1.0;
   })();
 
-  const orderedItems=React.useMemo(()=>activeResultsFirst(items),[items]);
+  const orderedItems = React.useMemo(() => {
+    if (!groupBy || groupBy === "none") return activeResultsFirst(items);
+    return items;
+  }, [items, groupBy]);
+
   const groupedItems = React.useMemo(() => {
     if (!groupBy || groupBy === "none") return null;
 
     const map = new Map<string, any[]>();
-    for (const item of orderedItems) {
-      if (
-        groupBy === "name_noterminated" &&
-        isCompletedResult(item)
-      ) {
-        continue;
-      }
-      if (
-        groupBy.includes("nobilling") &&
-        (item.sourceName?.toLowerCase().includes("pagar") ||
-          item.sourceName?.toLowerCase().includes("cobrar") ||
-          item.name?.toLowerCase().includes("cobrar") ||
-          item.name?.toLowerCase().includes("pagar"))
-      ) {
+    for (const item of items) {
+      if (groupBy.includes("nobilling") && isBillingItem(item)) {
         continue;
       }
 
@@ -385,7 +316,7 @@ export function ResultsVirtualTable({
       key,
       items: groupRows,
     })));
-  }, [orderedItems, groupBy]);
+  }, [items, groupBy]);
 
   const renderIcon = (item: any) => {
     const ext = (item.extension || item.name?.split(".").pop() || "").toLowerCase();

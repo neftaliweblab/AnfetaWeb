@@ -412,7 +412,7 @@ export function SearchConfigRow({
             <option value="project_suffix">📁 Proyecto / Sufijo (.webs, .ads...)</option>
             <option value="month">Mes</option>
             <option value="name">Nombre asignado</option>
-            <option value="name_noterminated">Nombre asignado (sin terminadas)</option>
+            <option value="name_noterminated">Nombre asignado (activas primero)</option>
             <option value="area">Tipo / área</option>
             <option value="area_nobilling">Tipo / área (sin cobrar/pagar)</option>
           </select>

@@ -18,9 +18,8 @@ import {readApiJson} from '@/lib/readApiJson';
 import {mexicoDate} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
 import {CalendarBatchModal} from './CalendarBatchModal';
-import { CalendarReviewNotifications } from './CalendarReviewNotifications';
+import {CalendarReviewNotifications} from './CalendarReviewNotifications';
 import {CalendarFtfPanel} from './CalendarFtfPanel';
-import {WhatsappGroupsPanel} from './WhatsappGroupsPanel';
 import {canViewFtfDashboard} from '@/services/ftfDashboard';
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -656,7 +655,6 @@ export function CalendarHost({
         onTogglePalette={handleTogglePalette}
       />
       {canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity}/>}
-      {['John','Neftali'].includes(normalizePerson(currentUser))&&<WhatsappGroupsPanel key={'whatsapp:'+currentUser} currentUser={normalizePerson(currentUser)}/>}
 
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
       <details className="px-3 py-1 text-xs border-b border-slate-800"><summary className="cursor-pointer text-cyan-200">Diseño del calendario · fondo, líneas y horas</summary><div className="flex flex-wrap items-center gap-3 py-2">{Object.entries(calendarThemes).map(([key,value])=><button key={key} onClick={()=>setGridTheme(value)} className="rounded border border-slate-600 px-2 py-1">{key==='soft'?'Suave':key==='blue'?'Azul':'Alto contraste'}</button>)}{(['background','lines','hours'] as const).map(key=><label key={key} className="flex items-center gap-2">{key==='background'?'Fondo':key==='lines'?'Líneas':'Horas'}<input aria-label={'Color de '+key} type="color" value={gridTheme[key]} onChange={e=>setGridTheme(old=>({...old,[key]:e.target.value}))}/></label>)}</div></details>

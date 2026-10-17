@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "eslint",
     "test:calendar": "node scripts/calendar-regression.test.cjs",
-    "test:whatsapp": "node scripts/whatsapp-integration.test.cjs",
     "test:templates": "node --test scripts/template-body-regression.test.cjs scripts/template-large-synced.test.cjs scripts/template-two-synced-columns.test.cjs scripts/template-general-hardening.test.cjs",
     "test:supabase": "node scripts/supabase-tests.cjs",
     "test:hotkey": "node scripts/anfeta-hotkey.test.cjs && node scripts/calendar-grid.test.cjs",
