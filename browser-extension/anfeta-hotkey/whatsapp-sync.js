@@ -75,19 +75,20 @@
                 const rows = allReq.result || [];
                 const groups = [];
                 for (const c of rows) {
-                  const id = String(c.id || "");
-                  const isGroup = c.isGroup === true || id.endsWith("@g.us");
+                  const rawId = c.id;
+                  const id = String(rawId?._serialized || (typeof rawId === "string" ? rawId : "")).trim();
+                  const isGroup = c.isGroup === true || id.endsWith("@g.us") || id.includes("@g.us");
                   if (!isGroup) continue;
 
-                  const name = String(c.formattedTitle || c.name || "").trim();
+                  const name = String(c.formattedTitle || c.name || c.contact?.name || "").trim();
                   if (!name) continue;
 
-                  const meta = metadataMap.get(id);
+                  const meta = metadataMap.get(id) || metadataMap.get(rawId?._serialized) || metadataMap.get(rawId?.user);
                   let inviteUrl = undefined;
-                  if (meta && meta.inviteCode) {
-                    inviteUrl = `https://chat.whatsapp.com/${meta.inviteCode}`;
+                  if (meta && (meta.inviteCode || meta.groupMetadata?.inviteCode)) {
+                    inviteUrl = `https://chat.whatsapp.com/${meta.inviteCode || meta.groupMetadata?.inviteCode}`;
                   } else {
-                    const descText = String(meta?.desc || c.desc || "");
+                    const descText = String(meta?.desc || meta?.description || c.desc || "");
                     const linkMatch = descText.match(/https:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9_-]+/i);
                     if (linkMatch) {
                       inviteUrl = linkMatch[0];
@@ -95,11 +96,11 @@
                   }
 
                   groups.push({
-                    id: id,
+                    id: id || `group_${Math.random().toString(36).slice(2, 8)}@g.us`,
                     name: name,
                     inviteUrl: inviteUrl,
                     participantsCount: Array.isArray(meta?.participants) ? meta.participants.length : undefined,
-                    owner: meta?.owner ? String(meta.owner) : undefined,
+                    owner: meta?.owner ? String(meta.owner?._serialized || meta.owner) : undefined,
                     unreadCount: typeof c.unreadCount === "number" ? c.unreadCount : 0,
                     lastSynced: new Date().toISOString(),
                   });
@@ -118,7 +119,10 @@
               const metaReq = metaStore.getAll();
               metaReq.onsuccess = () => {
                 for (const m of metaReq.result || []) {
-                  if (m && m.id) metadataMap.set(String(m.id), m);
+                  if (m && m.id) {
+                    const mid = String(m.id?._serialized || (typeof m.id === "string" ? m.id : "")).trim();
+                    if (mid) metadataMap.set(mid, m);
+                  }
                 }
                 readMetadataThenChats();
               };
