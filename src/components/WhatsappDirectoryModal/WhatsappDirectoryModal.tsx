@@ -665,43 +665,102 @@ export function WhatsappDirectoryModal({
 
         {/* Sync Helper Drawer (if opened) */}
         {showSyncHelper && (
-          <div className="bg-[#0D1826] border-b border-[#254160] px-5 py-3 text-xs text-slate-300 animate-in slide-in-from-top duration-200">
+          <div className="bg-[#0B1522] border-b border-[#254160] px-5 py-4 text-xs text-slate-300 animate-in slide-in-from-top duration-200">
             <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2 max-w-2xl">
-                <div className="flex items-center gap-2 font-semibold text-[#38BDF8]">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Sincronización en 2 pasos (100% segura, sin bloqueos de seguridad CSP)</span>
+              <div className="space-y-3 max-w-3xl">
+                <div className="flex items-center gap-2 font-bold text-[#38BDF8] text-sm">
+                  <Sparkles className="w-4 h-4 text-[#38BDF8]" />
+                  <span>Pasos para sincronizar tus grupos de WhatsApp con ANFETA</span>
                 </div>
-                <p className="text-slate-400 text-[11px] leading-relaxed">
-                  WhatsApp Web bloquea peticiones de red externas desde su consola por seguridad (CSP). Por eso el extractor copia el catálogo al portapapeles y lo pegas aquí directamente:
-                </p>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 pt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-[#1E3A5F] border border-[#38BDF8]/40 text-[#38BDF8] flex items-center justify-center font-bold text-[10px]">1</span>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1">
+                  {/* Paso 1 */}
+                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#0284C7] text-white font-bold text-[10px] flex items-center justify-center">1</span>
+                        <span className="font-bold text-white text-[11px]">Copiar script</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Copia el código extractor preparado para WhatsApp Web.
+                      </p>
+                    </div>
                     <button
                       onClick={copySyncScript}
-                      className="px-3 py-1 rounded bg-[#25D366]/20 hover:bg-[#25D366]/30 border border-[#25D366]/40 text-[#4ADE80] font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                      className="mt-2.5 w-full py-1.5 px-2 rounded bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-sm transition-colors"
                     >
                       <Copy className="w-3.5 h-3.5" />
-                      <span>Copiar script extractor</span>
+                      <span>Copiar Script</span>
                     </button>
-                    <span className="text-[10px] text-slate-400">Pega en F12 de WhatsApp Web y da Enter</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-[#1E3A5F] border border-[#38BDF8]/40 text-[#38BDF8] flex items-center justify-center font-bold text-[10px]">2</span>
+
+                  {/* Paso 2 */}
+                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#1E3A5F] text-[#38BDF8] font-bold text-[10px] flex items-center justify-center border border-[#38BDF8]/40">2</span>
+                        <span className="font-bold text-white text-[11px]">Pegar en WhatsApp</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Abre <b className="text-slate-200">web.whatsapp.com</b>, presiona <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">F12</kbd> (Consola), pega con <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">Ctrl+V</kbd> y da <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">Enter</kbd>.
+                      </p>
+                    </div>
+                    <span className="mt-2 text-[10px] text-slate-500 font-mono">web.whatsapp.com</span>
+                  </div>
+
+                  {/* Paso 3 */}
+                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#1E3A5F] text-[#38BDF8] font-bold text-[10px] flex items-center justify-center border border-[#38BDF8]/40">3</span>
+                        <span className="font-bold text-white text-[11px]">Copiar datos</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Saldrá una tarjeta verde en WhatsApp. Pulsa <b className="text-[#4ADE80]">Copiar datos</b> (también se descarga el JSON).
+                      </p>
+                    </div>
+                    <span className="mt-2 text-[10px] text-[#4ADE80] font-semibold">✓ Extracción lista</span>
+                  </div>
+
+                  {/* Paso 4 */}
+                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#25D366] text-[#0B141A] font-bold text-[10px] flex items-center justify-center">4</span>
+                        <span className="font-bold text-white text-[11px]">Guardar en ANFETA</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Regresa a esta ventana y pulsa el botón abajo para guardar todo.
+                      </p>
+                    </div>
                     <button
                       onClick={() => handlePasteClipboard()}
-                      className="px-3 py-1 rounded bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#0284C7]/40 text-[#38BDF8] font-semibold text-[11px] flex items-center gap-1.5 cursor-pointer"
+                      className="mt-2.5 w-full py-1.5 px-2 rounded bg-[#25D366] hover:bg-[#20BD5A] text-[#0A1319] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-sm transition-colors"
                     >
                       <ClipboardPaste className="w-3.5 h-3.5" />
-                      <span>Pegar Portapapeles (Ctrl+V)</span>
+                      <span>Pegar Portapapeles</span>
                     </button>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-[#1E2D40] text-[11px] text-slate-400">
+                  <span>¿Prefieres subir el archivo descargado directamente?</span>
+                  <label className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-[#7DD3FC] font-medium cursor-pointer transition-colors">
+                    <Upload className="w-3 h-3 text-[#38BDF8]" />
+                    <span>Importar anfeta-whatsapp-grupos.json</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportJson}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
               </div>
               <button
                 onClick={() => setShowSyncHelper(false)}
-                className="text-slate-500 hover:text-slate-300 p-1"
+                className="text-slate-500 hover:text-slate-300 p-1 cursor-pointer"
+                title="Cerrar guía"
               >
                 <X className="w-4 h-4" />
               </button>
