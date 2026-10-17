@@ -54,6 +54,8 @@ export function WhatsappDirectoryModal({
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupLink, setNewGroupLink] = useState("");
   const [showSyncHelper, setShowSyncHelper] = useState(false);
+  const [showManualPaste, setShowManualPaste] = useState(false);
+  const [manualPasteText, setManualPasteText] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -234,25 +236,31 @@ export function WhatsappDirectoryModal({
   };
 
   const handlePasteClipboard = async (pastedText?: string) => {
-    try {
-      let text = pastedText;
-      if (!text) {
-        if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.readText) {
-          try {
-            text = await navigator.clipboard.readText();
-          } catch {
-            text = prompt("Pega aquí el JSON copiado desde WhatsApp Web:") || "";
-          }
-        } else {
-          text = prompt("Pega aquí el JSON copiado desde WhatsApp Web:") || "";
+    let text = pastedText;
+    if (!text) {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          text = await navigator.clipboard.readText();
+        } catch {
+          setShowManualPaste(true);
+          return;
         }
+      } else {
+        setShowManualPaste(true);
+        return;
       }
-      if (!text || !text.trim()) return;
+    }
 
+    if (!text || !text.trim()) {
+      setShowManualPaste(true);
+      return;
+    }
+
+    try {
       const parsed = JSON.parse(text);
       const incoming = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.groups) ? parsed.groups : [];
       if (incoming.length === 0) {
-        alert("No se encontraron grupos válidos en el portapapeles. Primero ejecuta el script extractor en WhatsApp Web.");
+        setShowManualPaste(true);
         return;
       }
 
@@ -280,11 +288,13 @@ export function WhatsappDirectoryModal({
       setGroups(finalArr);
       saveLocalWhatsappGroups(finalArr);
       await persistWhatsappGroups(finalArr);
+      setShowManualPaste(false);
+      setManualPasteText("");
       playCopyChime?.();
-      setStatusMessage(`¡Éxito! Se sincronizaron y guardaron ${incoming.length} grupos desde el portapapeles.`);
+      setStatusMessage(`¡Éxito! Se sincronizaron y guardaron ${incoming.length} grupos.`);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch {
-      alert("El contenido del portapapeles no tiene un formato JSON de grupos válido. Ejecuta primero el script en WhatsApp Web.");
+      setShowManualPaste(true);
     }
   };
 
@@ -332,9 +342,84 @@ export function WhatsappDirectoryModal({
               }
             }
             const dataStr = JSON.stringify({ groups, total: groups.length }, null, 2);
-            if (typeof copy === 'function') copy(dataStr);
+
+            // 1. Descarga automática del archivo JSON
+            try {
+              const blob = new Blob([dataStr], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'anfeta-whatsapp-grupos.json';
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => a.remove(), 1000);
+            } catch {}
+
+            // 2. Copia real al portapapeles
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = dataStr;
+              ta.style.position = 'fixed';
+              ta.style.left = '-9999px';
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              document.execCommand('copy');
+              ta.remove();
+            } catch {}
             try { navigator.clipboard.writeText(dataStr); } catch {}
-            alert('✅ ¡' + groups.length + ' grupos extraídos exitosamente!\\n\\n📋 El catálogo y sus enlaces se han copiado a tu portapapeles.\\n\\n👉 Ve a ANFETA y haz clic en "📋 Pegar Portapapeles" (o pulsa Ctrl+V).\\n\\n¡Listo! No se bloquea por la seguridad (CSP) de WhatsApp.');
+            if (typeof copy === 'function') { try { copy(dataStr); } catch {} }
+
+            // 3. Tarjeta en pantalla en WhatsApp Web
+            const oldBox = document.getElementById('anfeta-sync-overlay');
+            if (oldBox) oldBox.remove();
+            const overlay = document.createElement('div');
+            overlay.id = 'anfeta-sync-overlay';
+            overlay.style.cssText = 'position:fixed;top:24px;right:24px;z-index:999999;background:#0B141A;border:2px solid #00A884;border-radius:12px;padding:18px;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.85);color:#E9EDEF;font-family:sans-serif;font-size:13px;';
+            overlay.innerHTML = \`
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <b style="color:#00A884;font-size:15px;">✅ ¡\${groups.length} grupos extraídos!</b>
+                <button id="anfeta-close-ov" style="background:transparent;border:none;color:#8696A0;cursor:pointer;font-size:18px;line-height:1;">✕</button>
+              </div>
+              <p style="margin:0 0 12px 0;font-size:12px;color:#AEBAC1;line-height:1.4;">
+                Se descargó <b>anfeta-whatsapp-grupos.json</b> automáticamente.<br>
+                O pulsa abajo para copiar y pegar directo en ANFETA.
+              </p>
+              <button id="anfeta-copy-btn" style="width:100%;padding:10px;background:#00A884;color:#111B21;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:13px;margin-bottom:8px;">
+                📋 Copiar datos al portapapeles
+              </button>
+              <button id="anfeta-down-btn" style="width:100%;padding:8px;background:#1E293B;color:#7DD3FC;border:1px solid #38BDF8;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px;">
+                💾 Volver a descargar archivo JSON
+              </button>
+            \`;
+            document.body.appendChild(overlay);
+
+            document.getElementById('anfeta-close-ov').onclick = () => overlay.remove();
+            document.getElementById('anfeta-down-btn').onclick = () => {
+              const blob = new Blob([dataStr], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'anfeta-whatsapp-grupos.json';
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => a.remove(), 1000);
+            };
+            document.getElementById('anfeta-copy-btn').onclick = async () => {
+              try {
+                await navigator.clipboard.writeText(dataStr);
+              } catch {
+                const ta = document.createElement('textarea');
+                ta.value = dataStr;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+              }
+              const btn = document.getElementById('anfeta-copy-btn');
+              if (btn) btn.textContent = '✓ ¡Copiado!';
+              alert('✅ ¡Copiado al portapapeles!\n\nAhora ve a ANFETA y pulsa "Pegar Portapapeles" (o Ctrl+V).');
+            };
+
+            alert('✅ ¡' + groups.length + ' grupos extraídos exitosamente!\\n\\n1. Se descargó el archivo \"anfeta-whatsapp-grupos.json\".\\n2. Los datos se copiaron a tu portapapeles.\\n\\n👉 Ve a ANFETA y pulsa \"📋 Pegar Portapapeles\" o \"Importar JSON\".');
           };
         } catch (e) {
           alert('Error leyendo chats: ' + e.message);
@@ -368,7 +453,7 @@ export function WhatsappDirectoryModal({
 })();`;
     navigator.clipboard.writeText(script.trim());
     playCopyChime?.();
-    alert("Script copiado al portapapeles.\n\n1. Ve a WhatsApp Web.\n2. Presiona F12 (Consola).\n3. Pega (Ctrl+V) y presiona Enter.\n4. Regresa a ANFETA y presiona 'Pegar Portapapeles' o Ctrl+V.");
+    alert("Script copiado al portapapeles.\n\n1. Ve a WhatsApp Web.\n2. Presiona F12 (Consola).\n3. Pega (Ctrl+V) y presiona Enter.\n4. Regresa a ANFETA y pulsa 'Pegar Portapapeles' o sube el archivo descargado.");
   };
 
   if (!isOpen) return null;
@@ -431,6 +516,66 @@ export function WhatsappDirectoryModal({
             </button>
           </div>
         </div>
+
+        {/* Manual Paste Modal Dialog */}
+        {showManualPaste && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-[#0F1622] border border-[#2B4058] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ClipboardPaste className="w-4 h-4 text-[#38BDF8]" />
+                  <span className="text-sm font-bold text-white">Pegar catálogo de grupos de WhatsApp</span>
+                </div>
+                <button
+                  onClick={() => setShowManualPaste(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                El navegador bloqueó la lectura automática del portapapeles. Pega el texto aquí abajo (<kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 font-mono">Ctrl + V</kbd>) o sube el archivo descargado:
+              </p>
+              <textarea
+                value={manualPasteText}
+                onChange={(e) => setManualPasteText(e.target.value)}
+                placeholder='Presiona Ctrl + V aquí para pegar el JSON de grupos...'
+                className="w-full h-40 bg-[#070B11] border border-[#223348] focus:border-[#38BDF8] rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none resize-none"
+                autoFocus
+              />
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-xs text-slate-300 font-medium cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5 text-[#38BDF8]" />
+                  <span>Subir anfeta-whatsapp-grupos.json</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      handleImportJson(e);
+                      setShowManualPaste(false);
+                    }}
+                    className="hidden"
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowManualPaste(false)}
+                    className="px-3 py-1.5 rounded border border-slate-700 text-xs text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => handlePasteClipboard(manualPasteText)}
+                    disabled={!manualPasteText.trim()}
+                    className="px-4 py-1.5 rounded bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-50 text-xs font-bold text-white cursor-pointer"
+                  >
+                    Guardar grupos
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sync Helper Drawer (if opened) */}
         {showSyncHelper && (
