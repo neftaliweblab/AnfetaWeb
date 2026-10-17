@@ -164,16 +164,27 @@ export function saveLocalWhatsappGroups(groups: WhatsappGroupItem[]): void {
 }
 
 export async function fetchRemoteWhatsappGroups(): Promise<WhatsappGroupItem[]> {
+  const local = getLocalWhatsappGroups();
   try {
     const res = await fetch("/api/whatsapp-directory", { cache: "no-store" });
-    if (!res.ok) return getLocalWhatsappGroups();
+    if (!res.ok) return local;
     const data = await res.json();
-    if (Array.isArray(data?.groups)) {
-      saveLocalWhatsappGroups(data.groups);
-      return data.groups;
+    if (Array.isArray(data?.groups) && data.groups.length > 0) {
+      const merged = mergeWhatsappGroups(local, data.groups);
+      saveLocalWhatsappGroups(merged.groups);
+      return merged.groups;
+    }
+    if (local.length > 0) {
+      // Sync local to remote in background
+      fetch("/api/whatsapp-directory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groups: local }),
+      }).catch(() => {});
+      return local;
     }
   } catch {}
-  return getLocalWhatsappGroups();
+  return local;
 }
 
 export async function persistWhatsappGroups(groups: WhatsappGroupItem[]): Promise<boolean> {

@@ -18,6 +18,7 @@ import {
   X, Plus, CalendarRange, Banknote, CreditCard, MessageCircle,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
+import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 
 interface CalendarTopControlsProps {
   phaseFilter?:string;
@@ -269,10 +270,10 @@ export function CalendarTopControls({
         {onOpenWhatsappGroups && (
           <button
             onClick={onOpenWhatsappGroups}
-            className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#25D366] border border-[#1E382A] text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+            className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#18212B] text-[#25D366] border border-[#1E382A] text-[11px] font-medium flex items-center gap-1.5 cursor-pointer"
             title="Directorio de Grupos de WhatsApp"
           >
-            <MessageCircle className="w-3 h-3 text-[#25D366]" />
+            <WhatsAppIcon className="w-3.5 h-3.5" />
             <span className="hidden xl:inline">WhatsApp</span>
           </button>
         )}

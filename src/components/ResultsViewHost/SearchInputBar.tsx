@@ -21,6 +21,7 @@ import {SavedSearches} from './SavedSearches';
 import { SearchPredictiveFlyout } from "./SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
 import { SearchMatchOptions } from "@/services/advancedQuery";
+import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 
 interface SearchInputBarProps {
   onSubmitSearch?:()=>void;
@@ -398,16 +399,16 @@ export function SearchInputBar({
             </button>
           )}
 
-          {/* Botón 💬 Grupos de WhatsApp */}
+          {/* Botón WhatsApp Grupos */}
           {onOpenWhatsappGroups && (
             <button
               type="button"
               onClick={onOpenWhatsappGroups}
               style={{ padding: `${Math.round(4 * scale)}px` }}
               className="relative rounded border bg-[#161F2C] border-[#26354A] text-[#25D366] hover:bg-[#1A2E24] hover:border-[#25D366] transition-colors cursor-pointer"
-              title="💬 Directorio de Grupos de WhatsApp de proyectos"
+              title="Directorio de Grupos de WhatsApp de proyectos"
             >
-              <MessageCircle style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
+              <WhatsAppIcon style={{ width: `${Math.round(14 * scale)}px`, height: `${Math.round(14 * scale)}px` }} />
             </button>
           )}
 

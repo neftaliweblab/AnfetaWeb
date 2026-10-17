@@ -34,6 +34,9 @@ import {
   mergeWhatsappGroups,
 } from "@/lib/whatsappDirectory";
 import { playCopyChime } from "@/services/windowsIntegration";
+import { WhatsAppIcon } from "./WhatsAppIcon";
+
+export { WhatsAppIcon };
 
 export const SYNC_EXTRACTOR_SCRIPT = `(async()=>{
   try {
@@ -246,10 +249,15 @@ export function WhatsappDirectoryModal({
   useEffect(() => {
     if (isOpen) {
       setSearchQuery(initialQuery);
-      setGroups(getLocalWhatsappGroups());
+      const local = getLocalWhatsappGroups();
+      setGroups(local);
       setLoading(true);
       fetchRemoteWhatsappGroups().then((rem) => {
-        setGroups(rem);
+        if (rem && rem.length > 0) {
+          setGroups(rem);
+        } else if (local && local.length > 0) {
+          setGroups(local);
+        }
         setLoading(false);
       });
       setTimeout(() => {
@@ -489,62 +497,54 @@ export function WhatsappDirectoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
       <div className="relative flex flex-col w-full max-w-4xl h-[88vh] max-h-[820px] bg-[#0B0F17] border border-[#202E42] rounded-xl shadow-2xl overflow-hidden text-slate-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-[#0F1622] border-b border-[#1E293B]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#25D366]/15 border border-[#25D366]/40 flex items-center justify-center text-[#25D366] shadow-[0_0_12px_rgba(37,211,102,0.25)]">
-              <MessageCircle className="w-5 h-5" />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 bg-[#0F1622] border-b border-[#1E293B] shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-[#25D366]/15 border border-[#25D366]/40 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(37,211,102,0.25)]">
+              <WhatsAppIcon className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white tracking-wide">
+                <h2 className="text-sm font-bold text-white tracking-wide truncate">
                   Grupos de WhatsApp de Proyectos
                 </h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1E293B] border border-slate-700 text-[#38BDF8]">
+                <span className="whitespace-nowrap shrink-0 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#1E293B] border border-slate-700 text-[#38BDF8]">
                   {groups.length} grupos
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 truncate">
                 Acceso directo a grupos de empresas y clientes sin salir de ANFETA
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setShowHelpModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold cursor-pointer transition-colors shadow-sm"
               title="Guía detallada paso a paso para sincronizar los grupos"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-[#38BDF8]" />
+              <BookOpen className="w-3.5 h-3.5 text-[#38BDF8]" />
               <span>¿Cómo sincronizar?</span>
             </button>
             <button
               onClick={() => handlePasteClipboard()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E3A5F] hover:bg-[#254A78] border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 text-xs font-bold cursor-pointer transition-colors shadow-[0_0_10px_rgba(37,211,102,0.25)]"
               title="Pegar los grupos copiados desde WhatsApp Web (o pulsa Ctrl+V)"
             >
-              <ClipboardPaste className="w-3.5 h-3.5 text-[#38BDF8]" />
+              <ClipboardPaste className="w-3.5 h-3.5 text-slate-950" />
               <span>Pegar Portapapeles</span>
             </button>
             <button
-              onClick={() => setShowSyncHelper(!showSyncHelper)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-[#38BDF8] text-xs font-medium cursor-pointer transition-colors"
-              title="Sincronizar o conectar con WhatsApp Web"
-            >
-              <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>Sincronizar</span>
-            </button>
-            <button
               onClick={() => setIsAddingNew(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-slate-200 text-xs font-semibold cursor-pointer transition-colors shadow-sm"
               title="Registrar un nuevo grupo manualmente"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5 text-[#38BDF8]" />
               <span>Nuevo Grupo</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors ml-1"
               title="Cerrar (Esc)"
             >
               <X className="w-5 h-5" />
@@ -554,13 +554,13 @@ export function WhatsappDirectoryModal({
 
         {/* Full Step-by-Step Guide Modal Dialog */}
         {showHelpModal && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in">
-            <div className="bg-[#0B121C] border border-[#223952] rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-slate-200">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-150">
+            <div className="bg-[#0B121C] border border-[#223952] rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden text-slate-200">
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 bg-[#0F1826] border-b border-[#1E2E42]">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#0284C7]/20 border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
-                    <BookOpen className="w-4 h-4" />
+              <div className="flex items-center justify-between px-6 py-4 bg-[#0F1826] border-b border-[#1E2E42] shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#25D366]/15 border border-[#25D366]/40 flex items-center justify-center text-[#25D366] shrink-0 shadow-[0_0_10px_rgba(37,211,102,0.2)]">
+                    <WhatsAppIcon className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Guía de Sincronización Paso a Paso</h3>
@@ -569,8 +569,8 @@ export function WhatsappDirectoryModal({
                 </div>
                 <button
                   onClick={() => setShowHelpModal(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                  title="Cerrar guía"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Cerrar guía (Esc)"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -725,10 +725,10 @@ export function WhatsappDirectoryModal({
               </div>
 
               {/* Modal Footer */}
-              <div className="px-6 py-3.5 bg-[#0F1826] border-t border-[#1E2E42] flex items-center justify-end">
+              <div className="px-6 py-3.5 bg-[#0F1826] border-t border-[#1E2E42] flex items-center justify-end shrink-0">
                 <button
                   onClick={() => setShowHelpModal(false)}
-                  className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs cursor-pointer transition-colors"
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs cursor-pointer transition-colors"
                 >
                   Entendido, cerrar guía
                 </button>
@@ -739,7 +739,7 @@ export function WhatsappDirectoryModal({
 
         {/* Manual Paste Modal Dialog */}
         {showManualPaste && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-150">
             <div className="bg-[#0F1622] border border-[#2B4058] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1015,38 +1015,40 @@ export function WhatsappDirectoryModal({
         {/* Group Cards List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">
           {filteredGroups.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center">
-              <div className="w-12 h-12 rounded-full bg-[#162232] flex items-center justify-center text-slate-500 mb-3">
-                <Users className="w-6 h-6" />
+            <div className="flex flex-col items-center justify-center h-72 text-center p-6">
+              <div className="w-14 h-14 rounded-2xl bg-[#25D366]/15 border border-[#25D366]/35 flex items-center justify-center mb-3 shadow-[0_0_20px_rgba(37,211,102,0.2)]">
+                <WhatsAppIcon className="w-8 h-8" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-300">
+              <h3 className="text-sm font-semibold text-slate-200">
                 {searchQuery ? "No se encontraron grupos que coincidan" : "No hay grupos registrados todavía"}
               </h3>
-              <p className="text-xs text-slate-500 max-w-sm mt-1">
+              <p className="text-xs text-slate-400 max-w-sm mt-1 leading-relaxed">
                 {searchQuery
                   ? "Prueba buscando por otra palabra o registra el grupo manualmente."
-                  : "Pulsa 'Sincronizar' o 'Nuevo Grupo' para agregar los grupos de tus empresas y proyectos."}
+                  : "Sincroniza tus grupos directamente desde WhatsApp Web o regístralos a mano para vincularlos con tus proyectos y calendario."}
               </p>
               {!searchQuery && (
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
                   <button
                     onClick={() => handlePasteClipboard()}
-                    className="px-3 py-1.5 rounded-lg bg-[#1E3A5F] hover:bg-[#254A78] border border-[#38BDF8]/60 text-[#7DD3FC] text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                    className="px-3.5 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(37,211,102,0.3)] cursor-pointer transition-all"
                   >
-                    <ClipboardPaste className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <ClipboardPaste className="w-3.5 h-3.5 text-slate-950" />
                     <span>Pegar Portapapeles (Ctrl+V)</span>
                   </button>
                   <button
                     onClick={() => setShowHelpModal(true)}
-                    className="px-3 py-1.5 rounded-lg bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#38BDF8]/50 text-[#7DD3FC] text-xs font-semibold cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-lg bg-[#0284C7]/20 hover:bg-[#0284C7]/30 border border-[#38BDF8]/50 text-[#7DD3FC] text-xs font-semibold cursor-pointer transition-colors"
                   >
-                    📖 Ver cómo sincronizar paso a paso
+                    <BookOpen className="w-3.5 h-3.5 text-[#38BDF8] inline mr-1" />
+                    <span>Ver cómo sincronizar paso a paso</span>
                   </button>
                   <button
                     onClick={() => setIsAddingNew(true)}
-                    className="px-3 py-1.5 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white text-xs font-semibold"
+                    className="px-3.5 py-1.5 rounded-lg bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
                   >
-                    Agregar grupo a mano
+                    <Plus className="w-3.5 h-3.5 text-[#38BDF8] inline mr-1" />
+                    <span>Registrar grupo a mano</span>
                   </button>
                 </div>
               )}
@@ -1168,9 +1170,9 @@ export function WhatsappDirectoryModal({
                               ? "bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold shadow-[0_0_10px_rgba(37,211,102,0.3)]"
                               : "bg-[#1E293B] hover:bg-[#334155] text-slate-200"
                           }`}
-                          title={hasLink ? "Abrir directamente en WhatsApp" : "Buscar en WhatsApp Web"}
+                          title={hasLink ? "Abrir directamente en WhatsApp" : "Buscar en WhatsApp Web (copia el nombre)"}
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
                           <span>{hasLink ? "Abrir Grupo" : "Abrir Web"}</span>
                         </button>
 
