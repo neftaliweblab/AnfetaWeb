@@ -58,12 +58,13 @@ async function main(){
  assert.equal((await db.query("select count(*)::int as n from whatsapp_groups where group_id='8888@g.us'")).rows[0].n,0);
  await db.exec('set role authenticated');await assert.rejects(db.query('select * from whatsapp_groups'),/permission denied/);await assert.rejects(importBatch(account,[]),/permission denied/);await db.exec('reset role');await db.close();
  // Exercise the route boundary: a hidden button is not authorization.
- let actor='Neftali',storageCalls=0,originChecks=0;
+ let actor='Genaro',storageCalls=0,originChecks=0;
+ const owners=[],realWaha=require(root+'/src/services/wahaClient.ts');
  const load=Module._load;
  Module._load=function(id,...args){
   if(id==='@/services/serverAuth')return {requireActor:async()=>actor,assertSameOrigin:req=>{originChecks++;if(req.headers.get('origin')!==new URL(req.url).origin)throw Error('Origen de solicitud no permitido.');}};
   if(id==='@/services/supabaseServer')return {supabaseAdmin:()=>{storageCalls++;throw Error('Storage must not be reached');}};
-  if(id==='@/services/wahaClient')return {...require(root+'/src/services/wahaClient.ts'),wahaConfigured:()=>false};
+  if(id==='@/services/wahaClient')return {...realWaha,wahaConfigured:()=>false,createWahaClient:(_transport,owner)=>{owners.push(owner);return {status:async()=>({status:'WORKING'}),start:async()=>({status:'SCAN_QR_CODE'}),disconnect:async()=>({disconnected:true}),groups:async()=>({account:'private-account',groups:[{id:'1000@g.us',name:'Vista temporal'}],total:1,nextOffset:1,done:true}),invite:async()=>invite};}};
   return load.call(this,id,...args);
  };
  const route=require(root+'/src/app/api/whatsapp/route.ts');
@@ -73,7 +74,25 @@ async function main(){
  response=await route.POST(new Request('https://anfeta.test/api/whatsapp',{method:'POST',headers:{origin:'https://evil.test'},body:JSON.stringify({action:'import',offset:0})}));assert.notEqual(response.status,200);assert.equal(originChecks,1);assert.equal(storageCalls,0);
  response=await route.POST(new Request('https://anfeta.test/api/whatsapp',{method:'POST',headers:{origin:'https://anfeta.test'},body:JSON.stringify({action:'sendMessage'})}));assert.equal(response.status,400);assert.equal(storageCalls,0);
  response=await route.POST(new Request('https://anfeta.test/api/whatsapp',{method:'POST',headers:{origin:'https://anfeta.test'},body:JSON.stringify({action:'import',offset:1})}));assert.equal(response.status,400);assert.equal(storageCalls,0);
+ for(const person of ['John','Neftali']){
+  actor=person;
+  for(const action of ['start','preview','invite','disconnect']){
+   response=await route.POST(new Request('https://anfeta.test/api/whatsapp',{method:'POST',headers:{origin:'https://anfeta.test'},body:JSON.stringify({action,offset:0,groupId:'1000@g.us',owner:'Someone else'})}));
+   assert.equal(response.status,200);const payload=await response.json();assert.equal(owners.at(-1),person);
+   if(action==='preview'){assert.deepEqual(payload.groups,[{id:'1000@g.us',name:'Vista temporal'}]);assert.ok(!('account'in payload));assert.ok(!('saved'in payload));}
+   assert.equal(storageCalls,0);
+  }
+  for(const action of ['import','link','unlink','access']){
+   response=await route.POST(new Request('https://anfeta.test/api/whatsapp',{method:'POST',headers:{origin:'https://anfeta.test'},body:JSON.stringify({action,offset:0})}));assert.equal(response.status,400);assert.equal(storageCalls,0);
+  }
+  response=await route.GET(new Request('https://anfeta.test/api/whatsapp?action=directory'));assert.equal(response.status,400);assert.equal(storageCalls,0);
+ }
  Module._load=load;
- console.log('OK: QR, WEBJS, paginación, datos mínimos, enlaces, coincidencias, logout antes de borrar, fallos, importación atómica, renombres, otra cuenta, permisos privados, autorización de John y rechazo de origen externo/envío.');
+ delete process.env.WAHA_NEFTALI_BASE_URL;delete process.env.WAHA_NEFTALI_API_KEY;delete process.env.WAHA_NEFTALI_SESSION;
+ assert.equal(realWaha.wahaConfigured('Neftali'),false);assert.throws(()=>realWaha.createWahaClient(transport,'Neftali'),/Falta configurar/);
+ process.env.WAHA_NEFTALI_BASE_URL='http://localhost:3002';process.env.WAHA_NEFTALI_API_KEY='neftali-test-only';
+ await realWaha.createWahaClient(async(url,init)=>{assert.ok(url.startsWith('http://localhost:3002/'));assert.equal(init.headers['X-Api-Key'],'neftali-test-only');return answer({},404);},'Neftali').status();
+ process.env.WAHA_NEFTALI_BASE_URL='http://localhost:3001/';assert.throws(()=>realWaha.createWahaClient(transport,'Neftali'),/separadas/);
+ console.log('OK: QR, WEBJS, paginación, enlaces, logout, John y Neftalí, conexiones separadas, vista temporal sin lecturas ni escrituras del directorio, rechazo de guardado y de otros usuarios.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

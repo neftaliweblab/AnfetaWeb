@@ -1,55 +1,56 @@
-# WAHA + WEBJS para ANFETA
+# WAHA + WEBJS: vista temporal para John y Neftalí
 
-## Qué incluye el código
+## Comportamiento actual
 
-Panel «Grupos de WhatsApp» encima del calendario, únicamente para John. La API aplica la misma restricción en el servidor. Permite conectar, mostrar un QR privado, importar grupos por lotes de 50, buscar, sugerir relaciones con las actividades del calendario cargado, confirmar/quitar relaciones y finalizar con logout y eliminación de la sesión. Los grupos, enlaces y relaciones permanecen en Supabase.
+El panel Grupos de WhatsApp aparece encima del calendario para John y Neftalí. La API verifica ese permiso y selecciona la conexión a partir del usuario autenticado, nunca de un nombre enviado por el navegador.
 
-Solo se guardan nombres e IDs de grupos, fecha de importación, enlaces de acceso y relaciones confirmadas. No se importan mensajes, teléfonos de integrantes, fotos ni participantes. WAHA sigue siendo un dispositivo vinculado con acceso a la cuenta mientras está conectado: esto no equivale a un permiso de WhatsApp limitado a lectura.
+Conectar → escanear QR → Obtener grupos → revisar nombres e IDs → Finalizar y desvincular.
 
-Se consulta el enlace de invitación de un grupo solo cuando John pulsa «Obtener enlace». Depende de sus permisos. No se envían invitaciones, no se revocan códigos y no se crean grupos. También puede pegarse un enlace vigente manualmente. Un enlace de invitación concede acceso según las reglas del grupo: no es un acceso privado exclusivo de John. El ID del grupo no se transforma en una URL inventada.
+Los grupos y enlaces obtenidos permanecen únicamente en la memoria de la ventana mientras el panel está abierto. Se borran al cerrar el panel, recargar, cambiar de persona o desmontar el calendario. Desvincular permite seguir revisando los resultados mientras el panel siga abierto. No se escriben en Supabase, Notion, archivos, localStorage ni almacenamiento de sesión del navegador. Las respuestas de la API llevan Cache-Control no-store.
 
-## Preparación del servicio
+Se retiraron las acciones de guardar enlaces y vincular actividades. La API rechaza también los antiguos comandos de persistencia, aunque se invoquen directamente. No consulta el directorio guardado anteriormente ni lo borra. La migración anterior de WhatsApp no es necesaria para esta vista temporal; la autenticación de ANFETA sigue usando su configuración habitual.
 
-1. Aplicar `supabase/migrations/202610160019_whatsapp_directory.sql` al proyecto de Supabase. No se ha aplicado a ninguna base remota desde esta entrega.
-2. Preparar un servidor persistente con Docker, separado de Vercel. Utilizar una instancia dedicada a John: el nombre `default` permite utilizar la sesión única de WAHA Core. No reutilizar una sesión con bots u otras integraciones.
-3. Usar `docs/whatsapp-waha.compose.yml` como base. Configurar `WAHA_IMAGE` con una versión o digest comprobado del proveedor. No se ha fijado una versión que no haya sido probada con una cuenta real. La disponibilidad de motores depende de la distribución elegida; verificar WEBJS en esa imagen.
-4. Generar una clave aleatoria fuerte localmente. Guardar su hash SHA-512 como `WAHA_API_KEY_HASH=sha512:<hash>` en el entorno de Docker; la clave original se guarda solo como secreto de ANFETA. No subir ninguno de esos valores al repositorio.
-5. Publicar el servicio mediante un proxy HTTPS autenticado por clave; el puerto del ejemplo solo escucha en localhost del servidor. Vercel necesita poder alcanzar esa URL HTTPS. Mantener dashboard y Swagger deshabilitados. No exponer Chrome ni su puerto de depuración.
-6. Configurar en el servidor de ANFETA, sin prefijo `NEXT_PUBLIC_`:
+La consulta recorre lotes de 50 y comprueba el total. Si falla, muestra que los resultados son parciales. Solo devuelve nombres e IDs normalizados; no incorpora mensajes ni integrantes a la vista. Un enlace se consulta bajo demanda y se descarta al cerrar. Obtenerlo depende de los permisos del usuario en el grupo; no se envían invitaciones ni se revocan códigos.
+
+## Configuración del servidor
+
+John conserva estas variables privadas:
 
 ```dotenv
-WAHA_BASE_URL=https://waha.tu-dominio.example
-WAHA_API_KEY=<clave original privada>
+WAHA_BASE_URL=https://waha-john.tu-dominio.example
+WAHA_API_KEY=<clave privada de John>
 WAHA_SESSION=default
 ```
 
-La URL no debe incluir `/api`: el conector lo agrega. Para pruebas locales se permite `http://localhost:3001`. Se usan las variables de Supabase ya existentes en ANFETA, incluida su clave privada de servidor. El servicio se comunica mediante API; no se agrega Puppeteer a las funciones de Vercel.
+Neftalí usa variables propias, sin recurrir a las de John:
 
-## Uso y validación real pendiente
+```dotenv
+WAHA_NEFTALI_BASE_URL=https://waha-neftali.tu-dominio.example
+WAHA_NEFTALI_API_KEY=<clave privada de Neftali>
+WAHA_NEFTALI_SESSION=default
+```
 
-1. Iniciar sesión en ANFETA como John y abrir Grupos de WhatsApp.
-2. Probar primero en un entorno de pruebas con una base Supabase separada y una cuenta de WhatsApp de prueba. Conectar y escanear desde WhatsApp → Dispositivos vinculados. La primera cuenta fija la identidad del directorio de ese entorno; no usar un número de prueba en la base de producción de John.
-3. Esperar estado Conectado. Importar y revisar el número de grupos disponibles. El total corresponde a los grupos disponibles para esa sesión de WAHA; comparar con WhatsApp antes de asumir cobertura completa.
-4. Revisar nombres y buscar grupos conocidos, incluidos archivados. Una lista incompleta no debe asumirse completa simplemente porque terminó un lote. No confundir archivado del chat con inactividad del proyecto.
-5. Seleccionar un grupo y obtener/guardar su enlace cuando sea posible. Confirmar sugerencias por dominio o título; buscar manualmente si no coincide. Las sugerencias solo usan actividades actualmente cargadas en el calendario, no todas las páginas de Notion.
-6. Reimportar: no debe duplicar grupos ni perder relaciones o enlaces al cambiar el nombre. Los grupos ausentes de una importación posterior no se borran automáticamente: conservar su última fecha de importación.
-7. Finalizar y desvincular. El conector exige logout antes de borrar la sesión y comprueba su ausencia; si falla muestra el error y no declara éxito. Confirmar también desde el teléfono que el dispositivo desapareció. Si la conexión falla, usar el teléfono para desvincularlo.
-8. Reabrir el directorio con WAHA desconectado: los datos guardados y enlaces deben continuar disponibles. Los grupos nuevos o renombrados requerirán volver a vincular e importar.
+Las conexiones deben tener distinta instancia o distinta sesión. El conector rechaza la misma combinación URL/sesión para ambos usuarios. Con WAHA Core de sesión única, usar dos instancias separadas. Si se utiliza una distribución que permite varias sesiones, asignar nombres distintos y verificar que soporta WEBJS. Dos dominios que apunten al mismo servicio siguen requiriendo sesiones distintas: los alias de infraestructura deben revisarse durante el despliegue.
 
-Cerrar el panel no cierra la sesión: se indica expresamente. No se realiza importación periódica ni conexión automática. Si se abandona la página o se cierra el navegador durante la operación, revisar y cerrar el dispositivo desde el teléfono. Un siguiente intento de importación vuelve desde el principio y actualiza por ID los lotes ya guardados.
+No usar prefijos NEXT_PUBLIC_ para las claves. No incluir /api en la URL. Se permite HTTP solo en localhost para pruebas. Configurar HTTPS para conexiones remotas.
 
-La primera cuenta importada fija la identidad del directorio. Se rechaza importar desde un número distinto para evitar mezclar cuentas. Cambiar el número requiere una migración deliberada del directorio; no hay botón de borrado masivo.
+El archivo whatsapp-waha.compose.yml sirve como base para cada instancia. Configurar una imagen WAHA comprobada con WEBJS mediante WAHA_IMAGE y el hash privado de su clave mediante WAHA_API_KEY_HASH. Para ejecutar ambas instancias en el mismo servidor, usar nombres de proyecto Compose distintos, volúmenes separados y otro puerto local para la segunda (por ejemplo 3002). Proteger el servicio con API key y proxy HTTPS. No exponer Chrome ni su puerto de depuración.
 
-## Límites de esta entrega
+## Sesión de WhatsApp y retención
 
-Se verifican localmente el conector con respuestas simuladas, la importación SQL con Postgres embebido, TypeScript y compilación. No se ha desplegado WAHA, aplicado la migración remota ni escaneado una cuenta. El flujo real queda pendiente de configurar el servicio, migrar la base y hacer la prueba de extremo a extremo. El código no ofrece garantía contra bloqueos: usar Chrome o desvincular después no convierte la conexión en oficial.
+Aunque los resultados no se guarden en ANFETA, WAHA necesita mantener su sesión de autenticación durante la conexión; puede utilizar el volumen de sesiones del servicio. Este estado es distinto del listado de grupos y desaparece mediante logout y eliminación de sesión al pulsar Finalizar y desvincular. No se promete ausencia total de datos internos en WhatsApp Web mientras esté conectado.
 
-Pruebas locales: `npm run test:whatsapp`. Incluyen respuestas WEBJS simuladas, paginación, validación de enlaces, coincidencias por título, logout fallido, importación SQL atómica, renombres sin perder relaciones, bloqueo de otra cuenta, permisos de tablas y autorización de la API. No sustituyen la prueba real del QR y de los enlaces en WhatsApp.
+Cerrar el panel borra los resultados pero no desvincula el dispositivo. Si se abandona la página o falla la desconexión, revisar Dispositivos vinculados en el teléfono y cerrar la sesión allí. La integración no es oficial y no garantiza evitar restricciones de cuenta.
+
+## Verificación
+
+Pruebas locales: npm run test:whatsapp. Comprueban la consulta paginada, los campos devueltos, enlaces, logout, acceso de John y Neftalí, rechazo de otros usuarios, separación de conexiones y ausencia de llamadas de almacenamiento desde la API temporal. También conservan cobertura de la migración histórica, que no se utiliza en este flujo.
+
+Falta configurar las instancias WAHA y probar el QR con cuentas reales. La compilación y las pruebas simuladas no sustituyen esa verificación. No se ha desplegado ni conectado ninguna cuenta desde esta entrega.
 
 ## Fuentes
 
 - [Sesiones, QR, logout y eliminación](https://waha.devlike.pro/docs/how-to/sessions/).
 - [Consulta paginada de grupos y enlaces](https://waha.devlike.pro/docs/how-to/groups/).
-- [WEBJS y otros motores](https://waha.devlike.pro/docs/engines/).
-- [Claves, HTTPS y seguridad del servicio](https://waha.devlike.pro/docs/how-to/security/).
-- [Advertencia de WhatsApp sobre dispositivos no oficiales](https://faq.whatsapp.com/378279804439436/?cms_platform=android&locale=es_ES).
+- [Motores](https://waha.devlike.pro/docs/engines/).
+- [Seguridad del servicio](https://waha.devlike.pro/docs/how-to/security/).

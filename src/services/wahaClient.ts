@@ -2,19 +2,25 @@ import {normalizedWhatsappGroups, whatsappGroupId, whatsappAccessUrl} from '@/li
 
 export class WahaError extends Error { constructor(message: string, public status = 502) { super(message); } }
 type Transport = typeof fetch;
-export function wahaConfigured() { return Boolean(process.env.WAHA_BASE_URL && process.env.WAHA_API_KEY); }
-export function createWahaClient(transport: Transport = fetch) {
-  const base = process.env.WAHA_BASE_URL?.replace(/\/+$/, ''), key = process.env.WAHA_API_KEY;
-  const name = process.env.WAHA_SESSION || 'default';
+export type WhatsappOwner = 'John' | 'Neftali';
+function connectionConfig(owner: WhatsappOwner) {
+  const prefix=owner==='Neftali'?'WAHA_NEFTALI_':'WAHA_';
+  return {base:process.env[prefix+'BASE_URL']?.replace(/\/+$/, ''),key:process.env[prefix+'API_KEY'],name:process.env[prefix+'SESSION']||'default'};
+}
+export function wahaConfigured(owner: WhatsappOwner='John') { const c=connectionConfig(owner);return Boolean(c.base&&c.key); }
+export function createWahaClient(transport: Transport = fetch, owner: WhatsappOwner='John') {
+  const {base,key,name}=connectionConfig(owner);
   if (!base || !key) throw new WahaError('Falta configurar el servicio de WhatsApp en el servidor.', 503);
   const url = new URL(base);
+  const other=connectionConfig(owner==='John'?'Neftali':'John');
+  if(other.base && new URL(other.base).href.replace(/\/+$/, '')===url.href.replace(/\/+$/, '') && other.name===name) throw new WahaError('John y Neftalí deben tener conexiones de WhatsApp separadas.',503);
   if (url.username || url.password || url.search || url.hash || !['https:', 'http:'].includes(url.protocol) || (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new WahaError('WAHA necesita una URL HTTPS, o localhost para pruebas.', 503);
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(name)) throw new WahaError('Nombre de sesión de WAHA no válido.', 503);
   async function request(path: string, method = 'GET', body?: unknown) {
     let response: Response;
     try {
       response = await transport(base + '/api/' + path, {method, headers: {'X-Api-Key': key!, Accept: 'application/json', ...(body === undefined ? {} : {'Content-Type': 'application/json'})}, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(20000)});
-    } catch { throw new WahaError('El servicio de WhatsApp no respondió. Puedes reintentar; el directorio guardado se conserva.'); }
+    } catch { throw new WahaError('El servicio de WhatsApp no respondió. Puedes volver a consultar.'); }
     if (!response.ok) throw new WahaError(response.status === 404 ? 'No hay una sesión de WhatsApp creada.' : response.status === 401 || response.status === 403 ? 'Revisa la clave del servicio de WhatsApp en el servidor.' : 'WAHA no confirmó la operación. Revisa el estado de la sesión.', response.status === 404 ? 404 : 502);
     if (response.status === 204) return null;
     const text = await response.text();
@@ -60,7 +66,7 @@ export function createWahaClient(transport: Transport = fetch) {
       const id = whatsappGroupId(groupId);
       if ((await status()).status !== 'WORKING') throw new WahaError('Conecta WhatsApp para consultar el enlace vigente.', 409);
       const code = await request(name + '/groups/' + encodeURIComponent(id) + '/invite-code');
-      if (typeof code !== 'string' || !/^[a-zA-Z0-9_-]{10,128}$/.test(code)) throw new WahaError('No se pudo obtener el enlace. Revisa los permisos de John en el grupo.');
+      if (typeof code !== 'string' || !/^[a-zA-Z0-9_-]{10,128}$/.test(code)) throw new WahaError('No se pudo obtener el enlace. Revisa tus permisos en el grupo.');
       return whatsappAccessUrl('https://chat.whatsapp.com/' + code);
     },
     async disconnect() {
