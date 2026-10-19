@@ -1,3 +1,5 @@
+import { normalizePerson } from "@/services/identityNormalizer";
+
 export interface WhatsappGroupItem {
   id: string;
   name: string;
@@ -13,6 +15,14 @@ export interface WhatsappGroupItem {
 }
 
 const STORAGE_KEY = "anfeta_whatsapp_groups_v1";
+
+export function getWhatsappStorageKey(user?: string): string {
+  const norm = normalizePerson(user);
+  if (norm && norm !== "Sin asignar") {
+    return `${STORAGE_KEY}:${norm}`;
+  }
+  return STORAGE_KEY;
+}
 
 export function detectGroupDomain(name: string): string | undefined {
   if (!name) return undefined;
@@ -51,7 +61,8 @@ export interface MergeResult {
 
 export function mergeWhatsappGroups(
   existingList: WhatsappGroupItem[],
-  incomingList: WhatsappGroupItem[]
+  incomingList: WhatsappGroupItem[],
+  defaultOwner?: string
 ): MergeResult {
   const existingMap = new Map<string, WhatsappGroupItem>();
   const nameToId = new Map<string, string>();
@@ -86,6 +97,7 @@ export function mergeWhatsappGroups(
     const incomingInvite = cleanInviteUrl(item.inviteUrl);
     // Never wipe out an existing valid invite URL
     const effectiveInvite = incomingInvite || prev?.inviteUrl;
+    const effectiveOwner = item.owner || prev?.owner || (prev ? undefined : defaultOwner);
 
     if (prev) {
       // Check if there are real changes
@@ -104,7 +116,7 @@ export function mergeWhatsappGroups(
           domain: detectedDomain,
           inviteUrl: effectiveInvite,
           participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev.participantsCount,
-          owner: item.owner || prev.owner,
+          owner: effectiveOwner,
           unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev.unreadCount,
           lastSynced: now,
         };
@@ -122,7 +134,7 @@ export function mergeWhatsappGroups(
         domain: detectedDomain,
         inviteUrl: effectiveInvite,
         participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : undefined,
-        owner: item.owner,
+        owner: effectiveOwner,
         unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : 0,
         notes: item.notes,
         lastSynced: now,
@@ -144,42 +156,64 @@ export function mergeWhatsappGroups(
   };
 }
 
-export function getLocalWhatsappGroups(): WhatsappGroupItem[] {
+export function getLocalWhatsappGroups(user?: string): WhatsappGroupItem[] {
   if (typeof window === "undefined") return [];
+  const key = getWhatsappStorageKey(user);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    // Fallback: check legacy key if user-specific key was empty
+    if (key !== STORAGE_KEY) {
+      const legacyRaw = localStorage.getItem(STORAGE_KEY);
+      if (legacyRaw) {
+        const legacyParsed = JSON.parse(legacyRaw);
+        if (Array.isArray(legacyParsed) && legacyParsed.length > 0) {
+          try {
+            localStorage.setItem(key, legacyRaw);
+          } catch {}
+          return legacyParsed;
+        }
+      }
+    }
+  } catch {}
+  return [];
 }
 
-export function saveLocalWhatsappGroups(groups: WhatsappGroupItem[]): void {
+export function saveLocalWhatsappGroups(groups: WhatsappGroupItem[], user?: string): void {
   if (typeof window === "undefined") return;
+  const key = getWhatsappStorageKey(user);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
+    localStorage.setItem(key, JSON.stringify(groups));
+    // Also maintain legacy key updated for backwards compatibility
+    if (!user || normalizePerson(user) === "Neftali" || normalizePerson(user) === "John") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
+    }
   } catch {}
 }
 
-export async function fetchRemoteWhatsappGroups(): Promise<WhatsappGroupItem[]> {
-  const local = getLocalWhatsappGroups();
+export async function fetchRemoteWhatsappGroups(user?: string): Promise<WhatsappGroupItem[]> {
+  const local = getLocalWhatsappGroups(user);
+  const norm = normalizePerson(user);
+  const queryParam = norm && norm !== "Sin asignar" ? `?user=${encodeURIComponent(norm)}` : "";
+
   try {
-    const res = await fetch("/api/whatsapp-directory", { cache: "no-store" });
+    const res = await fetch(`/api/whatsapp-directory${queryParam}`, { cache: "no-store" });
     if (!res.ok) return local;
     const data = await res.json();
     if (Array.isArray(data?.groups) && data.groups.length > 0) {
-      const merged = mergeWhatsappGroups(local, data.groups);
-      saveLocalWhatsappGroups(merged.groups);
+      const merged = mergeWhatsappGroups(local, data.groups, norm);
+      saveLocalWhatsappGroups(merged.groups, user);
       return merged.groups;
     }
     if (local.length > 0) {
-      // Sync local to remote in background
+      // Sync local to remote in background for this specific user
       fetch("/api/whatsapp-directory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groups: local }),
+        body: JSON.stringify({ user: norm, groups: local }),
       }).catch(() => {});
       return local;
     }
@@ -187,16 +221,29 @@ export async function fetchRemoteWhatsappGroups(): Promise<WhatsappGroupItem[]> 
   return local;
 }
 
-export async function persistWhatsappGroups(groups: WhatsappGroupItem[]): Promise<boolean> {
-  saveLocalWhatsappGroups(groups);
+export async function persistWhatsappGroups(groups: WhatsappGroupItem[], user?: string): Promise<boolean> {
+  saveLocalWhatsappGroups(groups, user);
+  const norm = normalizePerson(user);
   try {
     const res = await fetch("/api/whatsapp-directory", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ groups }),
+      body: JSON.stringify({ user: norm, groups }),
     });
     return res.ok;
   } catch {
     return false;
   }
+}
+
+export async function fetchAllTeamWhatsappGroups(): Promise<{ groups: WhatsappGroupItem[]; total: number }> {
+  try {
+    const res = await fetch("/api/whatsapp-directory?all=1", { cache: "no-store" });
+    if (!res.ok) return { groups: [], total: 0 };
+    const data = await res.json();
+    if (Array.isArray(data?.groups)) {
+      return { groups: data.groups, total: data.groups.length };
+    }
+  } catch {}
+  return { groups: [], total: 0 };
 }

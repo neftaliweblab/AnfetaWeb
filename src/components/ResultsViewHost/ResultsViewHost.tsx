@@ -1685,6 +1685,7 @@ export function ResultsViewHost({
       {showWhatsappModal && (
         <WhatsappDirectoryModal
           isOpen={showWhatsappModal}
+          currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
         />
       )}

@@ -901,6 +901,7 @@ export function CalendarHost({
       {showWhatsappModal && (
         <WhatsappDirectoryModal
           isOpen={showWhatsappModal}
+          currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
         />
       )}

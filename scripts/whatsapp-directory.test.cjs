@@ -5,6 +5,24 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 
+const customRequire = (name) => {
+  if (name.startsWith("@/")) {
+    const rel = name.slice(2);
+    const fullPath = path.join(root, "src", rel);
+    if (fs.existsSync(fullPath + ".ts")) {
+      const code = fs.readFileSync(fullPath + ".ts", "utf8");
+      const transpiled = ts.transpileModule(code, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const subMod = { exports: {} };
+      const subFn = new Function("exports", "module", "require", transpiled);
+      subFn(subMod.exports, subMod, customRequire);
+      return subMod.exports;
+    }
+  }
+  return require(name);
+};
+
 // Transpile ts file for testing
 const tsCode = fs.readFileSync(path.join(root, "src/lib/whatsappDirectory.ts"), "utf8");
 const jsCode = ts.transpileModule(tsCode, {
@@ -13,9 +31,9 @@ const jsCode = ts.transpileModule(tsCode, {
 
 const mod = { exports: {} };
 const fn = new Function("exports", "module", "require", jsCode);
-fn(mod.exports, mod, require);
+fn(mod.exports, mod, customRequire);
 
-const { detectGroupDomain, cleanInviteUrl, mergeWhatsappGroups } = mod.exports;
+const { detectGroupDomain, cleanInviteUrl, mergeWhatsappGroups, getWhatsappStorageKey } = mod.exports;
 
 // Test 1: detectGroupDomain
 assert.equal(detectGroupDomain("Apartallante - Web & Ads"), "Apartallante");
@@ -52,7 +70,7 @@ const incoming = [
   { id: "g3@g.us", name: "Grupo Tres", inviteUrl: "https://chat.whatsapp.com/New3" },
 ];
 
-const mergeRes = mergeWhatsappGroups(existing, incoming);
+const mergeRes = mergeWhatsappGroups(existing, incoming, "Karla");
 assert.equal(mergeRes.groups.length, 3);
 assert.equal(mergeRes.addedCount, 1, "Should add 1 new group");
 assert.equal(mergeRes.updatedCount, 1, "Should update 1 existing group");
@@ -68,17 +86,18 @@ assert.equal(g1.lastSynced, "2026-01-01T00:00:00.000Z", "Unchanged group preserv
 const g2 = mergeRes.groups.find(g => g.id === "g2@g.us");
 assert.equal(g2.inviteUrl, "https://chat.whatsapp.com/New2");
 
-// Check group 3 created
+// Check group 3 created with owner
 const g3 = mergeRes.groups.find(g => g.id === "g3@g.us");
 assert.equal(g3.name, "Grupo Tres");
+assert.equal(g3.owner, "Karla");
 
 // Test 4: API storage mock & persistence check
 const testFile = path.join(root, "data", "whatsapp_groups_directory.test.json");
 if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
 
 const sampleGroups = [
-  { id: "g1@g.us", name: "Beta Corp - Proyecto", inviteUrl: "https://chat.whatsapp.com/Beta123", participantsCount: 15, owner: "5215512345678@c.us", linkedActivityId: "act_123" },
-  { id: "g2@g.us", name: "Alpha Tech · Web", inviteUrl: undefined },
+  { id: "g1@g.us", name: "Beta Corp - Proyecto", inviteUrl: "https://chat.whatsapp.com/Beta123", participantsCount: 15, owner: "Karla", linkedActivityId: "act_123" },
+  { id: "g2@g.us", name: "Alpha Tech · Web", inviteUrl: undefined, owner: "Neftali" },
 ];
 
 fs.writeFileSync(testFile, JSON.stringify({ groups: sampleGroups, total: 2 }), "utf8");
@@ -87,8 +106,16 @@ assert.equal(readBack.groups.length, 2);
 assert.equal(readBack.groups[0].name, "Beta Corp - Proyecto");
 assert.equal(readBack.groups[0].inviteUrl, "https://chat.whatsapp.com/Beta123");
 assert.equal(readBack.groups[0].participantsCount, 15);
-assert.equal(readBack.groups[0].owner, "5215512345678@c.us");
+assert.equal(readBack.groups[0].owner, "Karla");
 assert.equal(readBack.groups[0].linkedActivityId, "act_123");
 fs.unlinkSync(testFile);
 
-console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces, merge incremental y almacenamiento de catálogo con metadatos verificados.");
+// Test 5: Multi-user storage keys
+assert.equal(getWhatsappStorageKey("Neftali"), "anfeta_whatsapp_groups_v1:Neftali");
+assert.equal(getWhatsappStorageKey("nneft"), "anfeta_whatsapp_groups_v1:Neftali");
+assert.equal(getWhatsappStorageKey("Karla"), "anfeta_whatsapp_groups_v1:Karla");
+assert.equal(getWhatsappStorageKey("kkarl"), "anfeta_whatsapp_groups_v1:Karla");
+assert.equal(getWhatsappStorageKey("John"), "anfeta_whatsapp_groups_v1:John");
+assert.equal(getWhatsappStorageKey(undefined), "anfeta_whatsapp_groups_v1");
+
+console.log("OK: WhatsApp Directory - Detección de dominios, validación de enlaces, merge incremental, aislamiento multi-usuario y almacenamiento de catálogo con metadatos verificados.");

@@ -11,7 +11,6 @@ import {
   X,
   Globe,
   Users,
-  MessageCircle,
   Link as LinkIcon,
   Trash2,
   Edit2,
@@ -22,6 +21,7 @@ import {
   ClipboardPaste,
   HelpCircle,
   BookOpen,
+  ChevronDown,
 } from "lucide-react";
 import {
   WhatsappGroupItem,
@@ -29,10 +29,17 @@ import {
   saveLocalWhatsappGroups,
   fetchRemoteWhatsappGroups,
   persistWhatsappGroups,
+  fetchAllTeamWhatsappGroups,
   detectGroupDomain,
   cleanInviteUrl,
   mergeWhatsappGroups,
 } from "@/lib/whatsappDirectory";
+import {
+  normalizePerson,
+  PERSON_METADATA,
+  getPersonInitials,
+  getPersonColor,
+} from "@/services/identityNormalizer";
 import { playCopyChime } from "@/services/windowsIntegration";
 import { WhatsAppIcon } from "./WhatsAppIcon";
 
@@ -215,17 +222,36 @@ export const SYNC_EXTRACTOR_SCRIPT = `(async()=>{
   }
 })();`;
 
+const TEAM_MEMBERS = [
+  "Neftali",
+  "Karla",
+  "Isaias",
+  "Andrade",
+  "Brian",
+  "Genaro",
+  "John",
+  "Sotelo",
+  "Acalli",
+];
+
 interface WhatsappDirectoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialQuery?: string;
+  currentUser?: string;
 }
 
 export function WhatsappDirectoryModal({
   isOpen,
   onClose,
   initialQuery = "",
+  currentUser,
 }: WhatsappDirectoryModalProps) {
+  const normalizedCurrent = useMemo(() => normalizePerson(currentUser || "Neftali"), [currentUser]);
+  const [selectedUser, setSelectedUser] = useState<string>(normalizedCurrent);
+  const [viewMode, setViewMode] = useState<"user" | "all">("user");
+  const [userSelectorOpen, setUserSelectorOpen] = useState(false);
+
   const [groups, setGroups] = useState<WhatsappGroupItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
@@ -236,35 +262,66 @@ export function WhatsappDirectoryModal({
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupLink, setNewGroupLink] = useState("");
-  const [showSyncHelper, setShowSyncHelper] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [scriptCopied, setScriptCopied] = useState(false);
   const [showScriptCode, setShowScriptCode] = useState(false);
   const [showManualPaste, setShowManualPaste] = useState(false);
   const [manualPasteText, setManualPasteText] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load groups on open
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const userSelectorRef = useRef<HTMLDivElement>(null);
+
+  // Sync selected user when currentUser changes
   useEffect(() => {
     if (isOpen) {
-      setSearchQuery(initialQuery);
-      const local = getLocalWhatsappGroups();
-      setGroups(local);
+      setSelectedUser(normalizedCurrent);
+    }
+  }, [isOpen, normalizedCurrent]);
+
+  // Click outside to close user selector
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (userSelectorRef.current && !userSelectorRef.current.contains(e.target as Node)) {
+        setUserSelectorOpen(false);
+      }
+    };
+    if (userSelectorOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => document.removeEventListener("mousedown", handleOutsideClick);
+    }
+  }, [userSelectorOpen]);
+
+  // Load groups on open or user change
+  useEffect(() => {
+    if (!isOpen) return;
+    setSearchQuery(initialQuery);
+
+    if (viewMode === "all") {
       setLoading(true);
-      fetchRemoteWhatsappGroups().then((rem) => {
-        if (rem && rem.length > 0) {
-          setGroups(rem);
-        } else if (local && local.length > 0) {
-          setGroups(local);
-        }
+      fetchAllTeamWhatsappGroups().then((res) => {
+        setGroups(res.groups);
         setLoading(false);
       });
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 100);
+      return;
     }
-  }, [isOpen, initialQuery]);
+
+    const local = getLocalWhatsappGroups(selectedUser);
+    setGroups(local);
+    setLoading(true);
+    fetchRemoteWhatsappGroups(selectedUser).then((rem) => {
+      if (rem && rem.length > 0) {
+        setGroups(rem);
+      } else if (local && local.length > 0) {
+        setGroups(local);
+      }
+      setLoading(false);
+    });
+
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+  }, [isOpen, initialQuery, selectedUser, viewMode]);
 
   // Handle ESC key to close and Ctrl+V to paste clipboard
   useEffect(() => {
@@ -279,8 +336,8 @@ export function WhatsappDirectoryModal({
           setEditingGroupId(null);
         } else if (isAddingNew) {
           setIsAddingNew(false);
-        } else if (showSyncHelper) {
-          setShowSyncHelper(false);
+        } else if (userSelectorOpen) {
+          setUserSelectorOpen(false);
         } else {
           onClose();
         }
@@ -294,7 +351,7 @@ export function WhatsappDirectoryModal({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, editingGroupId, isAddingNew, showSyncHelper, showHelpModal, showManualPaste, groups, onClose]);
+  }, [isOpen, editingGroupId, isAddingNew, showHelpModal, showManualPaste, userSelectorOpen, groups, onClose]);
 
   // Filtered and sorted groups
   const filteredGroups = useMemo(() => {
@@ -312,7 +369,8 @@ export function WhatsappDirectoryModal({
         const nameMatch = g.name.toLowerCase().includes(q);
         const domainMatch = (g.domain || "").toLowerCase().includes(q);
         const linkMatch = (g.inviteUrl || "").toLowerCase().includes(q);
-        return nameMatch || domainMatch || linkMatch;
+        const ownerMatch = (g.owner || "").toLowerCase().includes(q);
+        return nameMatch || domainMatch || linkMatch || ownerMatch;
       });
     }
 
@@ -331,7 +389,6 @@ export function WhatsappDirectoryModal({
     if (group.inviteUrl) {
       window.open(group.inviteUrl, "_blank", "noopener,noreferrer");
     } else {
-      // Abre WhatsApp Web copiando el nombre del grupo para pegarlo en el buscador
       try {
         navigator.clipboard.writeText(group.name);
         playCopyChime?.();
@@ -345,17 +402,23 @@ export function WhatsappDirectoryModal({
 
   const handleSaveInviteUrl = async (groupId: string) => {
     const valid = cleanInviteUrl(editLinkValue);
+    const targetUser = viewMode === "all" ? normalizedCurrent : selectedUser;
     const updated = groups.map((g) => {
       if (g.id === groupId) {
-        return { ...g, inviteUrl: valid || editLinkValue.trim() || undefined };
+        return {
+          ...g,
+          inviteUrl: valid || editLinkValue.trim() || undefined,
+          owner: g.owner || targetUser,
+        };
       }
       return g;
     });
     setGroups(updated);
     setEditingGroupId(null);
     setEditLinkValue("");
-    await persistWhatsappGroups(updated);
-    setStatusMessage("Enlace actualizado correctamente.");
+    saveLocalWhatsappGroups(updated, targetUser);
+    await persistWhatsappGroups(updated, targetUser);
+    setStatusMessage(`Enlace actualizado para ${targetUser}.`);
     setTimeout(() => setStatusMessage(null), 3000);
   };
 
@@ -363,11 +426,14 @@ export function WhatsappDirectoryModal({
     if (!newGroupName.trim()) return;
     const detected = detectGroupDomain(newGroupName);
     const validLink = cleanInviteUrl(newGroupLink);
+    const targetUser = viewMode === "all" ? normalizedCurrent : selectedUser;
+
     const newItem: WhatsappGroupItem = {
       id: `manual_${Date.now()}`,
       name: newGroupName.trim(),
       domain: detected,
       inviteUrl: validLink || newGroupLink.trim() || undefined,
+      owner: targetUser,
       lastSynced: new Date().toISOString(),
     };
 
@@ -376,25 +442,40 @@ export function WhatsappDirectoryModal({
     setIsAddingNew(false);
     setNewGroupName("");
     setNewGroupLink("");
-    await persistWhatsappGroups(updated);
-    setStatusMessage(`Grupo "${newItem.name}" agregado.`);
+    saveLocalWhatsappGroups(updated, targetUser);
+    await persistWhatsappGroups(updated, targetUser);
+    setStatusMessage(`Grupo agregado al catálogo de ${targetUser}.`);
     setTimeout(() => setStatusMessage(null), 3000);
   };
 
   const handleDeleteGroup = async (groupId: string) => {
+    const targetUser = viewMode === "all" ? normalizedCurrent : selectedUser;
     const updated = groups.filter((g) => g.id !== groupId);
     setGroups(updated);
-    await persistWhatsappGroups(updated);
+    saveLocalWhatsappGroups(updated, targetUser);
+    await persistWhatsappGroups(updated, targetUser);
+  };
+
+  const handleCopyGroupToMyDirectory = async (group: WhatsappGroupItem) => {
+    const myGroups = getLocalWhatsappGroups(normalizedCurrent);
+    const res = mergeWhatsappGroups(myGroups, [{ ...group, owner: normalizedCurrent }], normalizedCurrent);
+    saveLocalWhatsappGroups(res.groups, normalizedCurrent);
+    await persistWhatsappGroups(res.groups, normalizedCurrent);
+    playCopyChime?.();
+    setStatusMessage(`Grupo "${group.name}" guardado en tu catálogo (${normalizedCurrent}).`);
+    setTimeout(() => setStatusMessage(null), 3500);
   };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify({ groups, exportedAt: new Date().toISOString() }, null, 2)], {
-      type: "application/json",
-    });
+    const targetUser = viewMode === "all" ? "equipo" : selectedUser.toLowerCase();
+    const blob = new Blob(
+      [JSON.stringify({ owner: selectedUser, groups, exportedAt: new Date().toISOString() }, null, 2)],
+      { type: "application/json" }
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `anfeta-whatsapp-grupos-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `anfeta-whatsapp-${targetUser}-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -409,10 +490,12 @@ export function WhatsappDirectoryModal({
         const parsed = JSON.parse(text);
         const incoming = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.groups) ? parsed.groups : [];
         if (incoming.length > 0) {
-          const result = mergeWhatsappGroups(groups, incoming);
+          const targetUser = viewMode === "all" ? normalizedCurrent : selectedUser;
+          const currentList = getLocalWhatsappGroups(targetUser);
+          const result = mergeWhatsappGroups(currentList, incoming, targetUser);
           setGroups(result.groups);
-          saveLocalWhatsappGroups(result.groups);
-          await persistWhatsappGroups(result.groups);
+          saveLocalWhatsappGroups(result.groups, targetUser);
+          await persistWhatsappGroups(result.groups, targetUser);
           playCopyChime?.();
 
           const parts: string[] = [];
@@ -421,7 +504,7 @@ export function WhatsappDirectoryModal({
           if (result.unchangedCount > 0) parts.push(`${result.unchangedCount} sin cambios`);
           const detail = parts.length > 0 ? parts.join(", ") : "sin novedades";
 
-          setStatusMessage(`¡Catálogo actualizado! (${detail}). Total: ${result.groups.length} grupos.`);
+          setStatusMessage(`¡Catálogo de ${targetUser} actualizado! (${detail}). Total: ${result.groups.length} grupos.`);
           setTimeout(() => setStatusMessage(null), 4000);
         }
       } catch {
@@ -461,10 +544,12 @@ export function WhatsappDirectoryModal({
         return;
       }
 
-      const result = mergeWhatsappGroups(groups, incoming);
+      const targetUser = viewMode === "all" ? normalizedCurrent : selectedUser;
+      const currentList = getLocalWhatsappGroups(targetUser);
+      const result = mergeWhatsappGroups(currentList, incoming, targetUser);
       setGroups(result.groups);
-      saveLocalWhatsappGroups(result.groups);
-      await persistWhatsappGroups(result.groups);
+      saveLocalWhatsappGroups(result.groups, targetUser);
+      await persistWhatsappGroups(result.groups, targetUser);
       setShowManualPaste(false);
       setManualPasteText("");
       playCopyChime?.();
@@ -475,7 +560,7 @@ export function WhatsappDirectoryModal({
       if (result.unchangedCount > 0) parts.push(`${result.unchangedCount} sin cambios`);
       const detail = parts.length > 0 ? parts.join(", ") : "sin novedades";
 
-      setStatusMessage(`¡Sincronización completada! (${detail}). Total: ${result.groups.length} grupos.`);
+      setStatusMessage(`¡Sincronizado para ${targetUser}! (${detail}). Total: ${result.groups.length} grupos.`);
       setTimeout(() => setStatusMessage(null), 4000);
     } catch {
       setShowManualPaste(true);
@@ -503,16 +588,112 @@ export function WhatsappDirectoryModal({
               <WhatsAppIcon className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold text-white tracking-wide truncate">
                   Grupos de WhatsApp de Proyectos
                 </h2>
+
+                {/* Multi-user Persona Selector */}
+                <div className="relative inline-block text-left" ref={userSelectorRef}>
+                  <button
+                    type="button"
+                    onClick={() => setUserSelectorOpen(!userSelectorOpen)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer shadow-sm hover:brightness-110"
+                    style={{
+                      backgroundColor: viewMode === "all" ? "rgba(56, 189, 248, 0.15)" : `${getPersonColor(selectedUser)}20`,
+                      borderColor: viewMode === "all" ? "rgba(56, 189, 248, 0.6)" : `${getPersonColor(selectedUser)}60`,
+                      color: viewMode === "all" ? "#7DD3FC" : getPersonColor(selectedUser),
+                    }}
+                    title="Cambiar usuario o ver catálogo de otro compañero"
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-slate-950 shrink-0"
+                      style={{ backgroundColor: viewMode === "all" ? "#38BDF8" : getPersonColor(selectedUser) }}
+                    >
+                      {viewMode === "all" ? "★" : getPersonInitials(selectedUser)}
+                    </span>
+                    <span>{viewMode === "all" ? "Todo el equipo" : selectedUser}</span>
+                    {selectedUser === normalizedCurrent && viewMode !== "all" && (
+                      <span className="text-[10px] opacity-75">(Tú)</span>
+                    )}
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {userSelectorOpen && (
+                    <div className="absolute left-0 mt-1.5 w-64 rounded-xl bg-[#0F1622] border border-[#24354A] shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                      <div className="px-3 py-1.5 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                        Catálogo de Usuario
+                      </div>
+                      <div className="max-h-60 overflow-y-auto py-1 scrollbar-thin">
+                        {TEAM_MEMBERS.map((member) => {
+                          const isCurrent = member === normalizedCurrent;
+                          const isSelected = viewMode === "user" && member === selectedUser;
+                          const color = getPersonColor(member);
+                          return (
+                            <button
+                              key={member}
+                              type="button"
+                              onClick={() => {
+                                setSelectedUser(member);
+                                setViewMode("user");
+                                setUserSelectorOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left transition-colors cursor-pointer ${
+                                isSelected ? "bg-[#1E2E42] text-white font-bold" : "text-slate-300 hover:bg-[#162232] hover:text-white"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-slate-950 shrink-0"
+                                  style={{ backgroundColor: color }}
+                                >
+                                  {getPersonInitials(member)}
+                                </span>
+                                <span>{member}</span>
+                                {isCurrent && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 font-mono">
+                                    Tú
+                                  </span>
+                                )}
+                              </div>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-[#38BDF8]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="border-t border-slate-800 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewMode("all");
+                            setUserSelectorOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs text-left transition-colors cursor-pointer ${
+                            viewMode === "all" ? "bg-[#1E2E42] text-[#38BDF8] font-bold" : "text-[#7DD3FC] hover:bg-[#162232]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-[#0284C7] text-white text-[10px] font-bold flex items-center justify-center">
+                              ★
+                            </span>
+                            <span>Todo el equipo (Catálogo Unificado)</span>
+                          </div>
+                          {viewMode === "all" && <Check className="w-3.5 h-3.5 text-[#38BDF8]" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <span className="whitespace-nowrap shrink-0 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#1E293B] border border-slate-700 text-[#38BDF8]">
                   {groups.length} grupos
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 truncate">
-                Acceso directo a grupos de empresas y clientes sin salir de ANFETA
+                {viewMode === "all"
+                  ? "Viendo enlaces y grupos compartidos de todos los compañeros"
+                  : `Catálogo personal de enlaces de ${selectedUser}`}
               </p>
             </div>
           </div>
@@ -529,7 +710,7 @@ export function WhatsappDirectoryModal({
             <button
               onClick={() => handlePasteClipboard()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 text-xs font-bold cursor-pointer transition-colors shadow-[0_0_10px_rgba(37,211,102,0.25)]"
-              title="Pegar los grupos copiados desde WhatsApp Web (o pulsa Ctrl+V)"
+              title={`Pegar los grupos de WhatsApp Web en el catálogo de ${viewMode === "all" ? normalizedCurrent : selectedUser} (Ctrl+V)`}
             >
               <ClipboardPaste className="w-3.5 h-3.5 text-slate-950" />
               <span>Pegar Portapapeles</span>
@@ -537,7 +718,7 @@ export function WhatsappDirectoryModal({
             <button
               onClick={() => setIsAddingNew(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-slate-200 text-xs font-semibold cursor-pointer transition-colors shadow-sm"
-              title="Registrar un nuevo grupo manualmente"
+              title={`Registrar un nuevo grupo para ${viewMode === "all" ? normalizedCurrent : selectedUser}`}
             >
               <Plus className="w-3.5 h-3.5 text-[#38BDF8]" />
               <span>Nuevo Grupo</span>
@@ -564,7 +745,9 @@ export function WhatsappDirectoryModal({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Guía de Sincronización Paso a Paso</h3>
-                    <p className="text-[11px] text-slate-400">Importa o actualiza tus grupos de WhatsApp en ANFETA sin complicaciones</p>
+                    <p className="text-[11px] text-slate-400">
+                      Importa tus grupos a tu catálogo personal ({selectedUser}) sin complicaciones
+                    </p>
                   </div>
                 </div>
                 <button
@@ -681,7 +864,7 @@ export function WhatsappDirectoryModal({
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="w-6 h-6 rounded-full bg-[#22C55E] text-slate-900 font-bold flex items-center justify-center text-xs">6</span>
-                      <span className="font-bold text-white text-sm">Guardar en ANFETA</span>
+                      <span className="font-bold text-white text-sm">Guardar en tu perfil ({selectedUser})</span>
                     </div>
                     <button
                       onClick={() => {
@@ -719,7 +902,7 @@ export function WhatsappDirectoryModal({
                 <div className="p-3.5 rounded-lg bg-[#111927] border border-[#1E2E42] text-[11px] text-slate-400 flex items-start gap-2.5">
                   <Sparkles className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
                   <span className="leading-relaxed">
-                    <b className="text-white">Sincronización Inteligente:</b> Si ya tienes grupos registrados en ANFETA, esta sincronización solo agregará los grupos que falten y actualizará los nuevos datos (enlaces descubiertos o cambios en miembros), conservando tus notas y configuraciones previas sin borrar nada.
+                    <b className="text-white">Multi-Usuario & Sincronización Inteligente:</b> Los enlaces se guardan asociados a tu perfil. Solo agregará los grupos que falten y actualizará los nuevos datos (enlaces descubiertos o cambios en miembros), conservando tus enlaces previos y notas sin sobreescribir nada.
                   </span>
                 </div>
               </div>
@@ -744,7 +927,9 @@ export function WhatsappDirectoryModal({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ClipboardPaste className="w-4 h-4 text-[#38BDF8]" />
-                  <span className="text-sm font-bold text-white">Pegar catálogo de grupos de WhatsApp</span>
+                  <span className="text-sm font-bold text-white">
+                    Pegar grupos para {viewMode === "all" ? normalizedCurrent : selectedUser}
+                  </span>
                 </div>
                 <button
                   onClick={() => setShowManualPaste(false)}
@@ -766,7 +951,7 @@ export function WhatsappDirectoryModal({
               <div className="flex items-center justify-between pt-1">
                 <label className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-xs text-slate-300 font-medium cursor-pointer transition-colors">
                   <Upload className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>Subir anfeta-whatsapp-grupos.json</span>
+                  <span>Subir archivo .json</span>
                   <input
                     type="file"
                     accept=".json"
@@ -797,111 +982,6 @@ export function WhatsappDirectoryModal({
           </div>
         )}
 
-        {/* Sync Helper Drawer (if opened) */}
-        {showSyncHelper && (
-          <div className="bg-[#0B1522] border-b border-[#254160] px-5 py-4 text-xs text-slate-300 animate-in slide-in-from-top duration-200">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-3 max-w-3xl">
-                <div className="flex items-center gap-2 font-bold text-[#38BDF8] text-sm">
-                  <Sparkles className="w-4 h-4 text-[#38BDF8]" />
-                  <span>Pasos para sincronizar tus grupos de WhatsApp con ANFETA</span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1">
-                  {/* Paso 1 */}
-                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="w-5 h-5 rounded-full bg-[#0284C7] text-white font-bold text-[10px] flex items-center justify-center">1</span>
-                        <span className="font-bold text-white text-[11px]">Copiar script</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 leading-snug">
-                        Copia el código extractor preparado para WhatsApp Web.
-                      </p>
-                    </div>
-                    <button
-                      onClick={copySyncScript}
-                      className="mt-2.5 w-full py-1.5 px-2 rounded bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-sm transition-colors"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copiar Script</span>
-                    </button>
-                  </div>
-
-                  {/* Paso 2 */}
-                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="w-5 h-5 rounded-full bg-[#1E3A5F] text-[#38BDF8] font-bold text-[10px] flex items-center justify-center border border-[#38BDF8]/40">2</span>
-                        <span className="font-bold text-white text-[11px]">Pegar en WhatsApp</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 leading-snug">
-                        Abre <b className="text-slate-200">web.whatsapp.com</b>, presiona <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">F12</kbd> (Consola), pega con <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">Ctrl+V</kbd> y da <kbd className="px-1 py-0.5 rounded bg-slate-800 text-[#7DD3FC] font-mono text-[10px]">Enter</kbd>.
-                      </p>
-                    </div>
-                    <span className="mt-2 text-[10px] text-slate-500 font-mono">web.whatsapp.com</span>
-                  </div>
-
-                  {/* Paso 3 */}
-                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="w-5 h-5 rounded-full bg-[#1E3A5F] text-[#38BDF8] font-bold text-[10px] flex items-center justify-center border border-[#38BDF8]/40">3</span>
-                        <span className="font-bold text-white text-[11px]">Copiar datos</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 leading-snug">
-                        Saldrá una tarjeta verde en WhatsApp. Pulsa <b className="text-[#4ADE80]">Copiar datos</b> (también se descarga el JSON).
-                      </p>
-                    </div>
-                    <span className="mt-2 text-[10px] text-[#4ADE80] font-semibold">✓ Extracción lista</span>
-                  </div>
-
-                  {/* Paso 4 */}
-                  <div className="bg-[#111C2B] border border-[#1E3048] rounded-lg p-2.5 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="w-5 h-5 rounded-full bg-[#25D366] text-[#0B141A] font-bold text-[10px] flex items-center justify-center">4</span>
-                        <span className="font-bold text-white text-[11px]">Guardar en ANFETA</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 leading-snug">
-                        Regresa a esta ventana y pulsa el botón abajo para guardar todo.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handlePasteClipboard()}
-                      className="mt-2.5 w-full py-1.5 px-2 rounded bg-[#25D366] hover:bg-[#20BD5A] text-[#0A1319] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-sm transition-colors"
-                    >
-                      <ClipboardPaste className="w-3.5 h-3.5" />
-                      <span>Pegar Portapapeles</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-1 border-t border-[#1E2D40] text-[11px] text-slate-400">
-                  <span>¿Prefieres subir el archivo descargado directamente?</span>
-                  <label className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162232] hover:bg-[#1E3046] border border-[#263A52] text-[#7DD3FC] font-medium cursor-pointer transition-colors">
-                    <Upload className="w-3 h-3 text-[#38BDF8]" />
-                    <span>Importar anfeta-whatsapp-grupos.json</span>
-                    <input
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportJson}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowSyncHelper(false)}
-                className="text-slate-500 hover:text-slate-300 p-1 cursor-pointer"
-                title="Cerrar guía"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Status Toast */}
         {statusMessage && (
           <div className="bg-[#064E3B]/80 border-b border-[#059669] px-4 py-1.5 text-xs text-[#6EE7B7] flex items-center gap-2 animate-in fade-in">
@@ -910,7 +990,7 @@ export function WhatsappDirectoryModal({
           </div>
         )}
 
-        {/* Search & Filters */}
+        {/* Search & Filters Bar */}
         <div className="px-5 py-3 bg-[#0E1520] border-b border-[#1A2636] flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -919,7 +999,7 @@ export function WhatsappDirectoryModal({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por empresa, proyecto (ej. apartallante.com, webs), o nombre de grupo…"
+              placeholder="Buscar por empresa, proyecto (ej. apartallante.com, webs), nombre o compañero…"
               className="w-full bg-[#131D2A] border border-[#223348] rounded-lg pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#38BDF8] focus:ring-1 focus:ring-[#38BDF8] transition-all"
             />
             {searchQuery && (
@@ -970,7 +1050,9 @@ export function WhatsappDirectoryModal({
         {isAddingNew && (
           <div className="bg-[#121E2E] border-b border-[#254160] px-5 py-3 animate-in slide-in-from-top duration-150">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-[#38BDF8]">Registrar nuevo grupo de proyecto</span>
+              <span className="text-xs font-bold text-[#38BDF8]">
+                Registrar nuevo grupo para {viewMode === "all" ? normalizedCurrent : selectedUser}
+              </span>
               <button
                 onClick={() => setIsAddingNew(false)}
                 className="text-slate-400 hover:text-white"
@@ -1020,12 +1102,16 @@ export function WhatsappDirectoryModal({
                 <WhatsAppIcon className="w-8 h-8" />
               </div>
               <h3 className="text-sm font-semibold text-slate-200">
-                {searchQuery ? "No se encontraron grupos que coincidan" : "No hay grupos registrados todavía"}
+                {searchQuery
+                  ? "No se encontraron grupos que coincidan"
+                  : viewMode === "all"
+                  ? "No hay grupos registrados en el equipo todavía"
+                  : `No hay grupos registrados todavía para ${selectedUser}`}
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mt-1 leading-relaxed">
                 {searchQuery
                   ? "Prueba buscando por otra palabra o registra el grupo manualmente."
-                  : "Sincroniza tus grupos directamente desde WhatsApp Web o regístralos a mano para vincularlos con tus proyectos y calendario."}
+                  : `Sincroniza tus grupos directamente desde WhatsApp Web para asociarlos a tu perfil de ${selectedUser}.`}
               </p>
               {!searchQuery && (
                 <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
@@ -1057,6 +1143,8 @@ export function WhatsappDirectoryModal({
             filteredGroups.map((group) => {
               const hasLink = Boolean(group.inviteUrl);
               const isEditing = editingGroupId === group.id;
+              const ownerName = group.owner ? normalizePerson(group.owner) : undefined;
+              const isMine = ownerName === normalizedCurrent;
 
               return (
                 <div
@@ -1076,6 +1164,25 @@ export function WhatsappDirectoryModal({
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#1E3A5F]/60 border border-[#38BDF8]/40 text-[#7DD3FC]">
                             <Globe className="w-2.5 h-2.5 text-[#38BDF8]" />
                             <span>{group.domain}</span>
+                          </span>
+                        )}
+                        {ownerName && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border"
+                            style={{
+                              backgroundColor: `${getPersonColor(ownerName)}18`,
+                              borderColor: `${getPersonColor(ownerName)}40`,
+                              color: getPersonColor(ownerName),
+                            }}
+                            title={`Grupo en el catálogo de ${ownerName}`}
+                          >
+                            <span
+                              className="w-3 h-3 rounded-full text-[8px] font-bold flex items-center justify-center text-slate-950"
+                              style={{ backgroundColor: getPersonColor(ownerName) }}
+                            >
+                              {getPersonInitials(ownerName)}
+                            </span>
+                            <span>{ownerName}</span>
                           </span>
                         )}
                       </div>
@@ -1125,25 +1232,36 @@ export function WhatsappDirectoryModal({
                         />
                         <button
                           onClick={() => handleSaveInviteUrl(group.id)}
-                          className="px-2 py-0.5 rounded bg-[#0284C7] text-white text-[11px] font-bold"
+                          className="px-2 py-0.5 rounded bg-[#0284C7] text-white text-[11px] font-bold cursor-pointer"
                         >
                           Guardar
                         </button>
                         <button
                           onClick={() => setEditingGroupId(null)}
-                          className="px-1.5 py-0.5 text-slate-400 hover:text-white text-[11px]"
+                          className="px-1.5 py-0.5 text-slate-400 hover:text-white text-[11px] cursor-pointer"
                         >
                           ✕
                         </button>
                       </div>
                     ) : (
                       <>
+                        {/* Copy to my catalog button if viewing a teammate's group */}
+                        {!isMine && (
+                          <button
+                            onClick={() => handleCopyGroupToMyDirectory(group)}
+                            className="p-1.5 rounded hover:bg-sky-500/20 text-slate-400 hover:text-sky-300 transition-colors cursor-pointer"
+                            title={`Guardar copia en mi catálogo personal (${normalizedCurrent})`}
+                          >
+                            <Download className="w-3.5 h-3.5 text-sky-400" />
+                          </button>
+                        )}
+
                         <button
                           onClick={() => {
                             setEditingGroupId(group.id);
                             setEditLinkValue(group.inviteUrl || "");
                           }}
-                          className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-[#38BDF8] transition-colors"
+                          className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-[#38BDF8] transition-colors cursor-pointer"
                           title={hasLink ? "Editar enlace" : "Agregar enlace de invitación"}
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -1152,7 +1270,7 @@ export function WhatsappDirectoryModal({
                         {hasLink && (
                           <button
                             onClick={() => handleCopyLink(group)}
-                            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-[#38BDF8] transition-colors"
+                            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-[#38BDF8] transition-colors cursor-pointer"
                             title="Copiar enlace de invitación"
                           >
                             {copiedId === group.id ? (
@@ -1178,7 +1296,7 @@ export function WhatsappDirectoryModal({
 
                         <button
                           onClick={() => handleDeleteGroup(group.id)}
-                          className="p-1.5 rounded hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+                          className="p-1.5 rounded hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
                           title="Eliminar del directorio"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1196,7 +1314,7 @@ export function WhatsappDirectoryModal({
         <div className="flex items-center justify-between px-5 py-3 bg-[#0F1622] border-t border-[#1E293B] text-xs text-slate-400">
           <div className="flex items-center gap-3">
             <span className="font-mono text-[11px] text-slate-500">
-              Mostrando {filteredGroups.length} de {groups.length} grupos
+              Mostrando {filteredGroups.length} de {groups.length} grupos ({viewMode === "all" ? "Equipo" : selectedUser})
             </span>
           </div>
 
@@ -1225,7 +1343,7 @@ export function WhatsappDirectoryModal({
 
             <button
               onClick={onClose}
-              className="px-4 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-medium cursor-pointer"
+              className="px-4 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-medium cursor-pointer transition-colors"
             >
               Cerrar
             </button>
