@@ -1289,6 +1289,7 @@ export function ResultsViewHost({
 
   const renderQuickFilters=(onSelected?:()=>void)=>(
           <QuickFiltersColumn
+            onClose={()=>setIsFiltersOpen(false)}
             onQuickSearch={(term) => {handleQueryChange(term);onSelected?.();}}
             activeTodayProjects={activeProjects}
             onFilterByProject={(domain) => {
@@ -1495,7 +1496,7 @@ export function ResultsViewHost({
             </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
           <ResultsVirtualTable
-          headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)} renderQuickFilters={close=>renderQuickFilters(close)}/>:undefined}
+          headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}
           currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}

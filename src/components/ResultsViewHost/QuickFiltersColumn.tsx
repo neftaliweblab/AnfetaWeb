@@ -10,10 +10,12 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
+  X,
 } from "lucide-react";
 import { ActiveProjectItem } from "@/types/anfeta";
 
 interface QuickFiltersColumnProps {
+  onClose?: () => void;
   onQuickSearch: (term: string) => void;
   activeTodayProjects: ActiveProjectItem[];
   onFilterByProject: (domain: string) => void;
@@ -100,6 +102,7 @@ function getAreaChipStyle(type?: string) {
 }
 
 export function QuickFiltersColumn({
+  onClose,
   onQuickSearch,
   activeTodayProjects,
   onFilterByProject,
@@ -153,10 +156,11 @@ export function QuickFiltersColumn({
   };
 
   return (
-    <div className="w-[235px] max-w-full shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden">
+    <div id="quick-search-panel" className="w-[235px] max-w-full shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden">
       {/* 1. Header BÚSQUEDAS RÁPIDAS & Accesos rápidos (Paridad 1:1 ANFETA) */}
       <div className="shrink-0 mb-2 relative" ref={containerRef}>
-        <div className="px-1 mb-2">
+        <div className="relative px-1 mb-2 pr-7">
+          {onClose&&<button type="button" onClick={onClose} aria-label="Cerrar búsquedas rápidas" title="Cerrar búsquedas rápidas" className="absolute right-0 top-0 rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"><X size={14}/></button>}
           <span className="text-[11px] font-semibold text-[#8B9BB4] tracking-wide block uppercase">
             BÚSQUEDAS RÁPIDAS
           </span>
