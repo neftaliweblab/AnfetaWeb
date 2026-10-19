@@ -32,7 +32,7 @@ import {loadLiveFinance} from '@/services/notionFinance';
 import {financeRowsForDay} from '@/services/calendarFinance';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
-import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages } from '@/services/reviewNotifications';
+import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
@@ -789,6 +789,13 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if(type==="notion-diagnostics"){const report=await diagnoseNotion({...getSettings(),notionToken:resolveNotionToken(req,searchParams)});return NextResponse.json({...report,tokenSource:req.headers.get("x-notion-token")||searchParams.get("token")?"navegador":"servidor"},{headers:{"Cache-Control":"no-store"}});}
+    if (type === "scan-response-pages") {
+      const token = resolveNotionToken(req, searchParams);
+      const settings = { ...getSettings(), notionToken: token };
+      const snapshot = readLocalJson<any[]>("notion_index_snapshot_v1.json", []);
+      const result = await scanResponsePages(settings, snapshot);
+      return NextResponse.json(result);
+    }
     if (type === "search-index") {
       // The foreground serves pages from snapshots; full reads run after the response.
       const token = resolveNotionToken(req, searchParams);
@@ -2561,6 +2568,15 @@ async function POSTLive(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, title: newTitle });
+    }
+
+    if (action === "scan-response-pages") {
+      const token = resolveNotionToken(req) || payload?.token || getSettings().notionToken;
+      const settings = { ...getSettings(), notionToken: token };
+      const snapshot = readLocalJson<any[]>("notion_index_snapshot_v1.json", []);
+      const localItems = Array.isArray(payload?.items) ? payload.items : snapshot;
+      const result = await scanResponsePages(settings, localItems);
+      return NextResponse.json(result);
     }
 
     if (action === "delete-item" || action === "delete-items") {

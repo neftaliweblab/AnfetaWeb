@@ -40,6 +40,7 @@ import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
+import { ResponsePagesCleanupModal } from "./ResponsePagesCleanupModal";
 import { isExpiredResponsePage } from "@/services/reviewNotifications";
 import {
   playCheckChime,
@@ -184,6 +185,7 @@ export function ResultsViewHost({
   const [dropboxTargetDir, setDropboxTargetDir] = useState("");
   const [isGlobalPasteOpen, setIsGlobalPasteOpen] = useState(false);
   const [isBatchRenameOpen, setIsBatchRenameOpen] = useState(false);
+  const [isResponseCleanupOpen, setIsResponseCleanupOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [recordingUpload,setRecordingUpload]=useState(false);
   const [recordingDestination,setRecordingDestination]=useState<SearchResultRow|null>(null);
@@ -1371,6 +1373,7 @@ export function ResultsViewHost({
         isRemindersActive={isRemindersActive}
         remindersCount={remindersCount}
         onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
+        onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
       />
 
       {/* 2. Pills de Ámbitos / Bases Notion */}
@@ -1396,6 +1399,7 @@ export function ResultsViewHost({
         onChangeCurrentUser={setResultPerson}
         onSyncNotion={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
+        onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
         onSyncDropbox={handleSyncDropbox}
         isSyncingDropbox={isSyncingDropbox}
         selectedTag={selectedTag}
@@ -1515,7 +1519,19 @@ export function ResultsViewHost({
                 </button>
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2"><NotionConnectionCheck/><ExportResults rows={filteredItems}/></div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsResponseCleanupOpen(true)}
+                className="rounded border border-indigo-800/60 bg-indigo-950/40 text-indigo-300 px-2 py-1 text-xs hover:bg-indigo-900/60 transition-colors font-medium cursor-pointer flex items-center gap-1.5"
+                title="Escanear y previsualizar páginas [RESPUESTA] para archivarlas en Notion"
+              >
+                <span>🧹</span>
+                <span>Limpiar [RESPUESTA]</span>
+              </button>
+              <NotionConnectionCheck/>
+              <ExportResults rows={filteredItems}/>
+            </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
           <ResultsVirtualTable
           currentUser={currentUser}
@@ -1803,6 +1819,33 @@ export function ResultsViewHost({
           isOpen={showWhatsappModal}
           currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
+        />
+      )}
+
+      {/* Modal de Limpieza y Escaneo de Páginas [RESPUESTA] */}
+      {isResponseCleanupOpen && (
+        <ResponsePagesCleanupModal
+          isOpen={isResponseCleanupOpen}
+          onClose={() => setIsResponseCleanupOpen(false)}
+          localItems={items}
+          onDeleted={(deletedIds) => {
+            const removed = new Set(deletedIds);
+            setItems((prev) => prev.filter((it) => !removed.has(it.id) && (!it.externalId || !removed.has(it.externalId))));
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              for (const id of deletedIds) next.delete(id);
+              return next;
+            });
+            if (selectedItem && (removed.has(selectedItem.id) || (selectedItem.externalId && removed.has(selectedItem.externalId)))) {
+              setSelectedItem(null);
+            }
+            playDeleteChime();
+            setDeleteFeedback({
+              type: "success",
+              message: `✅ Se eliminaron ${deletedIds.length} página(s) de [RESPUESTA] en Notion con éxito.`,
+            });
+            setTimeout(() => setDeleteFeedback(null), 5000);
+          }}
         />
       )}
 

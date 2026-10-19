@@ -260,3 +260,177 @@ export async function cleanupExpiredResponsePages(settings: CalendarSettings): P
   return { count: archivedIds.length, archivedIds };
 }
 
+export interface ResponseScanItem {
+  id: string;
+  name: string;
+  url?: string;
+  serverModified?: string;
+  statusName: string;
+  isPending: boolean;
+  isFinalized: boolean;
+  isExpired: boolean;
+  ageHours: number;
+  dateFormatted: string;
+  recipient?: string;
+  sender?: string;
+}
+
+export function parseResponsePageRow(
+  id: string,
+  title: string,
+  rawDate: string | undefined,
+  statusPropName: string | undefined,
+  pageUrl?: string,
+  nowMs = Date.now()
+): ResponseScanItem | null {
+  if (!title.includes("[RESPUESTA]")) return null;
+
+  const statusStr = String(statusPropName || "").toLowerCase();
+  const fullLower = (title + " " + statusStr).toLowerCase();
+
+  const isPending =
+    fullLower.includes("actividad lista para revisión") ||
+    fullLower.includes("actividad lista para revision") ||
+    fullLower.includes("correcciones solicitadas") ||
+    fullLower.includes("en revisión") ||
+    fullLower.includes("en revision") ||
+    fullLower.includes("prtuzrevision") ||
+    fullLower.includes("aprtuzrevision") ||
+    fullLower.includes("sprtuzrevision") ||
+    fullLower.includes("pendiente") ||
+    fullLower.includes("por hacer");
+
+  const isFinalized =
+    fullLower.includes("revisión aprobada") ||
+    fullLower.includes("revision aprobada") ||
+    fullLower.includes("[terminado]") ||
+    fullLower.includes("terminada") ||
+    fullLower.includes("terminado") ||
+    fullLower.includes("cobrado terminado") ||
+    fullLower.includes("zrevision");
+
+  let dateMs: number | null = null;
+  let dateFormatted = "";
+  const match = title.match(/(?:^|\s)(\d{4}-\d{2}-\d{2})[ T](\d{2}[:\-]\d{2})/);
+  if (match) {
+    const isoString = `${match[1]}T${match[2].replace("-", ":")}:00-06:00`;
+    const parsed = Date.parse(isoString);
+    if (Number.isFinite(parsed)) {
+      dateMs = parsed;
+      dateFormatted = `${match[1]} ${match[2]}`;
+    }
+  }
+  if (!dateMs && rawDate) {
+    const parsed = Date.parse(rawDate);
+    if (Number.isFinite(parsed)) {
+      dateMs = parsed;
+      dateFormatted = new Date(parsed).toISOString().slice(0, 16).replace("T", " ");
+    }
+  }
+
+  const ageMs = dateMs ? Math.max(0, nowMs - dateMs) : 0;
+  const ageHours = Math.floor(ageMs / (1000 * 60 * 60));
+  const isExpired = !isPending && isFinalized && ageHours >= 24;
+
+  const userMatch = title.match(/(?:^|\s)([a-z0-9_]{3,8})\s+(?:de:|dex\s*|de\s+)([a-z0-9_]{3,15})/i);
+  const recipient = userMatch ? userMatch[1] : undefined;
+  const sender = userMatch ? userMatch[2] : undefined;
+
+  const cleanId = id.replace(/-/g, "").toLowerCase();
+  const url = pageUrl || `https://notion.so/${cleanId}`;
+
+  return {
+    id,
+    name: title,
+    url,
+    serverModified: rawDate,
+    statusName: statusPropName || (isFinalized ? "Revisión aprobada" : isPending ? "En revisión" : "Finalizada"),
+    isPending,
+    isFinalized,
+    isExpired,
+    ageHours,
+    dateFormatted: dateFormatted || "Sin fecha",
+    recipient,
+    sender,
+  };
+}
+
+export async function scanResponsePages(
+  settings: CalendarSettings,
+  localItems: any[] = []
+): Promise<{ count: number; items: ResponseScanItem[] }> {
+  const itemsMap = new Map<string, ResponseScanItem>();
+  const source = sourceId(settings);
+  const token = settings.notionToken;
+
+  if (token) {
+    try {
+      const schema = await notionRequest(settings, `data_sources/${source}`);
+      const nameProp = Object.entries(schema.properties || {}).find(([, p]: any) => p.type === "title")?.[0];
+      if (nameProp) {
+        let cursor: string | undefined;
+        let batches = 0;
+        do {
+          const batch: any = await notionRequest(settings, `data_sources/${source}/query`, "POST", {
+            page_size: 100,
+            filter: {
+              property: nameProp,
+              title: { contains: "[RESPUESTA]" },
+            },
+            sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+            ...(cursor ? { start_cursor: cursor } : {}),
+          });
+
+          for (const page of batch.results || []) {
+            if (page.archived || page.in_trash) continue;
+            const title = (page.properties?.[nameProp]?.title || [])
+              .map((t: any) => t.plain_text || t.text?.content || "")
+              .join("");
+
+            const statusProp = Object.values(page.properties || {}).find(
+              (p: any) => p && (p.type === "select" || p.type === "status")
+            ) as any;
+            const statusName = statusProp?.select?.name || statusProp?.status?.name || "";
+
+            const parsed = parseResponsePageRow(page.id, title, page.last_edited_time, statusName, page.url);
+            if (parsed) {
+              const clean = parsed.id.replace(/-/g, "").toLowerCase();
+              itemsMap.set(clean, parsed);
+            }
+          }
+
+          cursor = batch.has_more ? batch.next_cursor : undefined;
+          batches++;
+        } while (cursor && batches < 10);
+      }
+    } catch (err) {
+      console.warn("[ANFETA scan] Error consultando Notion API:", err);
+    }
+  }
+
+  for (const row of localItems) {
+    const rawId = String(row.externalId || row.id || "");
+    if (!rawId) continue;
+    const clean = rawId.replace(/-/g, "").toLowerCase();
+    if (itemsMap.has(clean)) continue;
+
+    const title = String(row.name || row.title || row.Name || "");
+    const status = String(row.updateStatus || row.status || row.statusLabel || "");
+    const date = row.serverModified || row.last_edited_time || row.scheduledDate;
+
+    const parsed = parseResponsePageRow(rawId, title, date, status, row.externalUrl || row.url);
+    if (parsed) {
+      itemsMap.set(clean, parsed);
+    }
+  }
+
+  const sorted = Array.from(itemsMap.values()).sort((a, b) => {
+    if (a.isExpired !== b.isExpired) return a.isExpired ? -1 : 1;
+    if (a.isPending !== b.isPending) return a.isPending ? 1 : -1;
+    return b.ageHours - a.ageHours;
+  });
+
+  return { count: sorted.length, items: sorted };
+}
+
+

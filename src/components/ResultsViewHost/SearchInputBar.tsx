@@ -47,6 +47,7 @@ interface SearchInputBarProps {
   isRemindersActive?: boolean;
   remindersCount?: number;
   onOpenWhatsappGroups?: () => void;
+  onOpenResponseCleanup?: () => void;
 }
 
 export function SearchInputBar({
@@ -73,6 +74,7 @@ export function SearchInputBar({
   isRemindersActive = false,
   remindersCount = 0,
   onOpenWhatsappGroups,
+  onOpenResponseCleanup,
 }: SearchInputBarProps) {
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -463,16 +465,19 @@ export function SearchInputBar({
                 >
                   Importar CSV
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMoreMenu(false);
-                    alert("Revisión de páginas eliminadas completada. 0 páginas huérfanas.");
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] cursor-pointer"
-                >
-                  Revisar páginas eliminadas
-                </button>
+                {onOpenResponseCleanup && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      onOpenResponseCleanup();
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#A5B4FC] text-[11px] font-medium cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>🧹</span>
+                    <span>Limpieza y escaneo [RESPUESTA]</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

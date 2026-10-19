@@ -2,7 +2,7 @@
 
 import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 import React, { useState, useRef, useEffect } from "react";
-import { Check, Columns, RefreshCw, User, Loader2, Cloud } from "lucide-react";
+import { Check, Columns, RefreshCw, User, Loader2, Cloud, Sparkles } from "lucide-react";
 
 export interface UserOption {
   code: string;
@@ -15,6 +15,7 @@ interface SearchConfigRowProps {
   onChangeCurrentUser?: (user: string) => void;
   onSyncNotion?: () => Promise<void> | void;
   isSyncingNotion?: boolean;
+  onOpenResponseCleanup?: () => void;
   onSyncDropbox?: () => Promise<void> | void;
   isSyncingDropbox?: boolean;
   selectedTag: string;
@@ -85,6 +86,7 @@ export function SearchConfigRow({
   onChangeCurrentUser,
   onSyncNotion,
   isSyncingNotion = false,
+  onOpenResponseCleanup,
   onSyncDropbox,
   isSyncingDropbox = false,
   selectedTag,
@@ -261,6 +263,28 @@ export function SearchConfigRow({
               </span>
             ) : null}
           </div>
+        )}
+
+        {/* Botón Limpiar Páginas [RESPUESTA] */}
+        {onOpenResponseCleanup && (
+          <button
+            type="button"
+            onClick={onOpenResponseCleanup}
+            style={{
+              gap: `${Math.round(4 * scale)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+            }}
+            className="rounded font-medium border flex items-center shrink-0 cursor-pointer transition-all bg-[#171A2E] border-[#4338CA] hover:border-[#818CF8] text-[#A5B4FC] hover:bg-[#202544]"
+            title="Escanear y previsualizar páginas de [RESPUESTA] para eliminarlas en Notion"
+          >
+            <Sparkles
+              style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
+              className="text-[#818CF8]"
+            />
+            <span>Limpiar [RESPUESTA]</span>
+          </button>
         )}
 
         {/* Botón Sincronizar Dropbox Cloud en Vivo */}
