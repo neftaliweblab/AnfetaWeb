@@ -32,7 +32,7 @@ import {loadLiveFinance} from '@/services/notionFinance';
 import {financeRowsForDay} from '@/services/calendarFinance';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
-import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity } from '@/services/reviewNotifications';
+import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages } from '@/services/reviewNotifications';
 import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
@@ -952,7 +952,14 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         injected++;
       }
 
-      const visibleItems=uniqueIndex(items.filter(item=>!/^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(item.name.replace(/^\[(?!ANFETA_)[^\]]+\]\s*/,''))&&(!fullIds||item.source!=='Notion'||fullIds.has(cleanPageId(item.externalId||item.id)))));
+      const visibleItems=uniqueIndex(items.filter(item=>!isExpiredResponsePage(item)&&!/^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(item.name.replace(/^\[(?!ANFETA_)[^\]]+\]\s*/,''))&&(!fullIds||item.source!=='Notion'||fullIds.has(cleanPageId(item.externalId||item.id)))));
+      if (token && !bootstrap) {
+        after(async () => {
+          try {
+            await cleanupExpiredResponsePages({ ...getSettings(), notionToken: token });
+          } catch {}
+        });
+      }
       return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-finance-due-v2',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
     }
 
@@ -2556,34 +2563,83 @@ async function POSTLive(req: NextRequest) {
       return NextResponse.json({ success: true, title: newTitle });
     }
 
-    if (action === "delete-item") {
-      const { id, source, path: itemPath } = payload || {};
-      const settings = getSettings();
-      const token = settings.notionToken;
+    if (action === "delete-item" || action === "delete-items") {
+      const itemsList: any[] = Array.isArray(payload?.items)
+        ? payload.items
+        : [payload || {}];
 
-      if (source?.toLowerCase() === "notion" && id && token && token.trim()) {
-        try {
-          await fetch(`https://api.notion.com/v1/pages/${id.replace(/-/g, "")}`, {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${token.trim()}`,
-              "Notion-Version": "2022-06-28",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ archived: true }),
-          });
-        } catch (err) {
-          console.warn("Error archiving Notion page:", err);
-        }
-      } else if (itemPath && fs.existsSync(itemPath)) {
-        try {
-          fs.rmSync(itemPath, { recursive: true, force: true });
-        } catch (err) {
-          console.warn("Error deleting file on disk:", err);
+      const token = resolveNotionToken(req) || payload?.token || getSettings().notionToken;
+      const settings = { ...getSettings(), notionToken: token };
+
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
+
+      for (const it of itemsList) {
+        const rawId = String(it.id || it.externalId || "").trim();
+        const cleanId = rawId.replace(/-/g, "").toLowerCase();
+        const isNotionUuid = /^[a-f0-9]{32}$/i.test(cleanId);
+        const src = String(it.source || it.sourceName || "").toLowerCase().trim();
+        const isNotion =
+          src === "notion" ||
+          isNotionUuid ||
+          ["revisiones", "clientes", "dominios", "programas y proyectos", "cobrar y pagar", "correos contraseñas"].includes(src);
+
+        const itemPath = it.path || it.target;
+
+        if (isNotion && cleanId && token && token.trim()) {
+          try {
+            const res = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${token.trim()}`,
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ archived: true }),
+            });
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.message || `HTTP ${res.status}`);
+            }
+            liveNotionOverrides.delete(cleanId);
+            calendarMemoryUpdates.delete(cleanId);
+            clearReadBlocksCache(settings);
+            successCount++;
+          } catch (err: any) {
+            failedCount++;
+            errors.push(`${it.name || cleanId}: ${err.message || "Error en Notion"}`);
+            console.warn(`[ANFETA delete] Error archiving Notion page ${cleanId}:`, err);
+          }
+        } else if (itemPath && fs.existsSync(itemPath)) {
+          try {
+            fs.rmSync(itemPath, { recursive: true, force: true });
+            successCount++;
+          } catch (err: any) {
+            failedCount++;
+            errors.push(`${itemPath}: ${err.message}`);
+            console.warn("[ANFETA delete] Error deleting file on disk:", err);
+          }
+        } else if (cleanId) {
+          liveNotionOverrides.delete(cleanId);
+          calendarMemoryUpdates.delete(cleanId);
+          successCount++;
         }
       }
 
-      return NextResponse.json({ success: true, id });
+      if (failedCount > 0 && successCount === 0) {
+        return NextResponse.json(
+          { success: false, error: errors.join("; ") || "No se pudo eliminar el elemento.", errors },
+          { status: 502 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        count: successCount,
+        failed: failedCount,
+        errors: errors.length ? errors : undefined,
+      });
     }
 
     if (action === 'create-from-template') {
@@ -2628,7 +2684,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
  try{return await refreshSnapshot(context,req,row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
-async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);await invalidateSnapshots({...getSettings(),notionToken:token},body?.action==='delete-item');}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
+async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);const isDelete=body?.action==='delete-item'||body?.action==='delete-items';await invalidateSnapshots({...getSettings(),notionToken:token},isDelete);}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
 export async function GET(req:NextRequest){
  const url=new URL(req.url);

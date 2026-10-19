@@ -18,7 +18,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import { ScopePillsRow } from "./ScopePillsRow";
@@ -40,6 +40,7 @@ import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
+import { isExpiredResponsePage } from "@/services/reviewNotifications";
 import {
   playCheckChime,
   playCopyChime,
@@ -367,8 +368,12 @@ export function ResultsViewHost({
   });
 
   // Table selections
-  const [items, setItems] = useState<SearchResultRow[]>(initialItems);
-  React.useEffect(()=>{setItems(initialItems);},[initialItems]);
+  const [items, setItems] = useState<SearchResultRow[]>(() => initialItems.filter((it) => !isExpiredResponsePage(it)));
+  React.useEffect(() => {
+    setItems(initialItems.filter((it) => !isExpiredResponsePage(it)));
+  }, [initialItems]);
+  const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
   useEffect(()=>{setPinnedDetail(old=>old?items.find(row=>row.id===old.id)||null:null);},[items]);
   const [selectedItem, setSelectedItem] = useState<SearchResultRow | null>(null);
@@ -578,33 +583,143 @@ export function ResultsViewHost({
     setSelectedItem(null);
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) {
       if (selectedItem) {
-        handleDeleteItem(selectedItem);
+        await handleDeleteItem(selectedItem);
       }
       return;
     }
     const count = selectedIds.size;
-    if (window.confirm(`¿Eliminar ${count} página${count > 1 ? "s" : ""} seleccionada${count > 1 ? "s" : ""} del índice?`)) {
+    const selectedItemsList = items.filter((it) => selectedIds.has(it.id));
+    if (!window.confirm(`¿Deseas eliminar permanentemente ${count} página${count > 1 ? "s" : ""} seleccionada${count > 1 ? "s" : ""} en Notion / fuente original?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteFeedback({ type: 'success', message: `Eliminando ${count} página${count > 1 ? 's' : ''} en Notion...` });
+
+    try {
+      let clientToken = "";
+      if (typeof window !== "undefined") {
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) clientToken = JSON.parse(s).notionToken || "";
+        } catch {}
+      }
+
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(clientToken ? { "x-notion-token": clientToken } : {}),
+        },
+        body: JSON.stringify({
+          action: "delete-items",
+          payload: {
+            items: selectedItemsList.map((it) => ({
+              id: it.externalId || it.id,
+              source: it.source || it.sourceName,
+              sourceName: it.sourceName,
+              path: it.path || it.target,
+              name: it.name,
+              token: clientToken,
+            })),
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "No se pudo completar la eliminación en Notion.");
+      }
+
       playDeleteChime();
-      setItems((prev) => prev.filter((it) => !selectedIds.has(it.id)));
-      if (selectedItem && selectedIds.has(selectedItem.id)) {
+      const removedIds = new Set(selectedIds);
+      setItems((prev) => prev.filter((it) => !removedIds.has(it.id)));
+      if (selectedItem && removedIds.has(selectedItem.id)) {
         setSelectedItem(null);
       }
       setSelectedIds(new Set());
+      setDeleteFeedback({
+        type: 'success',
+        message: `✅ Se eliminaron ${data.count || count} página${count > 1 ? 's' : ''} exitosamente en Notion.`,
+      });
+      setTimeout(() => setDeleteFeedback(null), 5000);
+    } catch (err: any) {
+      setDeleteFeedback({
+        type: 'error',
+        message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
+      });
+      setTimeout(() => setDeleteFeedback(null), 7000);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleDeleteItem = (item: any) => {
-    playDeleteChime();
-    setItems((prev) => prev.filter((it) => it.id !== item.id));
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.delete(item.id);
-      return next;
-    });
-    if (selectedItem?.id === item.id) setSelectedItem(null);
+  const handleDeleteItem = async (item: any) => {
+    if (!window.confirm(`¿Deseas eliminar permanentemente "${item.name}" en Notion / fuente original?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteFeedback({ type: 'success', message: `Eliminando "${item.name.slice(0, 30)}..." en Notion...` });
+
+    try {
+      let clientToken = "";
+      if (typeof window !== "undefined") {
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) clientToken = JSON.parse(s).notionToken || "";
+        } catch {}
+      }
+
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(clientToken ? { "x-notion-token": clientToken } : {}),
+        },
+        body: JSON.stringify({
+          action: "delete-item",
+          payload: {
+            id: item.externalId || item.id,
+            source: item.source || item.sourceName,
+            sourceName: item.sourceName,
+            path: item.path || item.target,
+            name: item.name,
+            token: clientToken,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "No se pudo eliminar en Notion.");
+      }
+
+      playDeleteChime();
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      if (selectedItem?.id === item.id) setSelectedItem(null);
+      setDeleteFeedback({
+        type: 'success',
+        message: `✅ Página eliminada exitosamente en Notion.`,
+      });
+      setTimeout(() => setDeleteFeedback(null), 5000);
+    } catch (err: any) {
+      setDeleteFeedback({
+        type: 'error',
+        message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
+      });
+      setTimeout(() => setDeleteFeedback(null), 7000);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Atajos de Teclado Globales (F5 refrescar, Enter abrir, Delete borrar)
@@ -1689,6 +1804,26 @@ export function ResultsViewHost({
           currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
         />
+      )}
+
+      {/* Mensaje de confirmación de eliminación */}
+      {deleteFeedback && (
+        <div
+          className={`fixed bottom-12 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-lg border text-xs font-semibold shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-2 ${
+            deleteFeedback.type === "success"
+              ? "bg-[#091E16] border-[#059669] text-[#34D399]"
+              : "bg-[#200D11] border-[#E11D48] text-[#FDA4AF]"
+          }`}
+        >
+          <span>{deleteFeedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setDeleteFeedback(null)}
+            className="p-0.5 rounded hover:bg-white/10 opacity-70 hover:opacity-100 transition-opacity ml-1"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
     </div>
   );

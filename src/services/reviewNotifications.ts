@@ -148,3 +148,115 @@ export async function reviewNotificationActivity(settings:CalendarSettings,actor
   if(page.archived||page.in_trash)throw Error('La actividad original fue eliminada o archivada.');
   return page;
 }
+
+export function isExpiredResponsePage(row: any, nowMs = Date.now()): boolean {
+  const name = String(row?.name || row?.title || row?.Name || "").trim();
+  if (!name.includes("[RESPUESTA]")) return false;
+
+  // Verificar que NO sea una actividad aún En revisión o pendiente
+  const statusStr = String(row?.updateStatus || row?.statusLabel || row?.status || "").toLowerCase();
+  const fullText = (name + " " + statusStr).toLowerCase();
+
+  if (
+    fullText.includes("actividad lista para revisión") ||
+    fullText.includes("actividad lista para revision") ||
+    fullText.includes("correcciones solicitadas") ||
+    fullText.includes("en revisión") ||
+    fullText.includes("en revision") ||
+    fullText.includes("prtuzrevision") ||
+    fullText.includes("aprtuzrevision") ||
+    fullText.includes("sprtuzrevision") ||
+    fullText.includes("pendiente") ||
+    fullText.includes("por hacer")
+  ) {
+    return false;
+  }
+
+  // Verificar que esté FINALIZADA (Revisión aprobada, Terminada, etc.)
+  const isFinalized =
+    fullText.includes("revisión aprobada") ||
+    fullText.includes("revision aprobada") ||
+    fullText.includes("[terminado]") ||
+    fullText.includes("terminada") ||
+    fullText.includes("terminado") ||
+    fullText.includes("cobrado terminado") ||
+    fullText.includes("zrevision");
+
+  if (!isFinalized) return false;
+
+  // Extraer timestamp del título (ej. "2026-10-16 17:23 ...")
+  let dateMs: number | null = null;
+  const match = name.match(/(?:^|\s)(\d{4}-\d{2}-\d{2})[ T](\d{2}[:\-]\d{2})/);
+  if (match) {
+    const isoString = `${match[1]}T${match[2].replace("-", ":")}:00-06:00`;
+    const parsed = Date.parse(isoString);
+    if (Number.isFinite(parsed)) dateMs = parsed;
+  }
+  if (!dateMs) {
+    const rawDate = row?.serverModified || row?.last_edited_time || row?.lastEdited || row?.scheduledDate;
+    if (rawDate) {
+      const parsed = Date.parse(rawDate);
+      if (Number.isFinite(parsed)) dateMs = parsed;
+    }
+  }
+
+  if (!dateMs) return false;
+
+  // Condición: haber pasado más de 24 horas (86,400,000 ms)
+  const ageMs = nowMs - dateMs;
+  return ageMs > 24 * 60 * 60 * 1000;
+}
+
+export async function cleanupExpiredResponsePages(settings: CalendarSettings): Promise<{ count: number; archivedIds: string[] }> {
+  const source = sourceId(settings);
+  const token = settings.notionToken;
+  if (!token) return { count: 0, archivedIds: [] };
+
+  const archivedIds: string[] = [];
+  try {
+    const schema = await notionRequest(settings, `data_sources/${source}`);
+    const nameProp = Object.entries(schema.properties || {}).find(([, p]: any) => p.type === 'title')?.[0];
+    if (!nameProp) return { count: 0, archivedIds: [] };
+
+    const batch = await notionRequest(settings, `data_sources/${source}/query`, 'POST', {
+      page_size: 100,
+      filter: {
+        property: nameProp,
+        title: { contains: '[RESPUESTA]' },
+      },
+      sorts: [{ timestamp: 'last_edited_time', direction: 'ascending' }],
+    });
+
+    for (const page of batch.results || []) {
+      if (page.archived || page.in_trash) continue;
+      const title = (page.properties?.[nameProp]?.title || [])
+        .map((t: any) => t.plain_text || t.text?.content || '')
+        .join('');
+
+      const statusProp = Object.values(page.properties || {}).find(
+        (p: any) => p && (p.type === 'select' || p.type === 'status')
+      ) as any;
+      const statusName = statusProp?.select?.name || statusProp?.status?.name || '';
+
+      const rowItem = {
+        name: title,
+        serverModified: page.last_edited_time,
+        updateStatus: statusName,
+      };
+
+      if (isExpiredResponsePage(rowItem)) {
+        try {
+          await notionRequest(settings, `pages/${page.id}`, 'PATCH', { archived: true });
+          archivedIds.push(page.id);
+        } catch (archErr) {
+          console.warn(`[ANFETA cleanup] No se pudo archivar página de respuesta ${page.id}:`, archErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[ANFETA cleanup] Error durante limpieza de respuestas:', err);
+  }
+
+  return { count: archivedIds.length, archivedIds };
+}
+
