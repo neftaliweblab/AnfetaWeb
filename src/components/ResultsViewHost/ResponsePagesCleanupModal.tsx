@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { X, RefreshCw, Trash2, CheckSquare, Square, AlertTriangle, ExternalLink, Loader2, Sparkles, Filter, CheckCircle2 } from "lucide-react";
-import { ResponseScanItem } from "@/services/reviewNotifications";
+import { ResponseScanItem } from "@/lib/responsePageRules";
 
 interface ResponsePagesCleanupModalProps {
   isOpen: boolean;

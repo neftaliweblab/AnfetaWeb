@@ -41,7 +41,7 @@ import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs"
 import { BatchRenameModal } from "./BatchRenameModal";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import { ResponsePagesCleanupModal } from "./ResponsePagesCleanupModal";
-import { isExpiredResponsePage } from "@/services/reviewNotifications";
+import { isExpiredResponsePage } from "@/lib/responsePageRules";
 import {
   playCheckChime,
   playCopyChime,
