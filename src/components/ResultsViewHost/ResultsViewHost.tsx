@@ -5,6 +5,8 @@ import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
 import {parseSearchTabs} from '@/lib/searchTabsStorage';
+import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
+import {CompactSearchAccess} from './CompactSearchAccess';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
@@ -114,8 +116,11 @@ export function ResultsViewHost({
   const [tabsOwner,setTabsOwner]=useState('');
   const tabsKey='anfeta_search_tabs_v1:'+normalizePerson(currentUser||'');
   useEffect(()=>{
+    const owner=normalizePerson(currentUser||'');
+    let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
+    setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
     let saved=null;try{saved=parseSearchTabs(localStorage.getItem(tabsKey));}catch{}
-    const next=saved||{tabs:[{id:'tab_1',query:externalQuery||'',canClose:false}],activeTabId:'tab_1'};
+    const next=saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'};
     setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
     setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
   },[tabsKey]);
@@ -133,9 +138,13 @@ export function ResultsViewHost({
   // Config & views (Deterministic initial states for SSR to prevent hydration errors)
   const [selectedTag, setSelectedTag] = useState("Ninguno");
   const [customTag, setCustomTag] = useState("");
+  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchDefaultsKey(normalizePerson(currentUser||'')),JSON.stringify({selectedTag,customTag}));}catch{}},[selectedTag,customTag,tabsOwner,tabsKey,currentUser]);
   const [textScale, setTextScale] = useState("100%");
   const [groupBy, setGroupBy] = useState("none");
-  const [selectedMonth, setSelectedMonth] = useState("Todos");
+  const [monthSelection,setSelectedMonth]=useState('Actual');
+  const [currentMonth,setCurrentMonth]=useState('');
+  useEffect(()=>{const refresh=()=>setCurrentMonth(currentSearchMonth());refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
+  const selectedMonth=effectiveSearchMonth(monthSelection,currentMonth,deferredQuery);
   const [viewZoom, setViewZoom] = useState<"list" | "small" | "medium" | "large">(() => {
     if (typeof window !== "undefined") {
       try {
@@ -319,12 +328,6 @@ export function ResultsViewHost({
   // Carga e hidratación segura de configuraciones desde localStorage sin romper SSR
   useEffect(() => {
     try {
-      const savedTag = localStorage.getItem("anfeta_default_tag");
-      if (savedTag) setSelectedTag(savedTag);
-
-      const savedCustom = localStorage.getItem("anfeta_custom_tag");
-      if (savedCustom) setCustomTag(savedCustom);
-
       const savedScale = localStorage.getItem("anfeta_text_scale");
       if (savedScale) setTextScale(savedScale);
 
@@ -424,73 +427,25 @@ export function ResultsViewHost({
   const handleNewTab = () => {
     if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas guardadas.');return;}
     const newId = `tab_${crypto.randomUUID()}`;
-    const newTab: SearchTab = { id: newId, query: "", canClose: true };
+    const initialQuery=newSearchQuery(selectedTag,customTag);
+    const newTab: SearchTab = { id: newId, query: initialQuery, canClose: true };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newId);
-    setQuery("");
-    onSearchChange?.("");
+    setQuery(initialQuery);
+    onSearchChange?.(initialQuery);
   };
 
-  const KNOWN_TAGS = [
-    "prtuzREVISION",
-    "zclientes",
-    "zdominios",
-    "zproyectos",
-    "zpagar",
-    "zcorreos",
-  ];
-
   const handleTagChange = (newTag: string) => {
+    const next={selectedTag:newTag,customTag};
     setSelectedTag(newTag);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("anfeta_default_tag", newTag);
-    }
-    if (newTag === "Ninguno") {
-      let q = query;
-      for (const t of KNOWN_TAGS) {
-        if (q.toLowerCase().startsWith(t.toLowerCase())) {
-          q = q.slice(t.length).trim();
-          break;
-        }
-      }
-      handleQueryChange(q);
-    } else if (newTag === "Personalizado") {
-      if (customTag.trim()) {
-        let q = query;
-        for (const t of KNOWN_TAGS) {
-          if (q.toLowerCase().startsWith(t.toLowerCase())) {
-            q = q.slice(t.length).trim();
-            break;
-          }
-        }
-        handleQueryChange(q ? `${customTag.trim()} ${q}` : `${customTag.trim()} `);
-      }
-    } else {
-      let q = query;
-      for (const t of KNOWN_TAGS) {
-        if (q.toLowerCase().startsWith(t.toLowerCase())) {
-          q = q.slice(t.length).trim();
-          break;
-        }
-      }
-      handleQueryChange(q ? `${newTag} ${q}` : `${newTag} `);
-    }
+    handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
   };
 
   const handleCustomTagChange = (newCustom: string) => {
+    const next={selectedTag:'Personalizado',customTag:newCustom};
     setCustomTag(newCustom);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("anfeta_custom_tag", newCustom);
-    }
-    let q = query;
-    for (const t of KNOWN_TAGS) {
-      if (q.toLowerCase().startsWith(t.toLowerCase())) {
-        q = q.slice(t.length).trim();
-        break;
-      }
-    }
-    const cleanTag = newCustom.trim();
-    handleQueryChange(cleanTag ? (q ? `${cleanTag} ${q}` : `${cleanTag} `) : q);
+    setSelectedTag('Personalizado');
+    handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
   };
 
   const handleGroupByChange = (group: string) => {
@@ -1332,6 +1287,35 @@ export function ResultsViewHost({
   }
   useEffect(()=>{setSelectedItem(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);setPinnedDetail(previous=>previous&&filteredItems.some(row=>row.id===previous.id)?previous:null);},[filteredItems]);
 
+  const renderQuickFilters=(onSelected?:()=>void)=>(
+          <QuickFiltersColumn
+            onQuickSearch={(term) => {handleQueryChange(term);onSelected?.();}}
+            activeTodayProjects={activeProjects}
+            onFilterByProject={(domain) => {
+              handleQueryChange(domain);
+              onSelected?.();
+              onSelectDomain?.(domain);
+            }}
+            onOpenProjectNotion={async (domain) => {
+              try {
+                const res = await fetch(`/api/data?type=project-view-url&domain=${encodeURIComponent(domain)}`);
+                const data = await res.json();
+                if (data.found && data.viewUrl) {
+                  window.open(data.viewUrl, "_blank");
+                } else if (data.fallbackUrl) {
+                  window.open(data.fallbackUrl, "_blank");
+                } else {
+                  window.open(`https://www.notion.so/search?query=${encodeURIComponent(domain)}`, "_blank");
+                }
+              } catch (err) {
+                console.error("Error opening Notion project view:", err);
+                window.open(`https://www.notion.so/search?query=${encodeURIComponent(domain)}`, "_blank");
+              }
+            }}
+            onGenerateDailyAiSummary={() => alert("Generando resumen de jornada mediante IA...")}
+          />
+  );
+
   return (
     <div
       ref={resultsRoot}
@@ -1410,7 +1394,8 @@ export function ResultsViewHost({
         onChangeTextScale={handleTextScaleChange}
         groupBy={groupBy}
         onChangeGroupBy={handleGroupByChange}
-        selectedMonth={selectedMonth}
+        selectedMonth={monthSelection}
+        currentMonth={currentMonth}
         onChangeMonth={setSelectedMonth}
         viewZoom={viewZoom}
         onChangeViewZoom={handleChangeViewZoom}
@@ -1456,31 +1441,7 @@ export function ResultsViewHost({
 
         {/* Col 1: FILTROS Y ACCESOS RÁPIDOS (225px) */}
         {isFiltersOpen && (
-          <QuickFiltersColumn
-            onQuickSearch={(term) => handleQueryChange(term)}
-            activeTodayProjects={activeProjects}
-            onFilterByProject={(domain) => {
-              handleQueryChange(domain);
-              onSelectDomain?.(domain);
-            }}
-            onOpenProjectNotion={async (domain) => {
-              try {
-                const res = await fetch(`/api/data?type=project-view-url&domain=${encodeURIComponent(domain)}`);
-                const data = await res.json();
-                if (data.found && data.viewUrl) {
-                  window.open(data.viewUrl, "_blank");
-                } else if (data.fallbackUrl) {
-                  window.open(data.fallbackUrl, "_blank");
-                } else {
-                  window.open(`https://www.notion.so/search?query=${encodeURIComponent(domain)}`, "_blank");
-                }
-              } catch (err) {
-                console.error("Error opening Notion project view:", err);
-                window.open(`https://www.notion.so/search?query=${encodeURIComponent(domain)}`, "_blank");
-              }
-            }}
-            onGenerateDailyAiSummary={() => alert("Generando resumen de jornada mediante IA...")}
-          />
+          renderQuickFilters()
         )}
 
         {/* Col 2: RESULTADOS (Central) */}
@@ -1534,6 +1495,7 @@ export function ResultsViewHost({
             </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
           <ResultsVirtualTable
+          headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)} renderQuickFilters={close=>renderQuickFilters(close)}/>:undefined}
           currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}

@@ -27,6 +27,7 @@ interface SearchConfigRowProps {
   groupBy: string;
   onChangeGroupBy: (group: string) => void;
   selectedMonth: string;
+  currentMonth?: string;
   onChangeMonth: (m: string) => void;
   viewZoom: "list" | "small" | "medium" | "large";
   onChangeViewZoom: (zoom: "list" | "small" | "medium" | "large") => void;
@@ -98,6 +99,7 @@ export function SearchConfigRow({
   groupBy,
   onChangeGroupBy,
   selectedMonth,
+  currentMonth,
   onChangeMonth,
   viewZoom,
   onChangeViewZoom,
@@ -457,6 +459,7 @@ export function SearchConfigRow({
             }}
             className="bg-[#141B26] text-[#FFFFFF] border border-[#26354A] rounded focus:outline-none cursor-pointer"
           >
+            <option value="Actual">Mes actual{currentMonth?' ('+currentMonth+')':''}</option>
             {MONTHS.map((m) => (
               <option key={m} value={m}>
                 {m}

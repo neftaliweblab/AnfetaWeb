@@ -82,6 +82,7 @@ interface ResultsTableProps {
   onChangeViewZoom?: (zoom: "list" | "small" | "medium" | "large") => void;
   textScale?: string;
   groupBy?: string;
+  headerActions?: React.ReactNode;
 }
 
 export function ResultsVirtualTable({
@@ -121,6 +122,7 @@ export function ResultsVirtualTable({
   onChangeViewZoom,
   textScale = "100%",
   groupBy = "none",
+  headerActions,
 }: ResultsTableProps) {
   const [contextMenu, setContextMenu] = useState<{ item: any; x: number; y: number } | null>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
@@ -895,7 +897,8 @@ export function ResultsVirtualTable({
         </div>
       )}
       {/* Subheader de Ruta y Estadísticas */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#121822] border-b border-[#1E2836] text-[10.5px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-[#121822] border-b border-[#1E2836] text-[10.5px]">
+        {headerActions}
         <span className="text-[#64748B] font-mono truncate">
           Ruta / Base: {items[0]?.sourceName || "Sin resultados"}
         </span>

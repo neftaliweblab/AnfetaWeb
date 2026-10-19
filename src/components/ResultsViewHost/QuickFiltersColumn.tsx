@@ -153,7 +153,7 @@ export function QuickFiltersColumn({
   };
 
   return (
-    <div className="w-[235px] shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden">
+    <div className="w-[235px] max-w-full shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden">
       {/* 1. Header BÚSQUEDAS RÁPIDAS & Accesos rápidos (Paridad 1:1 ANFETA) */}
       <div className="shrink-0 mb-2 relative" ref={containerRef}>
         <div className="px-1 mb-2">
