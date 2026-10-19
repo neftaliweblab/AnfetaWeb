@@ -758,7 +758,7 @@ export function DetailsPane({
             {highlightMultiSearch(parsed.title, searchQuery)}
           </h2>
           <p className="text-[10.5px] text-[#94A3B8] opacity-75 break-all font-mono">
-            {displayLocation}
+            {highlightMultiSearch(displayLocation, searchQuery)}
           </p>
         </div>
 

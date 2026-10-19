@@ -408,7 +408,7 @@ export function ResultsVirtualTable({
             className="shrink-0 truncate text-[#74808B] font-mono pr-2"
             title={displayPath}
           >
-            {displayPath}
+            {highlightMatch(displayPath)}
           </div>
         )}
 
@@ -470,7 +470,7 @@ export function ResultsVirtualTable({
               }}
               className="shrink-0 max-w-[140px] truncate ml-auto rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
             >
-              {parsed.domain || item.domainChip || item.domain}
+              {highlightMatch(parsed.domain || item.domainChip || item.domain)}
             </span>
           )}
         </div>
@@ -806,12 +806,12 @@ export function ResultsVirtualTable({
             <div className="my-auto py-1">
               {textSnippet ? (
                 <p className="text-[#94A3B8] text-[9.5px] font-mono leading-relaxed line-clamp-3 break-all select-none opacity-85">
-                  {textSnippet}
+                  {highlightMatch(textSnippet)}
                 </p>
               ) : (
                 <div className="flex items-center gap-1.5 text-[#475569] text-[9px] font-mono">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#38BDF8]/50 animate-pulse"></span>
-                  <span className="truncate max-w-[140px]">{targetPath || item.name}</span>
+                  <span className="truncate max-w-[140px]">{highlightMatch(targetPath || item.name)}</span>
                 </div>
               )}
             </div>
@@ -833,7 +833,7 @@ export function ResultsVirtualTable({
           className="flex items-center justify-between text-[#94A3B8] pt-1 border-t border-[#1E2836] gap-1"
         >
           {(parsed.domain || item.domainChip || item.domain) ? (
-            <span className="truncate max-w-[90px] text-[#93C5FD] font-mono">{parsed.domain || item.domainChip || item.domain}</span>
+            <span className="truncate max-w-[90px] text-[#93C5FD] font-mono">{highlightMatch(parsed.domain || item.domainChip || item.domain)}</span>
           ) : (
             <span className="truncate max-w-[90px] text-[#64748B] font-mono">{item.sourceName || "—"}</span>
           )}

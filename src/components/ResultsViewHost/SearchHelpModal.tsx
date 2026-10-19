@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { X, Search, Folder, Zap, Globe, Keyboard, ExternalLink } from "lucide-react";
+import { X, Search, Folder, Zap, Globe, Keyboard, Sparkles, Layers } from "lucide-react";
+import { MULTI_SEARCH_PALETTE } from "@/lib/multiSearchHighlight";
 
 interface SearchHelpModalProps {
   isOpen: boolean;
@@ -13,6 +14,37 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
   if (!isOpen) return null;
 
   const sections = [
+    {
+      title: "⚡ Búsquedas Múltiples y Operadores Lógicos (Nuevo)",
+      icon: Layers,
+      highlight: true,
+      commands: [
+        {
+          cmd: "jjo00 and jjo1",
+          desc: "AND explícito: requiere ambos términos. Colorea cada palabra con badges diferenciados (Cian + Rosa).",
+        },
+        {
+          cmd: "jjo00 or jjo1",
+          desc: "OR explícito: muestra resultados que contengan cualquiera de los dos términos.",
+        },
+        {
+          cmd: "jjo00 not jjo1",
+          desc: "NOT explícito: incluye jjo00 pero descarta los que contengan jjo1.",
+        },
+        {
+          cmd: "jjo00 and jjo1 and jjo2",
+          desc: "Multi-términos: paleta automática de hasta 6 colores vivos diferenciados.",
+        },
+        {
+          cmd: "( jjo00 or jjo1 ) and reporte",
+          desc: "Agrupación lógica con paréntesis y condiciones combinadas.",
+        },
+        {
+          cmd: "jjo00 && jjo1 || jjo2",
+          desc: "Sintaxis técnica: soporte total de && (AND) y || (OR).",
+        },
+      ],
+    },
     {
       title: "📁 Dropbox · carpetas y archivos",
       icon: Folder,
@@ -34,7 +66,6 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
       icon: Search,
       commands: [
         { cmd: "factura 2026", desc: "AND automático: deben aparecer ambos términos." },
-        { cmd: "jjo00 and jjo1", desc: "Búsqueda múltiple con resaltado diferenciado por palabra." },
         { cmd: '"estado de cuenta"', desc: "Busca la frase exacta y en ese orden." },
         { cmd: "reporte -SEO", desc: "Busca reporte y excluye SEO." },
         { cmd: "reporte !SEO", desc: "Otra forma de excluir SEO." },
@@ -85,13 +116,13 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
       onClick={onClose}
     >
       <div
-        className="w-[740px] max-h-[85vh] bg-[#0D131A] border border-[#253B4D] rounded-xl shadow-2xl flex flex-col overflow-hidden text-[#E2E8F0]"
+        className="w-[780px] max-h-[88vh] bg-[#0D131A] border border-[#253B4D] rounded-xl shadow-2xl flex flex-col overflow-hidden text-[#E2E8F0]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera */}
         <div className="flex items-center justify-between px-5 py-3.5 bg-[#101A24] border-b border-[#1E2E3E]">
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-[#38BDF8]">❓ Guía Rápida de Comandos y Filtros</span>
+            <span className="text-base font-bold text-[#38BDF8]">❓ Guía Rápida de Comandos y Búsquedas</span>
             <span className="text-xs text-[#94A3B8]">ANFETA 1:1</span>
           </div>
           <button
@@ -103,12 +134,30 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
           </button>
         </div>
 
-        {/* Info card */}
-        <div className="px-5 pt-3 pb-1">
+        {/* Info card con Paleta de Resaltado Diferenciado */}
+        <div className="px-5 pt-3 pb-1 space-y-2">
           <div className="p-3 rounded-lg bg-[#00A8FF]/10 border border-[#00A8FF]/30 text-xs text-[#BAE6FD]">
-            <span className="font-bold text-[#38BDF8]">💡 Cómo funciona: </span>
-            Escribe palabras normalmente y ANFETA las combina como <span className="font-mono font-bold text-white">AND</span>.
-            Pulsa en cualquiera de los comandos abajo para insertarlo directamente en tu barra de búsqueda.
+            <span className="font-bold text-[#38BDF8]">💡 Búsquedas múltiples con colores: </span>
+            Usa <span className="font-mono font-bold text-[#38BDF8]">and</span>,{" "}
+            <span className="font-mono font-bold text-[#F472B6]">or</span>, o{" "}
+            <span className="font-mono font-bold text-[#FBBF24]">not</span>. Cada palabra coincidente
+            se resalta automáticamente en los resultados con un badge de color propio sin importar mayúsculas ni acentos.
+          </div>
+
+          {/* Muestra de la paleta de colores */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#141E2B] border border-[#233549] text-xs">
+            <span className="text-[11px] font-bold text-[#94A3B8] shrink-0">Paleta de términos:</span>
+            <div className="flex flex-wrap items-center gap-1.5 flex-1">
+              {MULTI_SEARCH_PALETTE.map((pal, idx) => (
+                <span
+                  key={pal.key}
+                  className={`${pal.badge} cursor-default`}
+                  title={`Término ${idx + 1}: ${pal.label}`}
+                >
+                  T{idx + 1}: {pal.label}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -116,11 +165,19 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-5 scrollbar-thin">
           {sections.map((sec) => {
             const Icon = sec.icon;
+            const isHighlight = sec.highlight;
             return (
-              <div key={sec.title} className="space-y-2">
+              <div
+                key={sec.title}
+                className={`space-y-2 p-3 rounded-lg transition-all ${
+                  isHighlight
+                    ? "bg-[#0B1522] border border-[#0284C7]/40 shadow-inner"
+                    : ""
+                }`}
+              >
                 <div className="flex items-center gap-2 text-xs font-bold text-[#F1F5F9] border-b border-[#1E293B] pb-1">
-                  <Icon className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>{sec.title}</span>
+                  <Icon className={`w-3.5 h-3.5 ${isHighlight ? "text-[#38BDF8]" : "text-[#94A3B8]"}`} />
+                  <span className={isHighlight ? "text-[#38BDF8]" : ""}>{sec.title}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {sec.commands.map((c) => (
@@ -131,12 +188,18 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
                         onInsertCommand(c.cmd);
                         onClose();
                       }}
-                      className="flex flex-col text-left p-2 rounded-lg bg-[#141E2B] border border-[#233549] hover:border-[#38BDF8] hover:bg-[#1A2637] transition-all cursor-pointer group"
+                      className={`flex flex-col text-left p-2 rounded-lg transition-all cursor-pointer group ${
+                        isHighlight
+                          ? "bg-[#111C2B] border border-[#1E3A5F] hover:border-[#38BDF8] hover:bg-[#16273D]"
+                          : "bg-[#141E2B] border border-[#233549] hover:border-[#38BDF8] hover:bg-[#1A2637]"
+                      }`}
                     >
                       <span className="font-mono text-[11px] font-bold text-[#38BDF8] group-hover:text-white">
                         {c.cmd}
                       </span>
-                      <span className="text-[10px] text-[#94A3B8] mt-0.5 line-clamp-1">{c.desc}</span>
+                      <span className="text-[10px] text-[#94A3B8] mt-0.5 line-clamp-2 leading-relaxed">
+                        {c.desc}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -147,7 +210,7 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
 
         {/* Footer */}
         <div className="px-5 py-2.5 bg-[#101A24] border-t border-[#1E2E3E] flex items-center justify-between text-xs text-[#64748B]">
-          <span>Tip: Combina filtros como <code className="text-[#38BDF8]">cliente ext:pdf .file</code></span>
+          <span>Tip: Pulsa cualquier comando para probarlo al instante en la barra.</span>
           <button
             type="button"
             onClick={onClose}

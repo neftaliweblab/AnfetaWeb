@@ -167,6 +167,14 @@ assert.equal(color1.key, 'cyan', 'Primer término jjo00 debe ser de color Cian')
 assert.equal(color1.hex, '#38BDF8', 'Cian debe tener hex #38BDF8');
 assert.equal(color2.key, 'pink', 'Segundo término jjo1 debe ser de color Rosa');
 assert.equal(color2.hex, '#F472B6', 'Rosa debe tener hex #F472B6');
-assert.notEqual(color1.key, color2.key, 'Cada término debe tener un color diferente');
+// 7. Tolerancia a acentos y diacríticos
+const { normalizeDiacritics, makeAccentRegexPattern } = require(path.join(root, 'src/lib/multiSearchHighlight.tsx'));
+assert.equal(normalizeDiacritics('Diseño'), 'diseno', 'normalizeDiacritics debe remover acentos');
+assert.equal(normalizeDiacritics('Camión'), 'camion', 'normalizeDiacritics debe remover tildes');
 
-console.log('OK: Búsqueda avanzada múltiple (AND, OR, NOT), tokenización y paleta de colores diferenciados probados exitosamente.');
+const pattern = makeAccentRegexPattern('diseno');
+const accentRegex = new RegExp(pattern, 'i');
+assert.equal(accentRegex.test('Diseño Web'), true, 'diseno debe coincidir con Diseño');
+assert.equal(accentRegex.test('Diseno Web'), true, 'diseno debe coincidir con Diseno');
+
+console.log('OK: Búsqueda avanzada múltiple (AND, OR, NOT), tokenización, tolerancia a acentos y paleta de colores diferenciados probados exitosamente.');
