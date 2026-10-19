@@ -39,7 +39,7 @@ import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
-import { normalizePerson } from '@/services/identityNormalizer';
+import { normalizePerson, PERSON_ALIASES } from '@/services/identityNormalizer';
 import { NextRequest, NextResponse, after } from "next/server";
 import fs from "fs";
 import path from "path";
@@ -2596,7 +2596,7 @@ async function POSTLive(req: NextRequest) {
       for (const [index, item] of requests.entries()) {
         try {
           if (!item.sourcePageId || !item.person || !item.title) throw new Error('Completa plantilla, título y responsable.');
-          if (!canEditActivity(actor,{person:normalizePerson(item.person)})) throw new Error('No puedes crear actividades para esa persona.');
+          if (!PERSON_ALIASES[normalizePerson(item.person)] && normalizePerson(item.person) !== 'Sin asignar') throw new Error('Selecciona un responsable válido del equipo.');
           validateSchedule(item.start,item.end);
           const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:{start:item.start,end:item.end},overridePerson:item.person,copyBody:true,deadline});
           const created = result.page;

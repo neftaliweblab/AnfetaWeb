@@ -382,7 +382,7 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
-  if (person && !isDirection(actor) && !isReviewer(actor) && normalizePerson(actor) !== normalizePerson(person)) throw new Error('Solo puedes crear actividades asignadas a ti.');
+  if (person && !PERSON_ALIASES[normalizePerson(person)] && normalizePerson(person) !== 'Sin asignar') throw new Error('Selecciona un responsable válido del equipo.');
   if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
   const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload.quickRevision?{...payload,useCalendarSource:true}:payload);
   const fields = Object.entries(database.properties || {}) as [string, Property][];

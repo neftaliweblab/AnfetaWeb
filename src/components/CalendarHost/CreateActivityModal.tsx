@@ -3,7 +3,6 @@ import {createPortal} from 'react-dom';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { normalizePerson } from '@/services/identityNormalizer';
-import { isDirection, isReviewer } from '@/services/activityPermissions';
 import {
   CALENDAR_QUICK_TEMPLATES,
   CalendarQuickTemplateDefinition,
@@ -394,10 +393,9 @@ export function CreateActivityModal({
                 Responsable
               </label>
               <select
-                disabled={!isDirection(currentUser) && !isReviewer(currentUser)}
                 value={person}
                 onChange={(e) => setPerson(e.target.value)}
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white focus:outline-none focus:border-[#38BDF8] transition-colors cursor-pointer disabled:opacity-60"
+                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white focus:outline-none focus:border-[#38BDF8] transition-colors cursor-pointer"
               >
                 {people.map((p) => (
                   <option key={p} value={p}>

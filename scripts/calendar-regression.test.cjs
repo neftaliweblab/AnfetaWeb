@@ -36,7 +36,7 @@ global.fetch=async(url,options={})=>{
   state.calls.push({target,method,body});
   if(target==='pages' && method==='POST') {
     if(state.failAlert || state.failCreate)return response({message:'Creation rejected'},403);
-    const properties={};for(const [name,prop] of Object.entries(body.properties)) {assert.ok(!Array.isArray(prop),'Notion properties must be objects');const type=Object.keys(prop)[0];properties[name]={type,...prop};if(type==='people')properties[name].people=prop.people.map(u=>({...u,name:u.id==='neft-id'?'Neftali':'John'}));}
+    const properties={};for(const [name,prop] of Object.entries(body.properties)) {assert.ok(!Array.isArray(prop),'Notion properties must be objects');const type=Object.keys(prop)[0];properties[name]={type,...prop};if(type==='people')properties[name].people=prop.people.map(u=>({...u,name:({'neft-id':'Neftali','john-id':'John','karla-id':'Karla','acalli-id':'Acalli','brian-id':'Brian'})[u.id] || (u.id==='neft-id'?'Neftali':'John')}));}
     state.createdPage={id:other,url:'https://notion.so/'+other,parent:body.parent,properties};return response(state.createdPage);
   }
   if(target==='pages/'+other && method==='GET')return response(state.createdPage ? {...state.createdPage,archived:!!state.archivedAlert} : {id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
@@ -234,6 +234,14 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const res=await route.POST(request('create-from-template',{currentUser:'jjohn',date:'2026-10-05',requests:[{sourcePageId:pid,title:'prtuzREVISION jjohn anfeta.com Diseño',person:'John',start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'}]}));
     const data=await res.json();assert.equal(data.success,true,data.error);assert.equal(data.createdActivities[0].person,'John');
     assert.equal(state.calls.find(c=>c.target==='pages'&&c.method==='POST').body.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');
+  });
+  await test('Cualquier usuario puede crear actividades asignadas a otros integrantes y desde plantillas',async()=>{
+    process.env.NOTION_PERSON_IDS=JSON.stringify({Karla:'karla-id',John:'john-id',Neftali:'neft-id',Brian:'brian-id',Acalli:'acalli-id'});
+    const result=await mutations.createActivity(settings,'nneft',{title:'anfeta.com Rediseño',domain:'anfeta.com',person:'Karla',start:'2026-10-05T11:00:00-06:00',end:'2026-10-05T12:00:00-06:00'});
+    assert.equal(result.activity.person,'Karla');
+    const res=await route.POST(request('create-from-template',{currentUser:'kkarla',date:'2026-10-05',requests:[{sourcePageId:pid,title:'prtuzREVISION aacall anfeta.com Campaña',person:'Acalli',start:'2026-10-05T13:00:00-06:00',end:'2026-10-05T14:00:00-06:00'}]}));
+    const data=await res.json();assert.equal(data.success,true,data.error);assert.equal(data.createdActivities[0].person,'Acalli');
+    await assert.rejects(()=>mutations.createActivity(settings,'nneft',{title:'anfeta.com Test',domain:'anfeta.com',person:'PersonaInvalida',start:'2026-10-05T15:00:00-06:00',end:'2026-10-05T16:00:00-06:00'}),/responsable válido/);
   });
   await test('Planificador respeta horarios fijos y no excede la jornada',async()=>{
     const planner=require(root+'/src/services/calendarPlanner.ts');
