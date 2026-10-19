@@ -34,6 +34,7 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
       icon: Search,
       commands: [
         { cmd: "factura 2026", desc: "AND automático: deben aparecer ambos términos." },
+        { cmd: "jjo00 and jjo1", desc: "Búsqueda múltiple con resaltado diferenciado por palabra." },
         { cmd: '"estado de cuenta"', desc: "Busca la frase exacta y en ese orden." },
         { cmd: "reporte -SEO", desc: "Busca reporte y excluye SEO." },
         { cmd: "reporte !SEO", desc: "Otra forma de excluir SEO." },

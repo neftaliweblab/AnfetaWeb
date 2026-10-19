@@ -39,6 +39,7 @@ import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
+import { AdvancedMultiSearchModal } from "./AdvancedMultiSearchModal";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import {
   playCheckChime,
@@ -350,6 +351,7 @@ export function ResultsViewHost({
 
   // Action Dialogs state
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isAdvancedMultiSearchOpen, setIsAdvancedMultiSearchOpen] = useState(false);
   const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameTargetItem, setRenameTargetItem] = useState<any | null>(null);
@@ -1256,6 +1258,7 @@ export function ResultsViewHost({
         isRemindersActive={isRemindersActive}
         remindersCount={remindersCount}
         onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
+        onOpenAdvancedSearch={() => setIsAdvancedMultiSearchOpen(true)}
       />
 
       {/* 2. Pills de Ámbitos / Bases Notion */}
@@ -1487,6 +1490,7 @@ export function ResultsViewHost({
             onOpenGlobalPaste={() => triggerGlobalPaste(null)}
             onDelete={handleDeleteItem}
             textScale={textScale}
+            searchQuery={deferredQuery}
           />
           </div></div>
         )}
@@ -1687,6 +1691,17 @@ export function ResultsViewHost({
           isOpen={showWhatsappModal}
           currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
+        />
+      )}
+
+      {/* Modal Simulación de Búsqueda Avanzada y Múltiple */}
+      {isAdvancedMultiSearchOpen && (
+        <AdvancedMultiSearchModal
+          isOpen={isAdvancedMultiSearchOpen}
+          onClose={() => setIsAdvancedMultiSearchOpen(false)}
+          onApplyQuery={(newQ) => handleQueryChange(newQ)}
+          currentQuery={query}
+          items={items}
         />
       )}
     </div>

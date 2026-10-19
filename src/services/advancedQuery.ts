@@ -401,197 +401,252 @@ export function matchesFlexibleOrQuotedQuery(
   // Versión compacta: "Pre proyecto" ≈ "PreProyecto", "26-[09SEP]" ≈ "2609SEP"
   const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
 
-  // 3. Tokenización flexible respetando filtros especiales tipo folder:"...", ext:..., comillas y signos de negación
-  const tokens: Array<{ value: string; isExact: boolean; isNegated: boolean }> = [];
+  // 3. Tokenización flexible y evaluación de operadores lógicos (AND, OR, NOT)
+  const rawTokens: Array<{ raw: string; isQuoted: boolean }> = [];
   const regex = /([a-zA-Z]+:"[^"]+")|"([^"]+)"|(\S+)/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(normalizedQ)) !== null) {
     if (match[1]) {
-      // Token especial con comillas (ej. folder:"aaa Carperizacion.programa")
-      tokens.push({ value: match[1], isExact: false, isNegated: false });
+      rawTokens.push({ raw: match[1], isQuoted: false });
     } else if (match[2]) {
-      tokens.push({ value: match[2], isExact: true, isNegated: false });
+      rawTokens.push({ raw: match[2], isQuoted: true });
     } else if (match[3]) {
-      let val = match[3];
-      let isNegated = false;
-      if ((val.startsWith("-") || val.startsWith("!")) && val.length > 1) {
-        isNegated = true;
-        val = val.slice(1);
-      }
-      tokens.push({ value: val, isExact: false, isNegated });
+      rawTokens.push({ raw: match[3], isQuoted: false });
     }
   }
 
-  if (tokens.length === 0) return true;
+  if (rawTokens.length === 0) return true;
 
-  return tokens.every((token) => {
-    const tokenVal = matchCase ? token.value : token.value.toLowerCase();
-    const valLow = token.value.toLowerCase();
+  // Separar en cláusulas OR, donde cada cláusula exige que todos sus términos coincidan (AND)
+  const clauses: Array<Array<{ value: string; isExact: boolean; isNegated: boolean }>> = [[]];
+  let currentClause = clauses[0];
+  let nextIsNegated = false;
 
-    // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
-    if (valLow.startsWith("source:") && !token.isExact) {
-      const sWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
-      const sMatch = (item.source || "").toLowerCase().includes(sWant) || ((item.sourceName || "").toLowerCase().includes(sWant));
-      return token.isNegated ? !sMatch : sMatch;
-    }
-
-    // Filtro por extensión (ej. ext:pdf, ext:img)
-    if (valLow.startsWith("ext:") && !token.isExact) {
-      const extWant = valLow.slice(4).replace(/^"|"$/g, "").replace(/^\./, "");
-      const itemExt = (item.extension || "").toLowerCase().replace(/^\./, "");
-      const extMatch =
-        extWant === "img"
-          ? ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"].includes(itemExt)
-          : itemExt === extWant;
-      return token.isNegated ? !extMatch : extMatch;
-    }
-
-    // Filtro por carpeta (ej. folder:dropbox, folder:"aaa Carperizacion.programa")
-    if (valLow.startsWith("folder:") && !token.isExact) {
-      const fWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
-      const folderVal = (
-        ((item as any).folder || "") +
-        " " +
-        (item.target || "") +
-        " " +
-        (item.path || "") +
-        " " +
-        (item.name || "")
-      ).toLowerCase();
-      const fMatch = folderVal.includes(fWant);
-      return token.isNegated ? !fMatch : fMatch;
-    }
-
-    // Filtros de tipo: folder / file
-    if (valLow === "type:folder" && !token.isExact) {
-      const isFolder = item.isFolder || item.extension === "FOLDER" || item.type === "FOLDER";
-      return token.isNegated ? !isFolder : isFolder;
-    }
-    if (valLow === "type:file" && !token.isExact) {
-      const isFile = !item.isFolder && item.extension !== "FOLDER" && item.type !== "FOLDER";
-      return token.isNegated ? !isFile : isFile;
-    }
-
-    // Frase exacta entre comillas
-    if (token.isExact) {
-      const hasExact = matchWholeWord
-        ? new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
-        : searchable.includes(tokenVal);
-      return token.isNegated ? !hasExact : hasExact;
-    }
-
-    // Descomposición de prefijo operativo (ej. seo.tornillosam.com -> seo + tornillosam.com)
-    const pfxMatch = valLow.match(
-      /^(tzp|tzs|ads|aads|seo|sseo|webs?|wwebs|maps?|mmaps|app|apli|aapli|software|prog|pprog|coti|cotizacion|cotización|redes|rrede|disen[oó]|diseñ[oó]|ddise)\.(.+)$/i
-    );
-    const subParts = pfxMatch ? [pfxMatch[1], pfxMatch[2]] : [tokenVal];
-
-    for (const sp of subParts) {
-      const cleanSp = sp.replace(/^\.+|\.+$/g, "");
-      if (!cleanSp) continue;
-
-      const srcName = (
-        (item.sourceName || (item as any).externalSourceName || "") +
-        " " +
-        (item.source || "")
-      ).toLowerCase();
-
-      let has = matchWholeWord
-        ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
-        : (searchable.includes(cleanSp) ||
-           searchableWithSpaces.includes(cleanSp) ||
-           (cleanSp.length >= 4 &&
-             searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, ""))));
-
-      if (!has) {
-        // Alias y equivalencias automáticas de ANFETA
-        if (cleanSp === "zproyectos" || cleanSp === "zproyecto" || cleanSp === "proyectos" || cleanSp === "proyecto") {
-          has =
-            searchable.includes("zproyecto") ||
-            searchable.includes("zproyectos") ||
-            (srcName.includes("programa") && searchable.includes("proyecto")) ||
-            searchable.includes("[programas y proyectos]");
-        } else if (cleanSp === "programas" || cleanSp === "programa" || cleanSp === "pprog" || cleanSp === "zprogramas" || cleanSp === "zprograma") {
-          has =
-            srcName.includes("programa") ||
-            searchable.includes("programas y proyectos") ||
-            searchable.includes("pprog") ||
-            searchable.includes("programa") ||
-            searchable.includes("software") ||
-            searchable.includes("ssoft");
-        } else if (cleanSp === "zclientes" || cleanSp === "zcliente" || cleanSp === "clientes" || cleanSp === "cliente") {
-          has =
-            srcName.includes("cliente") ||
-            searchable.includes("zcliente") ||
-            searchable.includes("cliente") ||
-            searchable.includes("[clientes");
-        } else if (cleanSp === "zdominios" || cleanSp === "zdominio" || cleanSp === "dominios" || cleanSp === "dominio") {
-          has =
-            srcName.includes("dominio") ||
-            searchable.includes("zdominio") ||
-            searchable.includes("dominio") ||
-            searchable.includes("[dominios");
-        } else if (cleanSp === "zcorreos" || cleanSp === "zcorreo" || cleanSp === "correos" || cleanSp === "correo") {
-          has =
-            srcName.includes("correo") ||
-            searchable.includes("correos contraseñas") ||
-            searchable.includes("ccorr") ||
-            searchable.includes("zcorreo") ||
-            searchable.includes("correo") ||
-            searchable.includes("@");
-        } else if (cleanSp === "zpagar" || cleanSp === "pagar") {
-          has = searchable.includes("pagar") || srcName.includes("pagar");
-        } else if (cleanSp === "zcobrar" || cleanSp === "cobrar") {
-          has = searchable.includes("cobrar") || srcName.includes("cobrar");
-        } else if (cleanSp === "revisiones" || cleanSp === "revision" || cleanSp === "prtuzrevision" || cleanSp === "rtuzrevision" || cleanSp === "zrevision") {
-          has =
-            srcName.includes("revision") ||
-            searchable.includes("revision") ||
-            searchable.includes("rtuzrevision") ||
-            searchable.includes("prtuzrevision");
-        } else if (cleanSp === "z") {
-          has =
-            searchable.includes("zproyecto") ||
-            searchable.includes("zcliente") ||
-            searchable.includes("zdominio") ||
-            searchable.includes("zpagar") ||
-            searchable.includes("zcobrar") ||
-            searchable.includes("zrevision") ||
-            searchable.includes("[programas") ||
-            searchable.includes("[clientes") ||
-            searchable.includes("[dominios") ||
-            searchable.includes("[cobrar");
-        } else if (cleanSp === "nneft" || cleanSp === "nnetf" || cleanSp === "neftali" || cleanSp === "neft") {
-          has =
-            searchable.includes("neftali") ||
-            searchable.includes("nneft") ||
-            searchable.includes("nnetf") ||
-            searchable.includes("neft");
-        } else if (cleanSp === "jjohn" || cleanSp === "john") {
-          has = searchable.includes("john") || searchable.includes("jjohn");
-        } else if (cleanSp === "kkarl" || cleanSp === "karla" || cleanSp === "karl") {
-          has = searchable.includes("karla") || searchable.includes("kkarl") || searchable.includes("karl");
-        } else if (cleanSp === "bbria" || cleanSp === "brian") {
-          has = searchable.includes("brian") || searchable.includes("bbria");
-        } else if (cleanSp === "ggena" || cleanSp === "genaro") {
-          has = searchable.includes("genaro") || searchable.includes("ggena");
-        } else if (cleanSp === "iisai" || cleanSp === "isai" || cleanSp === "isaias" || cleanSp === "iisaia") {
-          has = searchable.includes("isaias") || searchable.includes("isai") || searchable.includes("iisai") || searchable.includes("iisaia");
-        } else if (cleanSp === "ssote" || cleanSp === "sotelo") {
-          has = searchable.includes("sotelo") || searchable.includes("ssote");
-        } else if (cleanSp === "aacal" || cleanSp === "acalli") {
-          has = searchable.includes("acalli") || searchable.includes("aacal");
-        } else if (cleanSp === "aandr" || cleanSp === "andrade") {
-          has = searchable.includes("andrade") || searchable.includes("aandr");
-        } else if (cleanSp === "eemma" || cleanSp === "eedua" || cleanSp === "emmanuel" || cleanSp === "eduardo") {
-          has = searchable.includes("emmanuel") || searchable.includes("eduardo") || searchable.includes("eemma") || searchable.includes("eedua");
-        }
+  for (const t of rawTokens) {
+    if (!t.isQuoted) {
+      const lower = t.raw.toLowerCase();
+      // Operadores OR
+      if (lower === "or" || lower === "||" || lower === "|") {
+        currentClause = [];
+        clauses.push(currentClause);
+        nextIsNegated = false;
+        continue;
       }
-
-      if (token.isNegated ? has : !has) return false;
+      // Operadores AND (simplemente conectan términos dentro de la misma cláusula)
+      if (lower === "and" || lower === "&&" || lower === "&" || lower === "+") {
+        continue;
+      }
+      // Operador NOT (niega el siguiente término)
+      if (lower === "not") {
+        nextIsNegated = true;
+        continue;
+      }
     }
 
-    return true;
-  });
+    let val = t.raw.replace(/^[\(\[\{]+|[\)\]\}]+$/g, "").trim();
+    if (!val) continue;
+
+    let isNegated = nextIsNegated;
+    nextIsNegated = false;
+
+    if (!t.isQuoted && (val.startsWith("-") || val.startsWith("!")) && val.length > 1) {
+      isNegated = true;
+      val = val.slice(1);
+    }
+
+    if (val) {
+      currentClause.push({ value: val, isExact: t.isQuoted, isNegated });
+    }
+  }
+
+  const activeClauses = clauses.filter((c) => c.length > 0);
+  if (activeClauses.length === 0) return true;
+
+  // OR: al menos una cláusula debe ser verdadera
+  return activeClauses.some((clause) =>
+    // AND: todos los términos de la cláusula deben coincidir
+    clause.every((token) =>
+      checkSingleToken(token, item, options, searchable, searchableWithSpaces, searchableCompact)
+    )
+  );
+}
+
+function checkSingleToken(
+  token: { value: string; isExact: boolean; isNegated: boolean },
+  item: SearchResultRow,
+  options: SearchMatchOptions | undefined,
+  searchable: string,
+  searchableWithSpaces: string,
+  searchableCompact: string
+): boolean {
+  const matchCase = !!options?.matchCase;
+  const matchWholeWord = !!options?.matchWholeWord;
+  const tokenVal = matchCase ? token.value : token.value.toLowerCase();
+  const valLow = token.value.toLowerCase();
+
+  // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
+  if (valLow.startsWith("source:") && !token.isExact) {
+    const sWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
+    const sMatch = (item.source || "").toLowerCase().includes(sWant) || ((item.sourceName || "").toLowerCase().includes(sWant));
+    return token.isNegated ? !sMatch : sMatch;
+  }
+
+  // Filtro por extensión (ej. ext:pdf, ext:img)
+  if (valLow.startsWith("ext:") && !token.isExact) {
+    const extWant = valLow.slice(4).replace(/^"|"$/g, "").replace(/^\./, "");
+    const itemExt = (item.extension || "").toLowerCase().replace(/^\./, "");
+    const extMatch =
+      extWant === "img"
+        ? ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"].includes(itemExt)
+        : itemExt === extWant;
+    return token.isNegated ? !extMatch : extMatch;
+  }
+
+  // Filtro por carpeta (ej. folder:dropbox, folder:"aaa Carperizacion.programa")
+  if (valLow.startsWith("folder:") && !token.isExact) {
+    const fWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();
+    const folderVal = (
+      ((item as any).folder || "") +
+      " " +
+      (item.target || "") +
+      " " +
+      (item.path || "") +
+      " " +
+      (item.name || "")
+    ).toLowerCase();
+    const fMatch = folderVal.includes(fWant);
+    return token.isNegated ? !fMatch : fMatch;
+  }
+
+  // Filtros de tipo: folder / file
+  if (valLow === "type:folder" && !token.isExact) {
+    const isFolder = item.isFolder || item.extension === "FOLDER" || item.type === "FOLDER";
+    return token.isNegated ? !isFolder : isFolder;
+  }
+  if (valLow === "type:file" && !token.isExact) {
+    const isFile = !item.isFolder && item.extension !== "FOLDER" && item.type !== "FOLDER";
+    return token.isNegated ? !isFile : isFile;
+  }
+
+  // Frase exacta entre comillas
+  if (token.isExact) {
+    const hasExact = matchWholeWord
+      ? new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
+      : searchable.includes(tokenVal);
+    return token.isNegated ? !hasExact : hasExact;
+  }
+
+  // Descomposición de prefijo operativo (ej. seo.tornillosam.com -> seo + tornillosam.com)
+  const pfxMatch = valLow.match(
+    /^(tzp|tzs|ads|aads|seo|sseo|webs?|wwebs|maps?|mmaps|app|apli|aapli|software|prog|pprog|coti|cotizacion|cotización|redes|rrede|disen[oó]|diseñ[oó]|ddise)\.(.+)$/i
+  );
+  const subParts = pfxMatch ? [pfxMatch[1], pfxMatch[2]] : [tokenVal];
+
+  for (const sp of subParts) {
+    const cleanSp = sp.replace(/^\.+|\.+$/g, "");
+    if (!cleanSp) continue;
+
+    const srcName = (
+      (item.sourceName || (item as any).externalSourceName || "") +
+      " " +
+      (item.source || "")
+    ).toLowerCase();
+
+    let has = matchWholeWord
+      ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
+      : (searchable.includes(cleanSp) ||
+         searchableWithSpaces.includes(cleanSp) ||
+         (cleanSp.length >= 4 &&
+           searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, ""))));
+
+    if (!has) {
+      // Alias y equivalencias automáticas de ANFETA
+      if (cleanSp === "zproyectos" || cleanSp === "zproyecto" || cleanSp === "proyectos" || cleanSp === "proyecto") {
+        has =
+          searchable.includes("zproyecto") ||
+          searchable.includes("zproyectos") ||
+          (srcName.includes("programa") && searchable.includes("proyecto")) ||
+          searchable.includes("[programas y proyectos]");
+      } else if (cleanSp === "programas" || cleanSp === "programa" || cleanSp === "pprog" || cleanSp === "zprogramas" || cleanSp === "zprograma") {
+        has =
+          srcName.includes("programa") ||
+          searchable.includes("programas y proyectos") ||
+          searchable.includes("pprog") ||
+          searchable.includes("programa") ||
+          searchable.includes("software") ||
+          searchable.includes("ssoft");
+      } else if (cleanSp === "zclientes" || cleanSp === "zcliente" || cleanSp === "clientes" || cleanSp === "cliente") {
+        has =
+          srcName.includes("cliente") ||
+          searchable.includes("zcliente") ||
+          searchable.includes("cliente") ||
+          searchable.includes("[clientes");
+      } else if (cleanSp === "zdominios" || cleanSp === "zdominio" || cleanSp === "dominios" || cleanSp === "dominio") {
+        has =
+          srcName.includes("dominio") ||
+          searchable.includes("zdominio") ||
+          searchable.includes("dominio") ||
+          searchable.includes("[dominios");
+      } else if (cleanSp === "zcorreos" || cleanSp === "zcorreo" || cleanSp === "correos" || cleanSp === "correo") {
+        has =
+          srcName.includes("correo") ||
+          searchable.includes("correos contraseñas") ||
+          searchable.includes("ccorr") ||
+          searchable.includes("zcorreo") ||
+          searchable.includes("correo") ||
+          searchable.includes("@");
+      } else if (cleanSp === "zpagar" || cleanSp === "pagar") {
+        has = searchable.includes("pagar") || srcName.includes("pagar");
+      } else if (cleanSp === "zcobrar" || cleanSp === "cobrar") {
+        has = searchable.includes("cobrar") || srcName.includes("cobrar");
+      } else if (cleanSp === "revisiones" || cleanSp === "revision" || cleanSp === "prtuzrevision" || cleanSp === "rtuzrevision" || cleanSp === "zrevision") {
+        has =
+          srcName.includes("revision") ||
+          searchable.includes("revision") ||
+          searchable.includes("rtuzrevision") ||
+          searchable.includes("prtuzrevision");
+      } else if (cleanSp === "z") {
+        has =
+          searchable.includes("zproyecto") ||
+          searchable.includes("zcliente") ||
+          searchable.includes("zdominio") ||
+          searchable.includes("zpagar") ||
+          searchable.includes("zcobrar") ||
+          searchable.includes("zrevision") ||
+          searchable.includes("[programas") ||
+          searchable.includes("[clientes") ||
+          searchable.includes("[dominios") ||
+          searchable.includes("[cobrar");
+      } else if (cleanSp === "nneft" || cleanSp === "nnetf" || cleanSp === "neftali" || cleanSp === "neft") {
+        has =
+          searchable.includes("neftali") ||
+          searchable.includes("nneft") ||
+          searchable.includes("nnetf") ||
+          searchable.includes("neft");
+      } else if (cleanSp === "jjohn" || cleanSp === "john") {
+        has = searchable.includes("john") || searchable.includes("jjohn");
+      } else if (cleanSp === "kkarl" || cleanSp === "karla" || cleanSp === "karl") {
+        has = searchable.includes("karla") || searchable.includes("kkarl") || searchable.includes("karl");
+      } else if (cleanSp === "bbria" || cleanSp === "brian") {
+        has = searchable.includes("brian") || searchable.includes("bbria");
+      } else if (cleanSp === "ggena" || cleanSp === "genaro") {
+        has = searchable.includes("genaro") || searchable.includes("ggena");
+      } else if (cleanSp === "iisai" || cleanSp === "isai" || cleanSp === "isaias" || cleanSp === "iisaia") {
+        has = searchable.includes("isaias") || searchable.includes("isai") || searchable.includes("iisai") || searchable.includes("iisaia");
+      } else if (cleanSp === "ssote" || cleanSp === "sotelo") {
+        has = searchable.includes("sotelo") || searchable.includes("ssote");
+      } else if (cleanSp === "aacal" || cleanSp === "acalli") {
+        has = searchable.includes("acalli") || searchable.includes("aacal");
+      } else if (cleanSp === "aandr" || cleanSp === "andrade") {
+        has = searchable.includes("andrade") || searchable.includes("aandr");
+      } else if (cleanSp === "eemma" || cleanSp === "eedua" || cleanSp === "emmanuel" || cleanSp === "eduardo") {
+        has = searchable.includes("emmanuel") || searchable.includes("eduardo") || searchable.includes("eemma") || searchable.includes("eedua");
+      }
+    }
+
+    if (token.isNegated ? has : !has) return false;
+  }
+
+  return true;
 }

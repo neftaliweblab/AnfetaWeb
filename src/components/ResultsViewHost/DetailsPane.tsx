@@ -44,7 +44,10 @@ interface DetailsPaneProps {
   onOpenGlobalPaste?: () => void;
   onDelete?: (item: any) => void;
   textScale?: string;
+  searchQuery?: string;
 }
+
+import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 
 interface PreviewBlock {
   id: string;
@@ -181,6 +184,7 @@ export function DetailsPane({
   onOpenGlobalPaste,
   onDelete,
   textScale = "100%",
+  searchQuery = "",
 }: DetailsPaneProps) {
   const [addingBlock,setAddingBlock]=useState(false);
   const [editingBlock,setEditingBlock]=useState<string|null>(null);
@@ -751,7 +755,7 @@ export function DetailsPane({
         {/* Título y Ruta (DetailsTitle y DetailsDisplayPath) */}
         <div className="space-y-1">
           <h2 className="text-[12px] font-semibold text-[#F1F5F9] leading-snug break-words">
-            {parsed.title}
+            {highlightMultiSearch(parsed.title, searchQuery)}
           </h2>
           <p className="text-[10.5px] text-[#94A3B8] opacity-75 break-all font-mono">
             {displayLocation}

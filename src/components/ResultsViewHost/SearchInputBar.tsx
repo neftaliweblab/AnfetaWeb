@@ -14,6 +14,7 @@ import {
   MessageSquare,
   MessageCircle,
   Bell,
+  SlidersHorizontal,
 } from "lucide-react";
 import {IndexSyncStatus} from './IndexSyncStatus';
 import {FavoritesBackup} from './FavoritesBackup';
@@ -47,6 +48,7 @@ interface SearchInputBarProps {
   isRemindersActive?: boolean;
   remindersCount?: number;
   onOpenWhatsappGroups?: () => void;
+  onOpenAdvancedSearch?: () => void;
 }
 
 export function SearchInputBar({
@@ -73,6 +75,7 @@ export function SearchInputBar({
   isRemindersActive = false,
   remindersCount = 0,
   onOpenWhatsappGroups,
+  onOpenAdvancedSearch,
 }: SearchInputBarProps) {
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -218,6 +221,22 @@ export function SearchInputBar({
             >
               .*
             </button>
+            {onOpenAdvancedSearch && (
+              <button
+                type="button"
+                onClick={onOpenAdvancedSearch}
+                style={{
+                  fontSize: `${(10 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(6 * scale)}px`,
+                  gap: `${Math.round(3 * scale)}px`,
+                }}
+                className="flex items-center rounded font-mono font-bold transition-all border bg-transparent border-[#26354A] text-[#38BDF8] hover:text-white hover:border-[#38BDF8] hover:bg-[#0284C7]/20"
+                title="Búsqueda avanzada múltiple (AND, OR, NOT) con diferenciación de color por palabra"
+              >
+                <SlidersHorizontal style={{ width: `${Math.round(11 * scale)}px`, height: `${Math.round(11 * scale)}px` }} />
+                <span className="hidden min-[540px]:inline">Avanzada</span>
+              </button>
+            )}
           </div>
         )}
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
+import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {workflowState} from '@/services/activityWorkflow';
 import {activeResultsFirst, activeGroupsFirst, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
@@ -349,28 +350,7 @@ export function ResultsVirtualTable({
   };
 
   const highlightMatch = (text: string) => {
-    if (!text || !searchQuery || searchQuery.trim().length < 2) return text;
-    const words = searchQuery
-      .trim()
-      .split(/\s+/)
-      .map((w) => w.replace(/^["'+\-!]+|["'+\-!]+$/g, "").trim())
-      .filter((w) => w.length >= 2 && !w.includes(":"));
-    if (words.length === 0) return text;
-    const escaped = words
-      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-      .join("|");
-    const regex = new RegExp(`(${escaped})`, "gi");
-    const parts = text.split(regex);
-    const wordSet = new Set(words.map((w) => w.toLowerCase()));
-    return parts.map((part, i) =>
-      wordSet.has(part.toLowerCase()) ? (
-        <span key={i} className="text-[#38BDF8] bg-[#38BDF8]/20 px-0.5 rounded font-bold">
-          {part}
-        </span>
-      ) : (
-        part
-      )
-    );
+    return highlightMultiSearch(text, searchQuery);
   };
 
   const renderRow = (item: any) => {
