@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X, Search, Folder, Zap, Globe, Keyboard, Sparkles, Layers } from "lucide-react";
+import { X, Search, Tag, Folder, Zap, Globe, Keyboard, Sparkles, Layers } from "lucide-react";
 import { MULTI_SEARCH_PALETTE } from "@/lib/multiSearchHighlight";
 
 interface SearchHelpModalProps {
@@ -14,33 +14,39 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
   if (!isOpen) return null;
 
   const sections = [
+    {title:'🏷 Tags de trabajo y revisión',icon:Tag,commands:[
+      {cmd:'iis11',desc:'Trabajo primario de Isaías. Prioridades: 00 urgente, 11 primaria, 22 secundaria, 33 usar / practicar.'},
+      {cmd:'is11',desc:'Referencia de Isaías: conserva la prioridad cuando pasa a revisión; no indica el responsable actual.'},
+      {cmd:'jjohn',desc:'Tag completo de revisión de John. Ejemplo al enviar: is11 jjohn. Al devolver: iis11 john.'},
+      {cmd:'nne11 OR nne22',desc:'Busca trabajo de Neftalí con cualquiera de estas prioridades. También reconoce tags históricos equivalentes.'},
+    ]},
     {
       title: "⚡ Búsquedas Múltiples y Operadores Lógicos (Nuevo)",
       icon: Layers,
       highlight: true,
       commands: [
         {
-          cmd: "jjo00 and jjo1",
+          cmd: "jjo00 and jjo11",
           desc: "AND explícito: requiere ambos términos. Colorea cada palabra con badges diferenciados (Cian + Rosa).",
         },
         {
-          cmd: "jjo00 or jjo1",
+          cmd: "jjo00 or jjo11",
           desc: "OR explícito: muestra resultados que contengan cualquiera de los dos términos.",
         },
         {
-          cmd: "jjo00 not jjo1",
-          desc: "NOT explícito: incluye jjo00 pero descarta los que contengan jjo1.",
+          cmd: "jjo00 not jjo11",
+          desc: "NOT explícito: incluye jjo00 pero descarta los que contengan jjo11.",
         },
         {
-          cmd: "jjo00 and jjo1 and jjo2",
+          cmd: "jjo00 and jjo11 and jjo22",
           desc: "Multi-términos: paleta automática de hasta 6 colores vivos diferenciados.",
         },
         {
-          cmd: "( jjo00 or jjo1 ) and reporte",
+          cmd: "( jjo00 or jjo11 ) and reporte",
           desc: "Agrupación lógica con paréntesis y condiciones combinadas.",
         },
         {
-          cmd: "jjo00 && jjo1 || jjo2",
+          cmd: "jjo00 && jjo11 || jjo22",
           desc: "Sintaxis técnica: soporte total de && (AND) y || (OR).",
         },
       ],

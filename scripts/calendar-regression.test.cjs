@@ -88,7 +88,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Fecha y hora de México, incluso después de medianoche UTC',()=>{assert.equal(presentation.mexicoDate('2026-10-06T00:39:00Z'),'2026-10-05');assert.equal(presentation.calendarTime('2026-10-05T14:00:00Z'),'08:00');});
   await test('Los ocho códigos oficiales muestran el tipo correcto',()=>{for(const [code,label] of [['aads','ADS'],['sseo','SEO'],['wwebs','WEBS'],['mmaps','MAPS'],['ddise','DISEÑO'],['aapli','APLICACIÓN'],['pprog','PROGRAMAS'],['rrede','REDES']])assert.equal(presentation.calendarType(code+' anfeta.com Trabajo'),label);});
   await test('Título sin dominio repetido ni metadatos, conserva descripción',()=>{assert.equal(presentation.calendarDisplayTitle('prtuzREVISION sseo 26-[10OCT] nneft anfeta.com Optimización SEO anfeta.com','anfeta.com'),'Optimización SEO');});
-  await test('Horas, años y números no se convierten en urgencias',()=>{for(const title of ['Cita 08:00','Reporte 2000','1000 visitas'])assert.equal(presentation.calendarUrgent(title),false);assert.equal(presentation.calendarUrgent('jjohn0000 Revisar'),true);assert.equal(presentation.calendarUrgent('Revisar 00'),true);});
+  await test('Horas, años y números no se convierten en urgencias',()=>{for(const title of ['Cita 08:00','Reporte 2000','1000 visitas'])assert.equal(presentation.calendarUrgent(title),false);assert.equal(presentation.calendarUrgent('jjohn0000 Revisar'),true);assert.equal(presentation.calendarUrgent('Revisar 00'),false);});
   await test('Identidades completas y correos; iniciales desconocidas sin privilegios',()=>{assert.equal(identity.normalizePerson('nnetf@practicante.com'),'Neftali');assert.equal(identity.normalizePerson('g'),'g');assert.equal(permissions.canEditActivity('g',{person:'Karla'}),false);assert.equal(permissions.canEditActivity('nnetf@practicante.com',{person:'Neftali'}),true);});
   await test('Respeta roles de John, Isaías y Genaro; bloqueos y espejos protegidos',()=>{for(const actor of ['jjohn','iisai','ggena']){assert.equal(permissions.canEditActivity(actor,{person:'Karla'}),true);assert.equal(permissions.canEditActivity(actor,{person:'Karla',isLocked:true}),false);assert.equal(permissions.canEditActivity(actor,{person:'Karla',isReviewMirror:true}),false);}});
   await test('Empalmes calculados en la misma zona horaria',()=>{const a={start:'2026-10-05T14:00:00Z',end:'2026-10-05T15:00:00Z'},b={start:'2026-10-05T08:30:00-06:00',end:'2026-10-05T09:30:00-06:00'};assert.deepEqual(layout.computeActivityOverlaps([a,b],'2026-10-05').map(p=>p.overlapTotal),[2,2]);});
@@ -100,7 +100,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Cuenta de revisor no resuelta impide éxito falso',async()=>{state.usersMissing=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/cuenta real/);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('Si falla el metadato se restaura la actividad anterior',async()=>{state.failMetadata=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/restauró/);assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(state.page.properties.Name.title[0].text.content,/^prtuzREVISION/);});
   await test('Terminar revisión conserva zREVISION y devuelve al responsable original',async()=>{await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});const page=await mutations.mutateActivity(settings,'jjohn',pid,{status:'zREVISION'});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^zREVISION.*\bneft\b.*\bjohn\b/);assert.equal(state.flow.State,'approved');});
-  await test('Revisión con urgencia no pierde prefijo ni revisor',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',isUrgent:true});assert.match(page.properties.Name.title[0].text.content,/^rtuzREVISION.*jjohn.* 00$/);});
+  await test('Revisión con urgencia conserva prioridad como referencia y revisor completo',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',isUrgent:true});assert.match(page.properties.Name.title[0].text.content,/^rtuzREVISION.*ne00 jjohn$/);});
   await test('API de checklist propaga el rechazo de Notion',async()=>{state.failChecklist=true;const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.match((await res.json()).error,/rejected/);});
   await test('API impide editar una tarea de otra actividad',async()=>{const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'foreign-block',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('API de checklist respeta actividad bloqueada',async()=>{state.page.properties.Locked.checkbox=true;const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,currentUser:'ggena'}));assert.equal(res.status,400);});
@@ -313,6 +313,32 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const result=k.computeDailyKPIs([base,{...base,title:'FFTF Calendario'},{...base,status:'Suspendida'},{...base,start:'2026-10-06T08:00:00-06:00',end:'2026-10-06T09:00:00-06:00'}],'2026-10-06');
     assert.equal(result.totalActivities,1);assert.equal(result.coveragePercentage,20);assert.equal(result.currentProgressPercentage,80);assert.equal(k.isFtfActivity('miFFTFproyecto'),false);
     assert.equal(k.currentActivityRatio({...base,checklistScanned:false,estimatedWorkMinutes:60,workedMinutes:30}),0.5);
+  });
+  await test('Tags nuevos conservan prioridad, People, devoluciones y reintentos sin avisos duplicados',async()=>{
+    state.page.properties.Name.title=[{text:{content:'prtuzREVISION iis22 anfeta.com Trabajo'}}];
+    state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'isaias-id',name:'Isaias'}];
+    await mutations.mutateActivity(settings,'Isaias',pid,{reviewer:'John',status:'rtuzREVISION'});
+    assert.equal(state.page.properties.Name.title[0].text.content,'rtuzREVISION anfeta.com Trabajo is22 jjohn');
+    assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');
+    const writes=state.calls.filter(c=>c.method==='PATCH'||c.method==='POST').length;
+    await assert.rejects(()=>mutations.mutateActivity(settings,'John',pid,{reviewer:'John',status:'rtuzREVISION'}),/ya está en revisión/);
+    assert.equal(state.calls.filter(c=>c.method==='PATCH'||c.method==='POST').length,writes);
+    const returned=await mutations.mutateActivity(settings,'John',pid,{reviewAction:'return',note:'Corregir el diseño'});
+    assert.equal(returned.properties.Name.title[0].text.content,'prtuzREVISION anfeta.com Trabajo iis22 john');
+    assert.equal(returned.properties['Assignee/Ejecutor Principal'].people[0].id,'isaias-id');
+  });
+  await test('Genaro conserva copia visual en carga básica aun sin caché del flujo',async()=>{
+    state.queryCurrent=true;
+    state.page.properties.Name.title=[{text:{content:'rtuzREVISION ge11 jjohn anfeta.com Trabajo'}}];
+    state.page.properties.Estado.status.name='En revisión';
+    state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'john-id',name:'John'}];
+    state.flow={State:'pending',OriginalPerson:'Genaro',ReviewAssignee:'John',LeaveVisualCopy:true};
+    const response=await route.GET(new Request('http://localhost/api/data?type=calendar&date=2026-10-05&basic=1'));
+    assert.equal(response.status,200);
+    const data=await response.json();
+    const mirrors=data.activities.filter(a=>a.isReviewMirror&&a.person==='Genaro');
+    assert.equal(mirrors.length,1);
+    assert.equal(data.activities.filter(a=>a.pageId===pid&&a.person==='John').length,1);
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

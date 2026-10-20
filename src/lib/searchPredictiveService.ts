@@ -77,7 +77,7 @@ export const DEFAULT_SAVED_SEARCHES = [
   "docx",
   "mhad.com.mx",
   "rtuzrevision",
-  "prueba nneft guardar",
+  "nne11 OR nne22",
 ];
 
 const STOP_WORDS = new Set([

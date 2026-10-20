@@ -1,3 +1,4 @@
+import {inferActivityPerson} from '@/services/activityTags';
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
@@ -194,19 +195,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
     }
   }
 
-  // Si no se detectó persona en propiedades, resolver desde el título
-  if (!person && title) {
-    if (/\b(?:ggena|genaro)\b/i.test(title)) person = "Genaro";
-    else if (/\b(?:nneft|nnetf|neft|neftali)\b/i.test(title)) person = "Neftali";
-    else if (/\b(?:bbria|brian)\b/i.test(title)) person = "Brian";
-    else if (/\b(?:iisai|iisaia|isai|isaias)\b/i.test(title)) person = "Isaias";
-    else if (/\b(?:kkarl|karl|karla)\b/i.test(title)) person = "Karla";
-    else if (/\b(?:jjohn|john)\b/i.test(title)) person = "John";
-    else if (/\b(?:aandr|andrade)\b/i.test(title)) person = "Andrade";
-    else if (/\b(?:aacal|acalli)\b/i.test(title)) person = "Acalli";
-    else if (/\b(?:ssote|sotelo)\b/i.test(title)) person = "Sotelo";
-    else if (/\b(?:eemma|eedua|eduardo|emmanuel)\b/i.test(title)) person = "Emmanuel";
-  }
+  if(!person&&title)person=inferActivityPerson(title,status);
 
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
@@ -1080,7 +1069,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status?old.reviewFlow:undefined),reviewFlowScanned=!!known;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
-              if (!basic) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
+              if (!basic || (state === 'review' && !reviewFlow)) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
@@ -2357,7 +2346,7 @@ async function POSTLive(req: NextRequest) {
         const activity = normalizeActivity({ ...cached, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
           person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
-          reviewFlow:page.__reviewFlow || cached?.reviewFlow, ...(input.isUrgent !== undefined ? {isUrgent:input.isUrgent} : {}) }, 0);
+          reviewFlow:page.__reviewFlow || cached?.reviewFlow, isUrgent:undefined }, 0);
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
         let ftfWarning='';

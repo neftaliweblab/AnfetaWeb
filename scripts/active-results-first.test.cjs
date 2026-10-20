@@ -59,10 +59,10 @@ const monthRows = [
   {id:'m2_done',name:'zREVISION done',monthChip:'FEB',updateStatus:'TERMINADA'},
   {id:'m3_act',name:'prtuzREVISION activo',monthChip:'MAR',updateStatus:'PENDIENTE'},
 ];
-const orderedMonths=orderSearchResults(monthRows,'month');
+const orderedMonths=orderSearchResults(monthRows,'month',new Date('2026-10-19T12:00:00Z'));
 assert.equal(orderedMonths.length,4);
-// Group ENE (mixed) has active before done; Group MAR (active) is before Group FEB; Group FEB (completed only) is last.
-assert.deepEqual(orderedMonths.map(r=>r.id),['m1_act','m1_done','m3_act','m2_done']);
+// Months descend chronologically; active rows precede completed rows inside each month.
+assert.deepEqual(orderedMonths.map(r=>r.id),['m3_act','m2_done','m1_act','m1_done']);
 
 // 7. Full set sorting before pagination
 const many=[...Array.from({length:80},(_,i)=>({...done,id:'d'+i})),...Array.from({length:80},(_,i)=>({...pending,id:'p'+i}))];

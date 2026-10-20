@@ -4,9 +4,9 @@ Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))n
 require.extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,p);
 const {quickRevisionTitle}=require('../src/lib/quickRevisionTitle.ts');
 const sample={type:'Corrección de prueba',title:'Error al mover actividad',person:'nneft',domain:'anfeta.com',description:'Revisar el horario mostrado',month:'26-[10OCT]'};
-assert.equal(quickRevisionTitle(sample),'prtuzREVISION [Corrección de prueba] 26-[10OCT] Error al mover actividad n-neft [anfeta.com] Revisar el horario mostrado');
-assert.match(quickRevisionTitle({...sample,person:'ggena'}),/ g-gena \[anfeta.com\]/);
-assert.match(quickRevisionTitle({...sample,person:'aandr'}),/ a-andr\s+\[anfeta.com\]/);
+assert.equal(quickRevisionTitle(sample),'prtuzREVISION [Corrección de prueba] 26-[10OCT] Error al mover actividad nne11 [anfeta.com] Revisar el horario mostrado');
+assert.match(quickRevisionTitle({...sample,person:'ggena'}),/ gge11 \[anfeta.com\]/);
+assert.match(quickRevisionTitle({...sample,person:'aandr'}),/ aan11\s+\[anfeta.com\]/);
 assert.throws(()=>quickRevisionTitle({...sample,person:'desconocido'}),/responsable válido/);
 assert.throws(()=>quickRevisionTitle({...sample,month:'26-[99OCT]'}),/mes/);
 assert.throws(()=>quickRevisionTitle({...sample,month:'26-[08OCT]'}),/mes/);

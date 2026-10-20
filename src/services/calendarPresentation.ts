@@ -1,4 +1,5 @@
 
+import {scanActivityTags,stripActivityTags} from './activityTags';
 const TYPES: [RegExp, string][] = [
   [/\b(?:aads|ads|google\s*ads|campañas?)\b/i, 'ADS'],
   [/\b(?:sseo|seo|posicionamiento|keywords)\b/i, 'SEO'],
@@ -22,10 +23,10 @@ export function calendarType(title: string, project = '') {
   return TYPES.find(([pattern]) => pattern.test(official || title + ' ' + (/^(sin|no content|general)/i.test(project) ? '' : project)))?.[1] || null;
 }
 export function calendarUrgent(title: string) {
-  return /(?:^|\s)00(?:\s|$)|\b(?:jjohn|john|nneft|nnetf|iisai|ggena|kkarl|aandr|bbria|ssote|aacal|eemma)0{2,4}\b/i.test(title);
+  return scanActivityTags(title).some(tag=>tag.role==='active'&&tag.priority==='00');
 }
 export function calendarDisplayTitle(title: string, domain = '') {
-  let text = title.replace(/\[COPIA REVISIÓN\]\s*/gi, '')
+  let text = stripActivityTags(title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
     .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, '')
     .replace(/\b(?:aads|sseo|wwebs|mmaps|ddise|aapli|pprog|rrede|cchat|rrapi|mmapi|bblib|ccoti|coti)\b/gi, '')

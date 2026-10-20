@@ -1,5 +1,6 @@
 "use client";
 
+import {ACTIVITY_TAGS} from "@/services/activityTags";
 import React, { useState, useRef, useEffect } from "react";
 import {
   Folder,
@@ -42,17 +43,10 @@ const ARCHIVOS_ITEMS = [
 ];
 
 // 2. Opciones de Personas
-const PERSONAS_ITEMS = [
-  { label: "👤 Neftali (nneft)", tag: "nneft" },
-  { label: "👤 John (jjohn)", tag: "jjohn" },
-  { label: "👤 Karla (kkarl)", tag: "kkarl" },
-  { label: "👤 Brian (bbria)", tag: "bbria" },
-  { label: "👤 Genaro (ggena)", tag: "ggena" },
-  { label: "👤 Isaias (iisai)", tag: "iisai" },
-  { label: "👤 Sotelo (eedua)", tag: "eedua" },
-  { label: "👤 Acalli (aacal)", tag: "aacal" },
-  { label: "👤 Andrade (aandr)", tag: "aandr" },
-];
+const PERSONAS_ITEMS = Object.entries(ACTIVITY_TAGS).flatMap(([name,entry])=>[
+  {label:'👤 '+name+' · trabajo',tag:['00','11','22','33'].map(priority=>entry.active+priority).join(' OR ')},
+  {label:'🔍 '+name+' · revisión ('+entry.review+')',tag:entry.review},
+]);
 
 // 3. Opciones de Proyectos (Tipos de Proyecto)
 const PROYECTOS_ITEMS = [

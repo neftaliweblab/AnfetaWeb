@@ -1,0 +1,95 @@
+/** Title tokens only. Identity/login aliases remain a separate concern. */
+export const ACTIVITY_TAGS = {
+  Neftali:{active:'nne',reference:'ne',review:'nneft',aliases:['nneft','nnetf','neft','netf','neftali'],passive:'neft'},
+  Genaro:{active:'gge',reference:'ge',review:'ggena',aliases:['ggena','gena','genaro'],passive:'gena'},
+  Acalli:{active:'aac',reference:'ac',review:'aacal',aliases:['aacal','acal','acalli'],passive:'acal'},
+  Karla:{active:'kka',reference:'ka',review:'kkarl',aliases:['kkarl','karl','karla'],passive:'karl'},
+  John:{active:'jjo',reference:'jo',review:'jjohn',aliases:['jjohn','john'],passive:'john'},
+  Isaias:{active:'iis',reference:'is',review:'iisai',aliases:['iisai','iisaia','isai','isaias'],passive:'isai'},
+  Andrade:{active:'aan',reference:'an',review:'aandr',aliases:['aandr','andr','andrade'],passive:'andr'},
+  Brian:{active:'bbr',reference:'br',review:'bbria',aliases:['bbria','bria','brian'],passive:'bria'},
+  Sotelo:{active:'sso',reference:'so',review:'ssote',aliases:['ssote','sote','eedua','edua','sotelo'],passive:'sote'},
+} as const;
+export type ActivityPerson=keyof typeof ACTIVITY_TAGS;
+export type ActivityPriority='00'|'11'|'22'|'33';
+export const PRIORITY_LABELS:Record<ActivityPriority,string>={'00':'Urgente','11':'Primaria','22':'Secundaria','33':'Usar / practicar'};
+export interface ActivityTag {person:ActivityPerson;role:'active'|'reference'|'review'|'legacy';priority?:ActivityPriority;suffix:string;token:string;index:number;legacy:boolean}
+const suffixes=['0000','000','001','002','003','00','11','22','33'];
+const legacyPriority=(suffix:string):ActivityPriority|undefined=>suffix==='001'?'11':suffix==='002'?'22':suffix==='003'?'33':/^0{2,4}$/.test(suffix)?'00':(['11','22','33'].includes(suffix)?suffix as ActivityPriority:undefined);
+export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
+  const lower=token.toLowerCase();
+  for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
+    for(const priority of ['00','11','22','33'] as const){
+      if(lower===entry.active+priority)return {person:person as ActivityPerson,role:'active',priority,suffix:priority,token,legacy:false};
+      if(lower===entry.reference+priority)return {person:person as ActivityPerson,role:'reference',priority,suffix:priority,token,legacy:false};
+    }
+    for(const alias of entry.aliases){
+      if(lower===alias)return {person:person as ActivityPerson,role:lower===entry.review?'review':'legacy',suffix:'',token,legacy:true};
+      for(const suffix of suffixes)if(lower===alias+suffix)return {person:person as ActivityPerson,role:alias[0]===alias[1]?'active':'reference',priority:legacyPriority(suffix),suffix,token,legacy:true};
+    }
+    if(lower===entry.active[0]+'-'+entry.passive)return {person:person as ActivityPerson,role:'legacy',suffix:'',token,legacy:true};
+  }
+}
+export function scanActivityTags(text:string):ActivityTag[]{
+  const found:ActivityTag[]=[];
+  for(const match of text.matchAll(/(?<![\p{L}\p{N}_@./-])[a-z]+(?:-[a-z]+)?\d*(?![\p{L}\p{N}_@./-])/giu)){
+    const tag=parseActivityTag(match[0]);if(tag)found.push({...tag,index:match.index!});
+  }
+  return found;
+}
+export function activityPerson(input:string):ActivityPerson|undefined{
+  const value=input.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
+  return (Object.keys(ACTIVITY_TAGS) as ActivityPerson[]).find(person=>person.toLowerCase()===value)||parseActivityTag(value)?.person;
+}
+export function activePersonTag(person:string,priority:ActivityPriority='11'){
+  const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+priority:'';
+}
+export function titlePriority(title:string,person?:string){
+  const key=person?activityPerson(person):undefined;
+  const tags=scanActivityTags(title).filter(tag=>tag.role==='active'&&(!key||tag.person===key));
+  return (['00','11','22','33'] as const).find(priority=>tags.some(tag=>tag.priority===priority));
+}
+/** Urgency is an owned task token; keep the normal priority for when urgency is removed. */
+export function setTaskUrgent(title:string,person:string,urgent:boolean){
+  const owner=activityPerson(person);
+  if(!owner)throw Error('No se encontró el responsable para cambiar la urgencia.');
+  const tags=scanActivityTags(title).filter(tag=>tag.person===owner&&tag.role==='active'&&tag.priority==='00');
+  if(urgent)return tags.length?title:(title+' '+activePersonTag(owner,'00')).trim();
+  let result=title;
+  for(const tag of tags.reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);
+  return result.replace(/\s+00$/,'').replace(/\s{2,}/g,' ').trim();
+}
+export function inferActivityPerson(title:string,status=''){
+  const tags=scanActivityTags(title),review=/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
+  const candidate=review?tags.findLast(tag=>tag.role==='review'):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy');
+  return candidate?.person||'';
+}
+export function resultAssignedPerson(item:any){
+  for(const value of [item?.assignedPerson,item?.AssignedPerson,item?.person,...(item?.assignmentKeys||[])]){
+    if(typeof value!=='string')continue;
+    const person=activityPerson(value.split('@')[0].trim());if(person)return person;
+  }
+  return inferActivityPerson(String(item?.name||item?.title||item?.Name||''),String(item?.updateStatus||item?.status||''));
+}
+export function activityTagPattern(){
+  const tokens:string[]=[];
+  for(const entry of Object.values(ACTIVITY_TAGS)){
+    for(const suffix of ['00','11','22','33'])tokens.push(entry.active+suffix,entry.reference+suffix);
+    for(const alias of entry.aliases){tokens.push(alias);for(const suffix of suffixes)tokens.push(alias+suffix);}
+    tokens.push(entry.active[0]+'-'+entry.passive);
+  }
+  return new RegExp('(?<![\\p{L}\\p{N}_@./-])(?:'+tokens.sort((a,b)=>b.length-a.length).join('|')+')(?![\\p{L}\\p{N}_@./-])','giu');
+}
+export function stripActivityTags(title:string){
+  let result=title;for(const tag of scanActivityTags(title).reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);return result;
+}
+/** Structured tag queries never fall back to substring/identity aliases. */
+export function matchesActivityTagQuery(title:string,query:string,matchCase=false):boolean|undefined{
+  const wanted=parseActivityTag(query);if(!wanted||wanted.role==='legacy')return undefined;
+  return scanActivityTags(title).some(tag=>{
+    if(matchCase&&tag.token!==query)return false;
+    if(tag.person!==wanted.person||tag.role!==wanted.role)return false;
+    if(wanted.role==='review')return tag.token.toLowerCase()===query.toLowerCase();
+    return wanted.priority===tag.priority;
+  });
+}

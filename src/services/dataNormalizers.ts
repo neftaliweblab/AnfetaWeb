@@ -1,21 +1,12 @@
+import {inferActivityPerson,ACTIVITY_TAGS} from './activityTags';
 import path from "path";
 import { calendarUrgent, mexicoDate } from "./calendarPresentation";
 import { normalizePerson } from "./identityNormalizer";
 import { SearchResultRow, NotionCalendarActivity } from "@/types/anfeta";
 
-function resolveAssignedPerson(text: string, keys: string[] = []): string {
-  const combined = `${text} ${keys.join(" ")}`.toLowerCase();
-  if (/\b(?:ggena|genaro|ggena@pprin\.com)\b/i.test(combined)) return "Genaro";
-  if (/\b(?:nneft|nnetf|neft|neftali|nnetf@practicante\.com)\b/i.test(combined)) return "Neftali";
-  if (/\b(?:bbria|brian|bbria@pprin\.com)\b/i.test(combined)) return "Brian";
-  if (/\b(?:iisai|iisaia|isai|isaias|iisai@pprin\.com)\b/i.test(combined)) return "Isaias";
-  if (/\b(?:kkarl|karl|karla|kkarl@pprin\.com)\b/i.test(combined)) return "Karla";
-  if (/\b(?:jjohn|john|jjohn@pprin\.com)\b/i.test(combined)) return "John";
-  if (/\b(?:aandr|andrade|aandr@pprin\.com)\b/i.test(combined)) return "Andrade";
-  if (/\b(?:aacal|acalli|aacal@pprin\.com)\b/i.test(combined)) return "Acalli";
-  if (/\b(?:ssote|sotelo|ssote@pprin\.com)\b/i.test(combined)) return "Sotelo";
-  if (/\b(?:eemma|eedua|eduardo|emmanuel|eedua@pprin\.com)\b/i.test(combined)) return "Emmanuel";
-  return "Sin asignar";
+function resolveAssignedPerson(text:string,keys:string[]=[]):string {
+  const explicit=keys.map(normalizePerson).find(person=>person in ACTIVITY_TAGS);
+  return explicit||inferActivityPerson(text)||'Sin asignar';
 }
 
 export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
@@ -40,7 +31,7 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
   const assignedPerson =
     raw.AssignedPerson ||
     raw.assignedPerson ||
-    resolveAssignedPerson(name + " " + (raw.SearchText || ""), assignmentKeys);
+    resolveAssignedPerson(name, assignmentKeys);
 
   const rawSearchText = raw.SearchText || raw.searchText || "";
   const combinedSearchText = [rawSearchText, name, assignedPerson, ...assignmentKeys]

@@ -1,3 +1,4 @@
+import {activityPerson} from './activityTags';
 export const PERSON_ALIASES: Record<string, string[]> = {
   Neftali: ["nneft", "nnetf", "neft", "netf", "neftali"],
   Karla: ["kkarl", "karl", "karla"],
@@ -37,6 +38,8 @@ export function normalizePerson(input: string | null | undefined): string {
   if (clean.includes("@")) {
     clean = clean.split("@")[0].trim();
   }
+
+  const tagPerson=activityPerson(clean);if(tagPerson)return tagPerson;
 
   for (const [canonical, aliases] of Object.entries(PERSON_ALIASES)) {
     if (canonical.toLowerCase() === clean) return canonical;

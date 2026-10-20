@@ -1,5 +1,6 @@
 "use client";
 import {ReassignActivityModal} from './ReassignActivityModal';
+import {titlePriority} from '@/services/activityTags';
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useRef, useMemo } from "react";
@@ -347,12 +348,11 @@ export function ActivityCard({
 
   // Desktop palette customization (ANFETA Desktop parity)
   let priorityBorderColor = "#64748B";
-  const titleUpper = (activity.title || "").toUpperCase();
   if (isUrgent || calendarUrgent(activity.title)) {
     priorityBorderColor = "#F87171";
-  } else if (titleUpper.includes("01") || titleUpper.includes("ALTA") || titleUpper.includes("URGENT")) {
+  } else if (titlePriority(activity.title,activity.person)==='11') {
     priorityBorderColor = "#FBBF24";
-  } else if (titleUpper.includes("ESPERA") || titleUpper.includes("WAIT")) {
+  } else if (titlePriority(activity.title,activity.person)==='22') {
     priorityBorderColor = "#60A5FA";
   } else if (isCompleted) {
     priorityBorderColor = "#10B981";

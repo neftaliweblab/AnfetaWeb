@@ -459,7 +459,7 @@ export function SearchConfigRow({
             }}
             className="bg-[#141B26] text-[#FFFFFF] border border-[#26354A] rounded focus:outline-none cursor-pointer"
           >
-            <option value="Actual">Mes actual{currentMonth?' ('+currentMonth+')':''}</option>
+            <option value="Actual">Todos · actual primero{currentMonth?' ('+currentMonth+')':''}</option>
             {MONTHS.map((m) => (
               <option key={m} value={m}>
                 {m}

@@ -1,3 +1,4 @@
+import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority} from '../services/activityTags';
 /**
  * templateCatalog.ts
  * Catálogo y utilidades de Plantillas Fase1 para ANFETA.
@@ -171,7 +172,7 @@ export function cleanCalendarQuickTemplateActivityTitle(
   rawTitle: string,
   projectToken = ""
 ): string {
-  let value = (rawTitle || "").trim().replace(/\s+/g, " ");
+  let value = stripActivityTags(rawTitle || "").trim().replace(/\s+/g, " ");
   if (!value) return "Actividad desde plantilla";
 
   // Quitar estados técnicos
@@ -244,66 +245,22 @@ export function buildCalendarTemplateMonthTag(date: Date): string {
 }
 
 /**
- * Genera el tag corto del revisor según ANFETA.
+ * Genera el tag completo del revisor según ANFETA.
  */
 export function getCalendarReviewerTag(personName: string): string {
-  const norm = (personName || "").trim().toLowerCase();
-  switch (norm) {
-    case "john":
-      return "john";
-    case "karla":
-      return "karl";
-    case "isaias":
-      return "isai";
-    case "sotelo":
-      return "edua";
-    case "acalli":
-      return "acal";
-    case "andrade":
-      return "andr";
-    case "brian":
-      return "bria";
-    case "genaro":
-      return "gena";
-    case "neftali":
-      return "neft";
-    default:
-      return norm.slice(0, 4);
-  }
+  const person=activityPerson(personName);return person?ACTIVITY_TAGS[person].review:'';
 }
 
 /**
- * Genera el tag del responsable asignado (ej. n-neft, k-karl, etc.).
+ * Genera el tag del responsable asignado (ej. nne11, kka11, etc.).
  */
 export function getCalendarPersonTag(personName: string): string {
-  const norm = (personName || "").trim().toLowerCase();
-  switch (norm) {
-    case "john":
-      return "j-john";
-    case "karla":
-      return "k-karl";
-    case "isaias":
-      return "i-isai";
-    case "sotelo":
-      return "s-sote";
-    case "acalli":
-      return "a-acal";
-    case "andrade":
-      return "a-andr";
-    case "brian":
-      return "b-bria";
-    case "genaro":
-      return "g-gena";
-    case "neftali":
-      return "n-neft";
-    default:
-      return "";
-  }
+  return activePersonTag(personName);
 }
 
 /**
  * Construye el título completo estandarizado para la nueva actividad de Notion/Calendario.
- * Formato: "prtuzREVISION wwebs 26-[10OCT] 6.00 Título [webs.dominio.com] n-neft john"
+ * Formato: "prtuzREVISION wwebs 26-[10OCT] 6.00 Título [webs.dominio.com] nne11 jjohn"
  */
 export function buildCalendarQuickTemplateFinalTitle(params: {
   projectToken?: string;
@@ -352,7 +309,7 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     }
   }
 
-  const personTag = personName ? getCalendarPersonTag(personName) : "";
+  const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle)) : "";
   const reviewerTag = reviewerName ? getCalendarReviewerTag(reviewerName) : "";
 
   // Conservar tags de equipo originales si no se eligieron personas específicas

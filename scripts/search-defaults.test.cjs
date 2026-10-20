@@ -21,7 +21,7 @@ assert.deepEqual(readSearchDefaults({getItem:()=>{throw Error('disabled')},setIt
 assert.equal(currentSearchMonth(new Date('2026-11-01T05:59:59Z')),'10OCT');
 assert.equal(currentSearchMonth(new Date('2026-11-01T06:00:00Z')),'11NOV');
 assert.equal(currentSearchMonth(new Date('2027-01-01T05:00:00Z')),'12DIC');
-assert.equal(effectiveSearchMonth('Actual','10OCT','reporte'),'10OCT');
+assert.equal(effectiveSearchMonth('Actual','10OCT','reporte'),'Todos');
 assert.equal(effectiveSearchMonth('Actual','10OCT','reporte 26-[09SEP]'),'Todos');
 assert.equal(effectiveSearchMonth('Actual','10OCT','09SEP OR 10OCT'),'Todos');
 assert.equal(effectiveSearchMonth('Todos','10OCT','reporte'),'Todos');

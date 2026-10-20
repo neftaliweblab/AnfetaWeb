@@ -1,3 +1,4 @@
+import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
 import {withActivityLease,operationKey} from './reliableOperations';
 import {ftfField,FTF_CHECKBOX} from './ftfVerification';
 import {activeTeam} from './teamDirectory';
@@ -72,7 +73,7 @@ export async function calendarScheduleAvailability(settings:Settings,moving:Cale
   const slots:CalendarSlot[]=pages.flatMap(page=>{
     const date:any=Object.entries(page.properties||{}).find(([n,p]:any)=>/^fecha por hacer$/i.test(n.trim())&&p.type==='date')?.[1];
     if(!date?.date?.start)return [];
-    const title=titleOf(page),fallback=title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1]||'';
+    const title=titleOf(page),fallback=inferActivityPerson(title);
     const start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;
     return [{pageId:page.id,title,person:assignedPerson(page,fallback),start,end:date.date.end||new Date(Date.parse(start)+3600000).toISOString()}];
   });
@@ -100,7 +101,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
   if(updates.expectedStatus!==undefined && (calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'')!==updates.expectedStatus)throw new Error('El estado cambió en otro dispositivo. Actualiza antes de guardar.');
   const locks = Object.entries(page.properties || {}).some(([name, prop]: any) => /lock|bloquead/i.test(name) && prop.type === 'checkbox' && prop.checkbox);
-  const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1] || '';
+  const inferred = inferActivityPerson(title);
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable, Dirección o un revisor puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
@@ -129,6 +130,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(completed&&!isReviewer(actor)&&!(previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee)&&PERSON_ALIASES[normalizePerson(actor)]))throw Error('Solo el revisor asignado puede terminar esta revisión.');
   if(handoff&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
   if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
+  if(updates.reviewer&&previousFlow?.State==='pending'&&normalizePerson(previousFlow.ReviewAssignee)===normalizePerson(updates.reviewer))throw new Error('La actividad ya está en revisión con este compañero. Actualiza antes de reenviarla.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
   if (returned && (!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
   if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
@@ -187,12 +189,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
     const titleField = fields.find(([,p]) => p.type === 'title');
     if (titleField) {
-      const ownerCodes = (PERSON_ALIASES[normalizePerson(activity.person)] || []).filter(alias => /^(.)\1/.test(alias));
-      const ownerToken = ownerCodes.length ? new RegExp('\\b(?:' + ownerCodes.join('|') + ')(?:0{2,4}|00[1-3])?\\b','i') : null;
-      const tag = PERSON_ALIASES[person]?.[0] || '';
-      const baseTitle = isSendingToReview || completed || returned || reassigned ? title.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '') : title;
-      nextTitle = ownerToken?.test(baseTitle) ? baseTitle.replace(ownerToken, () => tag) : tag ? tag + ' ' + baseTitle : baseTitle;
-      if(handoff)nextTitle=handoffTitle(title,activity.person,person);
+      nextTitle = isSendingToReview || completed || returned ? title : handoffTitle(title,activity.person,person);
       if (isSendingToReview) {
         // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
         nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
@@ -249,15 +246,16 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const field=fields.find(([,p])=>p.type==='title');
     if(field){
       // Compose from the original title: generic reassignment must not remove author/suffix tags.
-      const source=updates.title!==undefined?String(updates.title):title;
-      properties[field[0]]={title:[{text:{content:reviewTitle(source,previousFlow?.OriginalPerson||activity.person,updates.reviewer||previousFlow.ReviewAssignee,returned?'returned':completed?'approved':'pending')}}]};
+      let source=updates.title!==undefined?String(updates.title):title;
+      if(updates.reviewer&&updates.isUrgent!==undefined)source=setTaskUrgent(source,previousFlow?.OriginalPerson||activity.person,updates.isUrgent);
+      properties[field[0]]={title:[{text:{content:reviewTitle(source,previousFlow?.OriginalPerson||activity.person,updates.reviewer||previousFlow.ReviewAssignee,returned?'returned':completed?'approved':'pending',previousFlow?.State==='pending'?previousFlow.ReviewAssignee:'')}}]};
     }
   }
-  if (updates.isUrgent !== undefined) {
+  if (updates.isUrgent !== undefined && !updates.reviewer) {
     const titleProp = fields.find(([,p]) => p.type === 'title');
     if (!titleProp) throw new Error('No se encontró el título de Notion.');
     nextTitle = (properties[titleProp[0]]?.title || []).map((t: any) => t.text?.content || '').join('') || nextTitle;
-    nextTitle = updates.isUrgent ? `${nextTitle.replace(/\s+00$/, '')} 00` : nextTitle.replace(/\s+00$/, '');
+    nextTitle = setTaskUrgent(nextTitle,activity.person,updates.isUrgent);
     properties[titleProp[0]] = { title: [{ text: { content: nextTitle } }] };
   }
   if (!Object.keys(properties).length) throw new Error('No hay cambios válidos para guardar.');
@@ -390,7 +388,8 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   if (!titleField) throw new Error('La base no tiene propiedad de título.');
   const canonicalPerson = normalizePerson(person || actor);
   const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
-  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? ['prtuzREVISION', domain, PERSON_ALIASES[canonicalPerson]?.[0], description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
+  const personTag=scanActivityTags(description).some(tag=>tag.person===canonicalPerson&&tag.role==='active')?'':activePersonTag(canonicalPerson);
+  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? ['prtuzREVISION', domain, personTag, description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
     const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));

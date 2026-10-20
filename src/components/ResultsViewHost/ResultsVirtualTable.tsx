@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {workflowState} from '@/services/activityWorkflow';
-import {activeResultsFirst, activeGroupsFirst, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
   Globe,
   Folder,
@@ -315,10 +315,10 @@ export function ResultsVirtualTable({
       map.get(key)!.push(item);
     }
 
-    return activeGroupsFirst(Array.from(map.entries()).map(([key, groupRows]) => ({
+    return sortResultGroups(Array.from(map.entries()).map(([key, groupRows]) => ({
       key,
       items: groupRows,
-    })));
+    })),groupBy);
   }, [items, groupBy]);
 
   const renderIcon = (item: any) => {

@@ -32,8 +32,6 @@ export function currentSearchMonth(now=new Date()){
   return MONTH_CODES[month-1];
 }
 export function effectiveSearchMonth(selection:string,currentMonth:string,query:string){
-  if(selection!=='Actual')return selection;
-  // An explicit month in the query takes precedence over the automatic default.
-  if(/(?:^|[^a-z0-9])(?:0[1-9]|1[0-2])(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)(?=$|[^a-z0-9])/i.test(query))return 'Todos';
-  return currentMonth;
+  // Automatic month is an ordering preference, never an implicit filter.
+  return selection==='Actual'?'Todos':selection;
 }

@@ -1,3 +1,4 @@
+import {inferActivityPerson} from './activityTags';
 import {checklistTiming} from './checklistHistory';
 import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
@@ -177,7 +178,7 @@ export async function assertChecklistAccess(settings: CalendarSettings, actor: s
   if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
   const page = await notionRequest(settings, `pages/${pageId}`);
   const title = Object.values(page.properties || {}).filter((p: any) => p.type === 'title').flatMap((p: any) => p.title || []).map((t: any) => t.plain_text || t.text?.content || '').join('');
-  const inferred = title.match(/\b(jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/i)?.[1];
+  const inferred = inferActivityPerson(title);
   const locked = page.archived || page.in_trash || Object.entries(page.properties || {}).some(([name,p]: any) => /lock|bloquead/i.test(name) && p.type === 'checkbox' && p.checkbox);
   if (!canEditActivity(actor, { title, person: assignedPerson(page, inferred), isLocked: !!locked })) throw new Error('No puedes modificar esta actividad o está bloqueada.');
   return page;

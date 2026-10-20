@@ -26,7 +26,7 @@ interface SearchSidebarProps {
 const DEFAULT_SAVED_SEARCHES = [
   "mhad.com.mx",
   "rtuzrevision",
-  "prueba nneft guardar",
+  "nne11 OR nne22",
 ];
 
 export function SearchSidebar({

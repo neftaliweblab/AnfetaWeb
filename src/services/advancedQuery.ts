@@ -1,4 +1,5 @@
 import { SearchResultRow } from '@/types/anfeta';
+import {matchesActivityTagQuery} from './activityTags';
 
 export interface QueryPlan {
   sorts: Array<{ field: string; desc: boolean }>;
@@ -231,6 +232,8 @@ export class AdvancedQueryV3 {
         return node.regex.test(item.name) || node.regex.test(item.path);
 
       case 'TEXT':
+        const tagMatch=matchesActivityTagQuery(item.name||'',node.pattern);
+        if(tagMatch!==undefined)return tagMatch;
         return this.wildcardMatch(item.name, node.pattern) || 
                this.wildcardMatch(item.path, node.pattern) ||
                (item.description ? this.wildcardMatch(item.description, node.pattern) : false) ||
@@ -484,6 +487,8 @@ function checkSingleToken(
   const matchWholeWord = !!options?.matchWholeWord;
   const tokenVal = matchCase ? token.value : token.value.toLowerCase();
   const valLow = token.value.toLowerCase();
+  const tagMatch=matchesActivityTagQuery(item.name||'',token.value,matchCase);
+  if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
 
   // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
   if (valLow.startsWith("source:") && !token.isExact) {

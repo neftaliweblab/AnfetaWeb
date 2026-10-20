@@ -5,7 +5,7 @@ Module._extensions['.ts']=(mod,file)=>mod._compile(ts.transpileModule(fs.readFil
 const {handoffTitle}=require(root+'/src/services/handoffTitle.ts');
 assert.equal(handoffTitle('prtuzREVISION coti 26-[10OCT] Trabajo [dominio.com] acal john','Acalli','Karla'),'prtuzREVISION coti 26-[10OCT] Trabajo [dominio.com] kkarl john');
 assert.equal(handoffTitle('prtuzREVISION nneft002 Trabajo gena','Neftali','Andrade'),'prtuzREVISION aandr002 Trabajo gena');
-assert.equal(handoffTitle('sprtuzREVISION Trabajo','Neftali','Karla'),'sprtuzREVISION kkarl Trabajo');
+assert.equal(handoffTitle('sprtuzREVISION Trabajo','Neftali','Karla'),'sprtuzREVISION kka11 Trabajo');
 const {wavChunk}=require(root+'/src/lib/transcriptionAudio.ts');
 let pageWrites=0,metadataWrites=0,prepared=[],confirmed=[],flow,active=true,conflict=false,failHistory=false;
 const id='11111111-1111-1111-1111-111111111111',at=t=>'2026-10-15T'+t+':00-06:00';

@@ -1,30 +1,9 @@
 import {workflowState} from '@/services/activityWorkflow';
 import {parseVisualParts} from '@/lib/visualTitleParser';
+import {normalizePerson} from '@/services/identityNormalizer';
+import {resultAssignedPerson} from '@/services/activityTags';
+import {resultMonthKey,sortMonthGroups} from './searchMonthOrder';
 
-export const PERSON_ALIASES: Record<string, string> = {
-  jjohn: "John",
-  john: "John",
-  aandr: "Andrade",
-  andrade: "Andrade",
-  nneft: "Neftali",
-  neftali: "Neftali",
-  bbria: "Brian",
-  brian: "Brian",
-  ggena: "Genaro",
-  genaro: "Genaro",
-  iisaia: "Isaias",
-  iisai: "Isaias",
-  isaias: "Isaias",
-  kkarl: "Karla",
-  karla: "Karla",
-  eedua: "Sotelo",
-  ssote: "Sotelo",
-  sotelo: "Sotelo",
-  eduardo: "Sotelo",
-  aacal: "Acali",
-  acalli: "Acali",
-  pedro: "Pedro",
-};
 
 export function isCompletedResult(item: any): boolean {
   if (!item) return false;
@@ -45,11 +24,8 @@ export function getItemGroupKey(item: any, groupBy: string): string {
   const parsed = parseVisualParts(item.name || item.title || item.Name || "", item.updateStatus || item.status || "", item.contentSnippet);
 
   if (groupBy === "name" || groupBy === "name_noterminated" || groupBy === "person") {
-    for (const [key, label] of Object.entries(PERSON_ALIASES)) {
-      if (name.includes(key)) {
-        return `👤 ${label}`;
-      }
-    }
+    const person=normalizePerson(resultAssignedPerson(item));
+    if(person!=='Sin asignar')return '👤 '+person;
     return "👤 Sin persona asignada";
   }
 
@@ -67,7 +43,7 @@ export function getItemGroupKey(item: any, groupBy: string): string {
   }
 
   if (groupBy === "month") {
-    return parsed.monthCode || item.monthChip ? `📅 Mes: ${parsed.monthCode || item.monthChip}` : "📅 Sin mes";
+    return resultMonthKey(item);
   }
 
   if (groupBy === "area" || groupBy === "area_nobilling") {
@@ -95,7 +71,11 @@ export function activeGroupsFirst<T, G extends { items: T[] }>(groups: G[]): G[]
 }
 
 /** Order the full result set before pagination, respecting grouping rules. */
-export function orderSearchResults<T>(items: readonly T[], groupBy?: string): T[] {
+export function sortResultGroups<T,G extends {items:T[]}>(groups:G[],groupBy:string,now=new Date()):G[]{
+  if(groupBy==='month')return sortMonthGroups(groups.map(group=>({...group,items:activeResultsFirst(group.items)})),now);
+  return activeGroupsFirst(groups);
+}
+export function orderSearchResults<T>(items: readonly T[], groupBy?: string,now=new Date()): T[] {
   if (!groupBy || groupBy === "none") {
     return activeResultsFirst(items);
   }
@@ -117,7 +97,7 @@ export function orderSearchResults<T>(items: readonly T[], groupBy?: string): T[
     items: groupItems,
   }));
 
-  const sortedGroups = activeGroupsFirst(rawGroups);
+  const sortedGroups = sortResultGroups(rawGroups,groupBy,now);
   return sortedGroups.flatMap(group => group.items);
 }
 
