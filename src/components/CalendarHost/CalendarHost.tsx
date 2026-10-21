@@ -677,6 +677,9 @@ export function CalendarHost({
         currentDate={currentDate}
         onSelectDate={onSelectDate}
         availableDates={availableDates}
+        visiblePeople={visiblePeople}
+        onSoloPerson={(name) => setVisiblePeople([name])}
+        onShowAllPeople={() => setVisiblePeople(DEFAULT_COLLABORATORS)}
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
         totalActivitiesCount={filteredActivities.filter(a => !a.isReviewMirror).length}
         pixelsPerHour={pixelsPerHour}

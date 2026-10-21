@@ -128,13 +128,12 @@ function writeStoredGroups(groups: WhatsappGroupItem[], user?: string, lastSynce
     );
     fs.renameSync(tempFile, targetFile);
 
-    // Also mirror to legacy DIRECTORY_FILE if user is Neftali or John
-    const norm = normalizePerson(user);
-    if (!user || norm === "Neftali" || norm === "John") {
-      try {
-        fs.writeFileSync(DIRECTORY_FILE, JSON.stringify({ groups, lastSynced }, null, 2), "utf-8");
-      } catch {}
-    }
+    // Always mirror and consolidate into global shared DIRECTORY_FILE for the whole team
+    try {
+      const existing = readStoredGroups();
+      const consolidated = mergeWhatsappGroups(existing.groups, groups);
+      fs.writeFileSync(DIRECTORY_FILE, JSON.stringify({ groups: consolidated.groups, lastSynced }, null, 2), "utf-8");
+    } catch {}
   } catch (err) {
     console.error("[whatsapp-directory] Error saving groups:", err);
   }

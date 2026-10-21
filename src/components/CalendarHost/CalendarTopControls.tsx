@@ -54,6 +54,9 @@ interface CalendarTopControlsProps {
   calendarPalette?: "web" | "desktop";
   onTogglePalette?: () => void;
   onOpenWhatsappGroups?: () => void;
+  visiblePeople?: string[];
+  onSoloPerson?: (person: string) => void;
+  onShowAllPeople?: () => void;
 }
 
 export function CalendarTopControls({
@@ -63,6 +66,9 @@ export function CalendarTopControls({
   availableDates,
   onOpenPeoplePicker,
   onOpenWhatsappGroups,
+  visiblePeople,
+  onSoloPerson,
+  onShowAllPeople,
   totalActivitiesCount,
   pixelsPerHour,
   onChangeZoom,
@@ -306,6 +312,53 @@ export function CalendarTopControls({
 
         <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="min-w-0 max-w-[112px] rounded border border-slate-700 bg-slate-900 p-1 text-[10px] text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
         <span className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Horario disponible de 08:00 a 22:00">08–22h</span>
+
+        {/* Quick Collaborator Switcher: Todos, J, K, A, N, G, I, S */}
+        {onSoloPerson && (
+          <div className="flex items-center gap-0.5 rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
+            <button
+              type="button"
+              onClick={onShowAllPeople}
+              title="Mostrar todos los colaboradores"
+              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-all cursor-pointer ${
+                visiblePeople && visiblePeople.length >= 7
+                  ? "bg-cyan-500 font-bold text-slate-950"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              Todos
+            </button>
+            {[
+              { short: "J", name: "John" },
+              { short: "K", name: "Karla" },
+              { short: "A", name: "Andrade" },
+              { short: "N", name: "Neftali" },
+              { short: "G", name: "Genaro" },
+              { short: "I", name: "Isaias" },
+              { short: "S", name: "Sotelo" },
+            ].map(({ short, name }) => {
+              const isSolo = visiblePeople?.length === 1 && visiblePeople[0] === name;
+              const isIncluded = visiblePeople?.includes(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onSoloPerson(name)}
+                  title={`Ver solo ${name}`}
+                  className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold transition-all cursor-pointer ${
+                    isSolo
+                      ? "bg-cyan-500 font-bold text-slate-950 shadow-sm"
+                      : isIncluded
+                      ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      : "text-slate-600 hover:bg-slate-800 hover:text-slate-400"
+                  }`}
+                >
+                  {short}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* People Picker */}
         <button

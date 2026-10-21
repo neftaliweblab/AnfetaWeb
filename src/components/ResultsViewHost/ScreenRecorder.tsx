@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Video,Square,X} from 'lucide-react';
+import {Video,Square,X,ClipboardPaste,Trash2} from 'lucide-react';
 import {startScreenRecording,recordingMime,RECORDING_MAX_BYTES} from '@/lib/screenRecording';
 import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
@@ -37,11 +37,12 @@ function getMexicoToday(): string {
 
 const QUICK_NOTION_DESTINATIONS = [
   { code: 'gge00', label: 'gge00 notion', person: 'Genaro' },
-  { code: 'nne00', label: 'nne00 Notion', person: 'Neftali' },
-  { code: 'jjo00', label: 'jjo00', person: 'John' },
-  { code: 'kka00', label: 'kka00', person: 'Karla' },
-  { code: 'aan00', label: 'aan00', person: 'Andrade' },
-  { code: 'iis00', label: 'iis00', person: 'Isaias' },
+  { code: 'nne00', label: 'nne00 notion', person: 'Neftali' },
+  { code: 'jjo00', label: 'jjo00 notion', person: 'John' },
+  { code: 'kka00', label: 'kka00 notion', person: 'Karla' },
+  { code: 'aan00', label: 'aan00 notion', person: 'Andrade' },
+  { code: 'iis00', label: 'iis00 notion', person: 'Isaias' },
+  { code: 'sso00', label: 'sso00 notion', person: 'Sotelo' },
 ] as const;
 
 export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null)=>Promise<boolean>;disabled?:boolean}){
@@ -53,6 +54,11 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
   const [video,setVideo]=useState<Blob|null>(null),[url,setUrl]=useState(''),[notice,setNotice]=useState(''),[seconds,setSeconds]=useState(0),[sending,setSending]=useState(false);
   const [customDomain,setCustomDomain]=useState('');
   const [quickSavingCode,setQuickSavingCode]=useState<string|null>(null);
+  const [clipboardOpen,setClipboardOpen]=useState(false);
+  const [clipboardText,setClipboardText]=useState('');
+  const [clipboardImage,setClipboardImage]=useState<{base64:string;preview:string;name:string}|null>(null);
+  const [clipboardDomain,setClipboardDomain]=useState('');
+  const [clipboardSavingCode,setClipboardSavingCode]=useState<string|null>(null);
   const session=useRef<Awaited<ReturnType<typeof startScreenRecording>>|null>(null),mounted=useRef(true),starting=useRef(false);
 
   useEffect(()=>{mounted.current=true;setClient(true);return()=>{mounted.current=false;session.current?.dispose();};},[]);
@@ -145,6 +151,104 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
     }
   }
 
+  async function openClipboardModal() {
+    setClipboardOpen(true);
+    setNotice('');
+    try {
+      if (navigator.clipboard?.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim().length > 0 && text.trim().length < 500 && !clipboardText) {
+          setClipboardText(text.trim());
+        }
+      }
+    } catch {}
+  }
+
+  function handleClipboardPaste(e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const res = String(reader.result || '');
+            const base64 = res.includes(',') ? res.split(',')[1] : res;
+            setClipboardImage({
+              base64,
+              preview: res,
+              name: `Portapapeles_${Date.now()}.png`
+            });
+          };
+          reader.readAsDataURL(file);
+          return;
+        }
+      }
+    }
+  }
+
+  async function quickUploadClipboard(dest: typeof QUICK_NOTION_DESTINATIONS[number]) {
+    if (sending || clipboardSavingCode) return;
+    setClipboardSavingCode(dest.code);
+    setNotice(`Subiendo directo a Notion para ${dest.person} (${dest.code})...`);
+    try {
+      const today = getMexicoToday();
+      const start = `${today}T09:00:00-06:00`;
+      const end = `${today}T10:00:00-06:00`;
+      const cleanDom = clipboardDomain.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+      const domainTitlePart = cleanDom ? ` ${cleanDom}` : '';
+      const taskText = clipboardText.trim() || 'Actividad rápida';
+      const title = `prtuzREVISION ${dest.code}${domainTitlePart} ${taskText}`;
+
+      const files = clipboardImage ? [{
+        filename: clipboardImage.name,
+        contentType: 'image/png',
+        base64: clipboardImage.base64
+      }] : undefined;
+
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create-activity',
+          payload: {
+            title,
+            domain: cleanDom || undefined,
+            person: dest.person,
+            start,
+            end,
+            files
+          }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
+      }
+      playCheckChime();
+      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) a las 9:00 AM`);
+      window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
+      window.dispatchEvent(new CustomEvent('anfeta_calendar_refresh'));
+      setNotice(`✅ Creada en Notion para ${dest.person} (${dest.code}) a las 9am`);
+      setTimeout(() => {
+        if (mounted.current) {
+          setClipboardOpen(false);
+          setClipboardText('');
+          setClipboardImage(null);
+          setClipboardDomain('');
+          setNotice('');
+        }
+      }, 1500);
+    } catch (err: any) {
+      setNotice(err instanceof Error ? err.message : 'Error al subir a Notion');
+    } finally {
+      if (mounted.current) setClipboardSavingCode(null);
+    }
+  }
+
   const preferred=client&&typeof MediaRecorder!=='undefined'?recordingMime(MediaRecorder,microphone):'';
   const overlay=phase!=='idle'&&panelOpen?<div id="anfeta-recording-controls" className="fixed bottom-28 right-5 z-[400] w-[min(440px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-cyan-800 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl" role="region" aria-label="Grabación de pantalla">
     <button type="button" aria-label="Ocultar controles; la grabación continúa" title="Ocultar controles" onClick={()=>setPanelOpen(false)} className="float-right ml-2 p-1 text-slate-300"><X size={16}/></button>
@@ -216,6 +320,136 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
     {notice&&<p role="status" className="mt-2 text-amber-200 font-medium">{notice}</p>}
   </div>:null;
 
+  const clipboardOverlay = clipboardOpen ? (
+    <div
+      id="anfeta-clipboard-controls"
+      className="fixed bottom-28 right-5 z-[400] w-[min(440px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-amber-500/70 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl"
+      role="region"
+      aria-label="Asignación rápida desde portapapeles"
+      onPaste={handleClipboardPaste}
+    >
+      <button
+        type="button"
+        aria-label="Cerrar asignación rápida"
+        title="Cerrar"
+        onClick={() => setClipboardOpen(false)}
+        className="float-right ml-2 p-1 text-slate-400 hover:text-white cursor-pointer"
+      >
+        <X size={16} />
+      </button>
+      <div className="flex items-center gap-2 mb-2">
+        <ClipboardPaste className="w-4 h-4 text-amber-400" />
+        <h2 className="font-bold text-amber-300">Asignar Portapapeles a Notion (9am hoy)</h2>
+      </div>
+      <p className="text-[11px] text-slate-400 mb-2">
+        Pega texto o captura con <kbd className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">Ctrl+V</kbd> o escribe la tarea.
+      </p>
+
+      {/* Tarea / descripción */}
+      <textarea
+        rows={3}
+        value={clipboardText}
+        onChange={(e) => setClipboardText(e.target.value)}
+        placeholder="Descripción de la actividad o pega texto aquí con Ctrl+V..."
+        disabled={!!clipboardSavingCode}
+        className="w-full rounded bg-slate-900 border border-slate-700 p-2 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none mb-2 resize-none"
+      />
+
+      {/* Imagen pegada opcional */}
+      {clipboardImage && (
+        <div className="mb-2 relative rounded border border-slate-700 bg-slate-900 p-1.5 flex items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={clipboardImage.preview} alt="Captura pegada" className="h-12 w-16 object-cover rounded" />
+          <span className="text-[10px] text-slate-300 truncate flex-1">{clipboardImage.name}</span>
+          <button
+            type="button"
+            onClick={() => setClipboardImage(null)}
+            className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
+            title="Quitar imagen"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Dominio opcional */}
+      <div className="mb-2.5">
+        <label className="block text-[10.5px] text-slate-400 mb-0.5">
+          Dominio (opcional):
+        </label>
+        <input
+          type="text"
+          value={clipboardDomain}
+          onChange={(e) => setClipboardDomain(e.target.value)}
+          placeholder="Sin dominio o escribe (ej. novakid.com)"
+          disabled={!!clipboardSavingCode}
+          className="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+        />
+      </div>
+
+      {/* Botones de destino en 1 clic */}
+      <div className="space-y-1.5">
+        <span className="block text-[10.5px] font-semibold text-amber-300">
+          Asignar en 1 clic a Notion:
+        </span>
+        <div className="grid grid-cols-3 gap-1.5">
+          {QUICK_NOTION_DESTINATIONS.map((dest) => (
+            <button
+              key={dest.code}
+              type="button"
+              disabled={!!clipboardSavingCode}
+              onClick={() => void quickUploadClipboard(dest)}
+              className={`rounded-lg border px-2 py-1.5 text-center font-mono text-[11px] font-semibold transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 ${
+                clipboardSavingCode === dest.code
+                  ? 'bg-amber-600 border-amber-300 text-white animate-pulse'
+                  : 'bg-[#1C1811] border-[#3E311B] hover:bg-[#2A2113] hover:border-[#F59E0B] text-[#FCD34D] hover:text-white'
+              }`}
+              title={`Asignar tarea en Notion para ${dest.person} a las 9am (${dest.code})`}
+            >
+              {clipboardSavingCode === dest.code ? 'Guardando...' : dest.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {notice && <p role="status" className="mt-2 text-amber-200 font-medium">{notice}</p>}
+    </div>
+  ) : null;
+
   const label=phase==='recording'?'Grabando: mostrar u ocultar controles':phase==='preview'?'Revisar grabación':phase==='starting'?'Preparando grabación':'Grabar pantalla y micrófono';
-  return client?createPortal(<><button type="button" disabled={(disabled&&phase==='idle')||phase==='starting'} onClick={()=>phase==='idle'?configure():setPanelOpen(open=>!open)} aria-label={label} title={label} aria-expanded={phase!=='idle'&&panelOpen} aria-controls={phase!=='idle'&&panelOpen?'anfeta-recording-controls':undefined} className={`fixed bottom-12 right-6 z-[401] w-11 h-11 rounded-full border flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 ${phase==='recording'?'bg-rose-600 border-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.6)]':'bg-gradient-to-tr from-[#0284C7] to-[#38BDF8] border-[#7DD3FC]/50 shadow-[0_0_15px_rgba(56,189,248,0.5)]'}`}>{phase==='recording'?<Square className="w-4 h-4 fill-current animate-pulse"/>:<Video className="w-5 h-5"/>}</button>{phase==='idle'&&notice&&<p role="status" className="fixed bottom-28 right-5 z-[400] max-w-sm rounded-lg bg-slate-950 p-3 text-xs text-amber-200">{notice}</p>}{overlay}</>,document.body):null;
+  return client?createPortal(
+    <>
+      {/* Botón flotante de Asignación por Portapapeles (Ctrl+V) */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => (clipboardOpen ? setClipboardOpen(false) : void openClipboardModal())}
+        aria-label="Asignación rápida desde portapapeles"
+        title="Asignación rápida desde portapapeles (Ctrl+V / texto a Notion 9am)"
+        aria-expanded={clipboardOpen}
+        className="fixed bottom-12 right-20 z-[401] w-11 h-11 rounded-full border border-amber-400/50 bg-gradient-to-tr from-amber-600 to-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.45)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+      >
+        <ClipboardPaste className="w-5 h-5 text-white" />
+      </button>
+
+      {/* Botón flotante de Grabadora de Pantalla */}
+      <button
+        type="button"
+        disabled={(disabled&&phase==='idle')||phase==='starting'}
+        onClick={()=>phase==='idle'?configure():setPanelOpen(open=>!open)}
+        aria-label={label}
+        title={label}
+        aria-expanded={phase!=='idle'&&panelOpen}
+        aria-controls={phase!=='idle'&&panelOpen?'anfeta-recording-controls':undefined}
+        className={`fixed bottom-12 right-6 z-[401] w-11 h-11 rounded-full border flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 ${phase==='recording'?'bg-rose-600 border-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.6)]':'bg-gradient-to-tr from-[#0284C7] to-[#38BDF8] border-[#7DD3FC]/50 shadow-[0_0_15px_rgba(56,189,248,0.5)]'}`}
+      >
+        {phase==='recording'?<Square className="w-4 h-4 fill-current animate-pulse"/>:<Video className="w-5 h-5"/>}
+      </button>
+
+      {phase==='idle'&&notice&&<p role="status" className="fixed bottom-28 right-5 z-[400] max-w-sm rounded-lg bg-slate-950 p-3 text-xs text-amber-200">{notice}</p>}
+      {overlay}
+      {clipboardOverlay}
+    </>,
+    document.body
+  ):null;
 }

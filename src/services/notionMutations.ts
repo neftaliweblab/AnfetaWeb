@@ -26,7 +26,7 @@ export function validateSchedule(start: string, end: string) {
   const a = format.exec(start || ''), b = format.exec(end || '');
   if (!a || !b || start.slice(0,10) !== end.slice(0,10) || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)) || mexicoDate(start) !== start.slice(0,10) || Date.parse(end) <= Date.parse(start)) throw new Error('Fecha u horario inválidos.');
   const am = Number(a[1])*60+Number(a[2]), bm = Number(b[1])*60+Number(b[2]);
-  if (am < 480 || bm > 1320 || am % 15 || bm % 15) throw new Error('El horario debe usar bloques de 15 minutos entre 08:00 y 22:00.');
+  if (am < 480 || bm > 1320 || am % 5 || bm % 5) throw new Error('El horario debe estar entre 08:00 y 22:00 en intervalos de cuadrícula válidos.');
 }
 const requestPace = new Map<string, Promise<void>>();
 const nextRequestAt = new Map<string, number>();
