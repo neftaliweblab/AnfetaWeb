@@ -156,9 +156,19 @@ export async function selectSharedPerson(input:string){
  if(checked.error&&/timeout|abort|fetch|network/i.test(String(checked.error.message)))throw serviceError(checked.error,'verificar la persona activa');
  if(checked.error||!checked.data?.user||checked.data.user.id!==(gate.selectedId||gate.baseId))throw new Error('Inicia sesión para elegir persona.');
  const admin=supabaseAdmin(),profile=await getOrEnsureProfile(admin,tag);
- const link=await admin.auth.admin.generateLink({type:'magiclink',email:profile.login_email});
+ let link: any;
+ for (let attempt = 0; attempt < 2; attempt++) {
+   link = await admin.auth.admin.generateLink({type:'magiclink',email:profile.login_email});
+   if (!link.error && link.data?.properties?.hashed_token) break;
+   if (attempt === 0) await new Promise(r => setTimeout(r, 600));
+ }
  if(link.error||!link.data?.properties?.hashed_token)throw serviceError(link.error,'activar la persona');
- const verified=await client.auth.verifyOtp({token_hash:link.data.properties.hashed_token,type:'magiclink'});
+ let verified: any;
+ for (let attempt = 0; attempt < 2; attempt++) {
+   verified = await client.auth.verifyOtp({token_hash:link.data.properties.hashed_token,type:'magiclink'});
+   if (!verified.error && verified.data?.user?.id === profile.id) break;
+   if (attempt === 0) await new Promise(r => setTimeout(r, 600));
+ }
  if(verified.error||verified.data?.user?.id!==profile.id)throw new Error('Supabase no confirmó la sesión de la persona. No se guardó la selección.');
  await saveSharedGate({...gate,selectedId:profile.id,person,personTag:tag});return {person:validateProfile(profile)};
 }
