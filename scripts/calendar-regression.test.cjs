@@ -340,6 +340,24 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.equal(mirrors.length,1);
     assert.equal(data.activities.filter(a=>a.pageId===pid&&a.person==='John').length,1);
   });
+  await test('Documentación rechaza Dropbox antes de escribir contenido',async()=>{
+    for(const mode of ['dropbox','both']){
+      const res=await route.POST(request('unified-upload',{quickType:'Documentar contraseña',mode,body:'Contenido de prueba',files:[],uploadId:'44444444-4444-4444-8444-444444444444'}));
+      assert.ok(res.status>=400);assert.match((await res.json()).error,/solo en Notion/);
+    }
+    assert.equal(state.calls.length,0);
+  });
+  await test('Documentación usa Correos Contraseñas y no cae en Revisiones',async()=>{
+    const previous=process.env.NOTION_DOCUMENTATION_DATA_SOURCE_ID;delete process.env.NOTION_DOCUMENTATION_DATA_SOURCE_ID;
+    try{const result=await mutations.validateNotionCreationTarget(settings,{documentationKind:'password'});assert.equal(result.sourceId,'2f1abd7d-91b7-8136-8cc2-000ba807c666');assert.equal(state.calls[0].target,'data_sources/2f1abd7d-91b7-8136-8cc2-000ba807c666');}finally{if(previous!==undefined)process.env.NOTION_DOCUMENTATION_DATA_SOURCE_ID=previous;}
+  });
+  await test('Documentación crea solo una página en la fuente elegida sin horario',async()=>{
+    const id='dddddddddddddddddddddddddddddddd';
+    const created=await mutations.createActivity(settings,'nneft',{title:'Documentar correo: ejemplo',body:'Contenido de prueba',documentationKind:'email',dataSourceId:id});
+    const call=state.calls.find(c=>c.target==='pages'&&c.method==='POST');assert.equal(call.body.parent.data_source_id,id);
+    assert.equal(call.body.properties.Name.title[0].text.content,'Documentar correo: ejemplo');
+    assert.ok(!Object.values(call.body.properties).some(p=>p.date));assert.ok(created.page.id);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

@@ -4,7 +4,7 @@ import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
-import {CalendarHourGrid} from './CalendarHourGrid';
+import {CalendarHourGrid,gridDivisions} from './CalendarHourGrid';
 import {calendarThemes,parseCalendarTheme} from '@/lib/calendarTheme';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
@@ -182,6 +182,7 @@ export function CalendarHost({
     const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
+  const [gridInterval,setGridInterval]=useState(30);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -228,18 +229,18 @@ export function CalendarHost({
         order = [...order, ...DEFAULT_COLLABORATORS.filter(p => !order.includes(p))];
         visible = valid(saved.visible);
         if (Number.isFinite(saved.width)) width = Math.min(600, Math.max(180, saved.width));
-        if (Number.isFinite(saved.height)) height = Math.min(120, Math.max(48, saved.height));
+        if (Number.isFinite(saved.height)) height = Math.min(192, Math.max(48, saved.height));
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
+    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setGridInterval([15,20,30].includes(saved?.gridInterval)?saved.gridInterval:30);setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders})); }
+    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders})); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,financeSlots,showReminders]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, gridInterval, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,financeSlots,showReminders]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -363,7 +364,7 @@ export function CalendarHost({
   },[currentDate,currentUser,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
-    setPixelsPerHour((prev) => Math.min(120, Math.max(48, prev + delta)));
+    setPixelsPerHour((prev) => Math.min(192, Math.max(48, prev + delta)));
   };
 
   const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
@@ -557,7 +558,7 @@ export function CalendarHost({
 
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-grid-step':`${pixelsPerHour*gridInterval/60}px`,'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
       <UpdateNotice message={refreshWarning}/>
       {/* Notificación de Error / Alerta Visible y Elegante */}
       {error && (
@@ -612,7 +613,7 @@ export function CalendarHost({
           }}
         />
       )}
-      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);}}/>}
+      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setGridInterval(saved.gridInterval);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);}}/>}
       {cacheMeta&&<div role="status" className="shrink-0 px-3 py-1 text-[10px] text-cyan-200/80">{cacheMeta.source==='supabase'?'Copia Supabase':'Lectura de Notion'}{cacheMeta.updatedAt?' · '+new Date(cacheMeta.updatedAt).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'}):''}{cacheMeta.syncing?' · actualizando…':''}{cacheMeta.stale&&!cacheMeta.syncing?' · actualización pendiente':''}</div>}
       <CalendarTopControls
         phaseFilter={phaseFilter}
@@ -638,6 +639,7 @@ export function CalendarHost({
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
         totalActivitiesCount={filteredActivities.filter(a => !a.isReviewMirror).length}
         pixelsPerHour={pixelsPerHour}
+        gridInterval={gridInterval} onGridInterval={setGridInterval}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
@@ -699,19 +701,8 @@ export function CalendarHost({
                       style={{ top: `${idx * pixelsPerHour}px` }}
                       className="absolute right-0 w-2.5 h-[2px] bg-[#496278] pointer-events-none z-10"
                     />
-                    {/* Tick de media hora */}
-                    {idx < hoursList.length - 1 && (
-                      <div
-                        style={{ top: `${idx * pixelsPerHour + pixelsPerHour / 2}px` }}
-                        className="absolute right-0 w-1.5 h-px bg-[#293e52] pointer-events-none flex items-center justify-end z-10"
-                      >
-                        {pixelsPerHour >= 72 && (
-                          <span className="text-[9px] text-cyan-400/50 font-mono pr-2 select-none -translate-y-0.5">
-                            :30
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {/* Divisiones visuales, independientes de los horarios guardados */}
+                    {idx<hoursList.length-1&&gridDivisions(gridInterval).map(minute=><div key={minute} style={{top:`${idx*pixelsPerHour+minute*pixelsPerHour/60}px`}} className="absolute right-0 flex -translate-y-1/2 items-center text-right pr-2 text-[9px] font-mono text-cyan-300/80"><span>:{String(minute).padStart(2,'0')}</span><span className="ml-1 h-px w-2 bg-cyan-800"/></div>)}
                   </div>
                 );
               })}

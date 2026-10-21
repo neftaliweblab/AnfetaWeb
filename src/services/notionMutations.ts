@@ -1,4 +1,5 @@
 import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
+import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
 import {withActivityLease,operationKey} from './reliableOperations';
 import {ftfField,FTF_CHECKBOX} from './ftfVerification';
 import {activeTeam} from './teamDirectory';
@@ -339,6 +340,7 @@ export async function validateNotionCreationTarget(settings:Settings,payload:any
   const start=payload.start;
   let databaseId = payload?.databaseId || process.env.NOTION_DATABASE_ID || settings.notionDatabaseId;
   let sourceId = payload?.dataSourceId;
+  if(payload.documentationKind){databaseId=payload.databaseId;sourceId=payload.dataSourceId||(!databaseId?(process.env.NOTION_DOCUMENTATION_DATA_SOURCE_ID||DOCUMENTATION_SOURCE_ID):undefined);}
   const referencedId = String(payload.body || '').match(/https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s]*?([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:[?\s/#]|$)/i)?.[1];
 
   if (start || payload.useCalendarSource===true) {

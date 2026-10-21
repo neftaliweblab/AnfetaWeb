@@ -1,4 +1,5 @@
 "use client";
+import {SEARCH_SORTS} from "@/lib/searchPresentation";
 
 import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 import React, { useState, useRef, useEffect } from "react";
@@ -11,6 +12,8 @@ export interface UserOption {
 }
 
 interface SearchConfigRowProps {
+  resultSort?:string;
+  onChangeResultSort?:(value:string)=>void;
   currentUser?: string;
   onChangeCurrentUser?: (user: string) => void;
   onSyncNotion?: () => Promise<void> | void;
@@ -83,6 +86,7 @@ const VIEW_ZOOM_LABELS: Record<string, string> = {
 };
 
 export function SearchConfigRow({
+  resultSort="default",onChangeResultSort,
   currentUser,
   onChangeCurrentUser,
   onSyncNotion,
@@ -184,6 +188,7 @@ export function SearchConfigRow({
         style={{ gap: `${Math.round(8 * scale)}px` }}
         className="flex items-center overflow-x-auto scrollbar-none flex-1"
       >
+        <label className="flex shrink-0 items-center gap-2 text-xs text-cyan-300">Ordenar<select aria-label="Ordenar resultados" value={resultSort} onChange={e=>onChangeResultSort?.(e.target.value)} className="max-w-52 rounded border border-slate-700 bg-slate-900 p-1 text-slate-200">{SEARCH_SORTS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
         {/* Selector de Usuario Activo Dinámico */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#38BDF8] font-semibold flex items-center gap-1">

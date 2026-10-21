@@ -21,6 +21,8 @@ import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/li
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 
 interface CalendarTopControlsProps {
+  gridInterval?:number;
+  onGridInterval?:(value:number)=>void;
   phaseFilter?:string;
   onPhaseFilter?:(phase:string)=>void;
   extraHours?:boolean;
@@ -55,6 +57,7 @@ interface CalendarTopControlsProps {
 }
 
 export function CalendarTopControls({
+  gridInterval=30,onGridInterval,
   currentDate, onCreateActivity, reviewNotifications, onOpenBatch, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
   onSelectDate,
   availableDates,
@@ -91,6 +94,7 @@ export function CalendarTopControls({
   return (
     <div className="min-h-11 h-auto min-w-0 max-w-full bg-[#0F141A] border-b border-[#26323E] px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px] select-none flex-shrink-0">
       <button onClick={onCreateActivity} title="Nueva actividad" aria-label="Nueva actividad" className="shrink-0 flex items-center gap-1 rounded border border-cyan-400/40 bg-cyan-500/15 px-2 py-1 text-cyan-300"><Plus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Nueva</span></button>
+      <label className="flex items-center gap-1 text-cyan-200" title="Separación visual de la cuadrícula; no modifica horarios"><span>Divisiones</span><select aria-label="Divisiones del calendario" value={gridInterval} onChange={e=>onGridInterval?.(Number(e.target.value))} className="rounded border border-slate-700 bg-slate-900 p-1">{[15,20,30].map(value=><option key={value} value={value}>{value} min</option>)}</select></label>
       {/* 1. Date Navigation: Ayer, Hoy, Mañana, ‹ ›, Título largo con Badge */}
       <div className="flex flex-wrap items-center gap-1 min-w-0 max-w-full">
         <button
@@ -186,7 +190,7 @@ export function CalendarTopControls({
         </button>
         <button
           onClick={() => onChangeZoom(12)}
-          disabled={pixelsPerHour >= 120}
+          disabled={pixelsPerHour >= 192}
           className="text-[#94A3B8] hover:text-[#F1F5F9] disabled:opacity-30 p-0.5 text-xs font-bold cursor-pointer"
           title="Aumentar zoom horario (+)"
         >

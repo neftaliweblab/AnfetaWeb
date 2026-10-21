@@ -1,7 +1,8 @@
 import {notionRequest} from './notionMutations';
 import type {CalendarSettings} from './notionCalendar';
 import { isExpiredResponsePage } from '@/lib/responsePageRules';
-export const ANFETA_BASES=[['Revisiones','2eeabd7d-91b7-8193-a131-000b08cd54e2'],['Clientes','2f0abd7d-91b7-810b-b1b8-000b85005b68'],['Dominios','2f0abd7d-91b7-8133-82e8-000b57bceeda'],['Programas y proyectos','796abd7d-91b7-8271-9154-0749f7d58213'],['Cobrar y pagar','2eeabd7d-91b7-815f-b649-000bfdc93a2b'],['Correos Contraseñas','2f1abd7d-91b7-8136-8cc2-000ba807c666']];
+import {ANFETA_BASES} from '../lib/notionBaseCatalog';
+export {ANFETA_BASES} from '../lib/notionBaseCatalog';
 export function completedReminder(row:any){return row.sourceName==='Revisiones'&&/^\s*(?:\[Revisiones\]\s*)?\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)\b[\s\S]*(?:^|\s)\[TERMINADO\](?:\s|$)/i.test(row.name||'');}
 export function uniqueIndex(rows:any[]){const out=new Map<string,any>();for(const row of rows){if(completedReminder(row)||isExpiredResponsePage(row))continue;const id=String(row.externalId||row.id).replace(/-/g,'').toLowerCase();out.set(row.source+':'+id,row);}return [...out.values()];}
 export async function queryAnfetaIndex(settings:CalendarSettings,since?:string){

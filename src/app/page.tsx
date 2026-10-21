@@ -1,4 +1,5 @@
 "use client";
+import {usePendingTasks} from "@/components/usePendingTasks";
 import {openCalendarWindow} from '@/services/windowsIntegration';
 import {indexAvailability} from '@/lib/indexAvailability';
 import {retainSearchResults} from '@/lib/retainSearchResults';
@@ -173,11 +174,7 @@ export default function AnfetaApp() {
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
-  const pendingRevision=useRef<number|undefined>(undefined),pendingItems=useRef<PendingTaskItem[]>([]),pendingQueue=useRef(Promise.resolve()),pendingOwner=useRef(currentUser);
-  pendingOwner.current=currentUser;
-  const [pendingError,setPendingError]=useState('');
-  const [pendingTasks, setPendingTasks] = useState<PendingTaskItem[]>([]);
-  useEffect(()=>{pendingRevision.current=undefined;pendingItems.current=[];setPendingTasks([]);setPendingError('');},[currentUser,isAuthenticated]);
+  const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
@@ -223,8 +220,6 @@ export default function AnfetaApp() {
           try {const local=JSON.parse(localStorage.getItem('anfeta-calendar-automation-report') || 'null');setAutomationReport(local && Date.parse(local.generatedAt)>Date.parse(repData.generatedAt || repData.GeneratedAt || '1970-01-01') ? local : repData);}catch{setAutomationReport(repData);}
         }
 
-        pendingRevision.current=undefined;pendingItems.current=[];setPendingTasks([]);
-        try {const data=await readApiJson(await fetch('/api/data?type=pendientes',{cache:'no-store'}));if(stopped||pendingOwner.current!==currentUser)return;pendingRevision.current=data.revision;pendingItems.current=data.items||[];setPendingTasks(pendingItems.current);setPendingError('');}catch(e){setPendingError(e instanceof Error?e.message:'No se pudieron cargar los pendientes.');}
       } catch (err) {
         setCalendarLoadError(err instanceof Error ? err.message : "No se pudieron cargar los datos.");
       }
@@ -584,28 +579,13 @@ export default function AnfetaApp() {
 
   // Pending tasks handlers
   // Persistent Pending tasks handlers (manuales del usuario)
-  const persistPendingTasks = useCallback((tasks: PendingTaskItem[]) => {
-    if(pendingRevision.current===undefined){setPendingError('Espera a que se carguen los pendientes de tu cuenta.');return;}
-    const owner=currentUser;pendingItems.current=tasks;setPendingTasks(tasks);
-    pendingQueue.current=pendingQueue.current.then(async()=>{
-      if(pendingOwner.current!==owner||pendingRevision.current===undefined)return;
-      try{const data=await readApiJson(await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save-pendientes',payload:tasks,expectedRevision:pendingRevision.current})}));if(pendingOwner.current!==owner)return;pendingRevision.current=data.revision;setPendingError('');}
-      catch(e){if(pendingOwner.current!==owner)return;pendingRevision.current=undefined;setPendingError((e instanceof Error?e.message:'No se pudo guardar.')+' La lista se recuperará del servidor.');try{const data=await readApiJson(await fetch('/api/data?type=pendientes',{cache:'no-store'}));if(pendingOwner.current===owner){pendingItems.current=data.items||[];setPendingTasks(pendingItems.current);}}catch{} }
-    });
-  },[currentUser]);
-  const handleTogglePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.map(t=>t.id===id?{...t,isCompleted:!t.isCompleted}:t)),[persistPendingTasks]);
-  const handleAddPendingTask=useCallback((task:Omit<PendingTaskItem,'id'>)=>persistPendingTasks([{...task,id:crypto.randomUUID(),createdAt:new Date().toISOString()},...pendingItems.current]),[persistPendingTasks]);
-  const handleEditPendingTask=useCallback((id:string,data:Partial<PendingTaskItem>)=>persistPendingTasks(pendingItems.current.map(t=>t.id===id?{...t,...data}:t)),[persistPendingTasks]);
-  const handleDeletePendingTask=useCallback((id:string)=>persistPendingTasks(pendingItems.current.filter(t=>t.id!==id)),[persistPendingTasks]);
-  const handleDeleteAllPendingTasks=useCallback(()=>persistPendingTasks([]),[persistPendingTasks]);
-
   if(authChecking)return <main className="grid min-h-screen place-items-center bg-[#080B0F] text-cyan-200" role="status">Verificando acceso…</main>;
   if (!isAuthenticated) return <><div>{authError&&<p role="alert" className="fixed inset-x-4 top-4 z-[400] rounded border border-red-800 bg-red-950 p-3 text-sm text-red-100 flex items-center justify-between"><span>{authError}</span> <button onClick={()=>refreshAuthRef.current()} className="ml-2 underline font-medium">Reintentar conexión</button></p>}</div><LoginModal sharedMode={sharedMode} onSuccess={(userTag,options)=>{window.dispatchEvent(new Event("anfeta_auth_changed"));setCurrentUser(userTag);setSharedMode(options?.sharedMode===true);setAuthError("");setIsAuthenticated(true);}} /></>;
 
   if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
-      {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>{window.location.reload();}}>Recargar</button></div>}
+      {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>window.dispatchEvent(new Event("anfeta_retry_pending"))}>Reintentar</button></div>}
       {calendarPopupBlocked&&<div role="alert" className="px-4 py-2 bg-amber-950 text-amber-100 text-sm">El navegador bloqueó la ventana del calendario. Permite ventanas emergentes para ANFETA. <a href={'/calendar?date='+encodeURIComponent(currentDate)} target="_blank" rel="noopener noreferrer" className="underline">Abrir en otra pestaña</a> <button onClick={()=>setCalendarPopupBlocked(false)}>Cerrar aviso</button></div>}
       {debouncedAuthError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between animate-in fade-in duration-200"><span>{debouncedAuthError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}

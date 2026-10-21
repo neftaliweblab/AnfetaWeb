@@ -11,7 +11,7 @@ import {CompactSearchAccess} from './CompactSearchAccess';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
-import {newestFirst} from '@/lib/searchResultOrder';
+import {compareSearchRows,lastSearchTerm} from '@/lib/searchPresentation';
 import {activeResultsFirst, orderSearchResults} from '@/lib/activeResultsFirst';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -165,6 +165,7 @@ export function ResultsViewHost({
     } catch {}
   };
 
+  const [resultSort,setResultSort]=useState("default");
   const [searchOptions, setSearchOptions] = useState<{
     matchCase: boolean;
     matchWholeWord: boolean;
@@ -1219,11 +1220,11 @@ export function ResultsViewHost({
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
 
-    res = [...res].sort(newestFirst);
+    res = [...res].sort((a,b)=>compareSearchRows(a,b,resultSort));
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   const pagedItems = useMemo(() => {
@@ -1342,6 +1343,7 @@ export function ResultsViewHost({
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
+        resultSort={resultSort} onChangeResultSort={setResultSort}
         currentUser={resultPerson}
         onChangeCurrentUser={setResultPerson}
         onSyncNotion={handleRefreshIndex}
@@ -1381,6 +1383,7 @@ export function ResultsViewHost({
         onDismissNotification={() => setAppNotification(null)}
       />
 
+      {lastSearchTerm(deferredQuery)&&<p className="px-3 py-1 text-[11px] text-cyan-300" role="status">Resaltado: coincidencias del último término «{lastSearchTerm(deferredQuery)}». Las terminadas siguen visibles; el orden conserva las agrupaciones y las activas primero.</p>}
       {/* 4. Contenedor de 4 Columnas Dinámicas */}
       <div className="flex-1 flex overflow-hidden p-2 gap-2">
         {/* Col 0: PENDIENTES (260px) */}

@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
+import {lastSearchTerm} from '@/lib/searchPresentation';
+import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
 import {workflowState} from '@/services/activityWorkflow';
 import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
@@ -380,6 +382,7 @@ export function ResultsVirtualTable({
       <div
         key={item.id}
         data-search-result={item.id}
+        data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
         tabIndex={-1}
         aria-label={item.name}
         onClick={() => onSelect(item)}
@@ -393,7 +396,7 @@ export function ResultsVirtualTable({
           paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
           paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
         }}
-        className={`flex items-center px-3 cursor-pointer transition-colors ${
+        className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
           isSelected
             ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
             : isChecked
@@ -460,7 +463,7 @@ export function ResultsVirtualTable({
           )}
           <span
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-            className={'truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}
+            className={'truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0]')}
           >
             {highlightMatch(parsed.title)}
           </span>
@@ -659,6 +662,7 @@ export function ResultsVirtualTable({
       <div
         key={item.id}
         data-search-result={item.id}
+        data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
         tabIndex={-1}
         aria-label={item.name}
         onClick={() => onSelect(item)}
@@ -667,7 +671,7 @@ export function ResultsVirtualTable({
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });
         }}
-        className={`relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${
+        className={`relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
           isSelected
             ? "bg-[#1E293B] border-[#38BDF8] shadow-lg shadow-[#38BDF8]/10"
             : isChecked

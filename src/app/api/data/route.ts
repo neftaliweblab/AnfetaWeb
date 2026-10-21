@@ -1,3 +1,4 @@
+import {documentationKind,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {inferActivityPerson} from '@/services/activityTags';
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
@@ -38,7 +39,7 @@ import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovement
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken } from '@/services/dropboxUpload';
-import { createActivity, mutateActivity, notionRequest, validateSchedule } from '@/services/notionMutations';
+import { createActivity, mutateActivity, notionRequest, validateSchedule,validateNotionCreationTarget } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
 import { normalizePerson, PERSON_ALIASES } from '@/services/identityNormalizer';
 import { NextRequest, NextResponse, after } from "next/server";
@@ -1484,7 +1485,7 @@ async function POSTLive(req: NextRequest) {
       return NextResponse.json({success:true,databaseId:target.databaseId,dataSourceId:target.sourceId});
     }
     if(action==='unified-upload'){
-      const input=payload,mode=input.mode;if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
+      const input=payload,mode=input.mode;assertDocumentationMode(input);if(documentationKind(input.quickType)&&!input.targetPageId){if(input.quickRevision)throw Error('La documentación debe tener una base de Notion específica, sin usar Revisiones.');await validateNotionCreationTarget({...getSettings(),notionToken:resolveNotionToken(req)},{documentationKind:documentationKind(input.quickType),databaseId:input.databaseId,dataSourceId:input.dataSourceId});}if(!['both','dropbox','notion'].includes(mode))return NextResponse.json({error:'Destino inválido.'},{status:400});
       const files=Array.isArray(input.files)?input.files:[];if(files.length>20||files.some((f:any)=>!f||typeof f.filename!=='string'||!f.filename||(!f.cloudReceipt&&(typeof f.base64!=='string'||!f.base64||Buffer.byteLength(f.base64,'base64')>20*1024*1024))))return NextResponse.json({error:'Selecciona hasta 20 archivos de máximo 20 MB.'},{status:400});
       if(mode!=='notion'&&!input.customFolder)drxFolder(input.domain,input.root,input.category);if(!files.length&&!String(input.body||'').trim())throw new Error('Agrega archivos o contenido.');
       if(!/^[a-f0-9-]{36}$/i.test(input.uploadId||''))return NextResponse.json({error:'Actualiza la web para guardar el identificador del lote recuperable.'},{status:400});
@@ -1536,7 +1537,7 @@ async function POSTLive(req: NextRequest) {
               const title=input.separatePages&&groups.length>1?(input.title?input.title+'_'+(index+1):group[0].filename):input.title||group[0].filename;
               const quickTitle=input.separatePages&&groups.length>1?(input.quickTitle||input.title||group[0].filename)+'_'+(index+1):input.quickTitle||title;
               const backups=receipts.filter(r=>r.kind==='dropbox');const references=(input.separatePages?backups.slice(index,index+1):backups).map(r=>'Dropbox: '+r.path).join('\n');
-              const data=await invoke('create-notion-page',{title,domain:input.quickRevision?input.domain:undefined,person:input.quickRevision?input.person:undefined,...(input.quickRevision?{quickRevision:true,quickType:input.quickType,quickTitle,quickDescription:input.quickDescription,quickMonth:input.quickMonth}:{}),body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],databaseId:input.databaseId,dataSourceId:input.dataSourceId,useCalendarSource:input.useCalendarSource===true,currentUser:actor});receipts.push({kind:'notion',...data});
+              const data=await invoke('create-notion-page',{title,documentationKind:documentationKind(input.quickType)||undefined,domain:input.quickRevision?input.domain:undefined,person:input.quickRevision?input.person:undefined,...(input.quickRevision?{quickRevision:true,quickType:input.quickType,quickTitle,quickDescription:input.quickDescription,quickMonth:input.quickMonth}:{}),body:[input.body,references,input.person?'Persona / Revisor: '+input.person:''].filter(Boolean).join('\n'),files:mode==='notion'&&files.length?group:[],databaseId:input.databaseId,dataSourceId:input.dataSourceId,useCalendarSource:input.useCalendarSource===true,currentUser:actor});receipts.push({kind:'notion',...data});
             }
           }
         }
