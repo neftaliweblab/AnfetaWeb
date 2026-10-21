@@ -2369,10 +2369,19 @@ async function POSTLive(req: NextRequest) {
     }
 
     if (action === "save-pendientes") {
-      if(!Array.isArray(payload)||payload.length>500||payload.some((t:any)=>!t||typeof t.id!=='string'||typeof t.title!=='string'||t.title.length>500||typeof t.query!=='string'||t.query.length>4000||typeof t.scheduledDate!=='string'))throw new Error('Lista de pendientes inválida.');
-      if(!Number.isSafeInteger(body.expectedRevision))throw new Error('Actualiza la lista antes de guardar.');
-      const state=await updateUserState(getSettings(),await requireActor(req),{pendingTasks:payload},body.expectedRevision);
-      return NextResponse.json({success:true,items:state.values.pendingTasks,revision:state.revision});
+      if (!Array.isArray(payload) || payload.length > 500) throw new Error('Lista de pendientes inválida.');
+      const sanitized = payload.filter((t: any) => t && (t.id || t.title || t.query)).map((t: any) => ({
+        id: typeof t.id === 'string' && t.id.trim() ? t.id.slice(0, 100) : crypto.randomUUID(),
+        title: typeof t.title === 'string' ? t.title.slice(0, 500) : (typeof t.query === 'string' ? t.query.slice(0, 500) : ''),
+        query: typeof t.query === 'string' ? t.query.slice(0, 4000) : (typeof t.title === 'string' ? t.title.slice(0, 4000) : ''),
+        scheduledDate: typeof t.scheduledDate === 'string' ? t.scheduledDate.slice(0, 50) : '',
+        isCompleted: Boolean(t.isCompleted),
+        createdAt: typeof t.createdAt === 'string' && t.createdAt ? t.createdAt.slice(0, 50) : new Date().toISOString(),
+        ...(t.updatedAt && typeof t.updatedAt === 'string' ? { updatedAt: t.updatedAt.slice(0, 50) } : {}),
+      }));
+      if (!Number.isSafeInteger(body.expectedRevision)) throw new Error('Actualiza la lista antes de guardar.');
+      const state = await updateUserState(getSettings(), await requireActor(req), { pendingTasks: sanitized }, body.expectedRevision);
+      return NextResponse.json({ success: true, items: state.values.pendingTasks, revision: state.revision });
     }
 
     if (action === "open-explorer" || action === "open-file") {

@@ -8,12 +8,12 @@ export function calendarHourGridBackground(pixelsPerHour: number, interval=30) {
   ].join(',');
 }
 
-export function CalendarHourGrid({ pixelsPerHour, className }: { pixelsPerHour: number; className?: string }) {
+export function CalendarHourGrid({ pixelsPerHour, interval = 30, className }: { pixelsPerHour: number; interval?: number; className?: string }) {
   return (
     <div
       aria-hidden={true}
       className={`absolute inset-0 pointer-events-none ${className || ''}`}
-      style={{ backgroundImage: calendarHourGridBackground(pixelsPerHour) }}
+      style={{ backgroundImage: calendarHourGridBackground(pixelsPerHour, interval) }}
     />
   );
 }

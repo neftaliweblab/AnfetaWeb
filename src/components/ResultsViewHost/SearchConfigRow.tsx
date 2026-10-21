@@ -181,14 +181,50 @@ export function SearchConfigRow({
         paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
         paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
       }}
-      className="flex items-center justify-between px-3 bg-[#0F141C] border-y border-[#1E2836] select-none gap-2 transition-all"
+      className="flex flex-wrap items-center justify-between px-3 bg-[#0F141C] border-y border-[#1E2836] select-none gap-2 transition-all"
     >
       {/* Controles Izquierda */}
       <div
         style={{ gap: `${Math.round(8 * scale)}px` }}
-        className="flex items-center overflow-x-auto scrollbar-none flex-1"
+        className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 flex-1 min-w-0"
       >
-        <label className="flex shrink-0 items-center gap-2 text-xs text-cyan-300">Ordenar<select aria-label="Ordenar resultados" value={resultSort} onChange={e=>onChangeResultSort?.(e.target.value)} className="max-w-52 rounded border border-slate-700 bg-slate-900 p-1 text-slate-200">{SEARCH_SORTS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+        <div className="flex shrink-0 items-center gap-1.5 text-xs text-cyan-300">
+          <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}>Ordenar:</span>
+          <select
+            aria-label="Ordenar resultados"
+            value={resultSort}
+            onChange={(e) => onChangeResultSort?.(e.target.value)}
+            style={{
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              minHeight: `${Math.round(26 * scale)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
+            }}
+            className="max-w-44 rounded border border-slate-700 bg-[#141B26] p-1 text-slate-200 focus:outline-none cursor-pointer"
+          >
+            {SEARCH_SORTS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              if (resultSort === 'name-asc') onChangeResultSort?.('name-desc');
+              else if (resultSort === 'name-desc') onChangeResultSort?.('name-asc');
+              else onChangeResultSort?.('name-asc');
+            }}
+            style={{
+              minHeight: `${Math.round(24 * scale)}px`,
+              fontSize: `${(10 * scale).toFixed(1)}px`,
+              padding: `0 ${Math.round(6 * scale)}px`,
+            }}
+            className="rounded border border-[#25466A] bg-[#14233A] text-cyan-300 hover:border-cyan-400 font-mono font-bold cursor-pointer transition-colors"
+            title="Alternar orden rápido por Título (A-Z / Z-A)"
+          >
+            {resultSort === 'name-desc' ? 'Z→A' : 'A→Z'}
+          </button>
+        </div>
         {/* Selector de Usuario Activo Dinámico */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#38BDF8] font-semibold flex items-center gap-1">

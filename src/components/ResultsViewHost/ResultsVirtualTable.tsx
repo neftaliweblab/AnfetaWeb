@@ -284,11 +284,43 @@ export function ResultsVirtualTable({
   }, [contextMenu]);
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [moreBelowCount, setMoreBelowCount] = useState<number>(0);
+  const [nextBelowId, setNextBelowId] = useState<string | null>(null);
+
+  const checkMoreBelow = () => {
+    const container = listScrollRef.current;
+    if (!container || !searchQuery.trim()) {
+      setMoreBelowCount(0);
+      setNextBelowId(null);
+      return;
+    }
+    const viewBottom = container.scrollTop + container.clientHeight;
+    const matchSelector = lastSearchTerm(searchQuery) ? '[data-latest-match="true"]' : '[data-search-result]';
+    const matchingNodes = Array.from(container.querySelectorAll<HTMLElement>(matchSelector));
+    const belowNodes = matchingNodes.filter(node => node.offsetTop > viewBottom - 15);
+    setMoreBelowCount(belowNodes.length);
+    setNextBelowId(belowNodes.length > 0 ? (belowNodes[0].getAttribute('data-search-result') || null) : null);
+  };
+
   useEffect(() => {
     if (listScrollRef.current) {
       listScrollRef.current.scrollTop = 0;
     }
+    const t = setTimeout(checkMoreBelow, 80);
+    return () => clearTimeout(t);
   }, [items, searchQuery]);
+
+  const scrollToNextMatchBelow = () => {
+    if (!nextBelowId || !listScrollRef.current) return;
+    const target = listScrollRef.current.querySelector<HTMLElement>(`[data-search-result="${nextBelowId}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('ring-2', 'ring-cyan-400', 'bg-cyan-900/40');
+      setTimeout(() => {
+        target.classList.remove('ring-2', 'ring-cyan-400', 'bg-cyan-900/40');
+      }, 1200);
+    }
+  };
 
   const scale = (() => {
     if (!textScale) return 1.0;
@@ -439,17 +471,6 @@ export function ResultsVirtualTable({
               {parsed.area}
             </span>
           )}
-          {parsed.monthCode && (
-            <span
-              style={{
-                fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
-              }}
-              className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
-            >
-              {parsed.monthCode}
-            </span>
-          )}
           {parsed.orderCode && (
             <span
               style={{
@@ -459,6 +480,17 @@ export function ResultsVirtualTable({
               className="shrink-0 rounded font-bold bg-[#3B2D6B]/40 border border-[#A78BFA]/60 text-[#C4B5FD]"
             >
               {parsed.orderCode}
+            </span>
+          )}
+          {parsed.monthCode && (
+            <span
+              style={{
+                fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
+                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
+              }}
+              className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
+            >
+              {parsed.monthCode}
             </span>
           )}
           <span
@@ -688,6 +720,14 @@ export function ResultsVirtualTable({
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
               >
                 {parsed.area}
+              </span>
+            )}
+            {parsed.orderCode && (
+              <span
+                style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
+                className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#3B2D6B]/40 border border-[#A78BFA]/60 text-[#C4B5FD]"
+              >
+                {parsed.orderCode}
               </span>
             )}
             {parsed.monthCode && (
@@ -964,7 +1004,7 @@ export function ResultsVirtualTable({
             </div>
           )}
 
-          <div className="flex-1 px-1 min-w-[120px] truncate">Nombre ▲</div>
+          <div className="flex-1 px-1 min-w-[120px] truncate">Título ▲</div>
 
           {showStatus && (
             <div
@@ -1030,7 +1070,7 @@ export function ResultsVirtualTable({
 
       {/* Lista de Resultados (Modo Lista o Cuadrícula) */}
       {viewZoom === "list" ? (
-        <div ref={listScrollRef} className="flex-1 overflow-y-auto divide-y divide-[#17212F] scrollbar-thin">
+        <div ref={listScrollRef} onScroll={checkMoreBelow} className="flex-1 overflow-y-auto divide-y divide-[#17212F] scrollbar-thin">
           {groupedItems ? (
             groupedItems.map((group) => (
               <div key={group.key} className="mb-1">
@@ -1101,6 +1141,22 @@ export function ResultsVirtualTable({
             orderedItems.map(renderCard)
           )}
         </div>
+      )}
+
+      {/* Barrita flotante indicadora de resultados abajo */}
+      {moreBelowCount > 0 && (
+        <button
+          type="button"
+          onClick={scrollToNextMatchBelow}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2 px-4 py-2 rounded-full bg-[#0B1E33]/95 hover:bg-[#112A47] border border-[#38BDF8] text-[#38BDF8] shadow-[0_10px_30px_rgba(0,0,0,0.7)] backdrop-blur-md cursor-pointer text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+        >
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+          </span>
+          <span>Hay {moreBelowCount} resultado{moreBelowCount > 1 ? 's' : ''} más abajo para tu búsqueda</span>
+          <span className="text-[10px] text-cyan-200 bg-cyan-600/30 px-2 py-0.5 rounded-full font-mono font-bold">Ver ↓</span>
+        </button>
       )}
 
       {/* Menú Contextual (Clic Derecho) - 1:1 ANFETA ResultsContextFlyout */}

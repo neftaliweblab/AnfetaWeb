@@ -1,5 +1,5 @@
 import {newestFirst} from './searchResultOrder';
-export const SEARCH_SORTS=[['default','Orden habitual'],['name-asc','Nombre · A–Z'],['name-desc','Nombre · Z–A'],['scheduled-asc','Fecha por hacer · antigua primero'],['scheduled-desc','Fecha por hacer · reciente primero'],['modified-asc','Fecha modificada · antigua primero'],['modified-desc','Fecha modificada · reciente primero']] as const;
+export const SEARCH_SORTS=[['default','Orden habitual'],['name-asc','Título · A–Z'],['name-desc','Título · Z–A'],['scheduled-asc','Fecha por hacer · antigua primero'],['scheduled-desc','Fecha por hacer · reciente primero'],['modified-asc','Fecha modificada · antigua primero'],['modified-desc','Fecha modificada · reciente primero']] as const;
 export function compareSearchRows(a:any,b:any,sort:string){
  if(sort==='default')return newestFirst(a,b);
  const direction=sort.endsWith('-desc')?-1:1;

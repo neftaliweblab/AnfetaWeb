@@ -393,6 +393,17 @@ export function CalendarHost({
     setPixelsPerHour((prev) => Math.min(192, Math.max(48, prev + delta)));
   };
 
+  const handleGridIntervalChange = (newInterval: number) => {
+    setGridInterval(newInterval);
+    if (newInterval === 15) {
+      setPixelsPerHour(prev => Math.max(prev, 144));
+    } else if (newInterval === 20) {
+      setPixelsPerHour(prev => (prev === 144 ? 108 : Math.max(prev, 108)));
+    } else if (newInterval === 30) {
+      setPixelsPerHour(prev => (prev === 144 || prev === 108 ? 72 : prev));
+    }
+  };
+
   const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
     const original = activitiesList.find(a => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
@@ -669,7 +680,7 @@ export function CalendarHost({
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
         totalActivitiesCount={filteredActivities.filter(a => !a.isReviewMirror).length}
         pixelsPerHour={pixelsPerHour}
-        gridInterval={gridInterval} onGridInterval={setGridInterval}
+        gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
@@ -822,7 +833,7 @@ export function CalendarHost({
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px`,backgroundColor:'var(--anfeta-calendar-bg)' }}
                     >
-                      <CalendarHourGrid pixelsPerHour={pixelsPerHour}/>
+                      <CalendarHourGrid pixelsPerHour={pixelsPerHour} interval={gridInterval}/>
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
                         <ActivityCard
                           key={act.pageId || idx}
