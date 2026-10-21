@@ -1,5 +1,5 @@
 "use client";
-import {UPLOAD_ACTIVITY_TYPES,documentationKind,domainSuggestions,assertDocumentationMode} from '@/lib/uploadActivityTypes';
+import {UPLOAD_ACTIVITY_TYPES,documentationKind,catalogDomains,suggestDomains,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {loadCachedIndex} from '@/lib/clientIndexCache';
 import {ACTIVITY_TAGS} from '@/services/activityTags';
 import {activityAttachmentPlan} from '@/lib/activityAttachmentPlan';
@@ -7,7 +7,7 @@ import {RecordingTranscription} from './RecordingTranscription';
 import {uploadBrowserFiles,uploadMetadata} from '@/lib/browserDropboxUpload';
 import {readUploadDraft,saveUploadDraft,clearUploadDraft,UploadDraft,getUploadDraftStatus,summarizeDraftProgress} from '@/lib/uploadDraft';
 import {createPortal} from 'react-dom';
-import React,{useState,useEffect,useRef,useCallback} from 'react';
+import React,{useState,useEffect,useRef,useCallback,useMemo} from 'react';
 import {X,Upload,Loader2,Folder,ChevronRight,AlertTriangle,CheckCircle,Link2,Search} from 'lucide-react';
 import {detectUpload,drxFolder,monthToken,projectCategories,softwareCategories,replaceUploadPrefix,uploadFilename} from '@/lib/drxUploadPlan';
 import type {SearchResultRow} from '@/types/anfeta';
@@ -68,6 +68,7 @@ export function GlobalPasteModal({
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
   const [quickType,setQuickType]=useState('Actividad rápida'),[quickTitle,setQuickTitle]=useState(''),[quickDescription,setQuickDescription]=useState('');
   const [customType,setCustomType]=useState(false),[domainRows,setDomainRows]=useState<any[]>([]);
+  const domains=useMemo(()=>catalogDomains(domainRows),[domainRows]);
   const documentation=!!documentationKind(quickType)&&!attachmentOnly;
   useEffect(()=>{if(!isOpen)return;let active=true;setDomainRows([]);void loadCachedIndex(currentUser).then(data=>{if(active)setDomainRows(data?.items||[]);});return()=>{active=false;};},[isOpen,currentUser]);
   useEffect(()=>{if(documentation&&!started)setMode('notion');},[documentation]);
@@ -685,7 +686,7 @@ export function GlobalPasteModal({
           {!directAttachment&&<>
           {/* Configuración de Dominio y DRX */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <label className="text-xs">Dominio<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="dominio.com" /><datalist id="anfeta-domain-suggestions">{domainSuggestions(domainRows,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Sugerencias del catálogo desde 3 letras.</span></label>
+            <label className="text-xs">Dominio<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="dominio.com" /><datalist id="anfeta-domain-suggestions">{suggestDomains(domains,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Sugerencias del catálogo desde 3 letras.</span></label>
             {mode !== 'notion' && <>
               <label className="text-xs">Tipo<select value={root} onChange={e => { setRoot(e.target.value); setCategory(e.target.value); }} className={style}><option value="proyecto">Proyecto</option><option value="software">Software</option></select></label>
               <label className="text-xs">Categoría<select value={category} onChange={e => setCategory(e.target.value)} className={style}>{(root === 'software' ? softwareCategories : projectCategories).map(c => <option key={c}>{c}</option>)}</select></label>

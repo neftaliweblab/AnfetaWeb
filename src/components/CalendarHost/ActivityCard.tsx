@@ -1,5 +1,6 @@
 "use client";
 import {ReassignActivityModal} from './ReassignActivityModal';
+import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {titlePriority} from '@/services/activityTags';
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
@@ -727,9 +728,7 @@ export function ActivityCard({
           <div className="rounded-lg bg-[#141E2B] p-2.5 space-y-1.5 text-[11px] border border-[#1E2E40]">
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400">Responsable:</span>
-              <span className="font-medium text-slate-100">
-                {activity.person || "Sin asignar"}
-              </span>
+              <QuickAssigneeSelect activity={activity} currentUser={currentUser} onConfirm={updates=>onUpdateActivity?.(activity.pageId,updates)}/>
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span className="text-slate-400">Horario programado:</span>

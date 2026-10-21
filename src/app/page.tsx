@@ -1,4 +1,5 @@
 "use client";
+import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
 import {openCalendarWindow} from '@/services/windowsIntegration';
 import {indexAvailability} from '@/lib/indexAvailability';
@@ -174,6 +175,7 @@ export default function AnfetaApp() {
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
+  useEffect(()=>{const remove=()=>{setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);

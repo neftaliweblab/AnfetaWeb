@@ -1,3 +1,4 @@
+import {filterDeletedPages} from './deletedPages';
 const DB_NAME = "anfeta_cache_db_v1";
 const STORE_NAME = "search_index_store";
 const CACHE_KEY = "latest_index_activity_tags_v2";
@@ -40,7 +41,7 @@ export async function loadCachedIndex(owner?:string): Promise<CachedSearchIndex 
         db.close();
         const val = req.result;
         if (val && Array.isArray(val.items) &&  typeof val.indexVersion === "string") {
-          resolve(val as CachedSearchIndex);
+          resolve({...val,items:filterDeletedPages(val.items,owner)} as CachedSearchIndex);
         } else {
           resolve(null);
         }
@@ -66,7 +67,7 @@ export async function saveCachedIndex(data: {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
       const record: CachedSearchIndex = {
-        items: data.items,
+        items: filterDeletedPages(data.items,owner),
         indexVersion: data.indexVersion,
         total: data.total || data.items.length,
         savedAt: Date.now(),

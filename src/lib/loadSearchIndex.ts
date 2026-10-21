@@ -22,7 +22,7 @@ export async function loadSearchIndex(options:{signal?:AbortSignal;fresh?:boolea
    items.push(...data.items);if(items.length>100000)throw new Error('El catálogo supera el límite de carga; los resultados recibidos se conservan.');
    const next=data.nextOffset??null;options.onPartial?.({...first,items:[...items],loadingIndex:next!==null});
    if(next===null)return {...first,items,total:data.total??items.length,indexVersion:version,nextOffset:null};
-   if(!Number.isSafeInteger(next)||next<=offset||next!==offset+data.items.length)throw new Error('La paginación del índice no pudo completarse.');
+   if(!Number.isSafeInteger(next)||next<=offset||next!==offset+(data.scannedCount??data.items.length))throw new Error('La paginación del índice no pudo completarse.');
    offset=next;
   }while(true);
   if(!restart)break;

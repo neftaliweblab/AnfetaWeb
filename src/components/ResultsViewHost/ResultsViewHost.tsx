@@ -1,4 +1,8 @@
 "use client";
+import {applyNotionStates} from '@/lib/applyNotionStates';
+import {useNotionPageWatch} from '@/components/useNotionPageWatch';
+import {filterDeletedPages,rememberDeletedPages,pageIdentity,DELETED_PAGES_EVENT,deletedPages} from '@/lib/deletedPages';
+import {scanActivityTags} from '@/services/activityTags';
 import {resultAssignedPerson} from '@/services/activityTags';
 import {QuickPendingCapture} from './QuickPendingCapture';
 import {ScreenRecorder} from './ScreenRecorder';
@@ -375,10 +379,11 @@ export function ResultsViewHost({
   });
 
   // Table selections
-  const [items, setItems] = useState<SearchResultRow[]>(() => initialItems.filter((it) => !isExpiredResponsePage(it)));
+  const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
   React.useEffect(() => {
     setItems(initialItems.filter((it) => !isExpiredResponsePage(it)));
-  }, [initialItems]);
+  }, [initialItems,currentUser]);
+  const deleteErrorIds=useRef<string[]>([]);
   const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
@@ -594,23 +599,26 @@ export function ResultsViewHost({
       }
 
       playDeleteChime();
-      const removedIds = new Set(selectedIds);
+      deleteErrorIds.current=selectedItemsList.filter(it=>!(data.removedIds||[]).map(pageIdentity).includes(pageIdentity(it))).map(it=>pageIdentity(it));
+      const confirmed=new Set((data.removedIds||[]).map(pageIdentity));
+      const removedIds = new Set(selectedItemsList.filter(it=>confirmed.has(pageIdentity(it))).map(it=>it.id));
+      rememberDeletedPages(currentUser,data.removedIds||[]);
       setItems((prev) => prev.filter((it) => !removedIds.has(it.id)));
       if (selectedItem && removedIds.has(selectedItem.id)) {
         setSelectedItem(null);
       }
       setSelectedIds(new Set());
       setDeleteFeedback({
-        type: 'success',
-        message: `✅ Se eliminaron ${data.count || count} página${count > 1 ? 's' : ''} exitosamente en Notion.`,
+        type: data.failed?'error':'success',
+        message: data.failed?(data.errors||[]).join(' · '):`✅ Se eliminaron ${data.count || count} página${count > 1 ? 's' : ''} exitosamente en Notion.`,
       });
-      setTimeout(() => setDeleteFeedback(null), 5000);
+      if(!data.failed)setTimeout(() => setDeleteFeedback(previous=>previous?.type==='success'?null:previous), 5000);
     } catch (err: any) {
       setDeleteFeedback({
         type: 'error',
         message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
       });
-      setTimeout(() => setDeleteFeedback(null), 7000);
+      deleteErrorIds.current=selectedItemsList.map(it=>pageIdentity(it));
     } finally {
       setIsDeleting(false);
     }
@@ -658,6 +666,7 @@ export function ResultsViewHost({
       }
 
       playDeleteChime();
+      rememberDeletedPages(currentUser,[item.externalId||item.id]);
       setItems((prev) => prev.filter((it) => it.id !== item.id));
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -669,13 +678,13 @@ export function ResultsViewHost({
         type: 'success',
         message: `✅ Página eliminada exitosamente en Notion.`,
       });
-      setTimeout(() => setDeleteFeedback(null), 5000);
+      setTimeout(() => setDeleteFeedback(previous=>previous?.type==='success'?null:previous), 5000);
     } catch (err: any) {
       setDeleteFeedback({
         type: 'error',
         message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
       });
-      setTimeout(() => setDeleteFeedback(null), 7000);
+      deleteErrorIds.current=[pageIdentity(item)];
     } finally {
       setIsDeleting(false);
     }
@@ -1197,7 +1206,7 @@ export function ResultsViewHost({
 
   // Filter & scope processing
   const filteredItems = useMemo(() => {
-    let res = items.filter((item) => {
+    let res = filterDeletedPages(items,currentUser).filter((item) => {
       if (deferredQuery.trim()) {
         if (!matchesFlexibleOrQuotedQuery(item, deferredQuery, searchOptions)) {
           return false;
@@ -1227,10 +1236,14 @@ export function ResultsViewHost({
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
+  useEffect(()=>{const remove=(event?:Event)=>{if(event instanceof CustomEvent&&event.detail?.owner!==currentUser)return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, currentPage, pageSize]);
+  const watchPeople=new Set(scanActivityTags(deferredQuery).map(tag=>tag.person));
+  const watchRows=pagedItems.length?pagedItems:items.filter(item=>watchPeople.size?watchPeople.has(resultAssignedPerson(item) as any):/\[RESPUESTA\]/i.test(item.name));
+  useNotionPageWatch(currentUser,watchRows,isActive,states=>setItems(previous=>filterDeletedPages(applyNotionStates(previous,states),currentUser)));
   function focusResult(item:SearchResultRow){
     setSelectedItem(item);setSelectedIds(new Set([item.id]));
     requestAnimationFrame(()=>{const row=Array.from(resultsRoot.current?.querySelectorAll<HTMLElement>('[data-search-result]')||[]).find(el=>el.dataset.searchResult===item.id);row?.focus({preventScroll:true});row?.scrollIntoView({block:'nearest'});});
@@ -1757,6 +1770,7 @@ export function ResultsViewHost({
           onClose={() => setIsResponseCleanupOpen(false)}
           localItems={items}
           onDeleted={(deletedIds) => {
+            rememberDeletedPages(currentUser,deletedIds);
             const removed = new Set(deletedIds);
             setItems((prev) => prev.filter((it) => !removed.has(it.id) && (!it.externalId || !removed.has(it.externalId))));
             setSelectedIds((prev) => {
@@ -1772,7 +1786,7 @@ export function ResultsViewHost({
               type: "success",
               message: `✅ Se eliminaron ${deletedIds.length} página(s) de [RESPUESTA] en Notion con éxito.`,
             });
-            setTimeout(() => setDeleteFeedback(null), 5000);
+            setTimeout(() => setDeleteFeedback(previous=>previous?.type==='success'?null:previous), 5000);
           }}
         />
       )}

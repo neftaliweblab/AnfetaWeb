@@ -1,5 +1,6 @@
 import {documentationKind,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {inferActivityPerson} from '@/services/activityTags';
+import {archiveNotionPage} from '@/services/notionDeletion';
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
@@ -90,6 +91,8 @@ const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
 const calendarMemoryUpdates = new BoundedCache<any>(2000,8*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
+const confirmedDeletedPages=new BoundedCache<boolean>(5000,1024*1024,24*60*60*1000,()=>1);
+function recordDeletedPage(token:string,id:string){const key=token+':'+cleanPageId(id),known=confirmedDeletedPages.get(key);confirmedDeletedPages.set(key,true);liveNotionOverrides.delete(cleanPageId(id));calendarMemoryUpdates.delete(cleanPageId(id));if(!known)previewMemoryCache.clear();}
 function calendarSnapshot() {
   const cache = readLocalJson<Record<string, any[]>>('notion_calendar_cache_v13.json', {});
   for (const live of liveNotionOverrides.values()) {
@@ -1474,6 +1477,23 @@ async function POSTLive(req: NextRequest) {
       }
     }
     const payload={...(body.payload || {}),currentUser:actor};
+    if(action==='notion-page-states'){
+      const ids=[...new Set<string>((Array.isArray(payload.ids)?payload.ids:[]).map((id:any)=>cleanPageId(String(id))))];
+      if(ids.length>4||ids.some(id=>!/^[a-f0-9]{32}$/.test(id)))throw Error('Consulta hasta cuatro IDs de Notion válidos.');
+const settings={...getSettings(),notionToken:resolveNotionToken(req)},states:any[]=[];let needsInvalidation=false;
+for(const id of ids){try{const page=await notionRequest({...settings,notionSignal:AbortSignal.timeout(7000)},'pages/'+id);if(page.archived||page.in_trash){if(!confirmedDeletedPages.get(settings.notionToken+':'+id))needsInvalidation=true;recordDeletedPage(settings.notionToken,id);states.push({id,deleted:true});}else{confirmedDeletedPages.delete(settings.notionToken+':'+id);const live=extractNotionPageData(page);liveNotionOverrides.set(live.id,live);states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart});}}catch{states.push({id,unverified:true});}}
+if(needsInvalidation&&supabaseConfigured())try{await invalidateSnapshots(settings,true);}catch{}
+      return NextResponse.json({success:true,states},{headers:{'Cache-Control':'no-store'}});
+    }
+    if(action==='activity-edit-snapshot'){
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      if(!/^[a-f0-9-]{32,36}$/i.test(payload.pageId||''))throw Error('Identificador de actividad inválido.');
+      await assertChecklistAccess(settings,actor,payload.pageId);clearReadBlocksCache(settings);
+      const page=await notionRequest(settings,'pages/'+payload.pageId);if(page.archived||page.in_trash)throw Error('La actividad está archivada o en la papelera.');
+      const live=extractNotionPageData(page),reviewFlow=await readReviewFlow(settings,page.id);
+      const normalized=normalizeActivity({pageId:page.id,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);
+      return NextResponse.json({success:true,activity:{pageId:page.id,title:live.title,person:live.person,status:live.status,start:normalized.start,end:normalized.end,isLocked:live.isLocked,reviewFlow:reviewFlow||null,reviewFlowScanned:true}});
+    }
 
     if(action==='browser-dropbox-upload')return NextResponse.json(await browserDropboxUpload(actor,payload));
     if(action==='add-checklist-item'||action==='add-comment'){const item=await activityQuickEntry({...getSettings(),notionToken:resolveNotionToken(req)},actor,payload,action==='add-comment');previewMemoryCache.clear();return NextResponse.json({success:true,item});}
@@ -2580,6 +2600,7 @@ async function POSTLive(req: NextRequest) {
       let successCount = 0;
       let failedCount = 0;
       const errors: string[] = [];
+      const removedIds:string[]=[];
 
       for (const it of itemsList) {
         const rawId = String(it.id || it.externalId || "").trim();
@@ -2592,24 +2613,12 @@ async function POSTLive(req: NextRequest) {
           ["revisiones", "clientes", "dominios", "programas y proyectos", "cobrar y pagar", "correos contraseñas"].includes(src);
 
         const itemPath = it.path || it.target;
+        if(isNotion&&(!isNotionUuid||!token?.trim())){failedCount++;errors.push('No se pudo verificar la página: falta un ID válido o acceso a Notion.');continue;}
 
         if (isNotion && cleanId && token && token.trim()) {
           try {
-            const res = await fetch(`https://api.notion.com/v1/pages/${cleanId}`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${token.trim()}`,
-                "Notion-Version": "2022-06-28",
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ archived: true }),
-            });
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.message || `HTTP ${res.status}`);
-            }
-            liveNotionOverrides.delete(cleanId);
-            calendarMemoryUpdates.delete(cleanId);
+            await archiveNotionPage(token,cleanId);
+            recordDeletedPage(token,cleanId);removedIds.push(rawId);
             clearReadBlocksCache(settings);
             successCount++;
           } catch (err: any) {
@@ -2620,6 +2629,7 @@ async function POSTLive(req: NextRequest) {
         } else if (itemPath && fs.existsSync(itemPath)) {
           try {
             fs.rmSync(itemPath, { recursive: true, force: true });
+            removedIds.push(rawId);
             successCount++;
           } catch (err: any) {
             failedCount++;
@@ -2627,9 +2637,7 @@ async function POSTLive(req: NextRequest) {
             console.warn("[ANFETA delete] Error deleting file on disk:", err);
           }
         } else if (cleanId) {
-          liveNotionOverrides.delete(cleanId);
-          calendarMemoryUpdates.delete(cleanId);
-          successCount++;
+          failedCount++;errors.push('No se encontró la fuente del elemento; no se confirmó su eliminación.');
         }
       }
 
@@ -2644,6 +2652,7 @@ async function POSTLive(req: NextRequest) {
         success: true,
         count: successCount,
         failed: failedCount,
+        removedIds,
         errors: errors.length ? errors : undefined,
       });
     }
@@ -2692,7 +2701,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 
 async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);const isDelete=body?.action==='delete-item'||body?.action==='delete-items';await invalidateSnapshots({...getSettings(),notionToken:token},isDelete);}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
 
-export async function GET(req:NextRequest){
+async function GETRaw(req:NextRequest){
  const url=new URL(req.url);
  // El día se consulta en Notion con cachés breves compartidas; el índice completo es independiente.
  if(url.searchParams.get('type')==='calendar')return GETLive(req);
@@ -2733,4 +2742,12 @@ export async function GET(req:NextRequest){
  }catch(error){const message=error instanceof Error?error.message:'No se pudo cargar el índice.';console.warn('[ANFETA index]',JSON.stringify({offset,durationMs:Date.now()-started,outcome:'failed',cause:message}));return NextResponse.json({error:message},{status:/Inicia sesión/.test(message)?401:502});}
 }
 export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
+export async function GET(req:NextRequest){
+ const response=await GETRaw(req);if(!response.ok)return response;
+ const token=resolveNotionToken(req);const ids=[...confirmedDeletedPages].filter(([key])=>key.startsWith(token+':')).map(([key])=>key.slice(token.length+1));
+ if(!ids.length)return response;
+ const data=await response.clone().json().catch(()=>null);if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)))return response;
+ const deleted=new Set(ids),keep=(item:any)=>!deleted.has(cleanPageId(String(item.externalId||item.originalPageId||item.pageId||item.id||'').replace(/^review-mirror-/,'')));
+ return NextResponse.json({...data,...(Array.isArray(data.items)?{scannedCount:data.items.length,items:data.items.filter(keep)}:{}),...(Array.isArray(data.activities)?{activities:data.activities.filter(keep)}:{}),deletedPageIds:ids},{headers:response.headers});
+}
 

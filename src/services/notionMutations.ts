@@ -126,7 +126,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (updates.status && workflowState(updates.status) === 'review' && !updates.reviewer) throw new Error('Selecciona a quién enviar la actividad en el modal de revisión.');
   const completed = updates.status && workflowState(updates.status) === 'completed';
 
-  if(handoff)clearReadBlocksCache(settings);
+  if(handoff||updates.reviewer||completed||returned||reassigned)clearReadBlocksCache(settings);
   const previousFlow = updates.reviewer || completed || returned || reassigned || handoff ? await readReviewFlow(settings, id) : undefined;
   if(completed&&!isReviewer(actor)&&!(previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee)&&PERSON_ALIASES[normalizePerson(actor)]))throw Error('Solo el revisor asignado puede terminar esta revisión.');
   if(handoff&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');

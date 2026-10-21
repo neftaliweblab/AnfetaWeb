@@ -1,4 +1,7 @@
 "use client";
+import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
+import {useNotionPageWatch} from '@/components/useNotionPageWatch';
+import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
 import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
@@ -248,6 +251,8 @@ export function CalendarHost({
   });
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
+  useEffect(()=>{const remove=()=>{setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
+  useNotionPageWatch(currentUser,selectedActivity?[selectedActivity]:[],true,()=>{});
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
   const openNotificationActivity=(activity:NotionCalendarActivity)=>{
@@ -372,18 +377,22 @@ export function CalendarHost({
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
     pending.current.add(pageId); mutationVersion.current++; setError('');
+    let expectedReviewUpdatedAt=original.reviewFlow?.UpdatedAt||null;
+    if(updates.reviewer||updates.reviewAction||updates.handoff){
+      try{
+        const response=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity-edit-snapshot',payload:{pageId}})}),data=await response.json();
+        if(!response.ok||!data.activity)throw Error(data.error||'No se pudo verificar el estado actual.');
+        const fresh=data.activity;
+        const preflight=reviewPreflight(original,fresh);
+        if(preflight.changed){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?{...a,...fresh}:a));setSelectedActivity(prev=>prev?.pageId===pageId?{...prev,...fresh}:prev);throw Error('Se actualizaron los datos de la actividad porque cambiaron. Conserva tu selección, revisa el cambio y confirma de nuevo.');}
+        expectedReviewUpdatedAt=preflight.expectedReviewUpdatedAt;
+      }catch(e){pending.current.delete(pageId);setSaveRevision(v=>v+1);setError(e instanceof Error?e.message:'No se pudo verificar el flujo.');return false;}
+    }
     const originalMirror=activitiesList.find(a=>a.pageId==='review-mirror-'+pageId);
     const restoreSchedule=()=>{if(updates.start){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?original:a));setSelectedActivity(prev=>prev?.pageId===pageId?original:prev);}};
     if(updates.start){const moving={...original,...updates};setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?moving:a));setSelectedActivity(prev=>prev?.pageId===pageId?moving:prev);}
-    if(updates.reviewer){
-      try{const person=normalizePerson(updates.reviewer),owner=original.reviewFlow?.OriginalPerson||original.person;
-        const optimistic={...original,person,status:'rtuzREVISION',title:reviewTitle(original.title,owner,person,'pending'),isCompletedForReview:true,isFinalized:false,isSuspended:false,reviewFlow:{...original.reviewFlow,OriginalPerson:owner,ReviewAssignee:person,State:'pending',LeaveVisualCopy:updates.leaveVisualCopy!==false}};
-        recentSaves.current.set(pageId, { activity: optimistic, until: Date.now() + 120000 });
-        setActivitiesList(prev=>{const next=prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId);next.push(optimistic);if(updates.leaveVisualCopy!==false&&normalizePerson(owner)!==person)next.push({...optimistic,pageId:'review-mirror-'+pageId,person:normalizePerson(owner),isReviewMirror:true,title:'[COPIA REVISIÓN] '+optimistic.title});return next;});
-      }catch(e){pending.current.delete(pageId);setError(e instanceof Error?e.message:'No se pudo preparar la revisión.');return false;}
-    }
     try {
-      const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction||updates.handoff)?{expectedReviewUpdatedAt:original.reviewFlow?.UpdatedAt||null}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
+      const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction||updates.handoff)?{expectedReviewUpdatedAt}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
       if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
@@ -429,7 +438,7 @@ export function CalendarHost({
   }, [startHour, endHour]);
 
   const filteredActivities = useMemo(() => {
-    return activitiesList.filter((act) => {
+    return filterDeletedPages(activitiesList,currentUser).filter((act) => {
       if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
       if (searchFilterQuery && searchFilterQuery.trim()) {

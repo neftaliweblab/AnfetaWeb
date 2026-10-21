@@ -162,7 +162,7 @@ export async function readReviewFlow(settings: CalendarSettings, pageId: string)
       if (!text.startsWith(REVIEW_PREFIX)) continue;
       try {
         const flow = JSON.parse(Buffer.from(text.slice(REVIEW_PREFIX.length), 'base64').toString('utf8'));
-        if (flow.OriginalPerson && flow.State && (!latest || Date.parse(flow.UpdatedAt) >= Date.parse(latest.UpdatedAt))) latest = flow;
+        if (flow.OriginalPerson && flow.State && (!latest || (Date.parse(flow.UpdatedAt)||0) >= (Date.parse(latest.UpdatedAt)||0))) latest = flow;
       } catch { /* Ignore unrelated or damaged metadata; do not manufacture a flow. */ }
     }
   }

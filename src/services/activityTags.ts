@@ -19,6 +19,10 @@ const legacyPriority=(suffix:string):ActivityPriority|undefined=>suffix==='001'?
 export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
   for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
+    for(const suffix of ['000','0000']){
+      if(lower===entry.active+suffix)return {person:person as ActivityPerson,role:'active',priority:'00',suffix,token,legacy:false};
+      if(lower===entry.reference+suffix)return {person:person as ActivityPerson,role:'reference',priority:'00',suffix,token,legacy:false};
+    }
     for(const priority of ['00','11','22','33'] as const){
       if(lower===entry.active+priority)return {person:person as ActivityPerson,role:'active',priority,suffix:priority,token,legacy:false};
       if(lower===entry.reference+priority)return {person:person as ActivityPerson,role:'reference',priority,suffix:priority,token,legacy:false};
@@ -74,6 +78,7 @@ export function resultAssignedPerson(item:any){
 export function activityTagPattern(){
   const tokens:string[]=[];
   for(const entry of Object.values(ACTIVITY_TAGS)){
+    for(const suffix of ['000','0000'])tokens.push(entry.active+suffix,entry.reference+suffix);
     for(const suffix of ['00','11','22','33'])tokens.push(entry.active+suffix,entry.reference+suffix);
     for(const alias of entry.aliases){tokens.push(alias);for(const suffix of suffixes)tokens.push(alias+suffix);}
     tokens.push(entry.active[0]+'-'+entry.passive);

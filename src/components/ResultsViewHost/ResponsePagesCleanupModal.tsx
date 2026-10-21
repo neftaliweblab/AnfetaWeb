@@ -1,4 +1,5 @@
 "use client";
+import {pageIdentity} from '@/lib/deletedPages';
 
 import React, { useState, useEffect, useMemo } from "react";
 import { X, RefreshCw, Trash2, CheckSquare, Square, AlertTriangle, ExternalLink, Loader2, Sparkles, Filter, CheckCircle2 } from "lucide-react";
@@ -228,13 +229,14 @@ export function ResponsePagesCleanupModal({
         throw new Error(data.error || "No se pudo completar la eliminación en Notion.");
       }
 
-      const deletedIdsArray = Array.from(selectedIds);
+      const confirmed=new Set((data.removedIds||[]).map(pageIdentity));
+      const deletedIdsArray = items.filter(item=>selectedIds.has(item.id)&&confirmed.has(pageIdentity(item))).map(item=>item.id);
       // Actualizar estado local del modal
-      setItems((prev) => prev.filter((it) => !selectedIds.has(it.id)));
-      setSelectedIds(new Set());
+      setItems((prev) => prev.filter((it) => !confirmed.has(pageIdentity(it))));
+      setSelectedIds(previous=>new Set([...previous].filter(id=>!confirmed.has(pageIdentity(id)))));
       setFeedback({
-        type: "success",
-        message: `✅ Se eliminaron ${data.count || deletedIdsArray.length} página(s) exitosamente en Notion.`,
+        type: data.failed?'error':'success',
+        message: data.failed?(data.errors||[]).join(' · '):`✅ Se eliminaron ${data.count || deletedIdsArray.length} página(s) exitosamente en Notion.`,
       });
 
       // Notificar a ResultsViewHost

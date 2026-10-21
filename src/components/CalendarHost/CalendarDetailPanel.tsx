@@ -1,5 +1,6 @@
 "use client";
 import {ReassignActivityModal} from './ReassignActivityModal';
+import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {ActivityQuickEntry} from './ActivityQuickEntry';
 import {requestActivityRecording} from '@/lib/activityRecording';
 import {offlineAwareFetch} from '@/services/offlineQueue';
@@ -220,7 +221,7 @@ export function CalendarDetailPanel({
               <User className="w-3.5 h-3.5 text-cyan-400" />
               Responsable:
             </span>
-            <span className="font-semibold text-white">{person}</span>
+            <QuickAssigneeSelect activity={activity} currentUser={currentUser} onConfirm={onActivityUpdated}/>
           </div>
 
           <div className="flex items-center justify-between">

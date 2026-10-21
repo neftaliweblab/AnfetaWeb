@@ -39,11 +39,12 @@ global.fetch=async(url,options={})=>{
     const properties={};for(const [name,prop] of Object.entries(body.properties)) {assert.ok(!Array.isArray(prop),'Notion properties must be objects');const type=Object.keys(prop)[0];properties[name]={type,...prop};if(type==='people')properties[name].people=prop.people.map(u=>({...u,name:({'neft-id':'Neftali','john-id':'John','karla-id':'Karla','acalli-id':'Acalli','brian-id':'Brian'})[u.id] || (u.id==='neft-id'?'Neftali':'John')}));}
     state.createdPage={id:other,url:'https://notion.so/'+other,parent:body.parent,properties};return response(state.createdPage);
   }
+  if(target==='pages/'+other && method==='GET'&&state.noAccessOther)return response({message:'Page not accessible'},404);
   if(target==='pages/'+other && method==='GET')return response(state.createdPage ? {...state.createdPage,archived:!!state.archivedAlert} : {id:other,url:'https://notion.so/'+other,archived:!!state.archivedAlert,properties:{Name:{type:'title',title:[]}}});
   if(target==='pages/'+other && method==='PATCH')return response({id:other});
   if(target.startsWith('blocks/'+other+'/children') && method==='GET')return response({results:[],has_more:false});
   if((target==='blocks/'+other+'/children'||target.startsWith('blocks/copied-')) && method==='PATCH')return response({results:body.children.map((b,i)=>({...b,id:'copied-'+i}))});
-  if(target==='pages/'+pid && method==='GET')return response(state.page);
+  if(target==='pages/'+pid && method==='GET')return state.pageMissing?response({message:'Could not find page'},404):response(state.page);
   if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'Due Fecha Recordatorio':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
   if(target.endsWith('/query') && state.guestReviewer) return response({results:[{...fixture(),properties:{...fixture().properties,'Assignee/Ejecutor Principal':{type:'people',people:[{id:'guest-isaias',name:'iisai@pprin.com'}]}}}],has_more:false});
@@ -51,6 +52,7 @@ global.fetch=async(url,options={})=>{
   if(target.startsWith('users?'))return response({results:state.usersMissing?[]:[{id:'john-id',type:'person',name:'John',person:{email:'jjohn@pprin.com'}},{id:'genaro-id',type:'person',name:'Genaro',person:{email:'ggena@pprin.com'}}],has_more:false});
   if(target==='pages/'+pid && method==='PATCH'){
     if(state.failPage)return response({message:'PATCH rejected'},403);
+    if(body.archived===true){state.page.archived=true;return response(state.page);}
     for(const [name,p] of Object.entries(body.properties)) {
       const property={type:Object.keys(p)[0],...p};
       if (property.type === 'people') property.people = property.people.map(user => ({...user,name:({'john-id':'John','genaro-id':'Genaro','guest-isaias':'Isaias','neft-id':'Neftali'})[user.id] || user.name}));
@@ -357,6 +359,35 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const call=state.calls.find(c=>c.target==='pages'&&c.method==='POST');assert.equal(call.body.parent.data_source_id,id);
     assert.equal(call.body.properties.Name.title[0].text.content,'Documentar correo: ejemplo');
     assert.ok(!Object.values(call.body.properties).some(p=>p.date));assert.ok(created.page.id);
+  });
+  await test('Borrado ya archivado se confirma y no reaparece desde un calendario antiguo',async()=>{
+    state.page.archived=true;
+    const result=await route.POST(request('delete-item',{id:pid,source:'Notion'}));assert.equal(result.status,200);assert.equal((await result.json()).count,1);
+    assert.equal(state.calls.some(c=>c.method==='PATCH'),false);
+    const refreshed=await route.GET(new Request('http://localhost/api/data?type=calendar&date=2026-10-05&basic=1'));
+    const data=await refreshed.json();assert.ok(!data.activities.some(a=>a.pageId===pid));assert.ok(data.deletedPageIds.includes(pid.replace(/-/g,'')));
+  });
+  await test('Borrado parcial devuelve únicamente IDs confirmados',async()=>{
+    state.noAccessOther=true;
+    const result=await route.POST(request('delete-items',{items:[{id:pid,source:'Notion'},{id:other,source:'Notion'}]})),data=await result.json();
+    assert.equal(result.status,200);assert.equal(data.count,1);assert.equal(data.failed,1);assert.deepEqual(data.removedIds,[pid]);assert.match(data.errors[0],/faltar acceso/);
+  });
+  await test('Sondeo acotado no confunde 404 con eliminación',async()=>{
+    state.pageMissing=true;
+    const result=await route.POST(request('notion-page-states',{ids:[pid]})),data=await result.json();
+    assert.equal(result.status,200);assert.equal(data.states[0].unverified,true);assert.equal(data.states[0].deleted,undefined);
+    assert.equal(state.calls.some(c=>c.method==='PATCH'),false);
+    const rejected=await route.POST(request('notion-page-states',{ids:Array.from({length:5},(_,n)=>String(n+1).repeat(32))}));assert.ok(rejected.status>=400);
+  });
+  await test('Preflight devuelve flujo vigente sin fabricar progreso del checklist',async()=>{
+    state.flow={OriginalPerson:'Neftali',ReviewAssignee:'John',State:'returned',UpdatedAt:'2026-10-21T12:00:00Z'};
+    const result=await route.POST(request('activity-edit-snapshot',{pageId:pid})),data=await result.json();
+    assert.equal(result.status,200);assert.equal(data.activity.reviewFlow.UpdatedAt,state.flow.UpdatedAt);assert.equal(data.activity.reviewFlowScanned,true);assert.equal(data.activity.checklistTotal,undefined);
+  });
+  await test('Metadata con fecha vigente supera al bloque histórico sin UpdatedAt',async()=>{
+    const block=flow=>({type:'paragraph',paragraph:{rich_text:[{plain_text:calendar.REVIEW_PREFIX+Buffer.from(JSON.stringify(flow)).toString('base64')}]}});
+    state.customBlocks=[block({OriginalPerson:'Neftali',State:'returned'}),block({OriginalPerson:'Neftali',State:'pending',UpdatedAt:'2026-10-21T12:00:00Z'})];
+    assert.equal((await calendar.readReviewFlow(settings,pid)).State,'pending');
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
