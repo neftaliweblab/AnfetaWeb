@@ -1,7 +1,20 @@
-import {createHash} from 'node:crypto';import {supabaseAdmin} from './supabaseServer';import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';import type {CalendarSettings} from './notionCalendar';import {indexContentVersion,stableIndexRows} from './indexContentVersion';
+import {createHash} from 'node:crypto';import {supabaseAdmin, getOrEnsureProfile} from './supabaseServer';import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';import type {CalendarSettings} from './notionCalendar';import {indexContentVersion,stableIndexRows} from './indexContentVersion';
 export function notionSourceKey(settings:CalendarSettings){return createHash('sha256').update((settings.notionToken||'')+':'+(process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId||'')).digest('hex');}
 export function snapshotRequestKey(url:URL){const type=url.searchParams.get('type');if(type==='search-index')return 'search-index';if(type==='calendar'&&url.searchParams.get('basic')==='1'&&!url.searchParams.has('enrichOffset')){const date=url.searchParams.get('date');if(/^\d{4}-\d{2}-\d{2}$/.test(date||'')&&Number.isFinite(Date.parse(date!))){if(url.searchParams.get('scope')==='week'){const shift=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);const weekday=new Date(date!+'T12:00:00Z').getUTCDay();const first=shift(date!,-((weekday+6)%7));return 'calendar:week:'+first;}return 'calendar:'+date;}}return undefined;}
-export async function snapshotContext(user:string,settings:CalendarSettings,key:string){const client=supabaseAdmin(),tag=PERSON_ALIASES[normalizePerson(user)]?.[0];if(!tag)throw new Error('Persona no válida para leer el índice.');const query=client.from('profiles').select('id').eq('person_tag',tag).eq('active',true);const profile=query.maybeSingle?await query.maybeSingle():await query.single();if(profile.error||!profile.data?.id)throw new Error('No se pudo leer el perfil activo para el índice. No se usó otra cuenta como respaldo.');return {client,userId:profile.data.id,source:notionSourceKey(settings),key};}
+export async function snapshotContext(user:string,settings:CalendarSettings,key:string){
+  const client=supabaseAdmin(),tag=PERSON_ALIASES[normalizePerson(user)]?.[0];
+  if(!tag)throw new Error('Persona no válida para leer el índice.');
+  const query=client.from('profiles').select('id').eq('person_tag',tag).eq('active',true);
+  let profile=query.maybeSingle?await query.maybeSingle():await query.single();
+  if(!profile.data?.id){
+    try {
+      const ensured = await getOrEnsureProfile(client, tag);
+      if(ensured?.id) profile = { data: ensured, error: null };
+    } catch {}
+  }
+  if(profile.error||!profile.data?.id)throw new Error('No se pudo leer el perfil activo para el índice. No se usó otra cuenta como respaldo.');
+  return {client,userId:profile.data.id,source:notionSourceKey(settings),key};
+}
 export type SnapshotContext=Awaited<ReturnType<typeof snapshotContext>>;
 export interface SnapshotRow {payload?:any;has_payload:boolean;content_version:string|null;updated_at:string|null;valid:boolean;force_full:boolean;last_error:string|null;lease_until:string|null;retry_after:string|null}
 type SnapshotProjection=SnapshotRow&{user_id:string;source_key:string;syncMeta?:any;total?:number;indexRunId?:string};

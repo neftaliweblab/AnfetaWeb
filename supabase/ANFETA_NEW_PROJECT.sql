@@ -1093,3 +1093,39 @@ revoke all on function public.get_recent_notion_page_events(text,timestamptz,int
 grant execute on function public.get_recent_notion_page_events(text,timestamptz,integer) to service_role, authenticated;
 
 commit;
+
+-- ==========================================
+-- ANFETA: Creación de perfiles de equipo iniciales
+-- ==========================================
+DO $$
+DECLARE
+  v_tag text;
+  v_email text;
+  v_user_id uuid;
+  v_tags text[] := ARRAY['jjohn','nneft','kkarl','iisai','ssote','aacal','aandr','bbria','ggena','eemma'];
+BEGIN
+  FOREACH v_tag IN ARRAY v_tags LOOP
+    v_email := 'anfeta-persona-' || v_tag || '@internal.anfeta.invalid';
+    
+    SELECT id INTO v_user_id FROM auth.users WHERE email = v_email;
+    IF v_user_id IS NULL THEN
+      v_user_id := gen_random_uuid();
+      INSERT INTO auth.users (
+        id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+        created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin
+      ) VALUES (
+        v_user_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+        v_email, crypt('anfeta_internal_auto_pwd_2026', gen_salt('bf')), now(),
+        now(), now(), '{"provider":"email","providers":["email"]}', '{}', false
+      );
+    END IF;
+    
+    INSERT INTO public.profiles (id, person_tag, login_email, active)
+    VALUES (v_user_id, v_tag, v_email, true)
+    ON CONFLICT (person_tag) DO UPDATE SET active = true, login_email = excluded.login_email;
+    
+    INSERT INTO public.user_preferences (user_id)
+    VALUES (v_user_id)
+    ON CONFLICT DO NOTHING;
+  END LOOP;
+END $$;
