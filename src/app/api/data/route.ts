@@ -85,7 +85,7 @@ function readLocalJson<T>(filename: string, defaultValue: T): T {
 }
 
 // Caché en memoria para vistas previas con TTL de 15 minutos
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const previewMemoryCache = new BoundedCache<{timestamp:number;payload:any}>(100,8*1024*1024,15*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
