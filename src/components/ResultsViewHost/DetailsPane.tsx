@@ -4,6 +4,7 @@ import {NotionBlockTextEditor} from './NotionBlockTextEditor';
 import {EDITABLE_NOTION_TEXT_TYPES} from '@/lib/notionBlockText';
 import {mediaUrl} from '@/lib/mediaUrl';
 import {readApiJson} from '@/lib/readApiJson';
+import {getUnverifiedPageReason} from '@/lib/deletedPages';
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
@@ -752,6 +753,15 @@ export function DetailsPane({
 
       {/* 2. Cuerpo desplazable (Fila 1, auto scroll) */}
       <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 scrollbar-thin">
+        {item?.id && getUnverifiedPageReason(item.id) && (
+          <div className="p-2.5 bg-amber-950/40 border border-amber-500/50 rounded-lg text-amber-300 text-xs flex items-start gap-2 animate-in fade-in">
+            <span className="shrink-0 text-sm">⚠️</span>
+            <div className="text-[11px] leading-relaxed">
+              <span className="font-semibold block text-amber-200">Verificación pendiente con Notion</span>
+              {getUnverifiedPageReason(item.id)}
+            </div>
+          </div>
+        )}
         {/* Título y Ruta (DetailsTitle y DetailsDisplayPath) */}
         <div className="space-y-1">
           <h2 className="text-[12px] font-semibold text-[#F1F5F9] leading-snug break-words">

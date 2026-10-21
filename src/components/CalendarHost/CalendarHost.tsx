@@ -1,5 +1,6 @@
 "use client";
-import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
+import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
+import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
@@ -252,7 +253,27 @@ export function CalendarHost({
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
   useEffect(()=>{const remove=()=>{setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
-  useNotionPageWatch(currentUser,selectedActivity?[selectedActivity]:[],true,()=>{});
+  const watchCalendarRows = useMemo(() => {
+    const list = selectedActivity ? [selectedActivity] : [];
+    for (const a of activitiesList) {
+      if (list.length >= 10) break;
+      if (!list.some(x => x.pageId === a.pageId)) list.push(a);
+    }
+    return list;
+  }, [selectedActivity, activitiesList]);
+
+  useNotionPageWatch(currentUser, watchCalendarRows, true, (states) => {
+    setActivitiesList(prev => filterDeletedPages(applyNotionStates(prev, states), currentUser));
+    setSelectedActivity(prev => {
+      if (!prev) return null;
+      const updated = applyNotionStates([prev], states);
+      if (!updated.length) {
+        setIsDetailOpen(false);
+        return null;
+      }
+      return updated[0];
+    });
+  });
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
   const openNotificationActivity=(activity:NotionCalendarActivity)=>{

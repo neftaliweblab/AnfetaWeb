@@ -25,7 +25,8 @@ import {drxFolder,uploadFilename} from '@/lib/drxUploadPlan';
 import {prepareTemplateBody,appendTemplateBody} from '@/services/notionTemplateBody';
 import {createHash} from 'node:crypto';
 import {supabaseConfigured} from '@/services/supabaseServer';
-import {readIndexSlice,snapshotRequestKey,snapshotContext,readSnapshot,claimSnapshot,finishSnapshot,invalidateSnapshots} from '@/services/notionSnapshotCache';
+import {readIndexSlice,snapshotRequestKey,snapshotContext,readSnapshot,claimSnapshot,finishSnapshot,invalidateSnapshots,notionSourceKey} from '@/services/notionSnapshotCache';
+import {recordPageEvent,getRecentPageEvents,getConfirmedDeletedPageIds} from '@/services/notionEventSync';
 import {getSettings,saveSettings} from '@/services/serverSettings';
 import {searchNotionPages} from '@/services/searchIndexSync';
 import {readEditableBlock,saveEditableBlock,appendEditableBlock} from '@/services/notionBlockEditor';
@@ -1480,10 +1481,51 @@ async function POSTLive(req: NextRequest) {
     if(action==='notion-page-states'){
       const ids=[...new Set<string>((Array.isArray(payload.ids)?payload.ids:[]).map((id:any)=>cleanPageId(String(id))))];
       if(ids.length>4||ids.some(id=>!/^[a-f0-9]{32}$/.test(id)))throw Error('Consulta hasta cuatro IDs de Notion válidos.');
-const settings={...getSettings(),notionToken:resolveNotionToken(req)},states:any[]=[];let needsInvalidation=false;
-for(const id of ids){try{const page=await notionRequest({...settings,notionSignal:AbortSignal.timeout(7000)},'pages/'+id);if(page.archived||page.in_trash){if(!confirmedDeletedPages.get(settings.notionToken+':'+id))needsInvalidation=true;recordDeletedPage(settings.notionToken,id);states.push({id,deleted:true});}else{confirmedDeletedPages.delete(settings.notionToken+':'+id);const live=extractNotionPageData(page);liveNotionOverrides.set(live.id,live);states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart});}}catch{states.push({id,unverified:true});}}
-if(needsInvalidation&&supabaseConfigured())try{await invalidateSnapshots(settings,true);}catch{}
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)},states:any[]=[];let needsInvalidation=false;
+      const sourceKey=notionSourceKey(settings);
+      for(const id of ids){
+        try{
+          const page=await notionRequest({...settings,notionSignal:AbortSignal.timeout(7000)},'pages/'+id);
+          if(page.archived||page.in_trash){
+            if(!confirmedDeletedPages.get(settings.notionToken+':'+id))needsInvalidation=true;
+            recordDeletedPage(settings.notionToken,id);
+            try{await recordPageEvent({sourceKey,pageId:id,state:'deleted',eventType:'polled_state',serverModified:page.last_edited_time||new Date().toISOString()});}catch{}
+            states.push({id,deleted:true});
+          }else{
+            confirmedDeletedPages.delete(settings.notionToken+':'+id);
+            const live=extractNotionPageData(page);
+            liveNotionOverrides.set(live.id,live);
+            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart}});}catch{}
+            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart});
+          }
+        }catch(err:any){
+          const is404=err?.status===404||/404|no se puede verificar|faltar acceso/i.test(err?.message||'');
+          const reason=is404
+            ?'No se puede verificar esta página: puede no existir o faltar acceso a la integración. Actualiza o revisa los permisos.'
+            :(err?.message||'Error de verificación con Notion');
+          try{await recordPageEvent({sourceKey,pageId:id,state:'unverified',eventType:'polled_state',unverifiedReason:reason});}catch{}
+          states.push({id,unverified:true,reason});
+        }
+      }
+      if(needsInvalidation&&supabaseConfigured())try{await invalidateSnapshots(settings,true);}catch{}
       return NextResponse.json({success:true,states},{headers:{'Cache-Control':'no-store'}});
+    }
+    if(action==='sync-page-events'){
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      const sourceKey=notionSourceKey(settings);
+      const since=payload.since?String(payload.since):null;
+      const limit=typeof payload.limit==='number'?Math.min(payload.limit,500):200;
+      const events=await getRecentPageEvents(sourceKey,since,limit);
+      return NextResponse.json({success:true,events,timestamp:new Date().toISOString()},{headers:{'Cache-Control':'no-store'}});
+    }
+    if(action==='restore-notion-page'){
+      const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      const id=cleanPageId(payload.id||payload.pageId);
+      if(!/^[a-f0-9]{32}$/.test(id))throw Error('ID de página de Notion inválido.');
+      const sourceKey=notionSourceKey(settings);
+      confirmedDeletedPages.delete(settings.notionToken+':'+id);
+      await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'manual_restore',serverModified:new Date().toISOString()});
+      return NextResponse.json({success:true,pageId:id,restored:true},{headers:{'Cache-Control':'no-store'}});
     }
     if(action==='activity-edit-snapshot'){
       const settings={...getSettings(),notionToken:resolveNotionToken(req)};
@@ -2619,6 +2661,10 @@ if(needsInvalidation&&supabaseConfigured())try{await invalidateSnapshots(setting
           try {
             await archiveNotionPage(token,cleanId);
             recordDeletedPage(token,cleanId);removedIds.push(rawId);
+            try{
+              const sourceKey=notionSourceKey(settings);
+              await recordPageEvent({sourceKey,pageId:cleanId,state:'deleted',eventType:'manual_delete',serverModified:new Date().toISOString()});
+            }catch{}
             clearReadBlocksCache(settings);
             successCount++;
           } catch (err: any) {
@@ -2744,7 +2790,13 @@ async function GETRaw(req:NextRequest){
 export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
 export async function GET(req:NextRequest){
  const response=await GETRaw(req);if(!response.ok)return response;
- const token=resolveNotionToken(req);const ids=[...confirmedDeletedPages].filter(([key])=>key.startsWith(token+':')).map(([key])=>key.slice(token.length+1));
+ const token=resolveNotionToken(req);
+ const settings={...getSettings(),notionToken:token};
+ const sourceKey=notionSourceKey(settings);
+ const memoryIds=[...confirmedDeletedPages].filter(([key])=>key.startsWith(token+':')).map(([key])=>key.slice(token.length+1));
+ let persistentIds:string[]=[];
+ try{persistentIds=await getConfirmedDeletedPageIds(sourceKey);}catch{}
+ const ids=[...new Set([...memoryIds,...persistentIds])];
  if(!ids.length)return response;
  const data=await response.clone().json().catch(()=>null);if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)))return response;
  const deleted=new Set(ids),keep=(item:any)=>!deleted.has(cleanPageId(String(item.externalId||item.originalPageId||item.pageId||item.id||'').replace(/^review-mirror-/,'')));
