@@ -2,7 +2,9 @@ import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import { NotionCalendarActivity } from '@/types/anfeta';
 
 export function isDirection(user: string) {
-  return normalizePerson(user) === 'John';
+  const norm = normalizePerson(user);
+  const actor = user.trim().toLowerCase();
+  return norm === 'John' || norm === 'Neftali' || actor === 'jjohn' || actor === 'nneft';
 }
 
 export function isReviewer(user: string) {

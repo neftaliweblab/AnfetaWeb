@@ -114,8 +114,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
     const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);
-    if(!['pending','suspended'].includes(state))throw Error('Solo se pueden pasar actividades activas. Resuelve la revisión o reactívala primero.');
-    if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person))throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
+    const isRevState = state === 'review' || /rtuzREVISION/i.test(title);
+    if(!['pending','suspended'].includes(state) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
+    if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
     const target=normalizePerson(updates.person);
     if(target===normalizePerson(activity.person))throw Error('Selecciona a otro compañero.');
     if(!(await activeTeam()).some(p=>p.name===target))throw Error('El nuevo responsable no tiene un perfil activo.');
@@ -285,8 +286,21 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const checklistItems=await readChecklist(settings,id);
     const snapshot=normalizeActivity({...cached,pageId:id,title,domain:calendarDomain(title,cached?.domain),person:activity.person,start:snapshotStart,end:date?.end||cached?.end||new Date(Date.parse(snapshotStart)+3600000).toISOString(),pageUrl:page.url,checklistScanned:true,checklistItems,checklistTotal:checklistItems.length,checklistCompleted:checklistItems.filter(c=>c.isChecked).length},0);
     if(!snapshot.start||!snapshot.end)throw Error('La actividad necesita un horario válido para conservar su historial.');
-    handoffId=await prepareHandoff(settings,{pageId:id,from:normalizePerson(activity.person),to:normalizePerson(updates.person),actor,note:updates.note.trim(),copy:updates.leaveVisualCopy!==false,snapshot});
-    reviewFlow={OriginalPerson:normalizePerson(updates.person),ReviewAssignee:'',State:'handoff',UpdatedAt:new Date().toISOString(),UpdatedBy:actor,Note:updates.note.trim(),HandoffId:handoffId,FromPerson:activity.person};
+    const isRevState = previousFlow?.State === 'pending' || /rtuzREVISION/i.test(title);
+    if (isRevState) {
+      reviewFlow = {
+        OriginalPerson: previousFlow?.OriginalPerson || normalizePerson(activity.person),
+        OriginalAssigneeUserId: previousFlow?.OriginalAssigneeUserId,
+        ReviewAssignee: normalizePerson(updates.person),
+        State: 'pending',
+        UpdatedAt: new Date().toISOString(),
+        UpdatedBy: actor,
+        Note: updates.note?.trim() || previousFlow?.Note || ''
+      };
+    } else {
+      handoffId=await prepareHandoff(settings,{pageId:id,from:normalizePerson(activity.person),to:normalizePerson(updates.person),actor,note:updates.note.trim(),copy:updates.leaveVisualCopy!==false,snapshot});
+      reviewFlow={OriginalPerson:normalizePerson(updates.person),ReviewAssignee:'',State:'handoff',UpdatedAt:new Date().toISOString(),UpdatedBy:actor,Note:updates.note.trim(),HandoffId:handoffId,FromPerson:activity.person};
+    }
   }
   const updated = await notionRequest(settings, 'pages/' + id, 'PATCH', { properties });
   if (updates.start) {
