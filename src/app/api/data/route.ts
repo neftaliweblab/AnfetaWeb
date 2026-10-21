@@ -1727,7 +1727,7 @@ async function POSTLive(req: NextRequest) {
     if (action === 'create-activity' || action === 'create-notion-page') {
       const settings = {...getSettings(),notionToken:resolveNotionToken(req)};
       const actor = payload?.currentUser || settings.currentUser;
-      if (action === 'create-activity' && (!payload?.start || !payload?.end || !payload?.domain || !payload?.person)) return NextResponse.json({ error: 'Completa responsable, dominio, fecha y horario.' }, { status: 400 });
+      if (action === 'create-activity' && (!payload?.start || !payload?.end || !payload?.person)) return NextResponse.json({ error: 'Completa responsable, fecha y horario.' }, { status: 400 });
       const result = await createActivity(settings, actor, payload || {});
       if (result.activity.start) persistCalendarActivity(result.activity);
       const live = extractNotionPageData(result.page); liveNotionOverrides.set(live.id, live); previewMemoryCache.clear();
