@@ -23,6 +23,7 @@ export function reviewTitle(title:string,original:string,reviewer:string,state:'
   });
   let body=title;
   for(const tag of remove.reverse())body=body.slice(0,tag.index)+' '+body.slice(tag.index+tag.token.length);
+  body=body.replace(/[\s·|—–-]+$/, '').trim();
   const phase=/(?<![\p{L}\p{N}_])(?:sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\p{L}\p{N}_])/giu;
   const target=state==='pending'?'rtuzREVISION':state==='approved'?'zREVISION':'prtuzREVISION';
   body=phase.test(body)?body.replace(phase,target):target+' '+body;
