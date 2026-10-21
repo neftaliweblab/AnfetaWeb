@@ -1,9 +1,11 @@
--- ANFETA: instalación inicial, solo para proyecto nuevo sin migraciones ANFETA.
--- Ejecutar una sola vez en Supabase SQL Editor. No contiene claves ni contraseñas.
--- Después crear usuarios en Authentication y vincular sus perfiles.
-BEGIN;
+-- ANFETA: Instalacion completa para proyecto nuevo de Supabase.
+-- Ejecutar en el SQL Editor de Supabase (Ctrl+Enter o boton Run).
+-- Orden verificado de migraciones 0001 a 0021 sin errores de dependencia.
 
+
+-- ==========================================
 -- 202610060001_accounts_preferences.sql
+-- ==========================================
 begin;
 create table public.profiles (
  id uuid primary key references auth.users(id) on delete cascade,
@@ -67,71 +69,9 @@ revoke all on public.favorites,public.saved_searches from anon,authenticated;
 grant select on public.favorites,public.saved_searches to authenticated;
 commit;
 
--- 202610070013_reminders_recurrence.sql
-begin;
-alter table public.reminders add column if not exists recurrence text not null default 'none' check(recurrence in('none','daily','weekly','monthly'));
-alter table public.reminders add column if not exists recurrence_day integer check(recurrence_day between 1 and 31);
-alter table public.reminders add column if not exists previous_id uuid references public.reminders(id) on delete set null;
-create unique index if not exists reminders_previous_unique on public.reminders(previous_id) where previous_id is not null;
-
-create or replace function public.change_reminder(p_actor uuid,p_action text,p_id uuid,p_revision integer,p_title text,p_date date,p_time time,p_priority text,p_assignee uuid,p_completed boolean)
-returns public.reminders language plpgsql security definer set search_path='' as $$
-declare item public.reminders; was_completed boolean; next_date date; month_start date; wanted_day integer;
-begin
- if not exists(select 1 from public.profiles where id=p_actor and active) then raise exception 'inactive_profile';end if;
- if p_action='create' then
-  if not exists(select 1 from public.profiles where id=p_assignee and active) then raise exception 'inactive_assignee';end if;
-  insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority) values(p_actor,p_assignee,p_title,p_date,p_time,p_priority) returning * into item;
- else
-  select * into item from public.reminders where id=p_id for update;
-  if item.id is null or (item.creator_id<>p_actor and item.assignee_id<>p_actor) then raise exception 'reminder_not_available';end if;
-  if item.revision is distinct from p_revision then raise exception 'revision_conflict';end if;
-  if p_action='complete' then
-   if p_completed is null then raise exception 'invalid_completed';end if;
-   was_completed:=item.completed;
-   update public.reminders set completed=p_completed,revision=revision+1,updated_at=now() where id=p_id returning * into item;
-   if p_completed and not was_completed and item.recurrence<>'none' then
-    if item.recurrence='daily' then next_date:=item.due_date+1;
-    elsif item.recurrence='weekly' then next_date:=item.due_date+7;
-    else
-     wanted_day:=coalesce(item.recurrence_day,extract(day from item.due_date)::integer);
-     month_start:=(date_trunc('month',item.due_date)+interval '1 month')::date;
-     next_date:=month_start+least(wanted_day,extract(day from month_start+interval '1 month - 1 day')::integer)-1;
-    end if;
-    insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority,recurrence,recurrence_day,previous_id)
-     values(item.creator_id,item.assignee_id,item.title,next_date,item.due_time,item.priority,item.recurrence,coalesce(item.recurrence_day,extract(day from item.due_date)::integer),item.id)
-     on conflict(previous_id) where previous_id is not null do nothing;
-   end if;
-  elsif p_action='delete' and item.creator_id=p_actor then delete from public.reminders where id=p_id;
-  else raise exception 'action_not_allowed';end if;
- end if;
- return item;
-end;$$;
-
-create or replace function public.edit_reminder(p_actor uuid,p_action text,p_id uuid,p_revision integer,p_title text,p_date date,p_time time,p_priority text,p_assignee uuid,p_recurrence text)
-returns public.reminders language plpgsql security definer set search_path='' as $$
-declare item public.reminders;
-begin
- if not exists(select 1 from public.profiles where id=p_actor and active) then raise exception 'inactive_profile';end if;
- if p_recurrence is null or p_recurrence not in('none','daily','weekly','monthly') or p_title is null or length(trim(p_title)) not between 1 and 500 or p_date is null or p_time is null or p_priority is null or p_priority not in('low','medium','high','urgent') then raise exception 'invalid_reminder';end if;
- if not exists(select 1 from public.profiles where id=p_assignee and active) then raise exception 'inactive_assignee';end if;
- if p_action='create' then
-  insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority,recurrence,recurrence_day) values(p_actor,p_assignee,trim(p_title),p_date,p_time,p_priority,p_recurrence,extract(day from p_date)::integer) returning * into item;
- elsif p_action='edit' then
-  select * into item from public.reminders where id=p_id for update;
-  if item.id is null or item.creator_id<>p_actor then raise exception 'reminder_not_available';end if;
-  if item.revision is distinct from p_revision then raise exception 'revision_conflict';end if;
-  if item.completed then raise exception 'completed_reminder';end if;
-  update public.reminders set title=trim(p_title),due_date=p_date,due_time=p_time,priority=p_priority,assignee_id=p_assignee,recurrence=p_recurrence,recurrence_day=case when due_date=p_date then coalesce(recurrence_day,extract(day from p_date)::integer) else extract(day from p_date)::integer end,revision=revision+1,updated_at=now() where id=p_id returning * into item;
- else raise exception 'action_not_allowed';end if;
- return item;
-end;$$;
-revoke all on function public.edit_reminder(uuid,text,uuid,integer,text,date,time,text,uuid,text) from public,anon,authenticated;
-grant execute on function public.edit_reminder(uuid,text,uuid,integer,text,date,time,text,uuid,text) to service_role;
-commit;
-
-
+-- ==========================================
 -- 202610060002_notion_cache.sql
+-- ==========================================
 begin;
 create table public.notion_snapshots (
  user_id uuid not null references public.profiles(id) on delete cascade,
@@ -254,8 +194,9 @@ revoke all on function public.read_notion_index_slice(uuid,text,integer,integer,
 grant execute on function public.read_notion_index_slice(uuid,text,integer,integer,text,text) to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060003_reminders.sql
+-- ==========================================
 begin;
 create table public.reminders (
  id uuid primary key default gen_random_uuid(), creator_id uuid not null references public.profiles(id), assignee_id uuid not null references public.profiles(id),
@@ -288,8 +229,9 @@ revoke all on function public.change_reminder(uuid,text,uuid,integer,text,date,t
 grant execute on function public.change_reminder(uuid,text,uuid,integer,text,date,time,text,uuid,boolean) to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060004_presence.sql
+-- ==========================================
 begin;
 create table public.team_presence(user_id uuid primary key references public.profiles(id) on delete cascade,last_seen timestamptz not null default now());
 alter table public.team_presence enable row level security;
@@ -297,8 +239,9 @@ create policy team_presence_active on public.team_presence for select to authent
 grant select on public.team_presence to authenticated;grant all on public.team_presence to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060005_messages.sql
+-- ==========================================
 begin;
 create table public.conversations(id uuid primary key default gen_random_uuid(),creator_id uuid not null references public.profiles(id),title text not null check(length(trim(title)) between 1 and 200),members uuid[] not null check(cardinality(members) between 1 and 20),last_message_id bigint not null default 0,last_text text not null default '',updated_at timestamptz not null default now());
 create table public.conversation_messages(id bigint generated always as identity primary key,conversation_id uuid not null references public.conversations(id) on delete cascade,author_id uuid not null references public.profiles(id),body text not null check(length(trim(body)) between 1 and 4000),created_at timestamptz not null default now());
@@ -337,8 +280,9 @@ end;$$;
 revoke all on function public.change_conversation(uuid,text,jsonb) from public,anon,authenticated;grant execute on function public.change_conversation(uuid,text,jsonb) to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060006_automation_jobs.sql
+-- ==========================================
 begin;
 create table public.automation_jobs(source_key text not null,day date not null,actor_tag text not null,scope_all boolean not null default false,status text not null default 'pending' check(status in ('pending','running','completed','failed')),lease_token uuid,lease_until timestamptz,updated_at timestamptz not null default now(),report jsonb,error text,primary key(source_key,day,actor_tag));
 create table public.automation_attempts(token uuid primary key,source_key text not null,day date not null,actor_tag text not null,started_at timestamptz not null default now(),finished_at timestamptz,report jsonb,error text);
@@ -367,8 +311,9 @@ revoke all on function public.claim_automation_job(text,date,text,boolean,boolea
 grant execute on function public.claim_automation_job(text,date,text,boolean,boolean),public.finish_automation_job(uuid,jsonb,text) to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060007_checklist_history.sql
+-- ==========================================
 begin;
 create table public.checklist_marks(source_key text not null,page_id text not null,block_id text not null,checked boolean not null,marked_at timestamptz,marking_source text not null default 'unknown' check(marking_source in ('unknown','web')),observed_at timestamptz not null default now(),primary key(source_key,page_id,block_id));
 create table public.checklist_mark_events(id uuid primary key default gen_random_uuid(),source_key text not null,page_id text not null,block_id text not null,actor_tag text not null,checked boolean not null,changed_at timestamptz not null default now());
@@ -400,8 +345,9 @@ revoke all on function public.observe_checklist(text,text,jsonb,timestamptz),pub
 grant execute on function public.observe_checklist(text,text,jsonb,timestamptz),public.record_checklist_mark(text,text,text,text,boolean,boolean) to service_role;
 commit;
 
-
+-- ==========================================
 -- 202610060008_pending_preferences.sql
+-- ==========================================
 create or replace function public.update_anfeta_preferences(p_user_id uuid,p_patch jsonb,p_expected_revision bigint default null)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare current_row public.user_preferences; entry jsonb; key text;
@@ -443,9 +389,9 @@ $$;
 revoke all on function public.update_anfeta_preferences(uuid,jsonb,bigint) from public,anon,authenticated;
 grant execute on function public.update_anfeta_preferences(uuid,jsonb,bigint) to service_role;
 
-COMMIT;
-
--- 202610060009_index_bulk_save
+-- ==========================================
+-- 202610060009_index_bulk_save.sql
+-- ==========================================
 begin;
 create or replace function public.finish_notion_sync(p_user_id uuid,p_source_key text,p_request_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_payload jsonb,p_error text default null)
 returns boolean language plpgsql security definer set search_path='' as $$
@@ -487,7 +433,9 @@ begin
 end;$$;
 commit;
 
--- 202610060010_index_linear_reconciliation
+-- ==========================================
+-- 202610060010_index_linear_reconciliation.sql
+-- ==========================================
 begin;
 create or replace function public.finish_notion_sync(p_user_id uuid,p_source_key text,p_request_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_payload jsonb,p_error text default null)
 returns boolean language plpgsql security definer set search_path='' as $$
@@ -531,7 +479,9 @@ begin
 end;$$;
 commit;
 
--- 202610060011_index_chunks
+-- ==========================================
+-- 202610060011_index_chunks.sql
+-- ==========================================
 begin;
 create table if not exists public.notion_index_chunks (
  user_id uuid not null references public.profiles(id) on delete cascade,
@@ -597,7 +547,9 @@ revoke all on function public.stage_notion_index(uuid,text,uuid,bigint,uuid,inte
 grant execute on function public.stage_notion_index(uuid,text,uuid,bigint,uuid,integer,jsonb),public.publish_notion_index(uuid,text,uuid,bigint,uuid,jsonb,integer,text),public.read_notion_index_slice(uuid,text,integer,integer,text,text) to service_role;
 commit;
 
--- 202610070012_reminders_snooze
+-- ==========================================
+-- 202610070012_reminders_snooze.sql
+-- ==========================================
 begin;
 create or replace function public.snooze_reminder(p_actor uuid,p_id uuid,p_revision integer,p_minutes integer)
 returns public.reminders language plpgsql security definer set search_path='' as $$
@@ -615,4 +567,529 @@ begin
 end;$$;
 revoke all on function public.snooze_reminder(uuid,uuid,integer,integer) from public,anon,authenticated;
 grant execute on function public.snooze_reminder(uuid,uuid,integer,integer) to service_role;
+commit;
+
+-- ==========================================
+-- 202610070013_reminders_recurrence.sql
+-- ==========================================
+begin;
+alter table public.reminders add column if not exists recurrence text not null default 'none' check(recurrence in('none','daily','weekly','monthly'));
+alter table public.reminders add column if not exists recurrence_day integer check(recurrence_day between 1 and 31);
+alter table public.reminders add column if not exists previous_id uuid references public.reminders(id) on delete set null;
+create unique index if not exists reminders_previous_unique on public.reminders(previous_id) where previous_id is not null;
+
+create or replace function public.change_reminder(p_actor uuid,p_action text,p_id uuid,p_revision integer,p_title text,p_date date,p_time time,p_priority text,p_assignee uuid,p_completed boolean)
+returns public.reminders language plpgsql security definer set search_path='' as $$
+declare item public.reminders; was_completed boolean; next_date date; month_start date; wanted_day integer;
+begin
+ if not exists(select 1 from public.profiles where id=p_actor and active) then raise exception 'inactive_profile';end if;
+ if p_action='create' then
+  if not exists(select 1 from public.profiles where id=p_assignee and active) then raise exception 'inactive_assignee';end if;
+  insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority) values(p_actor,p_assignee,p_title,p_date,p_time,p_priority) returning * into item;
+ else
+  select * into item from public.reminders where id=p_id for update;
+  if item.id is null or (item.creator_id<>p_actor and item.assignee_id<>p_actor) then raise exception 'reminder_not_available';end if;
+  if item.revision is distinct from p_revision then raise exception 'revision_conflict';end if;
+  if p_action='complete' then
+   if p_completed is null then raise exception 'invalid_completed';end if;
+   was_completed:=item.completed;
+   update public.reminders set completed=p_completed,revision=revision+1,updated_at=now() where id=p_id returning * into item;
+   if p_completed and not was_completed and item.recurrence<>'none' then
+    if item.recurrence='daily' then next_date:=item.due_date+1;
+    elsif item.recurrence='weekly' then next_date:=item.due_date+7;
+    else
+     wanted_day:=coalesce(item.recurrence_day,extract(day from item.due_date)::integer);
+     month_start:=(date_trunc('month',item.due_date)+interval '1 month')::date;
+     next_date:=month_start+least(wanted_day,extract(day from month_start+interval '1 month - 1 day')::integer)-1;
+    end if;
+    insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority,recurrence,recurrence_day,previous_id)
+     values(item.creator_id,item.assignee_id,item.title,next_date,item.due_time,item.priority,item.recurrence,coalesce(item.recurrence_day,extract(day from item.due_date)::integer),item.id)
+     on conflict(previous_id) where previous_id is not null do nothing;
+   end if;
+  elsif p_action='delete' and item.creator_id=p_actor then delete from public.reminders where id=p_id;
+  else raise exception 'action_not_allowed';end if;
+ end if;
+ return item;
+end;$$;
+
+create or replace function public.edit_reminder(p_actor uuid,p_action text,p_id uuid,p_revision integer,p_title text,p_date date,p_time time,p_priority text,p_assignee uuid,p_recurrence text)
+returns public.reminders language plpgsql security definer set search_path='' as $$
+declare item public.reminders;
+begin
+ if not exists(select 1 from public.profiles where id=p_actor and active) then raise exception 'inactive_profile';end if;
+ if p_recurrence is null or p_recurrence not in('none','daily','weekly','monthly') or p_title is null or length(trim(p_title)) not between 1 and 500 or p_date is null or p_time is null or p_priority is null or p_priority not in('low','medium','high','urgent') then raise exception 'invalid_reminder';end if;
+ if not exists(select 1 from public.profiles where id=p_assignee and active) then raise exception 'inactive_assignee';end if;
+ if p_action='create' then
+  insert into public.reminders(creator_id,assignee_id,title,due_date,due_time,priority,recurrence,recurrence_day) values(p_actor,p_assignee,trim(p_title),p_date,p_time,p_priority,p_recurrence,extract(day from p_date)::integer) returning * into item;
+ elsif p_action='edit' then
+  select * into item from public.reminders where id=p_id for update;
+  if item.id is null or item.creator_id<>p_actor then raise exception 'reminder_not_available';end if;
+  if item.revision is distinct from p_revision then raise exception 'revision_conflict';end if;
+  if item.completed then raise exception 'completed_reminder';end if;
+  update public.reminders set title=trim(p_title),due_date=p_date,due_time=p_time,priority=p_priority,assignee_id=p_assignee,recurrence=p_recurrence,recurrence_day=case when due_date=p_date then coalesce(recurrence_day,extract(day from p_date)::integer) else extract(day from p_date)::integer end,revision=revision+1,updated_at=now() where id=p_id returning * into item;
+ else raise exception 'action_not_allowed';end if;
+ return item;
+end;$$;
+revoke all on function public.edit_reminder(uuid,text,uuid,integer,text,date,time,text,uuid,text) from public,anon,authenticated;
+grant execute on function public.edit_reminder(uuid,text,uuid,integer,text,date,time,text,uuid,text) to service_role;
+commit;
+
+-- ==========================================
+-- 202610130014_reliable_operations.sql
+-- ==========================================
+begin;
+create table if not exists public.activity_leases(key text primary key,token uuid not null,expires_at timestamptz not null);
+create table if not exists public.delivery_receipts(key text primary key,token uuid not null,state text not null check(state in ('running','done','uncertain')),result jsonb,created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+alter table public.activity_leases enable row level security;
+alter table public.delivery_receipts enable row level security;
+revoke all on public.activity_leases,public.delivery_receipts from anon,authenticated;
+create or replace function public.claim_activity_lease(p_key text,p_token uuid) returns boolean language plpgsql security definer set search_path='' as $$
+begin
+ insert into public.activity_leases(key,token,expires_at) values(p_key,p_token,now()+interval '5 minutes') on conflict(key) do update set token=excluded.token,expires_at=excluded.expires_at where public.activity_leases.expires_at<now();
+ return found;
+end;$$;
+create or replace function public.release_activity_lease(p_key text,p_token uuid) returns void language sql security definer set search_path='' as $$ delete from public.activity_leases where key=p_key and token=p_token; $$;
+create or replace function public.claim_delivery(p_key text,p_token uuid) returns jsonb language plpgsql security definer set search_path='' as $$
+declare item public.delivery_receipts;
+begin
+ insert into public.delivery_receipts(key,token,state) values(p_key,p_token,'running') on conflict do nothing;
+ if found then return jsonb_build_object('state','claimed'); end if;
+ select * into item from public.delivery_receipts where key=p_key;
+ return jsonb_build_object('state',item.state,'result',item.result);
+end;$$;
+create or replace function public.finish_delivery(p_key text,p_token uuid,p_result jsonb) returns void language plpgsql security definer set search_path='' as $$
+begin
+ update public.delivery_receipts set state='done',result=p_result,updated_at=now() where key=p_key and token=p_token and state='running';
+ if not found then raise exception 'operation_not_owned';end if;
+end;$$;
+create or replace function public.uncertain_delivery(p_key text,p_token uuid) returns void language sql security definer set search_path='' as $$ update public.delivery_receipts set state='uncertain',updated_at=now() where key=p_key and token=p_token and state='running'; $$;
+revoke all on function public.claim_activity_lease(text,uuid),public.release_activity_lease(text,uuid),public.claim_delivery(text,uuid),public.finish_delivery(text,uuid,jsonb),public.uncertain_delivery(text,uuid) from public,anon,authenticated;
+grant execute on function public.claim_activity_lease(text,uuid),public.release_activity_lease(text,uuid),public.claim_delivery(text,uuid),public.finish_delivery(text,uuid,jsonb),public.uncertain_delivery(text,uuid) to service_role;
+commit;
+
+-- ==========================================
+-- 202610130015_index_load_control.sql
+-- ==========================================
+begin;
+-- Check an existing immutable generation before staging the same catalog again.
+create or replace function public.finish_unchanged_notion_index(p_user_id uuid,p_source_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_version text,p_metadata jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots;
+begin
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index' for update;
+ if not found or s.lease_token is distinct from p_token or s.generation<>p_generation then return jsonb_build_object('state','discarded');end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile';end if;
+ if not s.has_payload or s.content_version is distinct from p_version or not(s.payload ? 'indexRunId') then return jsonb_build_object('state','changed');end if;
+ update public.notion_snapshots set payload=(s.payload || (p_metadata-'items'-'indexRunId'-'total')),valid=true,force_full=false,updated_at=now(),last_error=null,retry_after=null,lease_token=null,lease_until=null where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ update public.sync_runs set status='completed',finished_at=now(),item_count=(s.payload->>'total')::integer where id=p_run_id and user_id=p_user_id and status='running';
+ return jsonb_build_object('state','unchanged');
+end;$$;
+-- Only obsolete cache chunks, never snapshots, user data or an active/staging generation.
+create or replace function public.cleanup_obsolete_notion_chunks(p_limit integer default 100)
+returns integer language plpgsql security definer set search_path='' as $$
+declare removed integer;
+begin
+ if p_limit<1 or p_limit>200 then raise exception 'invalid_cleanup_limit';end if;
+ with obsolete as materialized (
+  select c.user_id,c.source_key,c.run_id,c.start_offset from public.notion_index_chunks c
+  join public.sync_runs r on r.id=c.run_id
+  where r.status in ('completed','failed','discarded') and r.finished_at<now()-interval '1 hour'
+   and not exists(select 1 from public.notion_snapshots s where s.user_id=c.user_id and s.source_key=c.source_key and s.payload->>'indexRunId'=c.run_id::text)
+  limit p_limit for update of c skip locked
+ )
+ delete from public.notion_index_chunks c using obsolete o where c.user_id=o.user_id and c.source_key=o.source_key and c.run_id=o.run_id and c.start_offset=o.start_offset;
+ get diagnostics removed=row_count;return removed;
+end;$$;
+create or replace function public.read_notion_index_slice(p_user_id uuid,p_source_key text,p_offset integer,p_limit integer,p_version text default null,p_known_version text default null)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots; result jsonb; n integer; total integer;
+begin
+ if p_offset<0 or p_limit<1 or p_limit>500 then raise exception 'invalid_pagination';end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile';end if;
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ if s.payload is null then return null;end if;
+ if p_version is not null and p_version<>s.content_version then return jsonb_build_object('code','index_version_changed','error','La versión del índice cambió.');end if;
+ if p_known_version=s.content_version then return jsonb_build_object('unchanged',true,'indexVersion',s.content_version,'total',coalesce((s.payload->>'total')::integer,jsonb_array_length(s.payload->'items')),'nextOffset',null);end if;
+ total:=coalesce((s.payload->>'total')::integer,jsonb_array_length(s.payload->'items'));
+ with candidates as materialized (
+  select value,position,octet_length(value::text) bytes from (
+   select t.value,c.start_offset+t.ordinal-1 as position from public.notion_index_chunks c cross join lateral jsonb_array_elements(c.items) with ordinality t(value,ordinal)
+   where c.user_id=p_user_id and c.source_key=p_source_key and c.run_id=(s.payload->>'indexRunId')::uuid and c.start_offset<p_offset+p_limit and c.start_offset+jsonb_array_length(c.items)>p_offset
+   union all
+   select value,ordinal-1 from jsonb_array_elements(s.payload->'items') with ordinality t(value,ordinal) where not(s.payload ? 'indexRunId')
+  ) q where position>=p_offset and position<p_offset+p_limit
+ ), sized as (select value,position,sum(bytes) over(order by position) cumulative_bytes from candidates)
+ select coalesce(jsonb_agg(value order by position),'[]'::jsonb),count(*) into result,n from sized where cumulative_bytes<=2000000;
+ if n=0 and p_offset<total then raise exception 'index_row_too_large';end if;
+ return (s.payload-'items')||jsonb_build_object('items',result,'total',total,'indexVersion',s.content_version,'nextOffset',case when p_offset+n<total then p_offset+n else null end);
+end;$$;
+revoke all on function public.finish_unchanged_notion_index(uuid,text,uuid,bigint,uuid,text,jsonb),public.cleanup_obsolete_notion_chunks(integer),public.read_notion_index_slice(uuid,text,integer,integer,text,text) from public,anon,authenticated;
+grant execute on function public.finish_unchanged_notion_index(uuid,text,uuid,bigint,uuid,text,jsonb),public.cleanup_obsolete_notion_chunks(integer),public.read_notion_index_slice(uuid,text,integer,integer,text,text) to service_role;
+commit;
+
+-- ==========================================
+-- 202610130016_bounded_index_cleanup.sql
+-- ==========================================
+begin;
+create or replace function public.cleanup_obsolete_notion_chunks(p_limit integer default 100)
+returns integer language plpgsql security definer set search_path='' as $$
+declare removed integer;
+begin
+ if p_limit<1 or p_limit>2000 then raise exception 'invalid_cleanup_limit';end if;
+ with obsolete as materialized (
+  select c.user_id,c.source_key,c.run_id,c.start_offset from public.notion_index_chunks c
+  join public.sync_runs r on r.id=c.run_id
+  where r.status in ('completed','failed','discarded') and r.finished_at<now()-interval '1 hour'
+   and not exists(select 1 from public.notion_snapshots s where s.user_id=c.user_id and s.source_key=c.source_key and s.payload->>'indexRunId'=c.run_id::text)
+  limit p_limit for update of c skip locked
+ )
+ delete from public.notion_index_chunks c using obsolete o where c.user_id=o.user_id and c.source_key=o.source_key and c.run_id=o.run_id and c.start_offset=o.start_offset;
+ get diagnostics removed=row_count;return removed;
+end;$$;
+revoke all on function public.cleanup_obsolete_notion_chunks(integer) from public,anon,authenticated;
+grant execute on function public.cleanup_obsolete_notion_chunks(integer) to service_role;
+commit;
+
+-- ==========================================
+-- 202610130017_shared_index_payloads.sql
+-- ==========================================
+begin;
+-- New catalogs reuse identical immutable payloads; legacy chunks remain readable.
+create table if not exists public.notion_index_payloads (
+ source_key text not null, content_hash text not null, items jsonb not null check(jsonb_typeof(items)='array'),
+ created_at timestamptz not null default now(), primary key(source_key,content_hash)
+);
+alter table public.notion_index_payloads enable row level security;
+revoke all on public.notion_index_payloads from anon,authenticated;
+grant all on public.notion_index_payloads to service_role;
+alter table public.notion_index_chunks add column if not exists payload_hash text;
+do $$begin if not exists(select 1 from pg_constraint where conname='notion_chunk_payload_fk' and conrelid='public.notion_index_chunks'::regclass) then alter table public.notion_index_chunks add constraint notion_chunk_payload_fk foreign key(source_key,payload_hash) references public.notion_index_payloads(source_key,content_hash);end if;end$$;
+create or replace function public.stage_notion_index(p_user_id uuid,p_source_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_offset integer,p_items jsonb)
+returns boolean language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots; h text;
+begin
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index' for update;
+ if not found or s.lease_token is distinct from p_token or s.generation<>p_generation then return false; end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile'; end if;
+ if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items)>100 or p_offset<0 then raise exception 'invalid_batch'; end if;
+ h:=encode(sha256(convert_to(p_items::text,'UTF8')),'hex');
+ insert into public.notion_index_payloads(source_key,content_hash,items) values(p_source_key,h,p_items) on conflict do nothing;
+ insert into public.notion_index_chunks(user_id,source_key,run_id,start_offset,items,payload_hash) values(p_user_id,p_source_key,p_run_id,p_offset,'[]',h)
+ on conflict(user_id,source_key,run_id,start_offset) do update set items='[]',payload_hash=excluded.payload_hash;
+ update public.notion_snapshots set lease_until=now()+interval '180 seconds' where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ return true;
+end;$$;
+create or replace function public.publish_notion_index(p_user_id uuid,p_source_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_metadata jsonb,p_total integer,p_version text)
+returns boolean language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots; n integer; complete boolean;
+begin
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index' for update;
+ if not found or s.lease_token is distinct from p_token or s.generation<>p_generation then return false; end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile'; end if;
+ select coalesce(sum(jsonb_array_length(items)),0),coalesce(bool_and(start_offset=expected),true) into n,complete
+ from (select start_offset,items,coalesce(sum(jsonb_array_length(items)) over(order by start_offset rows between unbounded preceding and 1 preceding),0) expected from (select c.start_offset,coalesce(p.items,c.items) items from public.notion_index_chunks c left join public.notion_index_payloads p on p.source_key=c.source_key and p.content_hash=c.payload_hash where c.user_id=p_user_id and c.source_key=p_source_key and c.run_id=p_run_id) merged) q;
+ if n<>p_total or not complete or p_total<0 then raise exception 'incomplete_index'; end if;
+ update public.notion_snapshots set payload=(p_metadata-'items')||jsonb_build_object('indexRunId',p_run_id,'total',p_total),has_payload=true,content_version=p_version,valid=true,force_full=false,updated_at=now(),last_error=null,retry_after=null,lease_token=null,lease_until=null where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ update public.sync_runs set status='completed',finished_at=now(),item_count=p_total where id=p_run_id and user_id=p_user_id;
+ return true;
+end;$$;
+
+create or replace function public.read_notion_index_slice(p_user_id uuid,p_source_key text,p_offset integer,p_limit integer,p_version text default null,p_known_version text default null)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots; result jsonb; n integer; total integer;
+begin
+ if p_offset<0 or p_limit<1 or p_limit>500 then raise exception 'invalid_pagination';end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile';end if;
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ if s.payload is null then return null;end if;
+ if p_version is not null and p_version<>s.content_version then return jsonb_build_object('code','index_version_changed','error','La versión del índice cambió.');end if;
+ if p_known_version=s.content_version then return jsonb_build_object('unchanged',true,'indexVersion',s.content_version,'total',coalesce((s.payload->>'total')::integer,jsonb_array_length(s.payload->'items')),'nextOffset',null);end if;
+ total:=coalesce((s.payload->>'total')::integer,jsonb_array_length(s.payload->'items'));
+ with candidates as materialized (
+  select value,position,octet_length(value::text) bytes from (
+   select t.value,c.start_offset+t.ordinal-1 as position from public.notion_index_chunks c left join public.notion_index_payloads p on p.source_key=c.source_key and p.content_hash=c.payload_hash cross join lateral jsonb_array_elements(coalesce(p.items,c.items)) with ordinality t(value,ordinal)
+   where c.user_id=p_user_id and c.source_key=p_source_key and c.run_id=(s.payload->>'indexRunId')::uuid and c.start_offset<p_offset+p_limit and c.start_offset+jsonb_array_length(coalesce(p.items,c.items))>p_offset
+   union all
+   select value,ordinal-1 from jsonb_array_elements(s.payload->'items') with ordinality t(value,ordinal) where not(s.payload ? 'indexRunId')
+  ) q where position>=p_offset and position<p_offset+p_limit
+ ), sized as (select value,position,sum(bytes) over(order by position) cumulative_bytes from candidates)
+ select coalesce(jsonb_agg(value order by position),'[]'::jsonb),count(*) into result,n from sized where cumulative_bytes<=2000000;
+ if n=0 and p_offset<total then raise exception 'index_row_too_large';end if;
+ return (s.payload-'items')||jsonb_build_object('items',result,'total',total,'indexVersion',s.content_version,'nextOffset',case when p_offset+n<total then p_offset+n else null end);
+end;$$;
+
+create index if not exists notion_chunk_payload_reference on public.notion_index_chunks(source_key,payload_hash) where payload_hash is not null;
+create or replace function public.cleanup_obsolete_notion_payloads(p_limit integer default 100)
+returns integer language plpgsql security definer set search_path='' as $$
+declare removed integer;
+begin
+ if p_limit<1 or p_limit>200 then raise exception 'invalid_cleanup_limit';end if;
+ with obsolete as materialized (
+ select p.source_key,p.content_hash from public.notion_index_payloads p where p.created_at<now()-interval '1 hour'
+ and not exists(select 1 from public.notion_index_chunks c where c.source_key=p.source_key and c.payload_hash=p.content_hash)
+ limit p_limit for update of p skip locked
+ ) delete from public.notion_index_payloads p using obsolete o where p.source_key=o.source_key and p.content_hash=o.content_hash;
+ get diagnostics removed=row_count;return removed;
+end;$$;
+revoke all on function public.cleanup_obsolete_notion_payloads(integer) from public,anon,authenticated;
+grant execute on function public.cleanup_obsolete_notion_payloads(integer) to service_role;
+create or replace function public.finish_unchanged_notion_index(p_user_id uuid,p_source_key text,p_token uuid,p_generation bigint,p_run_id uuid,p_version text,p_metadata jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare s public.notion_snapshots;
+begin
+ select * into s from public.notion_snapshots where user_id=p_user_id and source_key=p_source_key and request_key='search-index' for update;
+ if not found or s.lease_token is distinct from p_token or s.generation<>p_generation then return jsonb_build_object('state','discarded');end if;
+ if not exists(select 1 from public.profiles where id=p_user_id and active) then raise exception 'inactive_profile';end if;
+ if not s.has_payload or s.content_version is distinct from p_version or not(s.payload ? 'indexRunId') or exists(select 1 from public.notion_index_chunks c where c.user_id=p_user_id and c.source_key=p_source_key and c.run_id=(s.payload->>'indexRunId')::uuid and c.payload_hash is null) then return jsonb_build_object('state','changed');end if;
+ update public.notion_snapshots set payload=(s.payload || (p_metadata-'items'-'indexRunId'-'total')),valid=true,force_full=false,updated_at=now(),last_error=null,retry_after=null,lease_token=null,lease_until=null where user_id=p_user_id and source_key=p_source_key and request_key='search-index';
+ update public.sync_runs set status='completed',finished_at=now(),item_count=(s.payload->>'total')::integer where id=p_run_id and user_id=p_user_id and status='running';
+ return jsonb_build_object('state','unchanged');
+end;$$;
+commit;
+
+-- ==========================================
+-- 202610150018_activity_handoffs.sql
+-- ==========================================
+-- Historical visual copies reference the original Notion page; never duplicate it.
+create table if not exists public.activity_handoffs (
+ id uuid primary key,
+ source_key text not null,
+ page_id text not null,
+ from_person text not null,
+ to_person text not null,
+ actor text not null,
+ note text not null default '',
+ snapshot jsonb not null,
+ leave_copy boolean not null default true,
+ confirmed boolean not null default false,
+ created_at timestamptz not null default now()
+);
+create index if not exists activity_handoffs_source_date on public.activity_handoffs(source_key, ((snapshot->>'start')));
+alter table public.activity_handoffs enable row level security;
+revoke all on public.activity_handoffs from anon, authenticated;
+grant all on public.activity_handoffs to service_role;
+
+-- ==========================================
+-- 202610160019_whatsapp_directory.sql
+-- ==========================================
+-- Private server-only directory. WhatsApp session credentials never enter Supabase.
+create table if not exists public.whatsapp_accounts (
+ owner text primary key check (owner = 'John'),
+ account_key text not null,
+ updated_at timestamptz not null default now()
+);
+create table if not exists public.whatsapp_groups (
+ owner text not null references public.whatsapp_accounts(owner),
+ group_id text not null check (group_id ~ '^[0-9]+(-[0-9]+)?@g\.us$'),
+ name text not null check (length(name) between 1 and 1024),
+ access_url text,
+ last_seen_at timestamptz not null default now(),
+ primary key(owner, group_id)
+);
+create table if not exists public.whatsapp_activity_links (
+ owner text not null,
+ group_id text not null,
+ page_id text not null check (length(page_id) between 1 and 64),
+ activity_title text not null check (length(activity_title) between 1 and 2048),
+ created_at timestamptz not null default now(),
+ primary key(owner, group_id, page_id),
+ foreign key(owner, group_id) references public.whatsapp_groups(owner, group_id) on delete cascade
+);
+alter table public.whatsapp_accounts enable row level security;
+alter table public.whatsapp_groups enable row level security;
+alter table public.whatsapp_activity_links enable row level security;
+revoke all on public.whatsapp_accounts, public.whatsapp_groups, public.whatsapp_activity_links from anon, authenticated;
+grant all on public.whatsapp_accounts, public.whatsapp_groups, public.whatsapp_activity_links to service_role;
+
+create or replace function public.import_anfeta_whatsapp_groups(p_account_key text, p_groups jsonb)
+returns integer language plpgsql security invoker set search_path = public as $$
+declare existing_key text; imported integer;
+begin
+ perform pg_advisory_xact_lock(hashtext('anfeta-whatsapp-John'));
+ if length(p_account_key) <> 64 or jsonb_typeof(p_groups) <> 'array' or jsonb_array_length(p_groups) > 50 then
+   raise exception 'invalid_import';
+ end if;
+ select account_key into existing_key from public.whatsapp_accounts where owner = 'John';
+ if existing_key is not null and existing_key <> p_account_key then raise exception 'different_whatsapp_account'; end if;
+ insert into public.whatsapp_accounts(owner,account_key) values('John',p_account_key)
+ on conflict(owner) do update set updated_at = now();
+ insert into public.whatsapp_groups(owner, group_id, name)
+ select 'John', item->>'id', item->>'name' from jsonb_array_elements(p_groups) item
+ on conflict(owner,group_id) do update set name = excluded.name, last_seen_at = now();
+ get diagnostics imported = row_count;
+ return imported;
+end $$;
+revoke all on function public.import_anfeta_whatsapp_groups(text,jsonb) from public, anon, authenticated;
+grant execute on function public.import_anfeta_whatsapp_groups(text,jsonb) to service_role;
+
+-- ==========================================
+-- 202610190020_whatsapp_directory_multiuser.sql
+-- ==========================================
+-- Allow all ANFETA team members to have their own WhatsApp directory in Supabase
+alter table if exists public.whatsapp_accounts drop constraint if exists whatsapp_accounts_owner_check;
+
+-- Ensure foreign key cascade exists
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'whatsapp_groups_owner_fkey'
+  ) then
+    -- constraint is intact
+    null;
+  end if;
+end $$;
+
+-- ==========================================
+-- 202610210021_notion_page_events.sql
+-- ==========================================
+begin;
+
+create table if not exists public.notion_page_events (
+  id uuid primary key default gen_random_uuid(),
+  source_key text not null,
+  page_id text not null,
+  state text not null check(state in ('deleted', 'active', 'unverified')),
+  event_type text not null check(event_type in ('page.deleted', 'page.undeleted', 'page.properties_updated', 'page.content_updated', 'page.created', 'manual_delete', 'manual_restore', 'polled_state')),
+  server_modified timestamptz not null default now(),
+  event_timestamp timestamptz not null default now(),
+  properties jsonb,
+  unverified_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint notion_page_events_source_page_key unique (source_key, page_id)
+);
+
+create index if not exists idx_notion_page_events_source_updated
+  on public.notion_page_events (source_key, updated_at desc);
+
+create index if not exists idx_notion_page_events_page_id
+  on public.notion_page_events (page_id);
+
+alter table public.notion_page_events enable row level security;
+
+revoke all on public.notion_page_events from anon, authenticated;
+grant select on public.notion_page_events to authenticated;
+grant all on public.notion_page_events to service_role;
+
+create policy select_notion_page_events on public.notion_page_events
+  for select to authenticated
+  using (exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.active));
+
+create or replace function public.record_notion_page_event(
+  p_source_key text,
+  p_page_id text,
+  p_state text,
+  p_event_type text,
+  p_server_modified timestamptz,
+  p_properties jsonb default null,
+  p_unverified_reason text default null
+) returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_found boolean := false;
+  v_state text;
+  v_modified timestamptz;
+  v_props jsonb;
+  applied boolean := false;
+  clean_id text := lower(replace(p_page_id, '-', ''));
+begin
+  select true, state, server_modified, properties
+  into v_found, v_state, v_modified, v_props
+  from public.notion_page_events
+  where source_key = p_source_key and page_id = clean_id
+  for update;
+
+  if v_found then
+    -- Monotonic protection: If incoming event is strictly older than existing, ignore it!
+    if p_server_modified < v_modified then
+      return jsonb_build_object(
+        'applied', false,
+        'reason', 'stale_event',
+        'current_state', v_state,
+        'current_modified', v_modified
+      );
+    end if;
+
+    update public.notion_page_events
+    set state = p_state,
+        event_type = p_event_type,
+        server_modified = p_server_modified,
+        event_timestamp = now(),
+        properties = coalesce(p_properties, case when p_state = 'deleted' then null else v_props end),
+        unverified_reason = p_unverified_reason,
+        updated_at = now()
+    where source_key = p_source_key and page_id = clean_id;
+    applied := true;
+  else
+    insert into public.notion_page_events (
+      source_key, page_id, state, event_type, server_modified, event_timestamp, properties, unverified_reason, created_at, updated_at
+    ) values (
+      p_source_key, clean_id, p_state, p_event_type, p_server_modified, now(), p_properties, p_unverified_reason, now(), now()
+    );
+    applied := true;
+  end if;
+
+  -- Maintain cache coherence with notion_pages and activity_cache tables
+  if p_state = 'deleted' then
+    delete from public.notion_pages where source_key = p_source_key and page_id = clean_id;
+    delete from public.activity_cache where source_key = p_source_key and page_id = clean_id;
+  elsif p_state = 'active' and p_properties is not null then
+    update public.notion_pages
+    set data = data || p_properties,
+        updated_at = now()
+    where source_key = p_source_key and page_id = clean_id;
+
+    update public.activity_cache
+    set data = data || p_properties,
+        updated_at = now()
+    where source_key = p_source_key and page_id = clean_id;
+  end if;
+
+  return jsonb_build_object(
+    'applied', applied,
+    'page_id', clean_id,
+    'state', p_state,
+    'server_modified', p_server_modified
+  );
+end;
+$$;
+
+create or replace function public.get_recent_notion_page_events(
+  p_source_key text,
+  p_since timestamptz default null,
+  p_limit integer default 200
+) returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  result jsonb;
+begin
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'page_id', page_id,
+      'state', state,
+      'event_type', event_type,
+      'server_modified', server_modified,
+      'properties', properties,
+      'unverified_reason', unverified_reason,
+      'updated_at', updated_at
+    ) order by updated_at asc
+  ), '[]'::jsonb)
+  into result
+  from (
+    select *
+    from public.notion_page_events
+    where source_key = p_source_key
+      and (p_since is null or updated_at > p_since)
+    order by updated_at asc
+    limit coalesce(p_limit, 200)
+  ) sub;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.record_notion_page_event(text,text,text,text,timestamptz,jsonb,text) from public, anon, authenticated;
+grant execute on function public.record_notion_page_event(text,text,text,text,timestamptz,jsonb,text) to service_role;
+
+revoke all on function public.get_recent_notion_page_events(text,timestamptz,integer) from public, anon, authenticated;
+grant execute on function public.get_recent_notion_page_events(text,timestamptz,integer) to service_role, authenticated;
+
 commit;
