@@ -1,13 +1,13 @@
 import {readApiJson} from './readApiJson';
 export async function loadSearchIndex(options:{signal?:AbortSignal;fresh?:boolean;knownVersion?:string;onPartial?:(data:any)=>void;token?:string}={}){
  let token=options.token;if(!token&&typeof window!=='undefined')try{token=JSON.parse(localStorage.getItem('anfeta_settings')||'{}').notionToken;}catch{}
- const deadline=Date.now()+45000;
+ const deadline=Date.now()+120000;
  const fetchPage=async(offset:number,version?:string,attempt=0,first?:any)=>{
   const remaining=deadline-Date.now();if(remaining<=0)throw new Error('La carga del catálogo tardó demasiado. Los resultados recibidos se conservan; intenta actualizar de nuevo.');
   const params=new URLSearchParams({type:'search-index',offset:String(offset),limit:'500'});
   if(version)params.set('indexVersion',version);if(offset>0&&first?.cacheMeta?.source!=='supabase')params.set('indexOrigin','local');
   if(offset===0&&options.fresh&&attempt===0)params.set('fresh','1');if(offset===0&&options.knownVersion&&!options.fresh)params.set('ifVersion',options.knownVersion);
-  const timeout=AbortSignal.timeout(Math.min(15000,remaining)),signal=options.signal?AbortSignal.any([options.signal,timeout]):timeout;
+  const timeout=AbortSignal.timeout(Math.min(60000,remaining)),signal=options.signal?AbortSignal.any([options.signal,timeout]):timeout;
   let response:Response;try{response=await fetch('/api/data?'+params,{signal,headers:token?{'x-notion-token':token}:{},cache:'no-store'});}catch(error){if(options.signal?.aborted)throw error;if(timeout.aborted)throw new Error('El servidor tardó demasiado en entregar una página del catálogo. Los resultados recibidos se conservan.');throw error;}
   if(response.status===409)return {code:'index_version_changed'};return readApiJson(response);
  };
