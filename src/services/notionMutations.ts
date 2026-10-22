@@ -20,7 +20,7 @@ import { workflowState } from './activityWorkflow';
 import {queryCalendarPages} from './notionCalendar';
 import {calendarConflict,nearbyFreeCalendarSlots, type CalendarSlot} from './calendarConflicts';
 
-type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string; notionSignal?: AbortSignal };
+type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string; notionSignal?: AbortSignal; deferReviewNotice?:(job:()=>Promise<void>)=>void };
 type Property = { type: string; [key: string]: any };
 export function validateSchedule(start: string, end: string) {
   const format = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):00-06:00$/;
@@ -90,7 +90,7 @@ export async function mutateActivity(settings: Settings, actor: string, id: stri
   const key = settings.notionToken + ':' + id;
   if (mutationLocks.has(key)) throw new Error('La actividad se está guardando; espera antes de reenviarla.');
   mutationLocks.add(key);
-  try {const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};const run=()=>withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),()=>mutateActivityUnlocked(bounded, actor, id, updates, cached));return await (updates.start||updates.person||updates.reviewer?withCalendarSchedule(bounded,run):run()); }
+  try {const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};const run=()=>withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),()=>mutateActivityUnlocked(bounded, actor, id, updates, cached));const changesSchedule=!!updates.start||!!updates.person&&!updates.reviewAction&&!updates.status&&!updates.reviewer;return await (changesSchedule?withCalendarSchedule(bounded,run):run()); }
   finally {mutationLocks.delete(key);}
 }
 async function mutateActivityUnlocked(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
@@ -337,6 +337,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
     cacheReviewFlowMemory(settings,id,reviewFlow,updated.last_edited_time);
     if (updates.reviewer || ((completed || returned) && previousFlow?.State === 'pending')) {
+      const notify = async () => {
       try {
         const alert = await sendReviewNotification(settings, updated, reviewFlow, actor, !!completed || returned);
         reviewFlow = {...reviewFlow, AlertPageId:alert.PageId, AlertPageUrl:alert.PageUrl};
@@ -344,7 +345,21 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
         await saveReviewFlow(settings, id, reviewFlow).catch(() => {});
       } catch (error) {
         updated.__notificationWarning = 'La actividad se guardó, pero no se confirmó el aviso de revisión. ' + (error instanceof Error ? error.message : '');
+        console.warn(updated.__notificationWarning);
       }
+      };
+      if(settings.deferReviewNotice){
+        const committedFlow=reviewFlow;
+        settings.deferReviewNotice(async()=>{
+          // Do not append stale flow metadata if another edit won after the response.
+          await withActivityLease(operationKey(settings.notionToken,id.replace(/-/g,'')),async()=>{
+            clearReadBlocksCache(settings);
+            const current=await readReviewFlow(settings,id);
+            if(current?.UpdatedAt!==committedFlow.UpdatedAt||current?.State!==committedFlow.State)return;
+            await notify();
+          }).catch(error=>console.warn('Aviso de revisión pendiente:',error instanceof Error?error.message:''));
+        });
+      }else await notify();
     }
     updated.__reviewFlow = reviewFlow;
   }

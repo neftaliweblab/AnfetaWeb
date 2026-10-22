@@ -10,6 +10,7 @@ const pid='11111111-1111-1111-1111-111111111111', other='22222222-2222-2222-2222
 const settings={notionToken:'TEST_ONLY',currentUser:'nneft'};
 const load=Module._load;
 Module._load=function(name,parent,...rest){
+  if(name==='next/server'){const actual=load.call(this,name,parent,...rest);return {...actual,after:()=>{}};}
   if(name==='@/services/serverAuth' && parent?.filename.replace(/\\/g,'/').endsWith('/src/app/api/data/route.ts'))return {requireActor:req=>req.headers.get('x-test-user') || 'nneft',assertSameOrigin:()=>{}};
   if((name==='fs'||name==='node:fs') && ['/src/app/api/data/route.ts','/src/services/serverSettings.ts'].some(s=>parent?.filename.replace(/\\/g,'/').endsWith(s))) return {...fs,
     existsSync:p=>String(p).replace(/\\/g,'/')===root+'/settings.json',
@@ -418,6 +419,16 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Renombrar rechazado en Notion no informa éxito ficticio',async()=>{
     state.failPage=true;const response=await route.POST(request('rename-item',{id:pid,source:'Notion',oldName:state.page.properties.Name.title[0].plain_text,newName:'Nombre rechazado'})),data=await response.json();
     assert.notEqual(response.status,200);assert.notEqual(data.success,true);
+  });
+  await test('Revisión responde antes del aviso y lo completa después',async()=>{
+    let job;const page=await mutations.mutateActivity({...settings,deferReviewNotice:run=>{job=run;}},'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    assert.equal(page.__reviewFlow.State,'pending');assert.ok(job);assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,0);
+    await job();assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,1);assert.ok(state.flow.AlertPageId);
+  });
+  await test('Aviso diferido no pisa una revisión posterior',async()=>{
+    let job;await mutations.mutateActivity({...settings,deferReviewNotice:run=>{job=run;}},'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
+    state.flow={...state.flow,State:'approved',UpdatedAt:'2099-01-01T00:00:00Z'};
+    await job();assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,0);assert.equal(state.flow.State,'approved');
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

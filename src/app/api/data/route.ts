@@ -2425,7 +2425,7 @@ async function POSTLive(req: NextRequest) {
       if (action === 'update-activity-assignee' && !input.person && !input.reviewer) return NextResponse.json({ error: 'Selecciona un responsable.' }, { status: 400 });
       const cached = Object.values(calendarSnapshot()).flat().map(normalizeActivity).find(a => cleanPageId(a.pageId) === cleanPageId(id));
       try {
-        const page = await mutateActivity(settings, actor, id, input, cached);
+        const page = await mutateActivity({...settings,deferReviewNotice:job=>after(job)}, actor, id, input, cached);
         const live = extractNotionPageData(page); liveNotionOverrides.set(live.id, live);
         const activity = normalizeActivity({ ...cached, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
