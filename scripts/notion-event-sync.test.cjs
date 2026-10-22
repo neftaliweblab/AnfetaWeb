@@ -140,7 +140,8 @@ global.localStorage = new MockLocalStorage();
     serverModified: timeT2,
     properties: { name: 'Actividad Versión 2', updateStatus: 'En progreso' },
   });
-  assert.equal(recDup.applied, true);
+  assert.equal(recDup.applied, false);
+  assert.equal(recDup.reason, 'unchanged', 'Un evento idéntico no debe generar otra actualización ni escritura');
   console.log('OK: Protección monotónica comprobada: eventos fuera de orden rechazados e idempotencia garantizada.');
 
   console.log('--- 3. Sincronización Persistente y Eliminación / Restauración ---');

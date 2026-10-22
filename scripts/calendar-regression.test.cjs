@@ -389,6 +389,28 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     state.customBlocks=[block({OriginalPerson:'Neftali',State:'returned'}),block({OriginalPerson:'Neftali',State:'pending',UpdatedAt:'2026-10-21T12:00:00Z'})];
     assert.equal((await calendar.readReviewFlow(settings,pid)).State,'pending');
   });
+  await test('Reprogramar pendiente al día siguiente retira solo su verificación FTF',async()=>{
+    state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
+    const before=JSON.stringify(state.page.properties.Name),owner=JSON.stringify(state.page.properties['Assignee/Ejecutor Principal']);
+    await mutations.mutateActivity(settings,'Neftali',pid,{start:'2026-10-06T08:00:00-06:00',end:'2026-10-06T09:00:00-06:00'});
+    const patch=state.calls.find(c=>c.target==='pages/'+pid&&c.method==='PATCH').body.properties;
+    assert.deepEqual(Object.keys(patch).sort(),['Check FTF Pasos Verificados Hoy','Fecha POR Hacer']);
+    assert.equal(patch['Check FTF Pasos Verificados Hoy'].checkbox,false);assert.equal(JSON.stringify(state.page.properties.Name),before);assert.equal(JSON.stringify(state.page.properties['Assignee/Ejecutor Principal']),owner);
+  });
+  await test('Mover horario dentro del mismo día conserva la verificación FTF',async()=>{
+    state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
+    await mutations.mutateActivity(settings,'Neftali',pid,{start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'});
+    assert.equal(state.page.properties['Check FTF Pasos Verificados Hoy'].checkbox,true);
+  });
+  await test('Reinicio diario FTF rechaza una actividad que ya se terminó',async()=>{
+    state.page.properties.Estado.status.name='TERMINADA';state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
+    await assert.rejects(()=>mutations.mutateActivity(settings,'Neftali',pid,{ftfVerified:false,expectedFtfVerified:true,ftfDailyReset:true}),/ya no es un pendiente/);
+    assert.ok(!state.calls.some(c=>c.method==='PATCH'));
+  });
+  await test('Horario esperado UTC equivalente no produce un conflicto falso',async()=>{
+    await mutations.mutateActivity(settings,'Neftali',pid,{start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00',expectedStart:'2026-10-05T08:00:00-06:00',expectedEnd:'2026-10-05T09:00:00-06:00'});
+    assert.equal(state.page.properties['Fecha POR Hacer'].date.start,'2026-10-05T09:00:00-06:00');
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

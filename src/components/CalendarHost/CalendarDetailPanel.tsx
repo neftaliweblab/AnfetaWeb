@@ -140,11 +140,11 @@ export function CalendarDetailPanel({
       } finally { busy = false; if (!controller.signal.aborted) setLoading(false); }
     }
     load();
-    const timer = setInterval(load, 30000);
+
     window.addEventListener('anfeta_data_refreshed',load);
-    window.addEventListener('focus', load);
-    document.addEventListener('visibilitychange', load);
-    return () => {controller.abort();clearInterval(timer);window.removeEventListener('anfeta_data_refreshed',load);window.removeEventListener('focus', load);document.removeEventListener('visibilitychange', load);};
+
+
+    return () => {controller.abort();window.removeEventListener('anfeta_data_refreshed',load);};
   }, [activity.pageId, activity.isReviewMirror, retry]);
 
   const updating = React.useRef(false);

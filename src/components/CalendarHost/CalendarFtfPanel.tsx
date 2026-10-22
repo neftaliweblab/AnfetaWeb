@@ -21,9 +21,9 @@ export function CalendarFtfPanel({currentUser,date,onOpenActivity}:{currentUser:
       }catch(e){if(!stopped)setError(e instanceof Error?e.message:'No se pudo actualizar el FTF.');}
       finally{busy=false;if(!stopped)setLoading(false);}
     };
-    void refresh();const timer=setInterval(()=>void refresh(),60000);
-    window.addEventListener('anfeta_review_saved',refresh);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
-    return ()=>{stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('anfeta_review_saved',refresh);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
+    void refresh();
+    window.addEventListener('anfeta_review_saved',refresh);window.addEventListener('anfeta_calendar_refresh',refresh);
+    return ()=>{stopped=true;controller.abort();window.removeEventListener('anfeta_review_saved',refresh);window.removeEventListener('anfeta_calendar_refresh',refresh);};
   },[currentUser,date,revision]);
   if(!canViewFtfDashboard(currentUser))return null;
   return <details open className="shrink-0 border-b border-cyan-900/60 bg-slate-950/70 px-3 py-2">

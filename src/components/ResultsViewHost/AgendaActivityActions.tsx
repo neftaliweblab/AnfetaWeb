@@ -12,8 +12,8 @@ import {ReassignActivityModal} from '../CalendarHost/ReassignActivityModal';
 import {SendToReviewModal} from '../CalendarHost/SendToReviewModal';
 import type {AgendaUpdate} from './saveAgendaActivity';
 
-export function AgendaActivityActions({activity,currentUser,position,busy,onClose,onSave}:{activity:NotionCalendarActivity;currentUser:string;position:{x:number;y:number};busy:boolean;onClose:()=>void;onSave:(updates:AgendaUpdate)=>Promise<boolean>}){
-  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|null>(null);
+export function AgendaActivityActions({activity,currentUser,position,busy,onClose,onSave,initialAction=null}:{activity:NotionCalendarActivity;currentUser:string;position:{x:number;y:number};busy:boolean;initialAction?:'review'|'handoff'|'schedule'|null;onClose:()=>void;onSave:(updates:AgendaUpdate)=>Promise<boolean>}){
+  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|null>(initialAction);
   const [error,setError]=useState('');
   const editable=canEditActivity(currentUser,activity)&&!activity.isHandoffMirror;
   const completed=workflowState(activity.status,activity.title)==='completed';

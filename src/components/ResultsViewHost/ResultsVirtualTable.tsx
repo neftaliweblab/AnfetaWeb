@@ -71,6 +71,7 @@ interface ResultsTableProps {
   onDuplicate?: (item: any) => void;
   onCreateFolder?: (targetDir?: string) => void;
   onUpdateStatus?: (item: any, newStatus: string) => void;
+  onActivityAction?:(item:any,mode:'review'|'handoff'|'schedule'|'menu'|'finish',position:{x:number;y:number})=>void;
   onToggleSelectAll?: () => void;
   onClearSelection?: () => void;
   onDeleteSelected?: () => void;
@@ -110,7 +111,7 @@ export function ResultsVirtualTable({
   onRename,
   onDuplicate,
   onCreateFolder,
-  onUpdateStatus, currentUser,
+  onUpdateStatus, onActivityAction, currentUser,
   onToggleSelectAll,
   onClearSelection,
   onDeleteSelected,
@@ -1163,7 +1164,7 @@ export function ResultsVirtualTable({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 bg-[#0D1522]/98 backdrop-blur-md border border-[#00C8FF]/40 rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.85)] p-1 text-xs w-64 select-none animate-in fade-in zoom-in-95 duration-100"
+          className="fixed z-50 bg-[#0D1522]/98 backdrop-blur-md border border-[#00C8FF]/40 rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.85)] p-1 text-xs w-64 max-h-[calc(100dvh-24px)] overflow-y-auto select-none animate-in fade-in zoom-in-95 duration-100"
           style={{
             top: Math.max(10, Math.min(contextMenu.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 520)),
             left: Math.max(10, Math.min(contextMenu.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 270)),
@@ -1424,8 +1425,11 @@ export function ResultsVirtualTable({
                   <span>Abrir en Notion ↗</span>
                 </button>
 
-                {/* 2. Cambiar estado (Submenú) */}
-                <div
+                {onActivityAction&&<div className="my-1 border-y border-slate-700 py-1">{([
+                  ['handoff','◇ Reasignar actividad…'],['review','◇ Enviar a revisión final…'],['finish','✓ Finalizar actividad (zREVISION)'],['schedule','▣ Editar fecha y horario…'],['menu','↪ Mover fecha / Duración…']
+                ] as const).map(([mode,label])=><button key={mode} type="button" onClick={()=>{onActivityAction(item,mode,{x:contextMenu.x,y:contextMenu.y});setContextMenu(null);}} className="w-full rounded px-2.5 py-2 text-left text-[11px] text-cyan-200 hover:bg-slate-800">{label}</button>)}</div>}
+                {/* 2. Cambiar estado (Submenú): fallback para consumidores sin acciones completas */}
+                {!onActivityAction&&<div
                   className="relative"
                   onMouseEnter={() => setActiveSubmenu("status")}
                   onMouseLeave={() => setActiveSubmenu(null)}
@@ -1467,7 +1471,7 @@ export function ResultsVirtualTable({
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
 
                 <div className="h-px bg-[#26354A] my-1" />
 

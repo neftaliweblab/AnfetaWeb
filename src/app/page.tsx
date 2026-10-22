@@ -1,4 +1,5 @@
 "use client";
+import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
 import {openCalendarWindow} from '@/services/windowsIntegration';
@@ -180,40 +181,15 @@ export default function AnfetaApp() {
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
-  // Load local data from API route
+  const indexMutationRevision=useRef(0);
+  // Load the catalog once per account; changing the calendar day must not reload it.
   useEffect(() => {
     if(!isAuthenticated||!currentUser)return;
-    let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexInterval:ReturnType<typeof setInterval>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
-    let userToken = "";
-    try {
-      const savedSettings = localStorage.getItem("anfeta_settings");
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings);
-
-        if (parsed.notionToken) userToken = parsed.notionToken;
-      }
-    } catch {}
-
+    let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),15000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
-        void loadIndex();indexFocus=()=>void loadIndex();window.addEventListener('anfeta_settings_changed',indexFocus);indexInterval=setInterval(indexFocus,120000);window.addEventListener('focus',indexFocus);
-
-        // Calendar dates and today's activities
-        const calUrl = `/api/data?type=calendar&basic=1&date=${currentDate}`;
-        const calRes = await fetch(calUrl, {
-          headers: userToken ? { "x-notion-token": userToken } : {},
-        });
-        {
-          const calData = await readApiJson(calRes);
-          if(stopped)return;
-          if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(calData.warning || '');setCalendarCacheMeta(calData.cacheMeta||null);
-          if (calData.activities) setCalendarActivities(calData.activities);
-          if (calData.availableDates?.length) {
-            setAvailableDates(calData.availableDates);
-          }
-        }
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;const revision=indexMutationRevision.current;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&revision===indexMutationRevision.current&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(revision!==indexMutationRevision.current){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{unchanged:true,cacheMeta:{syncing:false}}}));return;}if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),15000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        void loadIndex();indexFocus=()=>void loadIndex();window.addEventListener('anfeta_settings_changed',indexFocus);
 
         // Daily automation report
         const repRes = await fetch("/api/data?type=daily-report");
@@ -232,25 +208,15 @@ export default function AnfetaApp() {
       // Configuraciones actualizadas sin forzar selector de persona
     };
 
-    const handleDataRefreshed = async () => {
-      try {
-        let token = "";
-        try {
-          const s = localStorage.getItem("anfeta_settings");
-          if (s) token = JSON.parse(s).notionToken || "";
-        } catch {}
-
-        const idxData=await loadSearchIndex({ token, onPartial:(p)=>{if(p?.items?.length){setSearchIndex(prev=>retainSearchResults(prev,p));setIndexSyncLabel(`Cargando catálogo (${p.items.length.toLocaleString()}...`);}} });if(Array.isArray(idxData.items)){setSearchIndex(previous=>retainSearchResults(previous,idxData));void saveCachedIndex(idxData,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:idxData}));
-        const calRes = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
-          headers: token ? { "x-notion-token": token } : {},
-        });
-        {
-          const calData = await readApiJson(calRes);
-          if (!calRes.ok || calData.error) throw new Error(calData.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(calData.warning || '');setCalendarCacheMeta(calData.cacheMeta||null);
-          if (calData.activities) setCalendarActivities(calData.activities);
-        }
-      } catch {}
+    const handleDataRefreshed = (event:Event) => {
+      const detail=(event as CustomEvent).detail;
+      if(Array.isArray(detail?.items)){
+        setSearchIndex(previous=>retainSearchResults(previous,detail));
+        return;
+      }
+      if(detail?.activity||detail?.pageId||detail?.ids)return;
+      // Only imports/creation/manual refresh without an affected record need a catalog check.
+      indexFocus?.();
     };
 
     window.addEventListener("anfeta_settings_changed", handleSettingsChanged);
@@ -260,16 +226,14 @@ export default function AnfetaApp() {
       stopped = true;
       initialController.abort();
       if (indexTimer) clearTimeout(indexTimer);
-      if (indexInterval) clearInterval(indexInterval);
-      if (indexFocus) window.removeEventListener('focus', indexFocus);
       window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
       window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
     };
-  }, [currentDate,isAuthenticated,currentUser]);
+  }, [isAuthenticated,currentUser]);
 
   useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='anfeta_person_changed')window.location.reload();};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[]);
 
-  // Fetch activities when date changes
+  // One calendar read per day; CalendarHost owns its explicit refreshes.
   useEffect(() => {
     if(!isAuthenticated||!currentUser)return;
     const controller = new AbortController();
@@ -281,7 +245,7 @@ export default function AnfetaApp() {
           const s = localStorage.getItem("anfeta_settings");
           if (s) token = JSON.parse(s).notionToken || "";
         } catch {}
-        const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
+        const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&date=${currentDate}`,currentUser, {
           signal: controller.signal,
           headers: token ? { "x-notion-token": token } : {},
         });
@@ -310,7 +274,7 @@ export default function AnfetaApp() {
       running=true;lastAttempt=Date.now();
       try {
         const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);},true);
-        if(!stopped){setAutomationReport(report);window.dispatchEvent(new Event('anfeta_data_refreshed'));}
+        if(!stopped){setAutomationReport(report);if(report.moved||report.ftfReset)window.dispatchEvent(new Event('anfeta_calendar_refresh'));}
         if(!report.failed&&!report.remaining)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
         if(report.failed&&!stopped)setCalendarLoadError(report.errors.join(' · '));
       }catch(e){if(!stopped)setCalendarLoadError('Robot 05:00: '+(e instanceof Error?e.message:'No se pudo preparar la jornada.'));}
@@ -359,7 +323,8 @@ export default function AnfetaApp() {
         const byId=new Map(msg.activities.filter((a:any)=>!a.isReviewMirror).map((a:any)=>[a.pageId.replace(/-/g,''),a]));
         setSearchIndex(prev=>prev.map(row=>{const a:any=byId.get((row.externalId || row.id || '').replace(/-/g,''));return a?{...row,name:a.title,assignedPerson:a.person,scheduledDate:mexicoDate(a.start),statusLabel:a.status}:row;}));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
-        setSearchIndex(prev=>prev.map(row=>(row.externalId || row.id || '').replace(/-/g,'')===msg.pageId!.replace(/-/g,'') ? {...row,...(msg.updates.title?{name:msg.updates.title}:{}),...(msg.updates.person?{assignedPerson:msg.updates.person}:{}),...(msg.updates.status?{statusLabel:msg.updates.status}:{})}:row));
+        indexMutationRevision.current++;
+        setSearchIndex(prev=>prev.map(row=>(row.externalId || row.id || '').replace(/-/g,'')===msg.pageId!.replace(/-/g,'') ? {...row,...(msg.updates.title?{name:msg.updates.title}:{}),...(msg.updates.person?{assignedPerson:msg.updates.person}:{}),...(msg.updates.status?{statusLabel:msg.updates.status,updateStatus:msg.updates.status}:{}),...(msg.updates.start?{scheduledDate:msg.updates.start}:{}),serverModified:msg.updates.serverModified||new Date().toISOString()}:row));
         setCalendarActivities((prev) =>
           prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
         );
@@ -688,7 +653,7 @@ export default function AnfetaApp() {
                   const s = localStorage.getItem("anfeta_settings");
                   if (s) token = JSON.parse(s).notionToken || "";
                 } catch {}
-                const res = await fetch(`/api/data?type=calendar&basic=1&date=${currentDate}`, {
+                const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&date=${currentDate}`,currentUser, {
                   headers: token ? { "x-notion-token": token } : {},
                 });
                 {

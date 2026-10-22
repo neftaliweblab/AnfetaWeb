@@ -1,4 +1,7 @@
 "use client";
+import {useNotionPageWatch} from '@/components/useNotionPageWatch';
+import {applyNotionStates} from '@/lib/applyNotionStates';
+import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
 import {openNotionPage} from '@/services/windowsIntegration';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {CalendarDetailPanel} from '../CalendarHost/CalendarDetailPanel';
@@ -69,7 +72,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
     loadingRef.current=true;
     setLoading(true);
     setError('');
-    fetch('/api/data?type=calendar&basic=1&date='+encodeURIComponent(day),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])})
+    sharedCalendarFetch('/api/data?type=calendar&basic=1&date='+encodeURIComponent(day),currentUser,{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])})
       .then(async response=>{
         const data=await response.json();
         if(!response.ok)throw Error(data.error||'No se pudo cargar el calendario.');
@@ -93,16 +96,21 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
   useEffect(()=>{
     const refresh=()=>{if(!pending.current&&!loadingRef.current&&!document.hidden)setRetry(n=>n+1);};
     const removeDeleted=()=>setItems(old=>filterDeletedPages(old,currentUser));
-    const unsubscribe=anfetaSync.subscribe(message=>{if(message.type==='ACTIVITY_UPDATED'||message.type==='ACTIVITY_CREATED')refresh();});
-    const timer=setInterval(refresh,30000);
-    window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus',refresh);
+    const unsubscribe=anfetaSync.subscribe(message=>{
+      if(message.type==='ACTIVITY_UPDATED'&&message.pageId&&message.updates){
+        revision.current++;
+        setItems(old=>old.map(a=>a.pageId===message.pageId?{...a,...message.updates}:a));
+      }else if(message.type==='ACTIVITY_CREATED'&&message.activity)setItems(old=>old.some(a=>a.pageId===message.activity.pageId)?old:[...old,message.activity]);
+    });
+    window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('online',refresh);
     window.addEventListener(DELETED_PAGES_EVENT,removeDeleted);window.addEventListener('storage',removeDeleted);
-    return()=>{clearInterval(timer);unsubscribe();window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus',refresh);window.removeEventListener(DELETED_PAGES_EVENT,removeDeleted);window.removeEventListener('storage',removeDeleted);};
+    return()=>{unsubscribe();window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('online',refresh);window.removeEventListener(DELETED_PAGES_EVENT,removeDeleted);window.removeEventListener('storage',removeDeleted);};
   },[currentUser]);
 
   const activities=useMemo(()=>personalAgendaActivities(items.filter(a=>mexicoDate(a.start)===day),person),[items,person,day]);
   const effectiveSelected=agendaSelection(activities,selectedId);
   const selected=activities.find(a=>a.pageId===effectiveSelected);
+  useNotionPageWatch(currentUser,activities,true,states=>{if(!pending.current)setItems(old=>filterDeletedPages(applyNotionStates(old,states),currentUser));});
   const menuActivity=activities.find(a=>a.pageId===menu?.pageId);
   const closeMenu=useCallback(()=>setMenu(null),[]);
   const updateActivity=async(pageId:string,updates:AgendaUpdate)=>{
@@ -125,11 +133,11 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
       });
       setNotice(data.warning||'Cambio confirmado en Notion.');
       anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
-      window.dispatchEvent(new Event('anfeta_review_saved'));window.dispatchEvent(new Event('anfeta_data_refreshed'));
+      window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start)setDay(mexicoDate(saved.start));
       return true;
     }catch(e){setNotice(e instanceof Error?e.message:'No se pudo guardar.');return false;}
-    finally{pending.current=false;setSaving(false);setRetry(n=>n+1);}
+    finally{pending.current=false;setSaving(false);}
   };
 
   return (

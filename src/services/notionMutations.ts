@@ -2,6 +2,7 @@ import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from
 import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
 import {withActivityLease,operationKey} from './reliableOperations';
 import {ftfField,FTF_CHECKBOX} from './ftfVerification';
+import {sameInstant} from '../lib/sameInstant';
 import {activeTeam} from './teamDirectory';
 import {handoffTitle} from './handoffTitle';
 import {prepareHandoff,confirmHandoff} from './activityHandoffs';
@@ -114,7 +115,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
     const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);
-    const isRevState = state === 'review' || /rtuzREVISION/i.test(title);
+    const isRevState = state === 'review' || /(?<![\p{L}\p{Nd}_])rtuzREVISION(?![\p{L}\p{Nd}_])/iu.test(title);
     if(!['pending','suspended'].includes(state) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
     if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
     const target=normalizePerson(updates.person);
@@ -144,6 +145,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(updates.titleDescription!==undefined)updates={...updates,title:editActivityDescription(title,String(updates.titleDescription))};
   let nextTitle = title;
   const properties: Record<string, any> = {};
+  if(updates.ftfDailyReset){const status=calendarStatusField(page)?.[1];if(!['pending','suspended','review'].includes(workflowState(status?.[status.type]?.name||'',title)))throw Error('La actividad ya no es un pendiente; no se reinició su verificación FTF.');}
   if(updates.ftfVerified!==undefined){
     const field=ftfField(page);
     if(!field)throw Error('No se encontró la casilla de Notion “'+FTF_CHECKBOX+'”.');
@@ -210,7 +212,11 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     validateSchedule(updates.start, updates.end);
     const date = fields.find(([name,p]) => p.type === 'date' && /^fecha por hacer$/i.test(name.trim()));
     if (!date) throw new Error('La página no tiene una propiedad de fecha editable.');
-    if((updates.expectedStart && date[1].date?.start !== updates.expectedStart)||(updates.expectedEnd && date[1].date?.end !== updates.expectedEnd)) throw new Error('El horario cambió desde que se preparó la propuesta; actualiza antes de moverla.');
+    if((updates.expectedStart && !sameInstant(date[1].date?.start,updates.expectedStart))||(updates.expectedEnd && !sameInstant(date[1].date?.end,updates.expectedEnd))) throw new Error('El horario cambió desde que se preparó la propuesta; actualiza antes de moverla.');
+    const previousStart=date[1].date?.start;
+    if(previousStart&&mexicoDate(updates.start)>mexicoDate(previousStart)){
+      const verification=ftfField(page);if(verification?.[1].checkbox)properties[verification[0]]={checkbox:false};
+    }
     properties[date[0]] = { date: { start: updates.start, end: updates.end } };
   }
   if (updates.status) {
@@ -286,7 +292,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const checklistItems=await readChecklist(settings,id);
     const snapshot=normalizeActivity({...cached,pageId:id,title,domain:calendarDomain(title,cached?.domain),person:activity.person,start:snapshotStart,end:date?.end||cached?.end||new Date(Date.parse(snapshotStart)+3600000).toISOString(),pageUrl:page.url,checklistScanned:true,checklistItems,checklistTotal:checklistItems.length,checklistCompleted:checklistItems.filter(c=>c.isChecked).length},0);
     if(!snapshot.start||!snapshot.end)throw Error('La actividad necesita un horario válido para conservar su historial.');
-    const isRevState = previousFlow?.State === 'pending' || /rtuzREVISION/i.test(title);
+    const isRevState = previousFlow?.State === 'pending' || /(?<![\p{L}\p{Nd}_])rtuzREVISION(?![\p{L}\p{Nd}_])/iu.test(title);
     if (isRevState) {
       reviewFlow = {
         OriginalPerson: previousFlow?.OriginalPerson || normalizePerson(activity.person),

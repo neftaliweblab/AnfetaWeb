@@ -32,6 +32,7 @@ export function useNotionPageWatch(
     let busy = false;
     let cursor = 0;
     let restoreCursor = 0;
+    let nextProbeAt=0;
     const controller = new AbortController();
 
     const getNotionToken = (): string => {
@@ -112,7 +113,7 @@ export function useNotionPageWatch(
                     assignedPerson: ev.properties?.assignedPerson,
                     updateStatus: ev.properties?.updateStatus,
                     serverModified: ev.serverModified,
-                    scheduledDate: ev.properties?.scheduledDate
+                    scheduledDate: ev.properties?.scheduledDate,scheduledEnd:ev.properties?.scheduledEnd,ftfVerified:ev.properties?.ftfVerified,ftfAvailable:ev.properties?.ftfAvailable
                   });
                 } else if (ev.state === 'unverified') {
                   setUnverifiedPage(pid, ev.unverifiedReason);
@@ -129,6 +130,8 @@ export function useNotionPageWatch(
           // Delta sync network failure is non-fatal; proceed to bounded check
         }
 
+        if(Date.now()<nextProbeAt)return;
+        nextProbeAt=Date.now()+60000;
         // Phase B: Bounded Direct Polling (max 4 IDs per tick, rotating with unverified backoff)
         const now = Date.now();
         const candidateIds = [...new Set(
@@ -208,7 +211,6 @@ export function useNotionPageWatch(
 
     const timer = setInterval(() => void check(), 5000);
     const onFocusOrOnline = () => {
-      busy = false;
       void check();
     };
 

@@ -1,4 +1,5 @@
 "use client";
+import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
@@ -262,7 +263,7 @@ export function CalendarHost({
     return list;
   }, [selectedActivity, activitiesList]);
 
-  useNotionPageWatch(currentUser, watchCalendarRows, true, (states) => {
+  useNotionPageWatch(currentUser, watchCalendarRows, active, (states) => {
     setActivitiesList(prev => filterDeletedPages(applyNotionStates(prev, states), currentUser));
     setSelectedActivity(prev => {
       if (!prev) return null;
@@ -340,12 +341,12 @@ export function CalendarHost({
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
     const controller = new AbortController();
     const refresh = async (light=false) => {
-      if (stopped || (light?lightBusy:busy) || document.hidden || pending.current.size) return;
+      if (stopped || busy || lightBusy || document.hidden || pending.current.size) return;
       if(light)lightBusy=true;else busy = true;
       const version = mutationVersion.current;
       const requestSequence=++sequence;
       try {
-        const response = await fetch('/api/data?type=calendar&date=' + encodeURIComponent(currentDate) + (light||basic?'&basic=1':'&enrichOffset=' + enrichOffset), {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
+        const response = await sharedCalendarFetch('/api/data?type=calendar&'+(light||basic?'basic=1&':'')+'date='+encodeURIComponent(currentDate)+(light||basic?'':'&enrichOffset='+enrichOffset),currentUser, {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
         const data = await readApiJson(response);
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
@@ -375,18 +376,18 @@ export function CalendarHost({
       finally {if(light)lightBusy=false;else busy = false;}
     };
     void refresh();
-    const timer = setInterval(()=>void refresh(), 30000);
+    // Enrichment runs once, then only explicit invalidations reload this day.
     const fastRefresh=()=>{void refresh(true);};
-    const fastTimer=setInterval(fastRefresh,5000);
-    window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('focus', fastRefresh); window.addEventListener('online', fastRefresh); document.addEventListener('visibilitychange', fastRefresh);
-    return () => {stopped = true; controller.abort(); clearInterval(timer);clearInterval(fastTimer);if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('focus', fastRefresh); window.removeEventListener('online', fastRefresh); document.removeEventListener('visibilitychange', fastRefresh);};
+
+    window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('online',fastRefresh);window.addEventListener('anfeta_calendar_refresh',fastRefresh);
+    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
     if(!active || (!filterCobros && !filterPagos))return;
     const controller=new AbortController();let running=false;setFinanceItems([]);setFinanceWarning('');setFinanceLoading(true);
     const load=async(force=false)=>{if(running||controller.signal.aborted)return;running=true;try{const response=await fetch('/api/data?type=calendar-finance&date='+currentDate+(force?'&fresh=1':''),{signal:controller.signal});const data=await readApiJson(response);if(!controller.signal.aborted){setFinanceItems(data.items || []);setFinanceWarning(data.warning || '');}}catch(error){if(!controller.signal.aborted)setFinanceWarning(error instanceof Error?error.message:'No se pudo cargar Cobros/Pagos.');}finally{running=false;if(!controller.signal.aborted)setFinanceLoading(false);}};
-    const refresh=(event?:Event)=>{if(!document.hidden)void load(event?.type==='anfeta_finance_refresh'||event?.type==='anfeta_data_refreshed');};void load();const timer=setInterval(refresh,60000);window.addEventListener('anfeta_finance_refresh',refresh);window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);return()=>{controller.abort();clearInterval(timer);window.removeEventListener('anfeta_finance_refresh',refresh);window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);};
+    const refresh=(event?:Event)=>{if(!document.hidden)void load(event?.type==='anfeta_finance_refresh'||event?.type==='anfeta_data_refreshed');};void load();window.addEventListener('anfeta_finance_refresh',refresh);window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('online',refresh);return()=>{controller.abort();window.removeEventListener('anfeta_finance_refresh',refresh);window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('online',refresh);};
   },[currentDate,currentUser,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
@@ -445,7 +446,6 @@ export function CalendarHost({
       if (!isBgWarning) setError(data.warning || '');
       window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start&&saved.start){const date=mexicoDate(saved.start);if(date!==currentDate)onSelectDate(date);}
-      onRefresh?.();
       return true;
     } catch (error) {
       restoreSchedule();
@@ -626,7 +626,7 @@ export function CalendarHost({
       )}
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
       {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
-      {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));onRefresh?.();}} />}
+      {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));}} />}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}

@@ -12,6 +12,9 @@ import {notionPageUrl} from '@/lib/notionPageUrl';
 import {parseSearchTabs} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
 import {CompactSearchAccess} from './CompactSearchAccess';
+import {workflowState} from '@/services/activityWorkflow';
+import {SearchActivityActions,type SearchActivityAction} from './SearchActivityActions';
+import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
@@ -378,10 +381,11 @@ export function ResultsViewHost({
     modifiedDate: true,
   });
 
+  const [activityAction,setActivityAction]=useState<{item:any;mode:SearchActivityAction;position:{x:number;y:number}}|null>(null);
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
   React.useEffect(() => {
-    setItems(initialItems.filter((it) => !isExpiredResponsePage(it)));
+    setItems(previous=>retainSearchResults(previous,{items:filterDeletedPages(initialItems,currentUser).filter(it=>!isExpiredResponsePage(it)),loadingIndex:true}));
   }, [initialItems,currentUser]);
   const deleteErrorIds=useRef<string[]>([]);
   const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -1020,7 +1024,16 @@ export function ResultsViewHost({
     }
   };
 
+  useEffect(()=>anfetaSync.subscribe(message=>{
+    if(message.type!=='ACTIVITY_UPDATED'||!message.pageId||!message.updates)return;
+    const a=message.updates;
+    const states=[{id:message.pageId,name:a.title,assignedPerson:a.person,updateStatus:a.status,scheduledDate:a.start,serverModified:a.serverModified||new Date().toISOString()}];
+    setItems(previous=>applyNotionStates(previous,states));
+    setSelectedItem((previous:any)=>previous?applyNotionStates([previous],states)[0]:previous);
+  }),[currentUser]);
+
   const handleUpdateStatus = async (item: any, newStatus: string) => {
+    const state=workflowState(newStatus);if(state==='review'||state==='completed'){setActivityAction({item,mode:state==='review'?'review':'finish',position:{x:window.innerWidth/2,y:120}});return;}
     try {
       playCheckChime();
       const res = await fetch("/api/data", {
@@ -1529,6 +1542,7 @@ export function ResultsViewHost({
             setIsCreateFolderOpen(true);
           }}
           onUpdateStatus={handleUpdateStatus}
+          onActivityAction={(item,mode,position)=>setActivityAction({item,mode,position})}
           onToggleSelectAll={handleToggleSelectAll}
           onClearSelection={handleClearSelection}
           onDeleteSelected={handleDeleteSelected}
@@ -1544,6 +1558,7 @@ export function ResultsViewHost({
           groupBy={groupBy}
         /></div>
 
+        {activityAction&&<SearchActivityActions item={activityAction.item} currentUser={currentUser} mode={activityAction.mode} position={activityAction.position} onClose={()=>setActivityAction(null)} onSaved={()=>setStatusError('')}/>}
         {/* Col 4: DETALLES (320px) */}
         {isDetailsOpen && (
           <div className="shrink-0 h-full flex flex-col"><div className="flex gap-2 border-b border-slate-800 bg-[#0F141C] p-2 text-xs"><button type="button" aria-pressed={showPersonalAgenda||!(pinnedDetail||selectedItem)} className="text-cyan-300" onClick={()=>setShowPersonalAgenda(true)}>Calendario individual</button><button type="button" disabled={!(pinnedDetail||selectedItem)} aria-pressed={!showPersonalAgenda&&!!(pinnedDetail||selectedItem)} className="text-slate-300 disabled:opacity-40" onClick={()=>setShowPersonalAgenda(false)}>Detalles</button></div><div className="flex-1 min-h-0">

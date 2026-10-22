@@ -1079,7 +1079,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
               return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
-                person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
+                serverModified:page.last_edited_time,person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
                 reviewFlow, reviewFlowScanned, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
@@ -1495,8 +1495,8 @@ async function POSTLive(req: NextRequest) {
             confirmedDeletedPages.delete(settings.notionToken+':'+id);
             const live=extractNotionPageData(page);
             liveNotionOverrides.set(live.id,live);
-            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart}});}catch{}
-            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart});
+            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable}});}catch{}
+            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable});
           }
         }catch(err:any){
           const is404=err?.status===404||/404|no se puede verificar|faltar acceso/i.test(err?.message||'');
@@ -1515,8 +1515,10 @@ async function POSTLive(req: NextRequest) {
       const sourceKey=notionSourceKey(settings);
       const since=payload.since?String(payload.since):null;
       const limit=typeof payload.limit==='number'?Math.min(payload.limit,500):200;
+      const queriedAt=new Date().toISOString();
       const events=await getRecentPageEvents(sourceKey,since,limit);
-      return NextResponse.json({success:true,events,timestamp:new Date().toISOString()},{headers:{'Cache-Control':'no-store'}});
+      const cursor=events.length?events[events.length-1].updatedAt||queriedAt:queriedAt;
+      return NextResponse.json({success:true,events,timestamp:cursor},{headers:{'Cache-Control':'no-store'}});
     }
     if(action==='restore-notion-page'){
       const settings={...getSettings(),notionToken:resolveNotionToken(req)};
@@ -2419,6 +2421,8 @@ async function POSTLive(req: NextRequest) {
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
           person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, isUrgent:undefined }, 0);
+        (activity as any).serverModified=page.last_edited_time;
+        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'polled_state',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable}});
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
         let ftfWarning='';
@@ -2470,7 +2474,7 @@ async function POSTLive(req: NextRequest) {
         if (action === 'calendar-automation-preview') return NextResponse.json({success:true,report:await planDailyAutomation(settings,actor,input.date || mexicoDate())});
         const excluded=Array.isArray(input.excludedIds)?input.excludedIds.filter((id:any)=>typeof id==='string'&&/^[a-f0-9-]{32,36}$/i.test(id)).slice(0,1000):[];
         const report=await executeCoordinatedAutomation(settings,actor,input.date || mexicoDate(),input.automatic!==true,excluded);
-        report.pages.forEach(page=>{const live=extractNotionPageData(page);persistCalendarActivity(normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0));});
+        report.pages.forEach((page:any)=>{const live=extractNotionPageData(page);persistCalendarActivity(normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0));});
         const {pages,...publicReport}=report;
         return NextResponse.json({success:true,report:publicReport});
       } catch(error) {return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo ejecutar el robot.'},{status:400});}
@@ -2754,7 +2758,16 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
  try{return await refreshSnapshot(context,req,row,actor)||await GETLive(req,undefined,false,actor);}catch(error){if(hasPayload&&!(error instanceof Error&&error.message.startsWith('Los datos cambiaron')))return cachedResponse(row?.payload||(await readSnapshot(context))?.payload||{},{...row,last_error:error instanceof Error?error.message:'No se pudo actualizar.'},false);throw error;}
  }catch(error){const response=await GETLive(req,undefined,key==='search-index',actor);const data=await response.json();return NextResponse.json({...data,warning:[data.warning,error instanceof Error?error.message:'Copia Supabase no disponible.'].filter(Boolean).join(' '),cacheMeta:{source:'notion',syncing:false,stale:false}},{status:response.status,headers:{'Cache-Control':'no-store'}});}}
 
-async function POSTWithInvalidation(req:NextRequest){const body=await req.clone().json().catch(()=>null);const response=await POSTLive(req);const changes=['add-checklist-item','add-comment','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','toggle-checklist','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];if(supabaseConfigured()&&response.ok&&changes.includes(body?.action)){try{const token=body?.payload?.token||resolveNotionToken(req);const isDelete=body?.action==='delete-item'||body?.action==='delete-items';await invalidateSnapshots({...getSettings(),notionToken:token},isDelete);}catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}}return response;}
+async function POSTWithInvalidation(req:NextRequest){
+ const body=await req.clone().json().catch(()=>null),response=await POSTLive(req);
+ const changes=['unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
+ if(!supabaseConfigured()||!response.ok||!changes.includes(body?.action))return response;
+ if(body.action==='update-activity-status'&&typeof body.payload?.ftfVerified==='boolean'&&!body.payload.status)return response;
+ if(body.action==='calendar-automation-run'){const result=await response.clone().json();if(!result.report?.moved&&!result.report?.ftf?.reset)return response;}
+ try{const token=body?.payload?.token||resolveNotionToken(req),isDelete=body?.action==='delete-item'||body?.action==='delete-items';await invalidateSnapshots({...getSettings(),notionToken:token},isDelete);}
+ catch(error){const data=await response.json();return NextResponse.json({...data,warning:error instanceof Error?error.message:'No se pudo invalidar la copia.'},{status:response.status});}
+ return response;
+}
 
 async function GETRaw(req:NextRequest){
  const url=new URL(req.url);

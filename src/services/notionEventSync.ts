@@ -150,6 +150,7 @@ export async function recordPageEvent(event: {
   const cacheKey = `${event.sourceKey}:${cleanId}`;
   const existing = memoryEvents.get(cacheKey);
 
+  if(existing&&existing.state===event.state&&existing.serverModified===serverModified&&JSON.stringify(existing.properties||null)===JSON.stringify(event.properties||existing.properties||null)&&existing.unverifiedReason===(event.unverifiedReason||null))return {applied:false,pageId:cleanId,state:existing.state,serverModified,reason:'unchanged'};
   // Monotonic check in-memory
   if (existing) {
     const incomingTime = Date.parse(serverModified);
@@ -190,7 +191,7 @@ export async function recordPageEvent(event: {
         p_state: event.state,
         p_event_type: event.eventType,
         p_server_modified: serverModified,
-        p_properties: record.properties ? JSON.stringify(record.properties) : null,
+        p_properties: record.properties || null,
         p_unverified_reason: record.unverifiedReason
       });
       if (res?.data && res.data.applied === false) {
@@ -235,7 +236,7 @@ export async function getRecentPageEvents(
           state: item.state,
           eventType: item.event_type,
           serverModified: item.server_modified,
-          properties: item.properties,
+          properties: typeof item.properties==='string'?JSON.parse(item.properties):item.properties,
           unverifiedReason: item.unverified_reason,
           updatedAt: item.updated_at
         }));
