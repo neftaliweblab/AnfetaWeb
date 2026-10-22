@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await processNotionWebhook(payload, {
       sourceKey,
+      calendarSourceId:process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId,
       notionToken: settings.notionToken
     });
 

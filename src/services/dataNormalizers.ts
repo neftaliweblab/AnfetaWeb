@@ -75,6 +75,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
   const title = raw.Title || raw.title || "";
   const workflow = workflowState(raw.Status || raw.status || "", title);
   return {
+    serverModified:raw.serverModified||raw.last_edited_time,
     pageId: raw.PageId || raw.pageId || `act-${idx}`,
     pageUrl: raw.PageUrl || raw.pageUrl || "",
     title,

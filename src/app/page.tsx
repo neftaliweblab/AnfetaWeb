@@ -1,4 +1,6 @@
 "use client";
+import {applyNotionStates} from '@/lib/applyNotionStates';
+import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
 import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
@@ -188,7 +190,7 @@ export default function AnfetaApp() {
     let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;const revision=indexMutationRevision.current;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&revision===indexMutationRevision.current&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(revision!==indexMutationRevision.current){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{unchanged:true,cacheMeta:{syncing:false}}}));return;}if(Array.isArray(data.items)){setSearchIndex(previous=>retainSearchResults(previous,data));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),15000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;const revision=indexMutationRevision.current;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&revision===indexMutationRevision.current&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>filterDeletedPages(retainSearchResults(previous,{...data,...(revision!==indexMutationRevision.current?{loadingIndex:true}:{})}),currentUser));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),15000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
         void loadIndex();indexFocus=()=>void loadIndex();window.addEventListener('anfeta_settings_changed',indexFocus);
 
         // Daily automation report
@@ -253,7 +255,7 @@ export default function AnfetaApp() {
           const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-          if (data.activities) setCalendarActivities(data.activities);
+          if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate));
         }
       } catch (err) {
         if (!controller.signal.aborted) setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
@@ -319,20 +321,19 @@ export default function AnfetaApp() {
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
-        setCalendarActivities(msg.activities);
+        setCalendarActivities(prev=>mergeCalendarSnapshot(prev,msg.activities!,currentDate));
         const byId=new Map(msg.activities.filter((a:any)=>!a.isReviewMirror).map((a:any)=>[a.pageId.replace(/-/g,''),a]));
         setSearchIndex(prev=>prev.map(row=>{const a:any=byId.get((row.externalId || row.id || '').replace(/-/g,''));return a?{...row,name:a.title,assignedPerson:a.person,scheduledDate:mexicoDate(a.start),statusLabel:a.status}:row;}));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
+        if(msg.updates.title!==undefined||msg.updates.person!==undefined||msg.updates.status!==undefined||msg.updates.start!==undefined){
         indexMutationRevision.current++;
         setSearchIndex(prev=>prev.map(row=>(row.externalId || row.id || '').replace(/-/g,'')===msg.pageId!.replace(/-/g,'') ? {...row,...(msg.updates.title?{name:msg.updates.title}:{}),...(msg.updates.person?{assignedPerson:msg.updates.person}:{}),...(msg.updates.status?{statusLabel:msg.updates.status,updateStatus:msg.updates.status}:{}),...(msg.updates.start?{scheduledDate:msg.updates.start}:{}),serverModified:msg.updates.serverModified||new Date().toISOString()}:row));
-        setCalendarActivities((prev) =>
-          prev.map((a) => (a.pageId === msg.pageId ? { ...a, ...msg.updates } : a))
-        );
+        }
+        setCalendarActivities(prev=>upsertCalendarActivity(prev,msg.pageId!,msg.updates,currentDate));
       } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
-        setCalendarActivities((prev) => {
-          if (prev.some((a) => a.pageId === msg.activity.pageId)) return prev;
-          return [...prev, msg.activity];
-        });
+        indexMutationRevision.current++;
+        setSearchIndex(previous=>applyNotionStates(previous,[{id:msg.activity.pageId,calendarActivity:msg.activity}]));
+        setCalendarActivities(prev=>upsertCalendarActivity(prev,msg.activity.pageId,msg.activity,currentDate));
       } else if (msg.sourceWindow === "calendar") {
         if (msg.type === "SYNC_QUERY" && typeof msg.query === "string") {
           setSearchQuery(msg.query);
@@ -660,7 +661,7 @@ export default function AnfetaApp() {
                   const data = await readApiJson(res);
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-                  if (data.activities) setCalendarActivities(data.activities);
+                  if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate));
                 }
               } catch (e) {
                 setCalendarLoadError(e instanceof Error ? e.message : "No se pudo cargar el calendario.");

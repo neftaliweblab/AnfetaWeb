@@ -411,6 +411,14 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     await mutations.mutateActivity(settings,'Neftali',pid,{start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00',expectedStart:'2026-10-05T08:00:00-06:00',expectedEnd:'2026-10-05T09:00:00-06:00'});
     assert.equal(state.page.properties['Fecha POR Hacer'].date.start,'2026-10-05T09:00:00-06:00');
   });
+  await test('Renombrar desde buscador confirma el nombre real y publica una actividad actualizada',async()=>{
+    const title='prtuzREVISION nne11 Nombre nuevo';const response=await route.POST(request('rename-item',{id:pid,source:'Notion',oldName:state.page.properties.Name.title[0].plain_text,newName:title})),data=await response.json();
+    assert.equal(response.status,200);assert.equal(data.success,true);assert.equal(data.newName,title);assert.equal(state.page.properties.Name.title[0].text.content,title);
+  });
+  await test('Renombrar rechazado en Notion no informa éxito ficticio',async()=>{
+    state.failPage=true;const response=await route.POST(request('rename-item',{id:pid,source:'Notion',oldName:state.page.properties.Name.title[0].plain_text,newName:'Nombre rechazado'})),data=await response.json();
+    assert.notEqual(response.status,200);assert.notEqual(data.success,true);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

@@ -1,4 +1,5 @@
 "use client";
+import {upsertCalendarActivity,applyCalendarStates} from '@/lib/calendarUpdates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
@@ -29,7 +30,7 @@ const SHORT_COLLABORATORS = [
 
 const SESSION_PERSON_KEY = 'anfeta_personal_agenda_person';
 
-export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:string;onOpenCalendar?:()=>void}){
+export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{currentUser:string;onOpenCalendar?:()=>void;active?:boolean}){
   const [person, setPerson] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -67,6 +68,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
   };
 
   useEffect(()=>{
+    if(!active)return;
     const controller=new AbortController();
     const version=revision.current;
     loadingRef.current=true;
@@ -91,26 +93,26 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
         if(!controller.signal.aborted){loadingRef.current=false;setLoading(false);}
       });
     return()=>{controller.abort();loadingRef.current=false;};
-  },[day,currentUser,retry]);
+  },[day,currentUser,retry,active]);
 
   useEffect(()=>{
-    const refresh=()=>{if(!pending.current&&!loadingRef.current&&!document.hidden)setRetry(n=>n+1);};
+    const refresh=()=>{if(active&&!pending.current&&!loadingRef.current&&!document.hidden)setRetry(n=>n+1);};
     const removeDeleted=()=>setItems(old=>filterDeletedPages(old,currentUser));
     const unsubscribe=anfetaSync.subscribe(message=>{
       if(message.type==='ACTIVITY_UPDATED'&&message.pageId&&message.updates){
         revision.current++;
-        setItems(old=>old.map(a=>a.pageId===message.pageId?{...a,...message.updates}:a));
-      }else if(message.type==='ACTIVITY_CREATED'&&message.activity)setItems(old=>old.some(a=>a.pageId===message.activity.pageId)?old:[...old,message.activity]);
+        setItems(old=>upsertCalendarActivity(old,message.pageId!,message.updates,day));
+      }else if(message.type==='ACTIVITY_CREATED'&&message.activity)setItems(old=>upsertCalendarActivity(old,message.activity.pageId,message.activity,day));
     });
     window.addEventListener('anfeta_data_refreshed',refresh);window.addEventListener('online',refresh);
     window.addEventListener(DELETED_PAGES_EVENT,removeDeleted);window.addEventListener('storage',removeDeleted);
     return()=>{unsubscribe();window.removeEventListener('anfeta_data_refreshed',refresh);window.removeEventListener('online',refresh);window.removeEventListener(DELETED_PAGES_EVENT,removeDeleted);window.removeEventListener('storage',removeDeleted);};
-  },[currentUser]);
+  },[currentUser,day,active]);
 
   const activities=useMemo(()=>personalAgendaActivities(items.filter(a=>mexicoDate(a.start)===day),person),[items,person,day]);
   const effectiveSelected=agendaSelection(activities,selectedId);
   const selected=activities.find(a=>a.pageId===effectiveSelected);
-  useNotionPageWatch(currentUser,activities,true,states=>{if(!pending.current)setItems(old=>filterDeletedPages(applyNotionStates(old,states),currentUser));});
+  useNotionPageWatch(currentUser,activities,active,states=>{if(pending.current)return false;setItems(old=>filterDeletedPages(applyCalendarStates(old,states,day),currentUser));},true);
   const menuActivity=activities.find(a=>a.pageId===menu?.pageId);
   const closeMenu=useCallback(()=>setMenu(null),[]);
   const updateActivity=async(pageId:string,updates:AgendaUpdate)=>{
@@ -132,7 +134,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar}:{currentUser:str
         return next;
       });
       setNotice(data.warning||'Cambio confirmado en Notion.');
-      anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
+      anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId,updates:saved});
       window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start)setDay(mexicoDate(saved.start));
       return true;

@@ -14,6 +14,8 @@ export interface AnfetaSyncMessage {
     | "ACTIVITY_CREATED"
     | "CALENDAR_REFRESHED"
     | "REMINDERS_CHANGED";
+  messageId?:string;
+  confirmed?:boolean;
   query?: string;
   date?: string;
   domain?: string;
@@ -27,7 +29,10 @@ export interface AnfetaSyncMessage {
 
 const CHANNEL_NAME = "anfeta_multiwindow_channel";
 
-class AnfetaSyncService {
+export class AnfetaSyncService {
+  private seen=new Set<string>();
+  private clientId=Math.random().toString(36).slice(2);
+  private sequence=0;
   private channel: BroadcastChannel | null = null;
   private listeners: Set<(msg: AnfetaSyncMessage) => void> = new Set();
 
@@ -60,19 +65,23 @@ class AnfetaSyncService {
   public broadcast(msg: AnfetaSyncMessage) {
     const payload = {
       ...msg,
+      messageId:this.clientId+':'+(++this.sequence),
+      ...(msg.confirmed&&msg.updates?{updates:{...msg.updates,localConfirmedAt:Date.now()}}:{}),
       timestamp: Date.now(),
     };
 
     this.notifyListeners(payload);
+    if(msg.confirmed&&typeof window!=='undefined')window.dispatchEvent(new Event('anfeta_activity_saved'));
+    let sent=false;
     if (this.channel) {
       try {
-        this.channel.postMessage(payload);
+        this.channel.postMessage(payload);sent=true;
       } catch (err) {
         console.warn("Error enviando BroadcastChannel:", err);
       }
     }
 
-    if (typeof window !== "undefined") {
+    if (!sent && typeof window !== "undefined") {
       try {
         localStorage.setItem("anfeta_sync_event", JSON.stringify(payload));
       } catch {
@@ -90,6 +99,7 @@ class AnfetaSyncService {
 
   private notifyListeners(data: AnfetaSyncMessage) {
     if (!data) return;
+    if(data.messageId){if(this.seen.has(data.messageId))return;this.seen.add(data.messageId);if(this.seen.size>512)this.seen.delete(this.seen.values().next().value!);}
     this.listeners.forEach((listener) => {
       try {
         listener(data);

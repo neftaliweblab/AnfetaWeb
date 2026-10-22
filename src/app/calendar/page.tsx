@@ -1,11 +1,13 @@
 "use client";
+import {mergeCalendarSnapshot} from '@/lib/calendarUpdates';
+import {sharedCalendarFetch} from '@/lib/sharedCalendarFetch';
 import {PersonSelector} from '@/components/LoginModal/PersonSelector';
 import {CalendarRecordingWorkspace} from '@/components/CalendarHost/CalendarRecordingWorkspace';
 import {LoginModal} from '@/components/LoginModal/LoginModal';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo,useRef } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { CalendarHost } from "@/components/CalendarHost/CalendarHost";
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
@@ -35,24 +37,26 @@ export default function StandaloneCalendarPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [syncStatus, setSyncStatus] = useState<string>("Sincronizado con Buscador Principal");
 
+  const loadRevision=useRef(0);
   // Cargar actividades de la fecha
   const loadCalendarData = useCallback(async (dateToLoad: string) => {
+    const sequence=++loadRevision.current;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/data?type=calendar&basic=1&date=${dateToLoad}`);
+      const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&date=${dateToLoad}`,currentUser);
       {
-        const data = await res.json();
+        const data = await res.json();if(sequence!==loadRevision.current)return;
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-        if (data.activities) setCalendarActivities(data.activities);
+        if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,dateToLoad));
         if (data.availableDates) setAvailableDates(data.availableDates);
       }
     } catch (err) {
-      setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
+      if(sequence===loadRevision.current)setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
     } finally {
-      setIsLoading(false);
+      if(sequence===loadRevision.current)setIsLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if(authenticated&&currentUser) loadCalendarData(currentDate);

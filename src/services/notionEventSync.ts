@@ -1,3 +1,7 @@
+import {assignedPerson,calendarStatusField} from './notionCalendar';
+import {normalizeActivity} from './dataNormalizers';
+import {ftfState} from './ftfVerification';
+import {calendarDomain} from './calendarPresentation';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { supabaseConfigured, supabaseAdmin } from './supabaseServer';
 import { BoundedCache } from '../lib/boundedCache';
@@ -92,6 +96,18 @@ export function parseNotionPageProperties(page: any): {
   }
 
   return { id, title, person, status, dateStart, lastEdited };
+}
+
+/** A real calendar card only exists when the official scheduling property is present. */
+export function calendarActivityFromPage(page:any,calendarSourceId?:string){
+  const source=calendarSourceId||process.env.NOTION_CALENDAR_DATA_SOURCE_ID||'2eeabd7d-91b7-8193-a131-000b08cd54e2';
+  if(page.parent?.data_source_id&&cleanPageId(page.parent.data_source_id)!==cleanPageId(source))return undefined;
+  const date:any=Object.entries(page.properties||{}).find(([name,value]:any)=>/^fecha por hacer$/i.test(name.trim())&&value.type==='date')?.[1];
+  if(!date?.date?.start)return undefined;
+  const parsed=parseNotionPageProperties(page),start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;
+  const end=date.date.end||new Date(Date.parse(start)+3600000).toISOString();
+  if(!Number.isFinite(Date.parse(start))||!Number.isFinite(Date.parse(end)))return undefined;
+  return {...normalizeActivity({pageId:page.id,pageUrl:page.url,title:parsed.title,person:assignedPerson(page,parsed.person),status:((field:any)=>field?.[1]?.[field[1].type]?.name||parsed.status)(calendarStatusField(page)),start,end,domain:calendarDomain(parsed.title),isLocked:Object.entries(page.properties||{}).some(([n,p]:any)=>/lock|bloquead/i.test(n)&&p.checkbox),...ftfState(page),reviewFlow:page.__reviewFlow,reviewFlowScanned:!!page.__reviewFlow},0),serverModified:parsed.lastEdited};
 }
 
 /**
@@ -291,6 +307,7 @@ export async function processNotionWebhook(
   payload: any,
   options: {
     sourceKey: string;
+    calendarSourceId?:string;
     notionToken?: string;
     requestFetch?: typeof fetch;
   }
@@ -364,7 +381,7 @@ export async function processNotionWebhook(
           name: parsed.title,
           assignedPerson: parsed.person,
           updateStatus: parsed.status,
-          scheduledDate: parsed.dateStart
+          scheduledDate: parsed.dateStart,scheduledEnd:calendarActivityFromPage(pageData,options.calendarSourceId)?.end,...ftfState(pageData),calendarActivity:calendarActivityFromPage(pageData,options.calendarSourceId)
         } : null
       });
       results.push({ pageId: cleanId, state: 'active', applied: recorded.applied });
@@ -425,7 +442,7 @@ export async function processNotionWebhook(
             name: parsed.title,
             assignedPerson: parsed.person,
             updateStatus: parsed.status,
-            scheduledDate: parsed.dateStart
+            scheduledDate: parsed.dateStart,scheduledEnd:calendarActivityFromPage(pageData,options.calendarSourceId)?.end,...ftfState(pageData),calendarActivity:calendarActivityFromPage(pageData,options.calendarSourceId)
           }
         });
         results.push({ pageId: cleanId, state: 'active', applied: recorded.applied });

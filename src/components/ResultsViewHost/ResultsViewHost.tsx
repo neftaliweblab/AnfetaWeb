@@ -1025,8 +1025,10 @@ export function ResultsViewHost({
   };
 
   useEffect(()=>anfetaSync.subscribe(message=>{
+    if(message.type==='ACTIVITY_CREATED'&&message.activity){setItems(previous=>applyNotionStates(previous,[{id:message.activity.pageId,calendarActivity:message.activity}]));return;}
     if(message.type!=='ACTIVITY_UPDATED'||!message.pageId||!message.updates)return;
     const a=message.updates;
+    if(a.title===undefined&&a.person===undefined&&a.status===undefined&&a.start===undefined)return;
     const states=[{id:message.pageId,name:a.title,assignedPerson:a.person,updateStatus:a.status,scheduledDate:a.start,serverModified:a.serverModified||new Date().toISOString()}];
     setItems(previous=>applyNotionStates(previous,states));
     setSelectedItem((previous:any)=>previous?applyNotionStates([previous],states)[0]:previous);
@@ -1091,7 +1093,7 @@ export function ResultsViewHost({
         body: JSON.stringify({
           action: "rename-item",
           payload: {
-            id: item.id,
+            id: item.externalId||item.id,
             source: item.source,
             oldName: item.name,
             newName,
@@ -1099,7 +1101,10 @@ export function ResultsViewHost({
           },
         }),
       });
+      const data=await res.json();
+      if(!res.ok||!data.success)throw Error(data.error||'No se confirmó el nombre en Notion.');
       if (res.ok) {
+        if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:data.activity.pageId,updates:data.activity});
         setItems((prev) =>
           prev.map((it) => (it.id === item.id ? { ...it, name: newName } : it))
         );
@@ -1109,7 +1114,7 @@ export function ResultsViewHost({
         sendWindowsNotification("Elemento renombrado", `Nuevo nombre: ${newName}`);
       }
     } catch (err) {
-      console.error("Error renaming:", err);
+      setStatusError(err instanceof Error?err.message:"No se pudo renombrar.");
     }
   };
 
@@ -1125,7 +1130,7 @@ export function ResultsViewHost({
           body: JSON.stringify({
             action: "rename-item",
             payload: {
-              id: item.id,
+              id: item.externalId||item.id,
               source: item.source,
               oldName: item.name,
               newName,
@@ -1134,6 +1139,7 @@ export function ResultsViewHost({
           }),
         });
         if (res.ok) {
+          const data=await res.json();if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:data.activity.pageId,updates:data.activity});
           count++;
           setItems((prev) =>
             prev.map((it) => (it.id === item.id ? { ...it, name: newName } : it))
@@ -1563,7 +1569,7 @@ export function ResultsViewHost({
         {isDetailsOpen && (
           <div className="shrink-0 h-full flex flex-col"><div className="flex gap-2 border-b border-slate-800 bg-[#0F141C] p-2 text-xs"><button type="button" aria-pressed={showPersonalAgenda||!(pinnedDetail||selectedItem)} className="text-cyan-300" onClick={()=>setShowPersonalAgenda(true)}>Calendario individual</button><button type="button" disabled={!(pinnedDetail||selectedItem)} aria-pressed={!showPersonalAgenda&&!!(pinnedDetail||selectedItem)} className="text-slate-300 disabled:opacity-40" onClick={()=>setShowPersonalAgenda(false)}>Detalles</button></div><div className="flex-1 min-h-0">
           <DetailsPane
-            emptyContent={<PersonalAgendaPane currentUser={currentUser} onOpenCalendar={onToggleCalendarView}/>}
+            emptyContent={<PersonalAgendaPane active={isActive} currentUser={currentUser} onOpenCalendar={onToggleCalendarView}/>}
             item={showPersonalAgenda?null:(pinnedDetail||selectedItem)}
             isPinned={!!pinnedDetail}
             onTogglePin={()=>setPinnedDetail(old=>old?null:selectedItem)}

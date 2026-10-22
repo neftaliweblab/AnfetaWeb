@@ -50,6 +50,8 @@ export interface SearchResultRow {
 }
 
 export interface NotionCalendarActivity {
+  serverModified?:string;
+  localConfirmedAt?:number;
   pageId: string;
   pageUrl: string;
   title: string;

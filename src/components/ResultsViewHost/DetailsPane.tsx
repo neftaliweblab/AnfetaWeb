@@ -275,9 +275,14 @@ export function DetailsPane({
   // Estados de vista previa de bloques y contenido
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewBlocks, setPreviewBlocks] = useState<PreviewBlock[]>([]);
+  const [previewRevision,setPreviewRevision]=useState(0);
+  const queuedContent=useRef(false);
   const [previewContent, setPreviewContent] = useState("");
   const [previewStatus, setPreviewStatus] = useState("");
   const activePageIdRef = useRef<string>("");
+  useEffect(()=>{const changed=(event:Event)=>{const id=String((event as CustomEvent).detail?.pageId||'').replace(/-/g,'');if(!id||id!==activePageIdRef.current.replace(/-/g,''))return;if(editingBlock||addingBlock){queuedContent.current=true;return;}setPreviewRevision(n=>n+1);};window.addEventListener('anfeta_page_content_changed',changed);return()=>window.removeEventListener('anfeta_page_content_changed',changed);},[editingBlock,addingBlock]);
+  useEffect(()=>{if(!editingBlock&&!addingBlock&&queuedContent.current){queuedContent.current=false;setPreviewRevision(n=>n+1);}},[editingBlock,addingBlock]);
+
 
   useEffect(() => {
     setEditingBlock(null);
@@ -379,7 +384,7 @@ export function DetailsPane({
           setIsLoadingPreview(false);
         }
       });
-  }, [item?.externalId, item?.id, item?.target, item?.path]);
+  }, [item?.externalId, item?.id, item?.target, item?.path,previewRevision]);
 
   if (!item) {
     if(emptyContent)return <>{emptyContent}</>;

@@ -1,4 +1,5 @@
 "use client";
+import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {ActivityQuickEntry} from './ActivityQuickEntry';
@@ -133,7 +134,7 @@ export function CalendarDetailPanel({
         if (!controller.signal.aborted && !updating.current) {
           setChecklistError('');
           setItems(data.items);
-          onChecklistUpdated?.({checklistTotal:data.items.length,checklistCompleted:data.items.filter((i: NotionTodoItem) => i.isChecked).length,checklistScanned:true});
+          const updates={checklistTotal:data.items.length,checklistCompleted:data.items.filter((i: NotionTodoItem) => i.isChecked).length,checklistScanned:true,checklistItems:data.items};onChecklistUpdated?.(updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates});
         }
       } catch (error) {
         if (!controller.signal.aborted) setChecklistError(error instanceof Error ? error.message : 'No se pudieron cargar las tareas.');
@@ -141,15 +142,18 @@ export function CalendarDetailPanel({
     }
     load();
 
+    const contentChanged=(event:Event)=>{const id=(event as CustomEvent).detail?.pageId;if(id&&id.replace(/-/g,'')===activity.pageId.replace(/^review-mirror-/,'').replace(/-/g,''))void load();};
+    window.addEventListener('anfeta_page_content_changed',contentChanged);
     window.addEventListener('anfeta_data_refreshed',load);
 
 
-    return () => {controller.abort();window.removeEventListener('anfeta_data_refreshed',load);};
+    return () => {controller.abort();window.removeEventListener('anfeta_page_content_changed',contentChanged);window.removeEventListener('anfeta_data_refreshed',load);};
   }, [activity.pageId, activity.isReviewMirror, retry]);
 
   const updating = React.useRef(false);
   const activePage = React.useRef(activity.pageId);
   activePage.current = activity.pageId;
+  useEffect(()=>{if(activity.checklistItems&&!updating.current)setItems(activity.checklistItems);},[activity.checklistItems]);
   const handleToggle = async (item: NotionTodoItem) => {
     if (!editable || updating.current || loading || item.isUpdating) return;
     const pageId = activity.pageId;
@@ -164,7 +168,7 @@ export function CalendarDetailPanel({
       const updated = items.map(i => i.id === item.id ? {...i,isChecked:data.checked,isUpdating:false} : i);
       setItems(updated);
       const completed = updated.filter(i => i.isChecked).length;
-      onChecklistUpdated?.({checklistTotal:updated.length,checklistCompleted:completed,checklistScanned:true,...data.stats});
+      const updates={checklistTotal:updated.length,checklistCompleted:completed,checklistScanned:true,checklistItems:updated,...data.stats};onChecklistUpdated?.(updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId,updates});
       setStatusMessage(data.warning||'Checklist guardado en Notion.');
     } catch (error) { if (activePage.current === pageId) setChecklistError(error instanceof Error ? error.message : 'No se pudo guardar el checklist.'); }
     finally { updating.current = false; if (activePage.current === pageId) setItems(prev => prev.map(i => ({...i,isUpdating:false}))); }

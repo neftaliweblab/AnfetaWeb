@@ -440,7 +440,7 @@ export function ActivityCard({
       if(!response.ok||!data.success||data.checked!==!chk.isChecked)throw Error(data.error||'Notion no confirmó el check.');
       const confirmed={...optimistic,items:data.stats?.checklistItems||items,total:data.stats?.checklistTotal??optimistic.total,completed:data.stats?.checklistCompleted??optimistic.completed,today:data.stats?.todayChecklistCompleted??effectiveToday,completedChecks:data.stats?.completedChecks||optimistic.completedChecks};
       checklistMemoryCache.set(cleanCardId(activity.pageId),confirmed);setChecklistData(confirmed);
-      const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
+      const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
   const isScanned = !!(activity.checklistScanned || checklistData);

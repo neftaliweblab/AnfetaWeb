@@ -1,7 +1,7 @@
 "use client";
 import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
+import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
 import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
-import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
@@ -184,6 +184,7 @@ export function CalendarHost({
     const historical=new Map(incoming.filter(a=>a.isHandoffMirror).map(a=>[a.pageId,a]));
     for(const [id,saved] of recentHandoffs.current){if(saved.until<Date.now()){recentHandoffs.current.delete(id);continue;}if(mexicoDate(saved.activity.start)===currentDate)historical.set(id,saved.activity);}
     const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
+    for(const saved of recentSaves.current.values())if(saved.until>Date.now()&&mexicoDate(saved.activity.start)===currentDate&&!originals.some(a=>pageIdentity(a)===pageIdentity(saved.activity)))originals.push(saved.activity);
     const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
@@ -264,17 +265,19 @@ export function CalendarHost({
   }, [selectedActivity, activitiesList]);
 
   useNotionPageWatch(currentUser, watchCalendarRows, active, (states) => {
-    setActivitiesList(prev => filterDeletedPages(applyNotionStates(prev, states), currentUser));
+    if(pending.current.size)return false;
+    mutationVersion.current++;
+    setActivitiesList(prev => filterDeletedPages(applyCalendarStates(prev, states,currentDate), currentUser));
     setSelectedActivity(prev => {
       if (!prev) return null;
-      const updated = applyNotionStates([prev], states);
+      const updated = applyCalendarStates([prev], states,currentDate);
       if (!updated.length) {
         setIsDetailOpen(false);
         return null;
       }
       return updated[0];
     });
-  });
+  },true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
   const openNotificationActivity=(activity:NotionCalendarActivity)=>{
@@ -309,27 +312,16 @@ export function CalendarHost({
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
-        if(!pending.current.size)setActivitiesList(protectSaved(msg.activities));
+        if(!pending.current.size)setActivitiesList(prev=>mergeCalendarSnapshot(prev,protectSaved(msg.activities!),currentDate));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
-        setActivitiesList((prev) =>
-          (() => {
-            const saved = prev.find(a => a.pageId === msg.pageId);
-            if (!saved) return prev;
-            const activity = {...saved,...msg.updates};
-            const next = prev.filter(a => a.pageId !== msg.pageId && a.pageId !== 'review-mirror-' + msg.pageId);
-            next.push(activity);
-            if (activity.reviewFlow?.State === 'pending' && activity.reviewFlow.LeaveVisualCopy !== false && normalizePerson(activity.reviewFlow.OriginalPerson) !== normalizePerson(activity.person)) next.push({...activity,pageId:'review-mirror-' + activity.pageId,person:normalizePerson(activity.reviewFlow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] ' + activity.title});
-            return next;
-          })()
-        );
+        mutationVersion.current++;
+        setActivitiesList(prev=>upsertCalendarActivity(prev,msg.pageId!,msg.updates,currentDate));
         setSelectedActivity((prev) =>
           prev && prev.pageId === msg.pageId ? { ...prev, ...msg.updates } : prev
         );
       } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
-        setActivitiesList((prev) => {
-          if (prev.some((a) => a.pageId === msg.activity.pageId)) return prev;
-          return [...prev, msg.activity];
-        });
+        mutationVersion.current++;
+        setActivitiesList(prev=>upsertCalendarActivity(prev,msg.activity.pageId,msg.activity,currentDate));
       }
     });
     return () => unsubscribe();
@@ -441,7 +433,7 @@ export function CalendarHost({
       });
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
       // Broadcast only the state confirmed by Notion.
-      anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates:saved});
+      anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId,updates:saved});
       const isBgWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
       if (!isBgWarning) setError(data.warning || '');
       window.dispatchEvent(new Event('anfeta_review_saved'));
@@ -471,6 +463,7 @@ export function CalendarHost({
 
   const filteredActivities = useMemo(() => {
     return filterDeletedPages(activitiesList,currentUser).filter((act) => {
+      if(!act.start||mexicoDate(act.start)!==currentDate)return false;
       if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
       if (searchFilterQuery && searchFilterQuery.trim()) {
@@ -480,7 +473,7 @@ export function CalendarHost({
       }
       return true;
     });
-  }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter]);
+  }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter,currentDate]);
 
   useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>(old&&available.find(a=>a.pageId===old.pageId))||available[0]||null);},[filteredActivities,visiblePeople]);
   const activitiesByPerson = useMemo(() => {
@@ -626,7 +619,7 @@ export function CalendarHost({
       )}
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
       {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
-      {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId:activity.pageId,updates:activity}));}} />}
+      {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:activity}));}} />}
       {showCreate && (
         <CreateActivityModal
           currentUser={currentUser}
@@ -643,14 +636,13 @@ export function CalendarHost({
             setCreateSlotSeed(null);
           }}
           onCreated={(activity) => {
-            setActivitiesList((prev) => [...prev, activity]);
+            setActivitiesList(prev=>upsertCalendarActivity(prev,activity.pageId,activity,currentDate));
             anfetaSync.broadcast({
-              type: "ACTIVITY_CREATED",
+              type: "ACTIVITY_CREATED",confirmed:true,
               activity,
             });
             setShowCreate(false);
             setCreateSlotSeed(null);
-            onRefresh?.();
           }}
         />
       )}
@@ -703,7 +695,7 @@ export function CalendarHost({
         onTogglePalette={handleTogglePalette}
         onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
       />
-      {canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity}/>}
+      {active&&canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity}/>}
 
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
       <details className="px-3 py-1 text-xs border-b border-slate-800"><summary className="cursor-pointer text-cyan-200">Diseño del calendario · fondo, líneas y horas</summary><div className="flex flex-wrap items-center gap-3 py-2">{Object.entries(calendarThemes).map(([key,value])=><button key={key} onClick={()=>setGridTheme(value)} className="rounded border border-slate-600 px-2 py-1">{key==='soft'?'Suave':key==='blue'?'Azul':'Alto contraste'}</button>)}{(['background','lines','hours'] as const).map(key=><label key={key} className="flex items-center gap-2">{key==='background'?'Fondo':key==='lines'?'Líneas':'Horas'}<input aria-label={'Color de '+key} type="color" value={gridTheme[key]} onChange={e=>setGridTheme(old=>({...old,[key]:e.target.value}))}/></label>)}</div></details>
@@ -879,7 +871,7 @@ export function CalendarHost({
               const pageId = selectedActivity.pageId;
               setActivitiesList(prev => prev.map(a => a.pageId === pageId ? {...a,...updates} : a));
               setSelectedActivity(prev => prev ? {...prev,...updates} : prev);
-              anfetaSync.broadcast({type:'ACTIVITY_UPDATED',pageId,updates});
+
             }}
           />
         )}
@@ -923,8 +915,7 @@ export function CalendarHost({
           initialTime={createSlotSeed?.start || "10:00"}
           onActivitiesCreated={(created) => {
             setActivitiesList((prev) => [...prev, ...created]);
-            created.forEach(activity=>anfetaSync.broadcast({type:"ACTIVITY_CREATED",activity}));
-            onRefresh?.();
+            created.forEach(activity=>anfetaSync.broadcast({type:"ACTIVITY_CREATED",confirmed:true,activity}));
           }}
         />
       )}
