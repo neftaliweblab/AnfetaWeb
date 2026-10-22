@@ -27,6 +27,8 @@ export interface NotionTodoItem {
 
 interface CalendarDetailPanelProps {
   activity: NotionCalendarActivity;
+  embedded?: boolean;
+  isSaving?: boolean;
   onClose: () => void;
   currentUser: string;
   onActivityUpdated?: (updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
@@ -37,6 +39,8 @@ interface CalendarDetailPanelProps {
 
 export function CalendarDetailPanel({
   activity,
+  embedded = false,
+  isSaving = false,
   onClose,
   currentUser,
   onActivityUpdated,
@@ -63,7 +67,7 @@ export function CalendarDetailPanel({
 
   // Limpiar título de prefijos y tecnicismos repetitivos
   const cleanTitle = calendarDisplayTitle(title, domain);
-  const editable = canEditActivity(currentUser, activity);
+  const editable = canEditActivity(currentUser, activity) && !activity.isHandoffMirror && !isSaving;
   const userCanReview = editable && (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser));
   const [ftfBusy,setFtfBusy]=useState(false);
   const ftfSaving=React.useRef(false);
@@ -169,7 +173,7 @@ export function CalendarDetailPanel({
   return (
     <aside
       aria-label="Detalle de actividad"
-      className="fixed top-14 bottom-0 right-0 w-full max-w-[380px] xl:static xl:w-[380px] shrink-0 shadow-2xl border-l border-[#27272A] bg-[#141416] p-4 flex flex-col justify-between overflow-y-auto select-none z-50 text-slate-200"
+      className={embedded ? "min-w-0 rounded-lg border border-slate-700 bg-[#101720] p-3 text-slate-200" : "fixed top-14 bottom-0 right-0 w-full max-w-[380px] xl:static xl:w-[380px] shrink-0 shadow-2xl border-l border-[#27272A] bg-[#141416] p-4 flex flex-col justify-between overflow-y-auto select-none z-50 text-slate-200"}
     >
       <div className="space-y-4">
         {/* Header */}
@@ -206,6 +210,7 @@ export function CalendarDetailPanel({
           )}
         </div>
 
+        {!embedded && <>
         {/* Metadata Card */}
         <label className={'flex items-start gap-3 rounded-xl border p-3 text-xs '+(activity.ftfVerified?'border-emerald-500/70 bg-emerald-950/40':'border-slate-700 bg-slate-900/40')}>
           <input type="checkbox" aria-label="Pasos FTF verificados para hoy" checked={!!activity.ftfVerified} disabled={!editable||!activity.ftfAvailable||ftfBusy||!onActivityUpdated} className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-400" onChange={async e=>{if(ftfSaving.current)return;const checked=e.target.checked;ftfSaving.current=true;setFtfBusy(true);try{const saved=await onActivityUpdated?.({ftfVerified:checked,expectedFtfVerified:!!activity.ftfVerified});setStatusMessage(saved===false?'No se confirmó la verificación FTF. Revisa el aviso del calendario.':checked?'Pasos verificados: la actividad ya está entendida.':'Se retiró la verificación FTF.');}catch(error){setStatusMessage(error instanceof Error?error.message:'No se pudo guardar la verificación FTF.');}finally{ftfSaving.current=false;setFtfBusy(false);}}}/>
@@ -303,6 +308,7 @@ export function CalendarDetailPanel({
         </div>
 
         {onActivityUpdated && <CalendarActivityTools activity={activity} currentUser={currentUser} onSave={onActivityUpdated} />}
+        </>}
         {/* Pestañas: Checklist de Notion vs Actividades del Proyecto (Dominio) */}
         <div className="flex items-center justify-between border-b border-[#27272A] pt-2">
           <div className="flex gap-2">
@@ -334,6 +340,7 @@ export function CalendarDetailPanel({
           </span>
         </div>
 
+        {embedded && <p className="text-xs text-emerald-300" role="status">{loading ? "Cargando pasos…" : `${checklistDone} / ${checklistTotal} pasos completados (${pct}%)`}</p>}
         {/* Tab 1: Checklist To-Do Box */}
         {activeTab === "checklist" && (
 
