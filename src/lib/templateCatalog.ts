@@ -1,4 +1,4 @@
-import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority} from '../services/activityTags';
+import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags,pendingReviewTag} from '../services/activityTags';
 /**
  * templateCatalog.ts
  * Catálogo y utilidades de Plantillas Fase1 para ANFETA.
@@ -247,8 +247,8 @@ export function buildCalendarTemplateMonthTag(date: Date): string {
 /**
  * Genera el tag completo del revisor según ANFETA.
  */
-export function getCalendarReviewerTag(personName: string): string {
-  const person=activityPerson(personName);return person?ACTIVITY_TAGS[person].review:'';
+export function getCalendarReviewerTag(personName: string,mode:'compatible'|'new'='compatible'): string {
+  const person=activityPerson(personName);return person?(mode==='new'?ACTIVITY_TAGS[person].reference+'000':ACTIVITY_TAGS[person].review):'';
 }
 
 /**
@@ -311,6 +311,8 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
 
   const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle)) : "";
   const reviewerTag = reviewerName ? getCalendarReviewerTag(reviewerName) : "";
+  const incomingReviewTags=scanActivityTags(templateOriginalTitle).filter(tag=>tag.role==='review'&&!tag.legacy);
+  const pendingTemplateTags=incomingReviewTags.length?(reviewerName?pendingReviewTag(reviewerName):[...new Set(incomingReviewTags.map(tag=>tag.token))].join(' ')):'';
 
   // Conservar tags de equipo originales si no se eligieron personas específicas
   let teamTags = "";
@@ -328,6 +330,7 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     formattedDomain,
     personTag,
     reviewerTag,
+    pendingTemplateTags,
     teamTags,
   ].filter(Boolean);
 

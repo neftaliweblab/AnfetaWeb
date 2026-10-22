@@ -17,14 +17,15 @@ export function usePendingTasks(user:string,authenticated:boolean){
   const [tasks,setTasks]=useState<PendingTaskItem[]>([]),[error,setError]=useState('');
   const current=useRef<PendingTaskItem[]>([]),enqueue=useRef<(op:PendingOperation)=>void>(()=>{});
   useEffect(()=>{
-    let active=true,busy=false;let journal:PendingOperation[]=[];
+    let active=true,busy=false;let journal:PendingOperation[]=[];let confirmedRevision=-1;
     const key='anfeta-pending-v2:'+user;
     current.current=[];setTasks([]);setError('');
     if(!authenticated||!user){enqueue.current=()=>{};return;}
     const publish=(items:PendingTaskItem[])=>{if(!active)return;const clean=items.map(sanitizeTask);current.current=clean;setTasks(clean);};
-    const persist=()=>{try{localStorage.setItem(key,JSON.stringify({items:current.current}));for(const op of journal)localStorage.setItem(key+':op:'+op.key,JSON.stringify(op));}catch{setError('No se pudo conservar la copia local de pendientes. Mantén abierta esta ventana hasta confirmar el guardado.');}};
+    const persist=()=>{try{localStorage.setItem(key,JSON.stringify({items:current.current,confirmedRevision}));for(const op of journal)localStorage.setItem(key+':op:'+op.key,JSON.stringify(op));}catch{setError('No se pudo conservar la copia local de pendientes. Mantén abierta esta ventana hasta confirmar el guardado.');}};
     try{
       const saved=JSON.parse(localStorage.getItem(key)||'null');
+      if(Number.isSafeInteger(saved?.confirmedRevision))confirmedRevision=saved.confirmedRevision;
       if(Array.isArray(saved?.journal))journal=saved.journal;
       for(let i=0;i<localStorage.length;i++){
         const name=localStorage.key(i);
@@ -37,7 +38,9 @@ export function usePendingTasks(user:string,authenticated:boolean){
     }catch{}
     const read=async()=>{
       const r=await fetch('/api/data?type=pendientes',{cache:'no-store'}),data=await r.json();
-      if(!r.ok||!Array.isArray(data.items)||!Number.isFinite(data.revision))throw Error(data.error||'No se pudieron cargar los pendientes.');
+      if(!r.ok||!Array.isArray(data.items)||!Number.isSafeInteger(data.revision))throw Error(data.error||'No se pudieron cargar los pendientes.');
+      if(data.revision<confirmedRevision)throw Error('Llegó una copia anterior de los pendientes. Se conserva la versión más reciente.');
+      confirmedRevision=data.revision;
       return data;
     };
     const sync=async()=>{
@@ -53,14 +56,14 @@ export function usePendingTasks(user:string,authenticated:boolean){
             const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save-pendientes',payload:items,expectedRevision:remote.revision})}),data=await r.json();
             if(!active)return;
             if(!r.ok||!data.success){
-              if(/inv[aá]lida/i.test(data.error||'')){
-                try{localStorage.removeItem(key+':op:'+op.key);}catch{}
-                confirmed=true;break;
-              }
               if(/cambi|revision|conflict|guardando/i.test(data.error||'')&&attempt<2)continue;
               throw Error(data.error||'No se confirmó el guardado.');
             }
-            remote={items:Array.isArray(data.items)?data.items:items,revision:data.revision};confirmed=true;
+            if(!Array.isArray(data.items)||!Number.isSafeInteger(data.revision)||data.revision<=remote.revision)throw Error('El servidor no confirmó la versión guardada.');
+            if(op.item&&!data.items.some((item:any)=>item.id===op.item.id))throw Error('El servidor no devolvió el pendiente guardado.');
+            if(op.remove?.some(id=>data.items.some((item:any)=>item.id===id)))throw Error('El servidor no confirmó el borrado.');
+            if(op.patch&&!data.items.some((item:any)=>item.id===op.id&&Object.entries(op.patch).every(([key,value])=>item[key]===value)))throw Error('El servidor no confirmó la edición.');
+            confirmedRevision=data.revision;remote={items:data.items,revision:data.revision};confirmed=true;
           }
           if(!confirmed)throw Error('Los pendientes cambiaron en otra ventana. Vuelve a intentar.');
           try{localStorage.removeItem(key+':op:'+op.key);}catch{}

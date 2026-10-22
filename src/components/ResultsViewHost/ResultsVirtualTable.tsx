@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
+import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
 import {workflowState} from '@/services/activityWorkflow';
@@ -429,7 +430,7 @@ export function ResultsVirtualTable({
           paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
           paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
         }}
-        className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
+        className={`flex flex-wrap items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
           isSelected
             ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
             : isChecked
@@ -437,6 +438,7 @@ export function ResultsVirtualTable({
             : "hover:bg-[#172230] text-[#CBD5E1]"
         }`}
       >
+        <div className="basis-full pb-1"><ResultIdentityBadges item={item} query={searchQuery}/></div>
         {showPath && (
           <div
             style={{
@@ -496,7 +498,7 @@ export function ResultsVirtualTable({
           )}
           <span
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-            className={'truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0]')}
+            className={'block truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0]')}
           >
             {highlightMatch(parsed.title)}
           </span>
@@ -868,6 +870,7 @@ export function ResultsVirtualTable({
           </div>
         ) : null}
 
+        <ResultIdentityBadges item={item} query={searchQuery}/>
         <div
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
           className={'font-semibold line-clamp-2 mb-2 '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}

@@ -6,11 +6,13 @@ const ops=require('../src/lib/pendingOperations.ts');
 const code=ts.transpileModule(fs.readFileSync(root+'/src/components/usePendingTasks.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const data=new Map(),storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key),key:index=>[...data.keys()][index],get length(){return data.size;}};
 const flush=async()=>{for(let i=0;i<30;i++)await new Promise(setImmediate);};
-let remote=[],revision=1,offline=false,conflict=false,gets=0,posts=0;
+let remote=[],revision=1,offline=false,conflict=false,gets=0,posts=0,invalid=false,stale=false,missingAck=false;
 const fetchMock=async(_url,init={})=>{
  if(offline)throw Error('Sin conexión');
- if(!init.method){gets++;return {ok:true,json:async()=>({items:structuredClone(remote),revision})};}
+ if(!init.method){gets++;return {ok:true,json:async()=>stale?({items:[],revision:0}):({items:structuredClone(remote),revision})};}
  posts++;const body=JSON.parse(init.body);
+ if(invalid)return {ok:false,json:async()=>({error:'Lista de pendientes inválida.'})};
+ if(missingAck)return {ok:true,json:async()=>({success:true,items:[],revision:revision+1})};
  if(conflict){conflict=false;remote.push({id:'other',title:'Agregado en otra ventana'});revision++;return {ok:false,json:async()=>({error:'La configuración cambió en otro dispositivo'})};}
  if(body.expectedRevision!==revision)return {ok:false,json:async()=>({error:'revision_conflict'})};
  remote=body.payload;revision++;return {ok:true,json:async()=>({success:true,items:structuredClone(remote),revision})};
@@ -33,7 +35,10 @@ function mount(user){
  // Recovery after reload replays the persisted operation instead of replacing it with stale server data.
  offline=false;app=mount('John');await flush();assert.equal(remote.filter(t=>t.title==='Sin conexión').length,1);assert.equal(app.states[1],'');
  const before=posts;app.retry();await flush();assert.equal(posts,before,'Confirmed entries must not be replayed');
- app.api.handleDeletePendingTask(own.id);await flush();assert.ok(!remote.some(t=>t.id===own.id));app.close();
+ app.api.handleDeletePendingTask(own.id);await flush();assert.ok(!remote.some(t=>t.id===own.id));
+ const retained=app.states[0].length;stale=true;app.retry();await flush();assert.equal(app.states[0].length,retained,'Stale read cannot erase confirmed tasks');stale=false;
+ invalid=true;app.api.handleAddPendingTask({title:'No descartar',query:'',isCompleted:false});await flush();assert.ok(app.states[0].some(t=>t.title==='No descartar'));assert.match(app.states[1],/inválida/);invalid=false;app.retry();await flush();assert.ok(remote.some(t=>t.title==='No descartar'));
+ missingAck=true;app.api.handleAddPendingTask({title:'Esperar confirmación',query:'',isCompleted:false});await flush();assert.ok(app.states[0].some(t=>t.title==='Esperar confirmación'));assert.match(app.states[1],/no devolvió/);missingAck=false;app.retry();await flush();assert.ok(remote.some(t=>t.title==='Esperar confirmación'));app.close();
  offline=true;const other=mount('Neftali');await flush();assert.equal(other.states[0].length,0,'Local account copies must stay isolated');other.close();
  const original=[{id:'a',title:'A',query:'preservar'},{id:'b',title:'B'}];
  assert.deepEqual(ops.applyPendingOperation(original,{key:'k',id:'a',patch:{title:'Nuevo'}}),[{id:'a',title:'Nuevo',query:'preservar'},{id:'b',title:'B'}]);

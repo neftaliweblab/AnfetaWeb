@@ -17,7 +17,7 @@ const target=recordingTarget({id:'11111111-1111-4111-8111-111111111111',title:'A
 const {prepareTemplateBody}=require('../src/services/notionTemplateBody.ts');
 tree={root:[{id:'a',type:'synced_block',synced_block:{synced_from:{block_id:'original'}}},{id:'b',type:'synced_block',synced_block:{synced_from:{block_id:'original'}}}],original:[{id:'todo',type:'to_do',to_do:{rich_text:[{type:'text',text:{content:'Tarea real'}}],checked:true}}]};
 let nodes=await prepareTemplateBody({},'root');assert.equal(nodes.length,2);assert.equal(nodes[0].block.to_do.checked,true);assert.equal(nodes[0].block.type,'to_do');assert.ok(!nodes[0].block.synced_block);
-tree={root:[{id:'a',type:'synced_block',synced_block:{synced_from:{block_id:'root'}}}]};await assert.rejects(()=>prepareTemplateBody({},'root'),/circulares/);
+tree={root:[{id:'a',type:'synced_block',synced_block:{synced_from:{block_id:'root'}}}]};await assert.rejects(()=>prepareTemplateBody({},'root'),/circular/);
 tree={root:[{id:'a',type:'synced_block',synced_block:{synced_from:{block_id:'missing'}}}]};await assert.rejects(()=>prepareTemplateBody({},'root'),/acceso/);
 const {runCalendarAutomation}=require('../src/services/runCalendarAutomation.ts');let requests=[];
 global.fetch=async(_url,init)=>{requests.push(JSON.parse(init.body));return new Response(JSON.stringify({report:requests.length===1?{reviewed:12,moved:1,failed:1,movements:[{activityId:'saved'}],errors:['No cabe'],attemptedIds:['saved','failed'],remaining:1}:{reviewed:11,moved:1,failed:0,movements:[{activityId:'saved-two'}],errors:[],attemptedIds:['saved-two'],remaining:0}}),{status:200});};

@@ -25,6 +25,7 @@ const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
 export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
   for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
+    if(lower===entry.reference+'000')return {person:person as ActivityPerson,role:'review',suffix:'000',token,legacy:false};
     for(const [suffix, priority] of PRIORITY_SUFFIXES){
       if(lower===entry.active+suffix)return {person:person as ActivityPerson,role:'active',priority,suffix:priority,token,legacy:false};
       if(lower===entry.reference+suffix)return {person:person as ActivityPerson,role:'reference',priority,suffix:priority,token,legacy:false};
@@ -50,6 +51,7 @@ export function activityPerson(input:string):ActivityPerson|undefined{
 export function activePersonTag(person:string,priority:ActivityPriority='11'){
   const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+priority:'';
 }
+export function pendingReviewTag(person:string){const key=activityPerson(person);return key?ACTIVITY_TAGS[key].reference+'000':'';}
 export function titlePriority(title:string,person?:string){
   const key=person?activityPerson(person):undefined;
   const tags=scanActivityTags(title).filter(tag=>tag.role==='active'&&(!key||tag.person===key));
@@ -80,6 +82,7 @@ export function resultAssignedPerson(item:any){
 export function activityTagPattern(){
   const tokens:string[]=[];
   for(const entry of Object.values(ACTIVITY_TAGS)){
+    tokens.push(entry.reference+'000');
     for(const [suffix] of PRIORITY_SUFFIXES)tokens.push(entry.active+suffix,entry.reference+suffix);
     for(const alias of entry.aliases){tokens.push(alias);for(const suffix of suffixes)tokens.push(alias+suffix);}
     tokens.push(entry.active[0]+'-'+entry.passive);

@@ -1,4 +1,5 @@
 import React from "react";
+import {parseActivityTag} from '@/services/activityTags';
 
 export interface PaletteItem {
   key: string;
@@ -193,11 +194,11 @@ export function highlightMultiSearch(text: string, query: string): React.ReactNo
   // Ordenar por longitud descendente para que palabras más largas tengan precedencia
   const sorted = [...terms].sort((a, b) => b.length - a.length);
   const escapedPattern = sorted
-    .map((w) => makeAccentRegexPattern(w))
+    .map((w) => parseActivityTag(w)?'(?<![\\p{L}\\p{N}_@./-])'+makeAccentRegexPattern(w)+'(?![\\p{L}\\p{N}_@./-])':makeAccentRegexPattern(w))
     .join("|");
 
   try {
-    const regex = new RegExp(`(${escapedPattern})`, "gi");
+    const regex = new RegExp(`(${escapedPattern})`, "giu");
     const parts = text.split(regex);
 
     return parts.map((part, i) => {

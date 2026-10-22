@@ -1,7 +1,8 @@
 import {mexicoDate,calendarTime} from '@/services/calendarPresentation';
-export function quickActivitySchedule(activity:{start:string;end:string},offset:number,duration:number|null){
+export function quickActivitySchedule(activity:{start:string;end:string},offset:number,duration:number|null,targetDate?:string){
   if(!Number.isInteger(offset)||offset< -1||offset>5)throw Error('Selecciona ayer o entre 1 y 5 días.');
-  const day=mexicoDate(activity.start),target=new Date(Date.parse(day+'T12:00:00Z')+offset*86400000).toISOString().slice(0,10);
+  const day=mexicoDate(activity.start),target=targetDate||new Date(Date.parse(day+'T12:00:00Z')+offset*86400000).toISOString().slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(target)||!Number.isFinite(Date.parse(target+'T12:00:00Z'))||new Date(target+'T12:00:00Z').toISOString().slice(0,10)!==target)throw Error('Selecciona una fecha válida.');
   const startTime=calendarTime(activity.start),startMinute=Number(startTime.slice(0,2))*60+Number(startTime.slice(3,5));
   const minutes=duration??(Date.parse(activity.end)-Date.parse(activity.start))/60000;
   if(!Number.isFinite(minutes)||minutes<=0||(minutes%5!==0)||startMinute<480||startMinute+minutes>1320)throw Error('El horario debe estar entre 08:00 y 22:00 en intervalos de cuadrícula válidos.');

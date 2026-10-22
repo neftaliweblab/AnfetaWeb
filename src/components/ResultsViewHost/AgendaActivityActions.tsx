@@ -12,15 +12,15 @@ import {ReassignActivityModal} from '../CalendarHost/ReassignActivityModal';
 import {SendToReviewModal} from '../CalendarHost/SendToReviewModal';
 import type {AgendaUpdate} from './saveAgendaActivity';
 
-export function AgendaActivityActions({activity,currentUser,position,busy,onClose,onSave,initialAction=null}:{activity:NotionCalendarActivity;currentUser:string;position:{x:number;y:number};busy:boolean;initialAction?:'review'|'handoff'|'schedule'|null;onClose:()=>void;onSave:(updates:AgendaUpdate)=>Promise<boolean>}){
-  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|null>(initialAction);
+export function AgendaActivityActions({activity,currentUser,position,busy,onClose,onSave,initialAction=null}:{activity:NotionCalendarActivity;currentUser:string;position:{x:number;y:number};busy:boolean;initialAction?:'review'|'handoff'|'schedule'|'quick'|null;onClose:()=>void;onSave:(updates:AgendaUpdate)=>Promise<boolean>}){
+  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|'quick'|null>(initialAction);
   const [error,setError]=useState('');
   const editable=canEditActivity(currentUser,activity)&&!activity.isHandoffMirror;
   const completed=workflowState(activity.status,activity.title)==='completed';
   const handoff=editable&&!completed&&workflowState(activity.status,activity.title)!=='review'&&activity.reviewFlow?.State!=='pending'&&(isDirection(currentUser)||normalizePerson(currentUser)===normalizePerson(activity.person));
   const finish=editable&&!completed&&(activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser));
   useEffect(()=>{
-    if(modal)return;
+    if(modal&&modal!=='quick')return;
     const click=()=>{if(!busy)onClose();},escape=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy)onClose();};
     window.addEventListener('click',click);window.addEventListener('keydown',escape);
     return()=>{window.removeEventListener('click',click);window.removeEventListener('keydown',escape);};
@@ -29,6 +29,7 @@ export function AgendaActivityActions({activity,currentUser,position,busy,onClos
   if(modal==='handoff')return <ReassignActivityModal activity={activity} onClose={onClose} onConfirm={onSave}/>;
   if(modal==='review')return <SendToReviewModal activity={activity} currentUser={currentUser} onClose={onClose} onConfirm={(reviewer,leaveVisualCopy)=>onSave({status:'rtuzREVISION',reviewer,leaveVisualCopy})}/>;
   if(modal==='schedule')return <AgendaScheduleDialog activity={activity} busy={busy} onClose={onClose} onSave={onSave}/>;
+  if(modal==='quick')return <ViewportMenu position={position}><div className="flex justify-between px-3 py-2">Fecha y duración<button aria-label="Cerrar acciones" disabled={busy} onClick={onClose}>✕</button></div>{editable&&!completed?<QuickScheduleActions activity={activity} currentUser={currentUser} disabled={busy} onClose={onClose} onSave={onSave}/>:<p className="p-3">Esta actividad no permite mover el horario.</p>}</ViewportMenu>;
   return <ViewportMenu position={position}>
     <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2 text-[10px] text-slate-400">ACCIONES DE ACTIVIDAD<button aria-label="Cerrar acciones" disabled={busy} onClick={onClose}>✕</button></div>
     <button role="menuitem" disabled={!handoff||busy} className={button+' text-cyan-200'} onClick={()=>setModal('handoff')}>◇ Reasignar actividad…</button>
