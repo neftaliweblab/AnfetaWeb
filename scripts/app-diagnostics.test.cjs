@@ -1,0 +1,18 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript'),{randomUUID}=require('crypto');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+for(const ext of ['.ts','.tsx'])Module._extensions[ext]=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,p);
+const data=new Map();global.window={};global.crypto={randomUUID};global.sessionStorage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
+const logs=require('../src/lib/appDiagnostics.ts');let notifications=0;const stop=logs.subscribeAppLogs('John',()=>notifications++);
+logs.recordAppLog('John','Robot','Actividad A: No hay espacio suficiente entre 08:00 y 22:00.');assert.equal(logs.getAppLogs('John').length,1);assert.match(logs.diagnosticAdvice(logs.getAppLogs('John')[0].message).next,/Recargar no libera/);
+logs.markAppLogsRead('John');assert.equal(logs.getAppLogs('John')[0].read,true);logs.recordAppLog('John','Robot','Actividad A: No hay espacio suficiente entre 08:00 y 22:00.');assert.equal(logs.getAppLogs('John').length,1);assert.equal(logs.getAppLogs('John')[0].count,2);assert.equal(logs.getAppLogs('John')[0].read,false);
+assert.equal(logs.getAppLogs('Neftali').length,0,'Person scopes remain isolated');assert.ok(notifications>=3);stop();
+for(let i=0;i<100;i++)logs.recordAppLog('John','Calendario','Aviso '+i);assert.equal(logs.getAppLogs('John').length,80);assert.equal(JSON.parse(data.get('anfeta-diagnostics-v1:John')).length,80);
+const clean=logs.sanitizeDiagnostic('token=private-value Bearer private-bearer ntn_privatekey eyJabc.def.ghi');for(const secret of ['private-value','private-bearer','ntn_privatekey','eyJabc.def.ghi'])assert.ok(!clean.includes(secret));
+assert.match(logs.diagnosticAdvice('Notion no confirmó el guardado').next,/antes de repetir/);assert.match(logs.diagnosticAdvice('La actividad se guardó, pero no se confirmó el aviso').next,/No repitas/);
+assert.match(logs.diagnosticAdvice('Failed to fetch').next,/Comprueba internet/);assert.match(logs.diagnosticAdvice('429 demasiadas solicitudes').next,/Espera/);
+assert.match(logs.diagnosticAdvice('Permiso denegado').title,/acceso/);assert.match(logs.diagnosticAdvice('Cambió en otro dispositivo').title,/Otro cambio/);
+const report=logs.formatDiagnosticReport(logs.getAppLogs('John'));assert.match(report,/Posible causa/);assert.match(report,/Sugerencia/);
+const filename=require.resolve('../src/lib/appDiagnostics.ts');delete require.cache[filename];const reloaded=require(filename);assert.equal(reloaded.getAppLogs('John').length,80,'Reload retains this tab history');reloaded.clearAppLogs('John');assert.equal(reloaded.getAppLogs('John').length,0);
+const React=require('react'),{renderToStaticMarkup}=require('react-dom/server'),{UpdateNotice}=require('../src/components/UpdateNotice.tsx');assert.equal(renderToStaticMarkup(React.createElement(UpdateNotice,{owner:'John',message:'No hay espacio suficiente'})),'','Warnings no longer take up calendar space');
+console.log('OK Logs: agrupa repeticiones, lectura, 80 registros, aislamiento por persona/pestaña, recuperación, datos ocultos, sugerencias y calendario sin banner.');

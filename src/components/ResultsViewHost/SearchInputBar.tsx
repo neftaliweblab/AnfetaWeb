@@ -24,6 +24,7 @@ import { SearchMatchOptions } from "@/services/advancedQuery";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 
 interface SearchInputBarProps {
+  currentUser?:string;
   onSubmitSearch?:()=>void;
   query: string;
   onChangeQuery: (q: string) => void;
@@ -51,6 +52,7 @@ interface SearchInputBarProps {
 }
 
 export function SearchInputBar({
+  currentUser='',
   onSubmitSearch,
   query,
   onChangeQuery,
@@ -226,7 +228,7 @@ export function SearchInputBar({
         {/* Botones de acción derecha */}
         <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0 select-none">
           <SavedSearches query={query} onSelect={onChangeQuery} /><FavoritesBackup />
-          <IndexSyncStatus />
+          <IndexSyncStatus owner={currentUser}/>
 
           {/* Botón ⚡ Plantillas */}
           <button

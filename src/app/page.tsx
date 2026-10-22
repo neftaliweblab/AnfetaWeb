@@ -4,6 +4,7 @@ import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdate
 import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
+import {DiagnosticMessage} from '@/components/Diagnostics/DiagnosticsLogs';
 import {openCalendarWindow} from '@/services/windowsIntegration';
 import {indexAvailability} from '@/lib/indexAvailability';
 import {retainSearchResults} from '@/lib/retainSearchResults';
@@ -553,7 +554,7 @@ export default function AnfetaApp() {
   if(sharedMode&&!currentUser)return <PersonSelector/>;
   return (
     <div className="flex flex-col h-screen w-screen bg-[#080B0F] text-[#F1F5F9] overflow-hidden select-none">
-      {pendingError&&<div role="alert" className="bg-red-950 text-red-100 px-4 py-3 text-sm flex gap-3"><span>{pendingError}</span><button onClick={()=>window.dispatchEvent(new Event("anfeta_retry_pending"))}>Reintentar</button></div>}
+      <DiagnosticMessage owner={currentUser} source="Pendientes" message={pendingError} level="error"/>
       {calendarPopupBlocked&&<div role="alert" className="px-4 py-2 bg-amber-950 text-amber-100 text-sm">El navegador bloqueó la ventana del calendario. Permite ventanas emergentes para ANFETA. <a href={'/calendar?date='+encodeURIComponent(currentDate)} target="_blank" rel="noopener noreferrer" className="underline">Abrir en otra pestaña</a> <button onClick={()=>setCalendarPopupBlocked(false)}>Cerrar aviso</button></div>}
       {debouncedAuthError&&<div role="alert" className="bg-amber-950 text-amber-100 px-4 py-2 text-sm flex items-center justify-between animate-in fade-in duration-200"><span>{debouncedAuthError}</span> <button className="ml-2 underline font-medium" onClick={()=>refreshAuthRef.current()}>Reintentar conexión</button></div>}
       {sharedMode&&personPickerOpen&&<PersonSelector currentUser={currentUser} onClose={()=>setPersonPickerOpen(false)}/>}

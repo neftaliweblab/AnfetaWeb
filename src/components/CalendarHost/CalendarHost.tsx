@@ -5,6 +5,7 @@ import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deleted
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
+import {DiagnosticMessage} from '../Diagnostics/DiagnosticsLogs';
 import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
@@ -592,30 +593,9 @@ export function CalendarHost({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-grid-step':`${pixelsPerHour*gridInterval/60}px`,'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
-      <UpdateNotice message={refreshWarning}/>
+      <UpdateNotice message={refreshWarning} owner={currentUser}/>
       {/* Notificación de Error / Alerta Visible y Elegante */}
-      {error && (
-        <div
-          role="alert"
-          className="absolute top-14 left-1/2 -translate-x-1/2 z-[300] max-w-lg w-full px-4 py-3 rounded-xl bg-[#2A0E14] border-2 border-[#E11D48] text-rose-200 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top duration-200"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="shrink-0 w-6 h-6 rounded-full bg-[#E11D48] text-white flex items-center justify-center font-bold text-xs">
-              ✕
-            </span>
-            <div className="text-xs">
-              <strong className="block text-white font-bold leading-tight">{error.startsWith('La actividad se guardó') ? 'Guardado con aviso pendiente' : 'Acción no completada'}</strong>
-              <span className="text-rose-200/90 leading-tight break-words">{error}</span>
-            </div>
-          </div>
-          <button
-            onClick={() => setError("")}
-            className="shrink-0 rounded p-1 text-rose-300 hover:text-white hover:bg-rose-950/40 transition-colors text-xs font-bold"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
+      <DiagnosticMessage owner={currentUser} source="Calendario · acción" message={error} level="error"/>
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
       {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
       {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:activity}));}} />}

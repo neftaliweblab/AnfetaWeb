@@ -14,6 +14,7 @@ import {
   LogOut,
 } from "lucide-react";
 import {TeamPresence} from './TeamPresence';
+import {DiagnosticsLogs} from './Diagnostics/DiagnosticsLogs';
 import { ActiveHostView } from "@/types/anfeta";
 import { SearchPredictiveFlyout } from "./ResultsViewHost/SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
@@ -260,6 +261,7 @@ export function TopBar({
 
       {/* Right controls: clock, automation robot, settings */}
       <div className="flex items-center gap-2">
+        <DiagnosticsLogs owner={currentUser||''}/>
         {onTriggerAutomation && (
           <button
             onClick={onTriggerAutomation}

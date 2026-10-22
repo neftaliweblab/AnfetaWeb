@@ -14,6 +14,7 @@ import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearch
 import {CompactSearchAccess} from './CompactSearchAccess';
 import {workflowState} from '@/services/activityWorkflow';
 import {SearchActivityActions,type SearchActivityAction} from './SearchActivityActions';
+import {DiagnosticMessage} from '../Diagnostics/DiagnosticsLogs';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
@@ -1331,6 +1332,7 @@ export function ResultsViewHost({
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
       <SearchInputBar
+        currentUser={currentUser}
         onSubmitSearch={()=>setSettledQuery(query)}
         query={query}
         onChangeQuery={handleQueryChange}
@@ -1682,7 +1684,7 @@ export function ResultsViewHost({
       />
 
       {/* Modal Pegar Texto / Captura Global (Ctrl+V) */}
-      {statusError && <div role="alert" className="fixed bottom-12 left-4 z-50 rounded bg-slate-900 p-3 text-rose-300">{statusError}</div>}
+      <DiagnosticMessage owner={currentUser} source="Buscador · acción" message={statusError} level="error"/>
       {draggingFiles && <div className="pointer-events-none fixed inset-4 z-[100] flex items-center justify-center rounded-2xl border-2 border-dashed border-cyan-300 bg-slate-950/80 text-xl text-cyan-200">📥 Soltar archivo aquí para Pegado Global ANFETA (Dropbox / Notion)</div>}
       <GlobalPasteModal
         isOpen={isGlobalPasteOpen}
