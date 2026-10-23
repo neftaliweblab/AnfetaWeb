@@ -58,17 +58,36 @@ export function broadcastPageSync(message: { type: 'deleted' | 'restored' | 'upd
   }
 }
 
+const deletedPagesCache = new Map<string, Set<string>>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key?.startsWith('anfeta-deleted-pages:')) {
+      const owner = e.key.replace('anfeta-deleted-pages:', '');
+      deletedPagesCache.delete(owner);
+    }
+  });
+}
+
 export function deletedPages(owner: string): Set<string> {
   if (typeof window === 'undefined') return new Set();
+  const cached = deletedPagesCache.get(owner);
+  if (cached) return cached;
   try {
-    return new Set(JSON.parse(localStorage.getItem('anfeta-deleted-pages:' + owner) || '[]'));
+    const set = new Set<string>(JSON.parse(localStorage.getItem('anfeta-deleted-pages:' + owner) || '[]'));
+    deletedPagesCache.set(owner, set);
+    return set;
   } catch {
-    return new Set();
+    const empty = new Set<string>();
+    deletedPagesCache.set(owner, empty);
+    return empty;
   }
 }
 
-export function filterDeletedPages<T>(rows: T[], owner: string) {
+export function filterDeletedPages<T>(rows: T[], owner: string): T[] {
+  if (!rows || rows.length === 0) return rows;
   const ids = deletedPages(owner);
+  if (!ids || ids.size === 0) return rows;
   return rows.filter(row => !ids.has(pageIdentity(row)));
 }
 
@@ -80,6 +99,7 @@ export function restoreConfirmedPages(owner: string, values: string[]) {
     clearUnverifiedPage(clean);
   }
   if (ids.size === before) return;
+  deletedPagesCache.set(owner, ids);
   try {
     localStorage.setItem('anfeta-deleted-pages:' + owner, JSON.stringify([...ids]));
   } catch {}
@@ -101,6 +121,7 @@ export function rememberDeletedPages(owner: string, values: string[]) {
     }
   }
   if (ids.size === before) return;
+  deletedPagesCache.set(owner, ids);
   try {
     localStorage.setItem('anfeta-deleted-pages:' + owner, JSON.stringify([...ids]));
   } catch {}

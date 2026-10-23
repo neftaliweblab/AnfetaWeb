@@ -95,6 +95,7 @@ export function CalendarHost({
   loadError,initialCacheMeta,
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
+  const activitiesListRef = React.useRef(activitiesList); activitiesListRef.current = activitiesList;
   const [error, setError] = useState('');
   const [refreshWarning,setRefreshWarning]=useState('');
   const [gridTheme,setGridTheme]=useState(calendarThemes.soft),[themeOwner,setThemeOwner]=useState('');
@@ -407,8 +408,8 @@ export function CalendarHost({
     }
   };
 
-  const handleUpdateActivity = async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
-    const original = activitiesList.find(a => a.pageId === pageId);
+  const handleUpdateActivity = React.useCallback(async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
+    const original = activitiesListRef.current.find((a: NotionCalendarActivity) => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
     pending.current.add(pageId); mutationVersion.current++; setError('');
@@ -423,7 +424,7 @@ export function CalendarHost({
         expectedReviewUpdatedAt=preflight.expectedReviewUpdatedAt;
       }catch(e){pending.current.delete(pageId);setSaveRevision(v=>v+1);setError(e instanceof Error?e.message:'No se pudo verificar el flujo.');return false;}
     }
-    const originalMirror=activitiesList.find(a=>a.pageId==='review-mirror-'+pageId);
+    const originalMirror=activitiesListRef.current.find((a: NotionCalendarActivity)=>a.pageId==='review-mirror-'+pageId);
     const restoreSchedule=()=>{if(updates.start){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?original:a));setSelectedActivity(prev=>prev?.pageId===pageId?original:prev);}};
     if(updates.start){const moving={...original,...updates};setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?moving:a));setSelectedActivity(prev=>prev?.pageId===pageId?moving:prev);}
     try {
@@ -456,7 +457,19 @@ export function CalendarHost({
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
-  };
+  }, [currentUser, currentDate, onSelectDate]);
+
+  const handleCardChecklistUpdated = React.useCallback((pageId: string, updates: Partial<NotionCalendarActivity>) => {
+    mutationVersion.current++;
+    setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
+    const saved = recentSaves.current.get(pageId);
+    if (saved) saved.activity = { ...saved.activity, ...updates };
+  }, []);
+
+  const handleCardSelectActivity = React.useCallback((selected: NotionCalendarActivity) => {
+    setSelectedActivity(selected);
+    setIsDetailOpen(true);
+  }, []);
 
   const startHour = 8;
   const endHour = 22;
@@ -824,7 +837,7 @@ export function CalendarHost({
                           key={act.pageId || idx}
                           activity={act}
                           isSaving={pending.current.has(act.pageId)}
-                          onChecklistUpdated={(pageId,updates)=>{mutationVersion.current++;setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?{...a,...updates}:a));const saved=recentSaves.current.get(pageId);if(saved)saved.activity={...saved.activity,...updates};}}
+                          onChecklistUpdated={handleCardChecklistUpdated}
                           displayDate={currentDate}
                           currentUser={currentUser}
                           pixelsPerHour={pixelsPerHour}
@@ -832,10 +845,7 @@ export function CalendarHost({
                           overlapTotal={overlapTotal}
                           palette={calendarPalette}
                           isSelected={selectedActivity?.pageId === act.pageId && isDetailOpen}
-                          onSelectActivity={(selected) => {
-                            setSelectedActivity(selected);
-                            setIsDetailOpen(true);
-                          }}
+                          onSelectActivity={handleCardSelectActivity}
                           onUpdateActivity={handleUpdateActivity}
                         />
                       ))}

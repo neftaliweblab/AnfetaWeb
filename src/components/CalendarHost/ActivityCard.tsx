@@ -31,6 +31,14 @@ interface ChecklistCardCacheEntry {
 }
 
 const checklistMemoryCache = new Map<string, ChecklistCardCacheEntry>();
+const MAX_CHECKLIST_CACHE = 250;
+function setChecklistCache(key: string, entry: ChecklistCardCacheEntry) {
+  checklistMemoryCache.set(key, entry);
+  if (checklistMemoryCache.size > MAX_CHECKLIST_CACHE) {
+    const oldest = checklistMemoryCache.keys().next().value;
+    if (oldest) checklistMemoryCache.delete(oldest);
+  }
+}
 const checklistInFlight = new Map<string, Promise<ChecklistCardCacheEntry | null>>();
 
 function cleanCardId(id: string): string {
@@ -81,7 +89,7 @@ interface ActivityCardProps {
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
 }
 
-export function ActivityCard({
+function ActivityCardComponent({
   activity,
   currentUser,
   displayDate,
@@ -136,7 +144,7 @@ export function ActivityCard({
         items: activity.checklistItems || activity.completedChecks || [],
         completedChecks: activity.completedChecks || [],
       };
-      checklistMemoryCache.set(key, entry);
+      setChecklistCache(key, entry);
       return entry;
     }
     return null;
@@ -150,7 +158,7 @@ export function ActivityCard({
     const key = cleanCardId(activity.pageId);
     if (activity.checklistScanned && activity.checklistItems) {
       const entry={total:activity.checklistTotal??0,completed:activity.checklistCompleted??0,today:activity.todayChecklistCompleted??0,items:activity.checklistItems,completedChecks:activity.completedChecks||[]};
-      checklistMemoryCache.set(key,entry);setChecklistData(entry);
+      setChecklistCache(key,entry);setChecklistData(entry);
     } else if (checklistMemoryCache.has(key)) {
       setChecklistData(checklistMemoryCache.get(key)!);
     } else if (activity.checklistScanned || (activity.checklistTotal ?? 0) > 0 || (activity.checklistItems && activity.checklistItems.length > 0)) {
@@ -161,7 +169,7 @@ export function ActivityCard({
         items: activity.checklistItems || activity.completedChecks || [],
         completedChecks: activity.completedChecks || [],
       };
-      checklistMemoryCache.set(key, entry);
+      setChecklistCache(key, entry);
       setChecklistData(entry);
     }
   }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
@@ -185,7 +193,7 @@ export function ActivityCard({
         items: activity.checklistItems || activity.completedChecks || [],
         completedChecks: activity.completedChecks || [],
       };
-      checklistMemoryCache.set(key, entry);
+      setChecklistCache(key, entry);
       setChecklistData(entry);
       return;
     }
@@ -216,7 +224,7 @@ export function ActivityCard({
               items,
               completedChecks: activeCompleted,
             };
-            checklistMemoryCache.set(key, entry);
+            setChecklistCache(key, entry);
             anfetaSync.broadcast({
               type: "ACTIVITY_UPDATED",
               pageId: activity.pageId,
@@ -443,7 +451,7 @@ export function ActivityCard({
       if(data.queued){setChecklistData(previous);setCheckMessage('Pendiente local; se confirmará al recuperar conexión.');return;}
       if(!response.ok||!data.success||data.checked!==!chk.isChecked)throw Error(data.error||'Notion no confirmó el check.');
       const confirmed={...optimistic,items:data.stats?.checklistItems||items,total:data.stats?.checklistTotal??optimistic.total,completed:data.stats?.checklistCompleted??optimistic.completed,today:data.stats?.todayChecklistCompleted??effectiveToday,completedChecks:data.stats?.completedChecks||optimistic.completedChecks};
-      checklistMemoryCache.set(cleanCardId(activity.pageId),confirmed);setChecklistData(confirmed);
+      setChecklistCache(cleanCardId(activity.pageId),confirmed);setChecklistData(confirmed);
       const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
@@ -499,10 +507,11 @@ export function ActivityCard({
   const closeContextMenu = () => setContextMenu(null);
 
   React.useEffect(() => {
+    if (!contextMenu) return;
     const handleClickOutside = () => closeContextMenu();
     window.addEventListener("click", handleClickOutside);
     return () => window.removeEventListener("click", handleClickOutside);
-  }, []);
+  }, [contextMenu]);
 
   if (interval.end <= interval.start) return null;
 
@@ -1173,3 +1182,5 @@ export function ActivityCard({
     </>
   );
 }
+
+export const ActivityCard = React.memo(ActivityCardComponent);

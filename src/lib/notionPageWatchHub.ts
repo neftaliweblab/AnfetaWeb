@@ -13,13 +13,22 @@ class PageWatchHub{
   constructor(readonly owner:string){
     try{this.channel=new BroadcastChannel(PAGE_SYNC_CHANNEL);this.channel.onmessage=e=>{if(e.data?.owner===owner&&Array.isArray(e.data.states))this.deliver(e.data.states);};}catch{}
     window.addEventListener('online',this.wake);window.addEventListener('focus',this.wake);
-    window.addEventListener('anfeta_activity_saved',this.saved);document.addEventListener('visibilitychange',this.wake);
+    window.addEventListener('anfeta_activity_saved',this.saved);document.addEventListener('visibilitychange',this.onVisibilityChange);
   }
+  onVisibilityChange=()=>{
+    if(document.hidden){
+      if(this.timer){clearInterval(this.timer);this.timer=undefined;}
+    }else{
+      this.schedule();
+      void this.wake();
+    }
+  };
   wake=()=>{if(!document.hidden)void this.check();};
   saved=()=>{if(this.busy)this.queued=true;else this.wake();};
-  schedule(){if(this.timer)clearInterval(this.timer);this.timer=setInterval(this.wake,[...this.subscribers].some(s=>s.calendar)?2000:10000);}
+  schedule(){if(this.timer)clearInterval(this.timer);if(this.stopped||document.hidden)return;this.timer=setInterval(this.wake,[...this.subscribers].some(s=>s.calendar)?2000:10000);}
   deliver(states:any[]){
     states=states.flatMap(state=>{const id=pageIdentity(state.id),old=this.versions.get(id),next=mergePageDelta(old,state,true);if(old===next)return [];this.versions.delete(id);this.versions.set(id,{...next,contentChanged:false,checklistUpdate:undefined});if(this.versions.size>1000)this.versions.delete(this.versions.keys().next().value!);return [next];});
+    if(!states.length)return;
     const removed=states.filter(s=>s.deleted).map(s=>s.id),restored=states.filter(s=>s.deleted===false&&!s.unverified).map(s=>s.id);
     if(removed.length)rememberDeletedPages(this.owner,removed);if(restored.length)restoreConfirmedPages(this.owner,restored);
     for(const state of states){if(state.unverified)setUnverifiedPage(state.id,state.reason);else clearUnverifiedPage(state.id);}
@@ -66,7 +75,7 @@ class PageWatchHub{
     finally{this.probeBusy=false;}
   }
 
-  stop(){this.stopped=true;this.controller.abort();if(this.timer)clearInterval(this.timer);this.channel?.close();window.removeEventListener('online',this.wake);window.removeEventListener('focus',this.wake);window.removeEventListener('anfeta_activity_saved',this.saved);document.removeEventListener('visibilitychange',this.wake);}
+  stop(){this.stopped=true;this.controller.abort();if(this.timer)clearInterval(this.timer);this.channel?.close();window.removeEventListener('online',this.wake);window.removeEventListener('focus',this.wake);window.removeEventListener('anfeta_activity_saved',this.saved);document.removeEventListener('visibilitychange',this.onVisibilityChange);}
 }
 export function subscribeNotionPages(owner:string,options:{rows:()=>any[];onStates:(states:any[])=>boolean|void|string[];calendar?:boolean}){
   let hub=hubs.get(owner);if(!hub){hub=new PageWatchHub(owner);hubs.set(owner,hub);}
