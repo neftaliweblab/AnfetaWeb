@@ -185,20 +185,49 @@ export function getSearchTermColorMap(query: string): {
  * según su orden (Cian para término 1, Rosa para término 2, etc.) con estilo de badge nítido,
  * tolerante a mayúsculas/minúsculas y acentos.
  */
+interface CompiledHighlight {
+  terms: string[];
+  termColorMap: Map<string, PaletteItem>;
+  regex: RegExp | null;
+}
+
+const highlightCache = new Map<string, CompiledHighlight>();
+const MAX_HIGHLIGHT_CACHE = 32;
+
+function getCompiledHighlight(query: string): CompiledHighlight {
+  const cached = highlightCache.get(query);
+  if (cached) return cached;
+
+  const { terms, termColorMap } = getSearchTermColorMap(query);
+  let regex: RegExp | null = null;
+  if (terms.length > 0) {
+    const sorted = [...terms].sort((a, b) => b.length - a.length);
+    const escapedPattern = sorted
+      .map((w) => parseActivityTag(w) ? '(?<![\p{L}\p{N}_@./-])' + makeAccentRegexPattern(w) + '(?![\p{L}\p{N}_@./-])' : makeAccentRegexPattern(w))
+      .join("|");
+    try {
+      regex = new RegExp('(' + escapedPattern + ')', 'giu');
+    } catch {
+      regex = null;
+    }
+  }
+
+  const compiled: CompiledHighlight = { terms, termColorMap, regex };
+  if (highlightCache.size >= MAX_HIGHLIGHT_CACHE) {
+    const oldest = highlightCache.keys().next().value;
+    if (oldest) highlightCache.delete(oldest);
+  }
+  highlightCache.set(query, compiled);
+  return compiled;
+}
+
 export function highlightMultiSearch(text: string, query: string): React.ReactNode {
   if (!text || !query || query.trim().length < 2) return text;
 
-  const { terms, termColorMap } = getSearchTermColorMap(query);
-  if (terms.length === 0) return text;
-
-  // Ordenar por longitud descendente para que palabras más largas tengan precedencia
-  const sorted = [...terms].sort((a, b) => b.length - a.length);
-  const escapedPattern = sorted
-    .map((w) => parseActivityTag(w)?'(?<![\\p{L}\\p{N}_@./-])'+makeAccentRegexPattern(w)+'(?![\\p{L}\\p{N}_@./-])':makeAccentRegexPattern(w))
-    .join("|");
+  const { terms, termColorMap, regex } = getCompiledHighlight(query);
+  if (terms.length === 0 || !regex) return text;
 
   try {
-    const regex = new RegExp(`(${escapedPattern})`, "giu");
     const parts = text.split(regex);
 
     return parts.map((part, i) => {

@@ -317,54 +317,135 @@ export interface SearchMatchOptions {
  * - Frases exactas entre comillas: "frase exacta"
  * - Opciones avanzadas del escritorio: matchCase, matchWholeWord, matchRegex
  */
-export function matchesFlexibleOrQuotedQuery(
-  item: SearchResultRow,
-  query: string,
-  options?: SearchMatchOptions
-): boolean {
-  const q = (query || "").trim();
-  if (!q) return true;
+interface ParsedClauseToken {
+  value: string;
+  isExact: boolean;
+  isNegated: boolean;
+}
 
+interface ParsedQueryPlan {
+  cleanQ: string;
+  matchRegex: boolean;
+  rx: RegExp | null;
+  activeClauses: ParsedClauseToken[][];
+}
+
+const queryPlanLRUCache = new Map<string, ParsedQueryPlan>();
+const MAX_PLAN_CACHE = 128;
+
+function getParsedQueryPlan(q: string, options?: SearchMatchOptions): ParsedQueryPlan {
   const matchCase = !!options?.matchCase;
-  const matchWholeWord = !!options?.matchWholeWord;
   const matchRegex = !!options?.matchRegex;
+  const matchWholeWord = !!options?.matchWholeWord;
+  const cacheKey = q + '::' + matchCase + '::' + matchRegex + '::' + matchWholeWord;
 
-  // 0. Modo Regex si está habilitado
+  const cached = queryPlanLRUCache.get(cacheKey);
+  if (cached) return cached;
+
   if (matchRegex) {
+    let rx: RegExp | null = null;
     try {
-      const rx = new RegExp(q, matchCase ? "" : "i");
-      const target = [
-        item.name,
-        item.displayName,
-        item.path,
-        item.description,
-        item.searchText,
-        (item as any).pageContent,
-      ]
-        .filter(Boolean)
-        .join(" ");
-      return rx.test(target);
+      rx = new RegExp(q, matchCase ? "" : "i");
     } catch {
-      // Regex malformado: no coincide
-      return false;
+      rx = null;
     }
+    const plan: ParsedQueryPlan = { cleanQ: "", matchRegex: true, rx, activeClauses: [] };
+    if (queryPlanLRUCache.size >= MAX_PLAN_CACHE) {
+      const oldest = queryPlanLRUCache.keys().next().value;
+      if (oldest) queryPlanLRUCache.delete(oldest);
+    }
+    queryPlanLRUCache.set(cacheKey, plan);
+    return plan;
   }
 
-  // Normalización inteligente de queries compuestos en español / ANFETA (ej. "z programas" -> "zprogramas")
-  let normalizedQ = q
+  const normalizedQ = q
     .replace(/\bz\s+(programas?|proyectos?|clientes?|dominios?|correos?|pagar|cobrar|revision(?:es)?)\b/gi, "z$1")
     .trim();
 
-  // 1. Coincidencia directa por ID o UUID de Notion
-  const rawId = (item.id || "").replace(/-/g, "").toLowerCase();
-  const rawExtId = ((item as any).externalId || "").replace(/-/g, "").toLowerCase();
   const cleanQ = normalizedQ.replace(/-/g, "").toLowerCase();
-  if (cleanQ.length >= 8 && (rawId === cleanQ || rawExtId === cleanQ)) {
-    return true;
+
+  const rawTokens: Array<{ raw: string; isQuoted: boolean }> = [];
+  const regex = /([a-zA-Z]+:"[^"]+")|"([^"]+)"|(\S+)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(normalizedQ)) !== null) {
+    if (match[1]) {
+      rawTokens.push({ raw: match[1], isQuoted: false });
+    } else if (match[2]) {
+      rawTokens.push({ raw: match[2], isQuoted: true });
+    } else if (match[3]) {
+      rawTokens.push({ raw: match[3], isQuoted: false });
+    }
   }
 
-  // 2. Construcción de searchable concatenando todos los metadatos relevantes
-  // Limpiar dominios genéricos y rutas base de providers (Notion/Dropbox) para evitar que todas las filas coincidan con "notion" o "dropbox"
+  const clauses: Array<Array<ParsedClauseToken>> = [[]];
+  let currentClause = clauses[0];
+  let nextIsNegated = false;
+
+  for (const t of rawTokens) {
+    if (!t.isQuoted) {
+      const lower = t.raw.toLowerCase();
+      if (lower === "or" || lower === "||" || lower === "|") {
+        currentClause = [];
+        clauses.push(currentClause);
+        nextIsNegated = false;
+        continue;
+      }
+      if (lower === "and" || lower === "&&" || lower === "&" || lower === "+") {
+        continue;
+      }
+      if (lower === "not") {
+        nextIsNegated = true;
+        continue;
+      }
+    }
+
+    let val = t.raw.replace(/^[\(\[\{]+|[\)\]\}]+$/g, "").trim();
+    if (!val) continue;
+
+    let isNegated = nextIsNegated;
+    nextIsNegated = false;
+
+    if (!t.isQuoted && (val.startsWith("-") || val.startsWith("!")) && val.length > 1) {
+      isNegated = true;
+      val = val.slice(1);
+    }
+
+    if (val) {
+      currentClause.push({ value: val, isExact: t.isQuoted, isNegated });
+    }
+  }
+
+  const activeClauses = clauses.filter((c) => c.length > 0);
+  const plan: ParsedQueryPlan = {
+    cleanQ,
+    matchRegex: false,
+    rx: null,
+    activeClauses,
+  };
+
+  if (queryPlanLRUCache.size >= MAX_PLAN_CACHE) {
+    const oldest = queryPlanLRUCache.keys().next().value;
+    if (oldest) queryPlanLRUCache.delete(oldest);
+  }
+  queryPlanLRUCache.set(cacheKey, plan);
+  return plan;
+}
+
+const itemSearchableCache = new WeakMap<SearchResultRow, {
+  searchable: string;
+  searchableWithSpaces: string;
+  searchableCompact: string;
+  rawId: string;
+  rawExtId: string;
+}>();
+
+function getItemSearchable(item: SearchResultRow, matchCase: boolean) {
+  if (!matchCase) {
+    const cached = itemSearchableCache.get(item);
+    if (cached) return cached;
+  }
+
   const cleanTarget = (item.target || "")
     .replace(/^https?:\/\/(?:app\.|www\.)?notion\.(?:com|so)\/[a-z0-9_\/]*\/?/i, "")
     .replace(/^.*[\\/]Dropbox[\\/]/i, "");
@@ -401,74 +482,60 @@ export function matchesFlexibleOrQuotedQuery(
 
   const searchable = matchCase ? rawSearchable : rawSearchable.toLowerCase();
   const searchableWithSpaces = searchable.replace(/[.\-_/]/g, " ");
-  // Versión compacta: "Pre proyecto" ≈ "PreProyecto", "26-[09SEP]" ≈ "2609SEP"
   const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
 
-  // 3. Tokenización flexible y evaluación de operadores lógicos (AND, OR, NOT)
-  const rawTokens: Array<{ raw: string; isQuoted: boolean }> = [];
-  const regex = /([a-zA-Z]+:"[^"]+")|"([^"]+)"|(\S+)/g;
-  let match: RegExpExecArray | null;
+  const rawId = (item.id || "").replace(/-/g, "").toLowerCase();
+  const rawExtId = ((item as any).externalId || "").replace(/-/g, "").toLowerCase();
 
-  while ((match = regex.exec(normalizedQ)) !== null) {
-    if (match[1]) {
-      rawTokens.push({ raw: match[1], isQuoted: false });
-    } else if (match[2]) {
-      rawTokens.push({ raw: match[2], isQuoted: true });
-    } else if (match[3]) {
-      rawTokens.push({ raw: match[3], isQuoted: false });
-    }
+  const result = {
+    searchable,
+    searchableWithSpaces,
+    searchableCompact,
+    rawId,
+    rawExtId,
+  };
+
+  if (!matchCase) {
+    itemSearchableCache.set(item, result);
   }
 
-  if (rawTokens.length === 0) return true;
+  return result;
+}
 
-  // Separar en cláusulas OR, donde cada cláusula exige que todos sus términos coincidan (AND)
-  const clauses: Array<Array<{ value: string; isExact: boolean; isNegated: boolean }>> = [[]];
-  let currentClause = clauses[0];
-  let nextIsNegated = false;
+export function matchesFlexibleOrQuotedQuery(
+  item: SearchResultRow,
+  query: string,
+  options?: SearchMatchOptions
+): boolean {
+  const q = (query || "").trim();
+  if (!q) return true;
 
-  for (const t of rawTokens) {
-    if (!t.isQuoted) {
-      const lower = t.raw.toLowerCase();
-      // Operadores OR
-      if (lower === "or" || lower === "||" || lower === "|") {
-        currentClause = [];
-        clauses.push(currentClause);
-        nextIsNegated = false;
-        continue;
-      }
-      // Operadores AND (simplemente conectan términos dentro de la misma cláusula)
-      if (lower === "and" || lower === "&&" || lower === "&" || lower === "+") {
-        continue;
-      }
-      // Operador NOT (niega el siguiente término)
-      if (lower === "not") {
-        nextIsNegated = true;
-        continue;
-      }
-    }
+  const plan = getParsedQueryPlan(q, options);
 
-    let val = t.raw.replace(/^[\(\[\{]+|[\)\]\}]+$/g, "").trim();
-    if (!val) continue;
-
-    let isNegated = nextIsNegated;
-    nextIsNegated = false;
-
-    if (!t.isQuoted && (val.startsWith("-") || val.startsWith("!")) && val.length > 1) {
-      isNegated = true;
-      val = val.slice(1);
-    }
-
-    if (val) {
-      currentClause.push({ value: val, isExact: t.isQuoted, isNegated });
-    }
+  if (plan.matchRegex) {
+    if (!plan.rx) return false;
+    const target = [
+      item.name,
+      item.displayName,
+      item.path,
+      item.description,
+      item.searchText,
+      (item as any).pageContent,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return plan.rx.test(target);
   }
 
-  const activeClauses = clauses.filter((c) => c.length > 0);
-  if (activeClauses.length === 0) return true;
+  const { searchable, searchableWithSpaces, searchableCompact, rawId, rawExtId } = getItemSearchable(item, !!options?.matchCase);
 
-  // OR: al menos una cláusula debe ser verdadera
-  return activeClauses.some((clause) =>
-    // AND: todos los términos de la cláusula deben coincidir
+  if (plan.cleanQ.length >= 8 && (rawId === plan.cleanQ || rawExtId === plan.cleanQ)) {
+    return true;
+  }
+
+  if (plan.activeClauses.length === 0) return true;
+
+  return plan.activeClauses.some((clause) =>
     clause.every((token) =>
       checkSingleToken(token, item, options, searchable, searchableWithSpaces, searchableCompact)
     )

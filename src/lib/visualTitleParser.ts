@@ -12,7 +12,14 @@ export interface VisualParts {
   contentSnippet?: string;
 }
 
+const visualPartsGlobalCache = new Map<string, VisualParts>();
+const MAX_PARTS_CACHE = 4000;
+
 export function parseVisualParts(rawName: string, status?: string, contentSnippet?: string): VisualParts {
+  const cacheKey = (rawName || '') + '::' + (status || '') + '::' + (contentSnippet || '');
+  const cachedResult = visualPartsGlobalCache.get(cacheKey);
+  if (cachedResult) return cachedResult;
+
   let display = (rawName || '').trim();
   const rawTitle = display;
   if (!display) {
@@ -126,7 +133,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   display = display.replace(/\[\s*\]|\(\s*\)/g, '');
   display = display.replace(/\s{2,}/g, ' ').replace(/^[\s\-–—|:]+|[\s\-–—|:]+$/g, '').trim();
 
-  return {
+  const finalParsed: VisualParts = {
     title: display || rawTitle,
     rawTitle,
     workflow,
@@ -137,4 +144,11 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     domain,
     contentSnippet,
   };
+  if (visualPartsGlobalCache.size >= MAX_PARTS_CACHE) {
+    const oldestKey = visualPartsGlobalCache.keys().next().value;
+    if (oldestKey) visualPartsGlobalCache.delete(oldestKey);
+  }
+  visualPartsGlobalCache.set(cacheKey, finalParsed);
+  return finalParsed;
 }
+
