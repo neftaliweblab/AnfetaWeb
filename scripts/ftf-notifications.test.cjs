@@ -18,7 +18,7 @@ const a={pageId:'one',person:'nneft',start:'2026-10-16T10:00:00-06:00',ftfAvaila
 (async()=>{
  assert.deepEqual(completedFtfPeople([],before),[]);
  assert.deepEqual(completedFtfPeople([a],before),['Neftali']);
- assert.deepEqual(completedFtfPeople([a],after),[]);
+ assert.deepEqual(completedFtfPeople([a],after),['Neftali']);
  assert.deepEqual(completedFtfPeople([a,{...a,pageId:'two',ftfVerified:false}],before),[]);
  assert.deepEqual(completedFtfPeople([{...a,ftfAvailable:false}],before),[]);
  assert.deepEqual(completedFtfPeople([{...a,isReviewMirror:true},{...a,isHandoffMirror:true}],before),[]);
@@ -44,5 +44,6 @@ const a={pageId:'one',person:'nneft',start:'2026-10-16T10:00:00-06:00',ftfAvaila
  await recordFtfCompletions({},[{...a,start:'2026-10-17T10:00:00-06:00'}],new Date('2026-10-17T12:00:00-06:00'));
  assert.equal(Object.keys(states.get('John').values.receipts.ftfCompletions).length,2);
  assert.equal(states.get('John').values.receipts.dismissedReviewNotifications[id],record.updated);
+ await recordFtfCompletions({},[{...a,person:'John'}],new Date('2026-10-16T18:30:00-06:00'),'confirmed');const late=states.get('John').values.receipts.ftfCompletions['ftf:2026-10-16:John'];assert.equal(late.late,true);assert.equal(late.timeKind,'confirmed');assert.equal(late.completedAt,'2026-10-17T00:30:00.000Z');
  console.log('OK: FTF por persona/día, corte 18:00 México, sin copias, checklist independiente, destinatarios, persistencia, deduplicación y recibos conservados. Servicios simulados.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

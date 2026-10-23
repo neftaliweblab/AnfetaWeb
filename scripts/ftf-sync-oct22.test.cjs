@@ -19,6 +19,7 @@ const {resetDailyFtf,ftfResetCandidate}=require('../src/services/ftfDailyReset.t
 const {reviewPreflight}=require('../src/lib/reviewPreflight.ts'),{applyNotionStates}=require('../src/lib/applyNotionStates.ts');
 const base=fixture();assert.equal(ftfResetCandidate(base,'Neftali',day),true);
 for(const patch of ['done','future','locked','today','unchecked']){const p=structuredClone(base);if(patch==='done')p.properties.Estado.status.name='TERMINADA';if(patch==='future')p.properties['Fecha POR Hacer'].date.start='2026-10-23';if(patch==='locked')p.properties.Locked={type:'checkbox',checkbox:true};if(patch==='today')p.last_edited_time=day+'T12:00:00Z';if(patch==='unchecked')p.properties[field].checkbox=false;assert.equal(ftfResetCandidate(p,'Neftali',day),false,patch);}
+const early=fixture();early.last_edited_time=day+'T10:30:00Z';assert.equal(ftfResetCandidate(early,'Neftali',day,new Date(day+'T05:00:00-06:00')),true);assert.equal(ftfResetCandidate(early,'Neftali',day,new Date(day+'T10:00:00-06:00')),false);
 const a={title:'Prueba',status:'POR HACER',person:'Neftali',start:day+'T10:00:00-06:00',end:day+'T11:00:00-06:00'};
 assert.equal(reviewPreflight(a,{...a,start:day+'T16:00:00Z',end:day+'T17:00:00.000Z'}).changed,false);
 assert.equal(reviewPreflight(a,{...a,end:day+'T18:00:00Z'}).changed,true);

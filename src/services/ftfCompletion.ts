@@ -6,7 +6,6 @@ import {isFtfReminder} from './progressKpis';
 // Only real activities starting today before 18:00 count; checklist progress is unrelated.
 export function completedFtfPeople(activities:NotionCalendarActivity[],now=new Date()) {
   const day=mexicoDate(now);
-  if(mexicoMinutes(now.toISOString())>=1080)return [];
   const groups=new Map<string,NotionCalendarActivity[]>();
   for(const activity of activities){
     const person=normalizePerson(activity.person);

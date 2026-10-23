@@ -10,7 +10,7 @@ import {operationKey,durableStep} from './reliableOperations';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 import {recordPageEvent,parseNotionPageProperties} from './notionEventSync';
 
-export function ftfResetCandidate(page:any,actor:string,day:string){
+export function ftfResetCandidate(page:any,actor:string,day:string,now=new Date()){
   const field=ftfField(page);if(!field?.[1].checkbox||page.archived||page.in_trash)return false;
   const title=Object.values(page.properties||{}).filter((p:any)=>p.type==='title').flatMap((p:any)=>p.title||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('');
   const status=calendarStatusField(page)?.[1],state=workflowState(status?.[status.type]?.name||'',title);
@@ -20,9 +20,11 @@ export function ftfResetCandidate(page:any,actor:string,day:string){
   const date:any=Object.entries(page.properties||{}).find(([n,p]:any)=>/^fecha por hacer$/i.test(n.trim())&&p.type==='date')?.[1];
   const scheduled=date?.date?.start;
   if(!scheduled||(scheduled.length===10?scheduled:mexicoDate(scheduled))>day)return false;
-  // A delayed first run must not erase a verification possibly made this morning.
-  const cutoff=Date.parse(day+'T05:00:00-06:00');
-  return Number.isFinite(Date.parse(page.last_edited_time))&&Date.parse(page.last_edited_time)<cutoff;
+  // The scheduled pre-06:00 run clears the daily flag even if Notion already moved the page.
+  // A delayed daytime fallback protects checks possibly made this morning.
+  if(day===mexicoDate(now.toISOString())&&mexicoMinutes(now.toISOString())>=300&&mexicoMinutes(now.toISOString())<360)return true;
+  const cutoff=Date.parse(day+'T00:00:00-06:00');
+  return (scheduled.length===10?scheduled:mexicoDate(scheduled))<day||Number.isFinite(Date.parse(page.last_edited_time))&&Date.parse(page.last_edited_time)<cutoff;
 }
 
 export async function resetDailyFtf(settings:any,actor:string,day:string,now=new Date()){
@@ -42,7 +44,7 @@ export async function resetDailyFtf(settings:any,actor:string,day:string,now=new
     const candidates:any[]=[];let cursor:string|undefined;
     do{
       const batch=await notionRequest(settings,'data_sources/'+sourceId+'/query','POST',{page_size:100,filter:{property:field[0],checkbox:{equals:true}},...(cursor?{start_cursor:cursor}:{})});
-      candidates.push(...(batch.results||[]).filter((page:any)=>ftfResetCandidate(page,actor,day)));
+      candidates.push(...(batch.results||[]).filter((page:any)=>ftfResetCandidate(page,actor,day,now)));
       if(batch.has_more&&(!batch.next_cursor||batch.next_cursor===cursor))throw Error('No se pudo completar la consulta FTF.');
       cursor=batch.has_more?batch.next_cursor:undefined;
     }while(cursor);
@@ -50,7 +52,7 @@ export async function resetDailyFtf(settings:any,actor:string,day:string,now=new
     for(const page of batch)try{
       const result=await durableStep(operationKey('ftf-reset-v1',source,day,page.id.replace(/-/g,'')),async()=>{
         const fresh=await notionRequest(settings,'pages/'+page.id);
-        if(!ftfResetCandidate(fresh,actor,day))return {reset:false};
+        if(!ftfResetCandidate(fresh,actor,day,now))return {reset:false};
         const saved=await mutateActivity(settings,actor,page.id,{ftfVerified:false,expectedFtfVerified:true,expectedEditedAt:fresh.last_edited_time,ftfDailyReset:true});
         const parsed=parseNotionPageProperties(saved);
         await recordPageEvent({sourceKey:source,pageId:page.id,state:'active',eventType:'polled_state',serverModified:saved.last_edited_time,properties:{name:parsed.title,assignedPerson:parsed.person,updateStatus:parsed.status,scheduledDate:parsed.dateStart,ftfVerified:false}});

@@ -14,7 +14,8 @@ assert.throws(()=>buildFtfDashboard('Genaro',day,people,[base],records),/John/);
 report=buildFtfDashboard('John',day,people,[base,{...base,pageId:'missing',ftfVerified:false},{...base,pageId:'late',start:day+'T18:00:00-06:00',ftfVerified:false},{...base,pageId:'mirror',isReviewMirror:true,ftfVerified:false},{...base,pageId:'handoff',isHandoffMirror:true,ftfVerified:false},{...base,pageId:'yesterday',start:'2026-10-15T10:00:00-06:00',ftfVerified:false}],records,now);
 assert.equal(report.pending,1);assert.equal(report.completed,0);assert.equal(report.people[0].total,2);assert.deepEqual(report.people[0].pending.map(a=>a.pageId),['missing']);assert.equal(report.people[0].completedAt,receipt.updated);
 report=buildFtfDashboard('John',day,people,[base],{},now);assert.equal(report.unconfirmed,1);assert.equal(report.completed,0);
-for(const stamp of [day+'T18:00:00-06:00',day+'T19:00:00-06:00','2026-10-15T10:00:00-06:00','invalid']){report=buildFtfDashboard('John',day,people,[base],{['ftf:'+day+':Neftali']:{...receipt,updated:stamp}},now);assert.equal(report.completed,0);}
+for(const stamp of ['2026-10-15T10:00:00-06:00','invalid']){report=buildFtfDashboard('John',day,people,[base],{['ftf:'+day+':Neftali']:{...receipt,updated:stamp}},now);assert.equal(report.completed,0);}
+for(const [time,late] of [['18:00:00',false],['18:00:01',true]]){const r=buildFtfDashboard('John',day,people,[base],{['ftf:'+day+':Neftali']:{...receipt,updated:day+'T'+time+'-06:00',timeKind:'confirmed'}},now);assert.equal(r.people[0].status,'complete');assert.equal(r.people[0].late,late);assert.equal(r.late,late?1:0);}
 report=buildFtfDashboard('John',day,people,[{...base,ftfAvailable:false}],records,now);assert.equal(report.people[0].pending.length,1);
 report=buildFtfDashboard('John',day,people,[base,base],records,now);assert.equal(report.people[0].total,1);
 // API authorization uses the authenticated actor, ignoring a forged person query.

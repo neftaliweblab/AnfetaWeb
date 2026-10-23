@@ -405,6 +405,21 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     await mutations.mutateActivity(settings,'Neftali',pid,{start:'2026-10-05T09:00:00-06:00',end:'2026-10-05T10:00:00-06:00'});
     assert.equal(state.page.properties['Check FTF Pasos Verificados Hoy'].checkbox,true);
   });
+  await test('Traslado FTF permite recordatorio histórico sin tocar checklist ni trabajo terminado',async()=>{
+    const NativeDate=Date;global.Date=class extends NativeDate{constructor(...a){super(...(a.length?a:['2026-10-23T05:00:00-06:00']));}static now(){return NativeDate.parse('2026-10-23T05:00:00-06:00');}};
+    try{
+      const updates={ftfRollover:true,start:'2026-10-23T18:00:00-06:00',end:'2026-10-23T19:00:00-06:00',expectedStart:state.page.properties['Fecha POR Hacer'].date.start,expectedEditedAt:state.page.last_edited_time};
+      state.page.properties.Estado.status.name='TERMINADA';
+      await assert.rejects(()=>mutations.mutateActivity(settings,'Neftali',pid,updates),/traslado FTF/);
+      state.page.properties.Name.title=[{plain_text:'JUNIO FTF 14 Calendario ccale - MOVER AL TERMINAR',text:{content:'JUNIO FTF 14 Calendario ccale - MOVER AL TERMINAR'}}];
+      state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
+      await mutations.mutateActivity(settings,'Neftali',pid,updates);
+      const patches=state.calls.filter(c=>c.method==='PATCH'&&c.target==='pages/'+pid);
+      assert.equal(patches.length,1);assert.deepEqual(Object.keys(patches[0].body.properties).sort(),['Check FTF Pasos Verificados Hoy','Fecha POR Hacer']);
+      assert.equal(state.page.properties.Estado.status.name,'TERMINADA');assert.equal(state.page.properties['Check FTF Pasos Verificados Hoy'].checkbox,false);
+      assert.ok(!state.calls.some(c=>c.method==='PATCH'&&c.body.to_do));
+    }finally{global.Date=NativeDate;}
+  });
   await test('Reinicio diario FTF rechaza una actividad que ya se terminó',async()=>{
     state.page.properties.Estado.status.name='TERMINADA';state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
     await assert.rejects(()=>mutations.mutateActivity(settings,'Neftali',pid,{ftfVerified:false,expectedFtfVerified:true,ftfDailyReset:true}),/ya no es un pendiente/);

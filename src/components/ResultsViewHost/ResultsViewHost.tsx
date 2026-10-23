@@ -9,7 +9,7 @@ import {ScreenRecorder} from './ScreenRecorder';
 import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
-import {parseSearchTabs} from '@/lib/searchTabsStorage';
+import {parseSearchTabs,personalFirstSearch} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
 import {CompactSearchAccess} from './CompactSearchAccess';
 import {workflowState} from '@/services/activityWorkflow';
@@ -129,7 +129,7 @@ export function ResultsViewHost({
     let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
     setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
     let saved=null;try{saved=parseSearchTabs(localStorage.getItem(tabsKey));}catch{}
-    const next=saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'};
+    const next=personalFirstSearch(saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'},owner);
     setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
     setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
   },[tabsKey]);

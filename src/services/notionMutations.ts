@@ -1,3 +1,4 @@
+import {isFtfActivity} from './progressKpis';
 import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
 import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
 import {withActivityLease,operationKey} from './reliableOperations';
@@ -15,7 +16,7 @@ import { canEditActivity, isActivityLocked, isDirection, isReviewer } from './ac
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
 import {quickRevisionTitle} from '@/lib/quickRevisionTitle';
 import { normalizeActivity } from './dataNormalizers';
-import { mexicoDate,calendarDomain } from './calendarPresentation';
+import { mexicoDate,mexicoMinutes,calendarDomain } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 import {queryCalendarPages} from './notionCalendar';
 import {calendarConflict,nearbyFreeCalendarSlots, type CalendarSlot} from './calendarConflicts';
@@ -101,6 +102,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const page = await notionRequest(settings, `pages/${id}`);
   if(page.archived||page.in_trash)throw Error('La actividad está archivada o en la papelera.');
   const title = titleOf(page);
+  const ftfRollover=updates.ftfRollover===true;
+  if(ftfRollover&&(!isFtfActivity(title)||!updates.expectedStart||!updates.expectedEditedAt||mexicoDate(updates.start||'')!==mexicoDate()||mexicoMinutes(new Date().toISOString())<300||mexicoDate(updates.expectedStart)>=mexicoDate()||updates.person||updates.reviewer||updates.reviewAction||updates.status||updates.title))throw Error('El traslado FTF solo admite la misma tarjeta y su horario confirmado.');
   if(updates.automationMove){const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);if(!['pending','suspended'].includes(state)||/\b(?:zREVISION|FTF|ccale)\b/i.test(title)||Object.entries(page.properties||{}).some(([n,p]:any)=>/fij[oa]|fixed/i.test(n)&&p.checkbox))throw Error('La actividad ya no es un pendiente reprogramable. Actualiza su estado.');}
   if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
   if(updates.expectedStatus!==undefined && (calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'')!==updates.expectedStatus)throw new Error('El estado cambió en otro dispositivo. Actualiza antes de guardar.');
@@ -109,7 +112,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
   if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable, Dirección o un revisor puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
-  if ((updates.start || updates.end) && (workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name||'',title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || '')))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
+  if (!ftfRollover && (updates.start || updates.end) && (workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name||'',title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(calendarStatusField(page)?.[1]?.[calendarStatusField(page)?.[1]?.type]?.name || '')))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
   const handoff=updates.handoff===true;
@@ -283,7 +286,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
     };
   }
-  if(checkSchedule){
+  if(checkSchedule&&!ftfRollover){
     const schedule:any=fields.find(([n,p])=>p.type==='date'&&/^fecha por hacer$/i.test(n.trim()))?.[1]?.date;
     if(schedule?.start){const start=updates.start||(schedule.start.length===10?schedule.start+'T08:00:00-06:00':schedule.start);await assertFreeCalendarSchedule(settings,{pageId:id,title:nextTitle,person:normalizePerson(updates.reviewer||updates.person||activity.person),start,end:updates.end||schedule.end||new Date(Date.parse(start)+3600000).toISOString()});}
   }

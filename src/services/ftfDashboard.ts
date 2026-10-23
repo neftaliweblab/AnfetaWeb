@@ -17,9 +17,10 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     }
     const all=[...unique.values()],pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified).sort((a,b)=>a.start.localeCompare(b.start));
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
-    const completedAt=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<cutoff&&stamp<=now.getTime()?record.updated:null;
+    const completedAt=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime()?record.updated:null;
+    const late=!!completedAt&&stamp>cutoff;
     const status=!all.length?'empty':pending.length?'pending':completedAt?'complete':'unconfirmed';
-    return {...person,name,total:all.length,verified:all.length-pending.length,pending,completedAt,status};
+    return {...person,name,total:all.length,verified:all.length-pending.length,pending,completedAt,late,timeKind:record?.timeKind||'observed',status};
   });
-  return {day,cutoff:'18:00',updatedAt:now.toISOString(),deadlinePassed:now.getTime()>=cutoff,people:rows,completed:rows.filter(p=>p.status==='complete').length,pending:rows.filter(p=>p.status==='pending').length,unconfirmed:rows.filter(p=>p.status==='unconfirmed').length,empty:rows.filter(p=>p.status==='empty').length};
+  return {day,cutoff:'18:00',updatedAt:now.toISOString(),deadlinePassed:now.getTime()>cutoff,people:rows,completed:rows.filter(p=>p.status==='complete'&&!p.late).length,late:rows.filter(p=>p.status==='complete'&&p.late).length,pending:rows.filter(p=>p.status==='pending').length,unconfirmed:rows.filter(p=>p.status==='unconfirmed').length,empty:rows.filter(p=>p.status==='empty').length};
 }

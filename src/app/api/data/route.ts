@@ -1,3 +1,4 @@
+import {ftfJobHealth} from '@/services/ftfJobHealth';
 import {calendarActivityFromPage} from '@/services/notionEventSync';
 import {documentationKind,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {inferActivityPerson} from '@/services/activityTags';
@@ -17,7 +18,7 @@ import {replayMutation} from '@/services/replayMutation';
 import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
 import {queryAnfetaIndex,uniqueIndex} from '@/services/notionIndexParity';
 import {diagnoseNotion} from '@/services/notionDiagnostics';
-import {executiveActivities} from '@/services/progressKpis';
+import {executiveActivities,isFtfReminder} from '@/services/progressKpis';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 import {readUserState,updateUserState} from '@/services/userState';
 import {recordChecklistMark} from '@/services/checklistHistory';
@@ -540,7 +541,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         let warning='';
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const state=await readUserState(settings,'John');
-        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{}),warning},{headers:{'Cache-Control':'no-store'}});
+        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{}),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
     }
     if (type === 'review-notifications') {
@@ -2440,8 +2441,8 @@ async function POSTLive(req: NextRequest) {
           try{
             const day=mexicoDate(),tomorrow=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
             const pages=await queryCalendarPages(settings,day,tomorrow,true);
-            const rows=pages.map((p:any)=>{const value=extractNotionPageData(p);return normalizeActivity({pageId:p.id,person:value.person,start:value.dateStart,end:value.dateEnd,...ftfState(p)},0);});
-            await recordFtfCompletions(settings,rows);
+            const rows=pages.map((p:any)=>{const value=extractNotionPageData(p);return normalizeActivity({pageId:p.id,title:value.title,status:value.status,person:value.person,start:value.dateStart,end:value.dateEnd,...ftfState(p)},0);});
+            await recordFtfCompletions(settings,rows.filter(row=>normalizePerson(row.person)===normalizePerson(activity.person)),new Date(page.last_edited_time||Date.now()),isFtfReminder(activity)?'observed':'confirmed');
           }catch(error){ftfWarning='La casilla se guardó; el aviso FTF queda pendiente de comprobar al actualizar los avisos.';}
         }
         return NextResponse.json({ success:true, activity, handoffCopies:input.handoff?await handoffMirrors(settings,mexicoDate(activity.start),new Date(Date.parse(mexicoDate(activity.start)+'T12:00:00Z')+86400000).toISOString().slice(0,10)).catch(()=>[]):undefined, warning:[page.__notificationWarning,page.__historyWarning,ftfWarning].filter(Boolean).join(' · ') || undefined });
