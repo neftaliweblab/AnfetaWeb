@@ -420,6 +420,16 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
       assert.ok(!state.calls.some(c=>c.method==='PATCH'&&c.body.to_do));
     }finally{global.Date=NativeDate;}
   });
+  await test('Flujo primario rtuzR y tuzR guarda revisión y aprobación sin marcar liquidación',async()=>{
+    if(process.env.NEXT_PUBLIC_ANFETA_LEGACY_WORKFLOW==='1')return;
+    const page=await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John',status:'rtuzREVISION'});
+    assert.match(page.properties.Name.title[0].text.content,/^rtuzR /);assert.match(page.properties.Name.title[0].text.content,/\bjo000\b/);
+    assert.equal(state.flow.State,'pending');
+    const approved=await mutations.mutateActivity(settings,'John',pid,{status:'zREVISION'});
+    assert.match(approved.properties.Name.title[0].text.content,/^tuzR /);assert.equal(state.flow.State,'approved');
+    assert.equal(approved.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
+    assert.ok(!/^zR /i.test(approved.properties.Name.title[0].text.content));
+  });
   await test('Reinicio diario FTF rechaza una actividad que ya se terminó',async()=>{
     state.page.properties.Estado.status.name='TERMINADA';state.page.properties['Check FTF Pasos Verificados Hoy']={type:'checkbox',checkbox:true};
     await assert.rejects(()=>mutations.mutateActivity(settings,'Neftali',pid,{ftfVerified:false,expectedFtfVerified:true,ftfDailyReset:true}),/ya no es un pendiente/);

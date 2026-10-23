@@ -25,6 +25,7 @@ export interface AnfetaSyncMessage {
   updates?: any;
   sourceWindow?: "main" | "calendar";
   timestamp?: number;
+  readStartedAt?:number;
 }
 
 const CHANNEL_NAME = "anfeta_multiwindow_channel";
@@ -67,6 +68,7 @@ export class AnfetaSyncService {
       ...msg,
       messageId:this.clientId+':'+(++this.sequence),
       ...(msg.confirmed&&msg.updates?{updates:{...msg.updates,localConfirmedAt:Date.now()}}:{}),
+      ...(msg.confirmed&&msg.activity?{activity:{...msg.activity,localConfirmedAt:Date.now()}}:{}),
       timestamp: Date.now(),
     };
 

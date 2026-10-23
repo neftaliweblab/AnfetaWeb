@@ -109,6 +109,7 @@ export function GlobalPasteModal({
   const prefixRef = useRef('');
   const recovery = useRef<UploadDraft | null>(null);
   const [draftReady, setDraftReady] = useState(false);
+  const submitLock=useRef(false);
   const [started, setStarted] = useState(false);
   const [pendingConflict, setPendingConflict] = useState<UploadDraft | null>(null);
   const [stashedFiles, setStashedFiles] = useState<GlobalPasteImagePayload[]>([]);
@@ -355,7 +356,7 @@ export function GlobalPasteModal({
 
   async function submit(e: React.FormEvent,dropboxOnly=false) {
     e.preventDefault();
-    if (busy || locked || !draftReady || pendingConflict) return;
+    if (busy || submitLock.current || locked || !draftReady || pendingConflict) return;
     if(attachmentOnly&&!attachment){setError('No se pudo identificar la actividad de destino. Cierra este panel y vuelve a grabar desde la actividad.');return;}
     setError('');
     if (files.length > 20) { setError('Selecciona hasta 20 archivos por lote.'); return; }
@@ -379,7 +380,7 @@ export function GlobalPasteModal({
       setError('Este envío supera 2.5 MB. Reduce el lote para enviarlo por la web.');
       return;
     }
-    setBusy(true);
+    submitLock.current=true;setBusy(true);
     try {
       if (!recovery.current) throw Error('No se preparó la recuperación del lote.');
       let frozen = recovery.current.started ? recovery.current.plan : {
@@ -492,7 +493,7 @@ export function GlobalPasteModal({
     } catch (e: any) {
       setError(e instanceof Error ? e.message : 'No se pudo subir.');
     } finally {
-      setBusy(false);
+      submitLock.current=false;setBusy(false);
     }
   }
 

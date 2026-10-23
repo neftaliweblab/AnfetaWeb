@@ -15,7 +15,7 @@ export function handoffTitle(title:string,from:string,to:string){
  // preserving unrelated collaborator/reviewer tags, month, domain and description.
  const match=matches.find(m=>/^(.)\1/.test(m[0]))||matches.at(-1);
  if(match&&match.index!==undefined)return title.slice(0,match.index)+target+(match.groups?.suffix||'')+title.slice(match.index+match[0].length);
- const phase=title.match(/^(?:sprtuzREVISION|prtuzREVISION)\s+/i);
+ const phase=title.match(/^(?:sprtuzREVISION|prtuzREVISION|saprtuzR|aprtuzR|prtuzR)\s+/i);
  const active=activePersonTag(to);
  return phase?phase[0]+active+' '+title.slice(phase[0].length):active+' '+title;
 }

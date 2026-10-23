@@ -1,40 +1,8 @@
-const assert = require("assert/strict");
-const path = require("path");
-const fs = require("fs");
-const ts = require("typescript");
-
-const root = path.resolve(__dirname, "..");
-
-const customRequire = (name) => {
-  if (name.startsWith("@/")) {
-    const rel = name.slice(2);
-    const fullPath = path.join(root, "src", rel);
-    if (fs.existsSync(fullPath + ".ts")) {
-      const code = fs.readFileSync(fullPath + ".ts", "utf8");
-      const transpiled = ts.transpileModule(code, {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-      }).outputText;
-      const subMod = { exports: {} };
-      const subFn = new Function("exports", "module", "require", transpiled);
-      subFn(subMod.exports, subMod, customRequire);
-      return subMod.exports;
-    }
-  }
-  return require(name);
-};
-
-// Transpile ts file for testing
-const tsCode = fs.readFileSync(path.join(root, "src/lib/whatsappDirectory.ts"), "utf8");
-const jsCode = ts.transpileModule(tsCode, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-
-const mod = { exports: {} };
-const fn = new Function("exports", "module", "require", jsCode);
-fn(mod.exports, mod, customRequire);
-
-const { detectGroupDomain, cleanInviteUrl, mergeWhatsappGroups, getWhatsappStorageKey } = mod.exports;
-
+const assert=require('assert/strict'),path=require('path'),fs=require('fs'),Module=require('module'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+Module._extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,p);
+const {detectGroupDomain,cleanInviteUrl,mergeWhatsappGroups,getWhatsappStorageKey}=require('../src/lib/whatsappDirectory.ts');
 // Test 1: detectGroupDomain
 assert.equal(detectGroupDomain("Apartallante - Web & Ads"), "Apartallante");
 assert.equal(detectGroupDomain("constructora.mx - Avances de Obra"), "constructora.mx");

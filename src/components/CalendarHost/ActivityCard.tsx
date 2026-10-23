@@ -16,7 +16,7 @@ import {notionPageUrl} from '@/lib/notionPageUrl';
 import {ViewportMenu} from './ViewportMenu';
 import {QuickScheduleActions} from './QuickScheduleModal';
 import { ChecklistPopup } from "./ChecklistPopup";
-import { workflowState } from "@/services/activityWorkflow";
+import { workflowState,workflowPresentation } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
 import { SendToReviewModal } from "./SendToReviewModal";
@@ -347,6 +347,9 @@ export function ActivityCard({
     phaseColor = "#261A10";
     phaseTextColor = "#FDE68A";
   }
+
+  const phaseInfo=workflowPresentation(status,title);
+  if(phaseInfo.stage&&!phaseInfo.inconsistent&&!isUrgent)phaseLabel=phaseInfo.label.toUpperCase();
 
   // Desktop palette customization (ANFETA Desktop parity)
   let priorityBorderColor = "#64748B";
@@ -988,7 +991,7 @@ export function ActivityCard({
             className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-[#4ADE80] flex items-center gap-2"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Finalizar Actividad (zREVISION)</span>
+            <span>Finalizar actividad</span>
           </button>
           {editable && (
             <button

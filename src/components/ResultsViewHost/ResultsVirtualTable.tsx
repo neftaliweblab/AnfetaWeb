@@ -6,6 +6,8 @@ import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
+import {WorkflowStageBadge} from '../WorkflowStageBadge';
+import {progressiveStage} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
 import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
@@ -521,7 +523,7 @@ export function ResultsVirtualTable({
             style={{ width: `${colWidths.status}px` }}
             className="shrink-0 px-1 flex items-center gap-1 overflow-hidden"
           >
-            {parsed.workflow ? (
+            {progressiveStage(item.name)||progressiveStage(item.updateStatus||'') ? (<WorkflowStageBadge status={item.updateStatus||''} title={item.name}/>) : parsed.workflow ? (
               <span
                 style={{
                   fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
@@ -1429,7 +1431,7 @@ export function ResultsVirtualTable({
                 </button>
 
                 {onActivityAction&&<div className="my-1 border-y border-slate-700 py-1">{([
-                  ['handoff','◇ Reasignar actividad…'],['review','◇ Enviar a revisión final…'],['finish','✓ Finalizar actividad (zREVISION)'],['schedule','▣ Editar fecha y horario…'],['menu','↪ Mover fecha / Duración…']
+                  ['handoff','◇ Reasignar actividad…'],['review','◇ Enviar a revisión final…'],['finish','✓ Finalizar actividad'],['schedule','▣ Editar fecha y horario…'],['menu','↪ Mover fecha / Duración…']
                 ] as const).map(([mode,label])=><button key={mode} type="button" onClick={()=>{onActivityAction(item,mode,{x:contextMenu.x,y:contextMenu.y});setContextMenu(null);}} className="w-full rounded px-2.5 py-2 text-left text-[11px] text-cyan-200 hover:bg-slate-800">{label}</button>)}</div>}
                 {/* 2. Cambiar estado (Submenú): fallback para consumidores sin acciones completas */}
                 {!onActivityAction&&<div

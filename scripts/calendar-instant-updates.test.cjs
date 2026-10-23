@@ -8,10 +8,10 @@ const base={pageId:id,title:'prtuzREVISION nne11 Prueba',status:'POR HACER',pers
 let rows=upsertCalendarActivity([],id,base,day);assert.equal(rows.length,1);
 assert.equal(upsertCalendarActivity(rows,id,{title:base.title},day),rows,'Unchanged delta keeps array identity');
 rows=upsertCalendarActivity(rows,other,{...base,pageId:other,person:'John'},day);assert.equal(rows.length,2,'Previously unloaded activity arrives immediately');
-let moved=upsertCalendarActivity(rows,id,{start:'2026-10-23T10:00:00-06:00',end:'2026-10-23T11:00:00-06:00'},day);assert.equal(moved.length,1);assert.equal(moved[0].pageId,other);
-let review=upsertCalendarActivity([base],id,{person:'John',status:'EN REVISIÓN',reviewFlow:{State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'John',LeaveVisualCopy:true}},day);assert.equal(review.length,2);assert.equal(review[1].person,'Neftali');
-review=upsertCalendarActivity(review,id,{person:'Karla',reviewFlow:{State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'Karla',LeaveVisualCopy:true}},day);assert.equal(review.length,2);assert.equal(review[0].person,'Karla');
-review=upsertCalendarActivity(review,id,{person:'Neftali',status:'TERMINADA',reviewFlow:{State:'approved',OriginalPerson:'Neftali',ReviewAssignee:'Karla'}},day);assert.equal(review.length,1);
+let moved=upsertCalendarActivity(rows,id,{serverModified:stamp,start:'2026-10-23T10:00:00-06:00',end:'2026-10-23T11:00:00-06:00'},day);assert.equal(moved.length,1);assert.equal(moved[0].pageId,other);
+let review=upsertCalendarActivity([base],id,{serverModified:stamp,person:'John',status:'EN REVISIÓN',reviewFlow:{State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'John',LeaveVisualCopy:true}},day);assert.equal(review.length,2);assert.equal(review[1].person,'Neftali');
+review=upsertCalendarActivity(review,id,{serverModified:stamp,person:'Karla',reviewFlow:{State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'Karla',LeaveVisualCopy:true}},day);assert.equal(review.length,2);assert.equal(review[0].person,'Karla');
+review=upsertCalendarActivity(review,id,{serverModified:stamp,person:'Neftali',status:'TERMINADA',reviewFlow:{State:'approved',OriginalPerson:'Neftali',ReviewAssignee:'Karla'}},day);assert.equal(review.length,1);
 let changed=applyCalendarStates([base],[{id,serverModified:'2026-10-22T16:01:00Z',calendarActivity:{...base,serverModified:'2026-10-22T16:01:00Z',checklistScanned:false,checklistTotal:0},checklistUpdate:{blockId:'c'.repeat(32),checked:true,checklistCompleted:1}}],day)[0];assert.equal(changed.checklistTotal,2);assert.equal(changed.checklistCompleted,1);assert.equal(changed.checklistItems[0].isChecked,true);
 assert.equal(applyCalendarStates([changed],[{id,serverModified:stamp,checklistUpdate:{blockId:'c'.repeat(32),checked:false,checklistCompleted:0}}],day)[0],changed,'Old counters cannot replace new check');
 assert.equal(applyCalendarStates([base],[{id,serverModified:'2026-10-21T00:00:00Z',scheduledDate:''}],day)[0],base);

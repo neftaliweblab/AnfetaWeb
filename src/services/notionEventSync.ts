@@ -1,3 +1,4 @@
+import {activityFinancialFields} from './activityFinancialFields';
 import {assignedPerson,calendarStatusField} from './notionCalendar';
 import {normalizeActivity} from './dataNormalizers';
 import {ftfState} from './ftfVerification';
@@ -107,7 +108,7 @@ export function calendarActivityFromPage(page:any,calendarSourceId?:string){
   const parsed=parseNotionPageProperties(page),start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;
   const end=date.date.end||new Date(Date.parse(start)+3600000).toISOString();
   if(!Number.isFinite(Date.parse(start))||!Number.isFinite(Date.parse(end)))return undefined;
-  return {...normalizeActivity({pageId:page.id,pageUrl:page.url,title:parsed.title,person:assignedPerson(page,parsed.person),status:((field:any)=>field?.[1]?.[field[1].type]?.name||parsed.status)(calendarStatusField(page)),start,end,domain:calendarDomain(parsed.title),isLocked:Object.entries(page.properties||{}).some(([n,p]:any)=>/lock|bloquead/i.test(n)&&p.checkbox),...ftfState(page),reviewFlow:page.__reviewFlow,reviewFlowScanned:!!page.__reviewFlow},0),serverModified:parsed.lastEdited};
+  return {...normalizeActivity({financialFields:activityFinancialFields(page),pageId:page.id,pageUrl:page.url,title:parsed.title,person:assignedPerson(page,parsed.person),status:((field:any)=>field?.[1]?.[field[1].type]?.name||parsed.status)(calendarStatusField(page)),start,end,domain:calendarDomain(parsed.title),isLocked:Object.entries(page.properties||{}).some(([n,p]:any)=>/lock|bloquead/i.test(n)&&p.checkbox),...ftfState(page),reviewFlow:page.__reviewFlow,reviewFlowScanned:!!page.__reviewFlow},0),serverModified:parsed.lastEdited};
 }
 
 /**

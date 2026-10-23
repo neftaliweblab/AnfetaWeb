@@ -1,3 +1,4 @@
+import {revisionPhaseTitle,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
 import catalog from '../../data/notion_template_phase1_catalog_v2.json';
 import {getCalendarPersonTag} from './templateCatalog';
 import {ACTIVITY_TAGS,activityPerson} from '../services/activityTags';
@@ -17,5 +18,5 @@ export function quickRevisionTitle(input:{type?:string;title:string;person:strin
   if(!template)throw Error('No se encontró la plantilla rápida del responsable.');
   const result=template.Title.replace(' '+legacyTag+' ',' '+tag+' ').replace(/\[ttipo-actividad(?:-rrapi rapido)?\]/i,()=>`[${type}]`).replace(/\d{2}-\[\d{2}[A-Z]+\]/,()=>month).replace('[TITULO ACTIVIDAD]',()=>title+(specific?'':' '+tag)).replace('[dominio.com]',()=>`[${domain}]`).replace('[AGREGAR DESCRIPCION ACTIVIDAD]',()=>clean(input.description||''));
   if(result.length>1900)throw Error('Reduce el título o descripción de la actividad rápida.');
-  return result.replace(/\s+/g,' ').trim();
+  return (PROGRESSIVE_WORKFLOW_PRIMARY?revisionPhaseTitle(result,'pending'):result).replace(/\s+/g,' ').trim();
 }

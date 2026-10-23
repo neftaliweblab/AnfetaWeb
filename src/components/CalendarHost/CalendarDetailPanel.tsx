@@ -1,4 +1,6 @@
 "use client";
+import {WorkflowStageBadge} from '../WorkflowStageBadge';
+import {ActivityWhatsappGroups} from '../ActivityWhatsappGroups';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
@@ -202,6 +204,9 @@ export function CalendarDetailPanel({
           </button>
         </div>
 
+        <WorkflowStageBadge status={activity.status} title={activity.title}/>
+        {activity.financialFields?.length?<dl className="rounded border border-slate-700 p-2 text-xs">{activity.financialFields.map(field=><div key={field.name} className="flex justify-between gap-2"><dt>{field.name}</dt><dd className={field.value<0?'text-rose-300':'text-emerald-300'}>{field.value.toLocaleString('es-MX')}</dd></div>)}</dl>:null}
+        <ActivityWhatsappGroups title={activity.title} currentUser={currentUser}/>
         {/* Descripción / Título Limpio */}
         <div>
           <h3 className="text-xs font-semibold text-slate-100 leading-snug break-words">

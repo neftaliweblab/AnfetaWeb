@@ -2,7 +2,7 @@ const fs=require('fs'),path=require('path'),Module=require('module'),assert=requ
 const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
 Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
 for(const ext of ['.ts','.tsx'])Module._extensions[ext]=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,p);
-const tags=require('../src/services/activityTags.ts'),{reviewTitle}=require('../src/services/reviewTitle.ts'),{calendarUrgent}=require('../src/services/calendarPresentation.ts');
+const tags=require('../src/services/activityTags.ts'),{reviewTitleLegacy:reviewTitle}=require('../src/services/reviewTitleLegacy.ts'),{calendarUrgent}=require('../src/services/calendarPresentation.ts');
 const {matchesFlexibleOrQuotedQuery:match}=require('../src/services/advancedQuery.ts');
 for(const [person,entry]of Object.entries(tags.ACTIVITY_TAGS)){
  const token=entry.reference+'000';assert.equal(tags.pendingReviewTag(person),token);assert.equal(tags.parseActivityTag(token).role,'review');assert.equal(calendarUrgent(token),false);

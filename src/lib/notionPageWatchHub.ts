@@ -1,8 +1,10 @@
+import {mergePageDelta} from './activityRevision';
 import {rememberDeletedPages,restoreConfirmedPages,deletedPages,pageIdentity,setUnverifiedPage,clearUnverifiedPage,PAGE_SYNC_CHANNEL} from './deletedPages';
-type Subscriber={rows:()=>any[];onStates:(states:any[])=>boolean|void;calendar:boolean;pending:Map<string,any>};
+type Subscriber={rows:()=>any[];onStates:(states:any[])=>boolean|void|string[];calendar:boolean;pending:Map<string,any>};
 const hubs=new Map<string,PageWatchHub>();
 /** One incremental connection per account/window, shared by visible panels. */
 class PageWatchHub{
+  versions=new Map<string,any>();
   contentVersions=new Map<string,string>();
   subscribers=new Set<Subscriber>();controller=new AbortController();cursor:string|null=null;
   token='';busy=false;probeBusy=false;queued=false;stopped=false;nextProbe=0;probeCursor=0;restoreCursor=0;
@@ -17,18 +19,19 @@ class PageWatchHub{
   saved=()=>{if(this.busy)this.queued=true;else this.wake();};
   schedule(){if(this.timer)clearInterval(this.timer);this.timer=setInterval(this.wake,[...this.subscribers].some(s=>s.calendar)?2000:10000);}
   deliver(states:any[]){
+    states=states.flatMap(state=>{const id=pageIdentity(state.id),old=this.versions.get(id),next=mergePageDelta(old,state,true);if(old===next)return [];this.versions.delete(id);this.versions.set(id,{...next,contentChanged:false,checklistUpdate:undefined});if(this.versions.size>1000)this.versions.delete(this.versions.keys().next().value!);return [next];});
     const removed=states.filter(s=>s.deleted).map(s=>s.id),restored=states.filter(s=>s.deleted===false&&!s.unverified).map(s=>s.id);
     if(removed.length)rememberDeletedPages(this.owner,removed);if(restored.length)restoreConfirmedPages(this.owner,restored);
     for(const state of states){if(state.unverified)setUnverifiedPage(state.id,state.reason);else clearUnverifiedPage(state.id);}
     for(const state of states)if(state.contentChanged&&state.serverModified&&this.contentVersions.get(state.id)!==state.serverModified){this.contentVersions.set(state.id,state.serverModified);if(this.contentVersions.size>512)this.contentVersions.delete(this.contentVersions.keys().next().value!);window.dispatchEvent(new CustomEvent('anfeta_page_content_changed',{detail:{pageId:state.id}}));}
-    for(const subscriber of this.subscribers){for(const state of states){const id=pageIdentity(state.id),old=subscriber.pending.get(id);if(old&&((!old.unverified&&state.unverified)||Date.parse(old.serverModified||'')>Date.parse(state.serverModified||'')))continue;subscriber.pending.set(id,state);}this.flush(subscriber);}
+    for(const subscriber of this.subscribers){for(const state of states){const id=pageIdentity(state.id),old=subscriber.pending.get(id);subscriber.pending.set(id,mergePageDelta(old,state));}this.flush(subscriber);}
   }
-  flush(subscriber:Subscriber){if(!subscriber.pending.size)return;try{if(subscriber.onStates([...subscriber.pending.values()])!==false)subscriber.pending.clear();}catch{/* Keep unapplied events. */}}
+  flush(subscriber:Subscriber){if(!subscriber.pending.size)return;try{const applied=subscriber.onStates([...subscriber.pending.values()]);if(Array.isArray(applied)){for(const id of applied)subscriber.pending.delete(pageIdentity(id));}else if(applied!==false)subscriber.pending.clear();}catch{/* Keep unapplied events. */}}
   async check(){
     if(this.stopped||this.busy||document.hidden)return;
     this.busy=true;for(const subscriber of this.subscribers)this.flush(subscriber);
     let token='';try{token=JSON.parse(localStorage.getItem('anfeta_settings')||'{}').notionToken||'';}catch{}
-    if(this.token!==token){this.token=token;this.cursor=null;this.nextProbe=0;this.contentVersions.clear();for(const s of this.subscribers)s.pending.clear();}
+    if(this.token!==token){this.token=token;this.cursor=null;this.nextProbe=0;this.contentVersions.clear();this.versions.clear();for(const s of this.subscribers)s.pending.clear();}
     const headers={'Content-Type':'application/json',...(token?{'x-notion-token':token}:{})};
     try{
       const sync=await fetch('/api/data',{method:'POST',headers,signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(8000)]),body:JSON.stringify({action:'sync-page-events',payload:{since:this.cursor,limit:100}})});
@@ -65,7 +68,7 @@ class PageWatchHub{
 
   stop(){this.stopped=true;this.controller.abort();if(this.timer)clearInterval(this.timer);this.channel?.close();window.removeEventListener('online',this.wake);window.removeEventListener('focus',this.wake);window.removeEventListener('anfeta_activity_saved',this.saved);document.removeEventListener('visibilitychange',this.wake);}
 }
-export function subscribeNotionPages(owner:string,options:{rows:()=>any[];onStates:(states:any[])=>boolean|void;calendar?:boolean}){
+export function subscribeNotionPages(owner:string,options:{rows:()=>any[];onStates:(states:any[])=>boolean|void|string[];calendar?:boolean}){
   let hub=hubs.get(owner);if(!hub){hub=new PageWatchHub(owner);hubs.set(owner,hub);}
   const subscriber:Subscriber={...options,calendar:!!options.calendar,pending:new Map()};hub.subscribers.add(subscriber);hub.schedule();void hub.check();
   return ()=>{hub!.subscribers.delete(subscriber);if(!hub!.subscribers.size){hub!.stop();hubs.delete(owner);}else hub!.schedule();};

@@ -1,3 +1,5 @@
+import {workflowPresentation} from '../services/activityWorkflow';
+import {stripProgressiveStage,progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
 export interface VisualParts {
   title: string;        // Título limpio para la tabla
   rawTitle: string;     // Título original completo sin tocar
@@ -31,7 +33,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   display = display.replace(/^\[[^\]]{1,40}\]\s*/i, '').trim();
 
   // 2. Extraer Workflow token (sprtuzREVISION, aprtuzREVISION, prtuzREVISION, rtuzREVISION, zREVISION)
-  let workflow = '';
+  let workflow = '',areaFromStage='';
   const wfMatch = display.match(/(?<![\w_])(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\w_])/i);
   if (wfMatch) {
     const val = wfMatch[1].toUpperCase();
@@ -57,6 +59,10 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   else if (workflow === 'SUSPENDIDA') workflowColor = '#FACC15';
   else if (workflow === 'POR HACER') workflowColor = '#C084FC';
 
+  const presentation=workflowPresentation(status||'',rawTitle);
+  if(presentation.state!=='unknown'){workflow=presentation.label.toUpperCase();workflowColor={pending:'#FBBF24',review:'#F87171',completed:'#38BDF8',suspended:'#FACC15',unknown:'#94A3B8'}[presentation.state];}
+  if(PROGRESSIVE_WORKFLOW_PRIMARY){const stage=progressiveStage(rawTitle);display=stripProgressiveStage(display);if(stage?.category==='software')areaFromStage='PROG';if(stage?.category==='cobro')areaFromStage='COBRO';if(stage?.category==='pago')areaFromStage='PAGO';}
+
   // 3. Extraer Mes (ej. 26-[08AGO], [08AGO], (2609SEPT), 08AGO)
   let monthCode = '';
   const monthMatch = display.match(/(?<![\w_])(?:\d{2}-)?\[?\(?(\d{1,2}[A-Za-z]{3,4})\)?\]?(?:\s*-\s*|\s+)?/i);
@@ -67,7 +73,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
 
   // 4. Extraer Dominio (ej. webs.apantallante.com, seo.lcacalderas.com, novakid.com)
   let domain = '';
-  let area = '';
+  let area = areaFromStage;
   const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co)))\b\s*(?:\]|\))?/i;
   const domainMatch = display.match(domainRegex);
   if (domainMatch) {

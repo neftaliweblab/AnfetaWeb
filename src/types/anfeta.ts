@@ -50,6 +50,7 @@ export interface SearchResultRow {
 }
 
 export interface NotionCalendarActivity {
+  financialFields?:{name:string;value:number}[];
   serverModified?:string;
   localConfirmedAt?:number;
   pageId: string;

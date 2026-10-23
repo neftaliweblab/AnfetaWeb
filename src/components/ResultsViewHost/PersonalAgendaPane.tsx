@@ -1,14 +1,16 @@
 "use client";
-import {upsertCalendarActivity,applyCalendarStates} from '@/lib/calendarUpdates';
+import {pageIdentity} from '@/lib/deletedPages';
+import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {applyNotionStates} from '@/lib/applyNotionStates';
-import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
+import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {openNotionPage} from '@/services/windowsIntegration';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {CalendarDetailPanel} from '../CalendarHost/CalendarDetailPanel';
 import {AgendaActivityActions} from './AgendaActivityActions';
 import {saveAgendaActivity,type AgendaUpdate} from './saveAgendaActivity';
 import {personalAgendaActivities,agendaSelection,agendaAppearance} from '@/lib/personalAgenda';
+import {workflowPresentation} from '@/services/activityWorkflow';
 import {isFtfReminder} from '@/services/progressKpis';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
@@ -53,6 +55,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
   const [menu,setMenu]=useState<{pageId:string;x:number;y:number}|null>(null);
   const [saving,setSaving]=useState(false),[notice,setNotice]=useState('');
   const loadingRef=useRef(false);
+  const pendingId=useRef<string|null>(null);
   const pending=useRef(false),revision=useRef(0),requestedSelection=useRef<string|null>(null);
   const itemsRef=useRef(items);itemsRef.current=items;
   const recentSaves=useRef(new Map<string,{activity:NotionCalendarActivity;until:number}>());
@@ -71,19 +74,20 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
   useEffect(()=>{
     if(!active)return;
     const controller=new AbortController();
+    const readStartedAt=Date.now();
     const version=revision.current;
     loadingRef.current=true;
     setLoading(true);
     setError('');
     sharedCalendarFetch('/api/data?type=calendar&basic=1&date='+encodeURIComponent(day),currentUser,{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])})
       .then(async response=>{
-        const data=await response.json();
+        const data=await response.json();const boundary=calendarReadBoundary(response,data.cacheMeta,readStartedAt);
         if(!response.ok)throw Error(data.error||'No se pudo cargar el calendario.');
         if(!controller.signal.aborted&&!pending.current&&version===revision.current){
           const incoming:NotionCalendarActivity[]=data.activities||[];
           const protectedItems=incoming.map(incomingActivity=>{const previous=itemsRef.current.find(a=>a.pageId===incomingActivity.pageId);const a=!incomingActivity.checklistScanned&&previous?.checklistScanned?{...incomingActivity,checklistScanned:true,checklistTotal:previous.checklistTotal,checklistCompleted:previous.checklistCompleted,checklistItems:previous.checklistItems,completedChecks:previous.completedChecks,todayChecklistCompleted:previous.todayChecklistCompleted}:incomingActivity;const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
           for(const saved of recentSaves.current.values())if(saved.until>Date.now()&&mexicoDate(saved.activity.start)===day&&!protectedItems.some(a=>a.pageId===saved.activity.pageId))protectedItems.push(saved.activity);
-          setItems(filterDeletedPages(protectedItems,currentUser));
+          setItems(old=>filterDeletedPages(mergeCalendarSnapshot(old,protectedItems,day,boundary),currentUser));
           setError(data.warning||'');
         }
       })
@@ -113,13 +117,13 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
   const activities=useMemo(()=>personalAgendaActivities(items.filter(a=>mexicoDate(a.start)===day),person),[items,person,day]);
   const effectiveSelected=agendaSelection(activities,selectedId);
   const selected=activities.find(a=>a.pageId===effectiveSelected);
-  useNotionPageWatch(currentUser,activities,active,states=>{if(pending.current)return false;setItems(old=>filterDeletedPages(applyCalendarStates(old,states,day),currentUser));},true);
+  useNotionPageWatch(currentUser,activities,active,states=>{const ready=states.filter(s=>!pendingId.current||pageIdentity(s.id)!==pageIdentity(pendingId.current));if(ready.length)setItems(old=>filterDeletedPages(applyCalendarStates(old,ready,day),currentUser));return ready.map(s=>pageIdentity(s.id));},true);
   const menuActivity=activities.find(a=>a.pageId===menu?.pageId);
   const closeMenu=useCallback(()=>setMenu(null),[]);
   const updateActivity=async(pageId:string,updates:AgendaUpdate)=>{
     if(pending.current)return false;
     const original=itemsRef.current.find(a=>a.pageId===pageId);if(!original)return false;
-    pending.current=true;revision.current++;setSaving(true);setNotice('');
+    pending.current=true;pendingId.current=pageId;revision.current++;setSaving(true);setNotice('');
     try{
       const data=await saveAgendaActivity(original,updates,currentUser,fresh=>{
         recentSaves.current.set(pageId,{activity:{...original,...fresh},until:Date.now()+60000});
@@ -140,7 +144,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
       if(updates.start)setDay(mexicoDate(saved.start));
       return true;
     }catch(e){setNotice(e instanceof Error?e.message:'No se pudo guardar.');return false;}
-    finally{pending.current=false;setSaving(false);}
+    finally{pending.current=false;pendingId.current=null;setSaving(false);}
   };
 
   return (
@@ -218,7 +222,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
             <div className="flex items-start gap-2">
               <button type="button" disabled={saving} aria-expanded={active} aria-label={'Ver pasos de '+calendarDisplayTitle(a.title,a.domain||'')} onClick={()=>{setSelectedId(a.pageId);setExpanded(true);}} className="min-w-0 flex-1 text-left">
                 <span className="font-mono text-[11px] text-slate-300">{calendarTime(a.start)} – {calendarTime(a.end)}</span>
-                <span className={'mt-1 block text-[10px] font-semibold '+appearance.text}>{isFtfReminder(a)?'FTF · Recordatorio · No cuenta como actividad':appearance.label}{a.isReviewMirror?' · Copia de revisión':a.isHandoffMirror?' · Copia histórica':''}</span>
+                <span className={'mt-1 block text-[10px] font-semibold '+appearance.text}>{isFtfReminder(a)?'FTF · Recordatorio · No cuenta como actividad':workflowPresentation(a.status,a.title).label}{a.isReviewMirror?' · Copia de revisión':a.isHandoffMirror?' · Copia histórica':''}</span>
                 <span className={'mt-1 block break-words font-medium leading-snug '+(appearance.state==='completed'?'text-slate-400 line-through':'text-slate-100')}>{calendarDisplayTitle(a.title,a.domain||'')}</span>
                 {a.checklistScanned&&<span className="mt-1 block text-[10px] text-slate-400">{a.checklistCompleted} / {a.checklistTotal} pasos</span>}
               </button>

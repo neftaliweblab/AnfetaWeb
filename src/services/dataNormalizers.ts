@@ -75,6 +75,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
   const title = raw.Title || raw.title || "";
   const workflow = workflowState(raw.Status || raw.status || "", title);
   return {
+    financialFields:raw.financialFields,
     serverModified:raw.serverModified||raw.last_edited_time,
     pageId: raw.PageId || raw.pageId || `act-${idx}`,
     pageUrl: raw.PageUrl || raw.pageUrl || "",
@@ -84,7 +85,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     originalPerson: raw.OriginalPerson || raw.originalPerson || "—",
     project: raw.Project || raw.project || "",
     domain: raw.ParsedDomain || raw.domain || "general",
-    status: raw.Status || raw.status || "Pendiente",
+    status: raw.Status || raw.status || ({pending:'Pendiente',review:'En revisión',completed:'Terminada',suspended:'Suspendida',unknown:'Pendiente'}[workflow]),
     start: raw.Start || raw.start || "",
     end: raw.End || raw.end || "",
     originalScheduledDate: raw.originalScheduledDate || raw.ActivityCreatedDate || "",

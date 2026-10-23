@@ -1,7 +1,7 @@
 "use client";
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
-import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
+import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
 import {DiagnosticMessage} from '@/components/Diagnostics/DiagnosticsLogs';
@@ -179,6 +179,7 @@ export default function AnfetaApp() {
   const [calendarActivities, setCalendarActivities] = useState<NotionCalendarActivity[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
+  const calendarContextRef=useRef('');calendarContextRef.current=currentUser+':'+currentDate;
   useEffect(()=>{const remove=()=>{setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
@@ -242,6 +243,7 @@ export default function AnfetaApp() {
     const controller = new AbortController();
     setCalendarActivities([]);
     async function fetchCalendarForDate() {
+      const readStartedAt=Date.now();
       try {
         let token = "";
         try {
@@ -254,9 +256,10 @@ export default function AnfetaApp() {
         });
         {
           const data = await readApiJson(res);
+          if(controller.signal.aborted)return;
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-          if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate));
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:calendarReadBoundary(res,data.cacheMeta)});
+          if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate,calendarReadBoundary(res,data.cacheMeta)));
         }
       } catch (err) {
         if (!controller.signal.aborted) setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");
@@ -322,13 +325,12 @@ export default function AnfetaApp() {
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
-        setCalendarActivities(prev=>mergeCalendarSnapshot(prev,msg.activities!,currentDate));
-        const byId=new Map(msg.activities.filter((a:any)=>!a.isReviewMirror).map((a:any)=>[a.pageId.replace(/-/g,''),a]));
-        setSearchIndex(prev=>prev.map(row=>{const a:any=byId.get((row.externalId || row.id || '').replace(/-/g,''));return a?{...row,name:a.title,assignedPerson:a.person,scheduledDate:mexicoDate(a.start),statusLabel:a.status}:row;}));
+        setCalendarActivities(prev=>mergeCalendarSnapshot(prev,msg.activities!,currentDate,msg.readStartedAt));
+        setSearchIndex(prev=>applyNotionStates(prev,msg.activities!.filter(a=>!a.isReviewMirror).map(a=>({id:a.pageId,name:a.title,assignedPerson:a.person,scheduledDate:a.start,updateStatus:a.status,serverModified:a.serverModified}))));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         if(msg.updates.title!==undefined||msg.updates.person!==undefined||msg.updates.status!==undefined||msg.updates.start!==undefined){
         indexMutationRevision.current++;
-        setSearchIndex(prev=>prev.map(row=>(row.externalId || row.id || '').replace(/-/g,'')===msg.pageId!.replace(/-/g,'') ? {...row,...(msg.updates.title?{name:msg.updates.title}:{}),...(msg.updates.person?{assignedPerson:msg.updates.person}:{}),...(msg.updates.status?{statusLabel:msg.updates.status,updateStatus:msg.updates.status}:{}),...(msg.updates.start?{scheduledDate:msg.updates.start}:{}),serverModified:msg.updates.serverModified||new Date().toISOString()}:row));
+        setSearchIndex(prev=>applyNotionStates(prev,[{id:msg.pageId,name:msg.updates!.title,assignedPerson:msg.updates!.person,updateStatus:msg.updates!.status,scheduledDate:msg.updates!.start,serverModified:msg.updates!.serverModified}]));
         }
         setCalendarActivities(prev=>upsertCalendarActivity(prev,msg.pageId!,msg.updates,currentDate));
       } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
@@ -649,6 +651,7 @@ export default function AnfetaApp() {
             onRunAutomation={() => setShowAutomation(true)}
             onOpenDailyProgress={() => setActiveView("dailyProgress")}
             onRefresh={async () => {
+              const context=currentUser+':'+currentDate;
               try {
                 let token = "";
                 try {
@@ -660,9 +663,10 @@ export default function AnfetaApp() {
                 });
                 {
                   const data = await readApiJson(res);
+                  if(calendarContextRef.current!==context)return;
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-                  if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate));
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:calendarReadBoundary(res,data.cacheMeta)});
+                  if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate,calendarReadBoundary(res,data.cacheMeta)));
                 }
               } catch (e) {
                 setCalendarLoadError(e instanceof Error ? e.message : "No se pudo cargar el calendario.");

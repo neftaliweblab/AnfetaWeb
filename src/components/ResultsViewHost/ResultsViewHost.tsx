@@ -9,7 +9,8 @@ import {ScreenRecorder} from './ScreenRecorder';
 import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
-import {parseSearchTabs,personalFirstSearch} from '@/lib/searchTabsStorage';
+import {readSearchView,searchViewKey} from '@/lib/searchViewPreferences';
+import {parseSearchTabs,personalFirstSearch,recoverSearchTabs} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
 import {CompactSearchAccess} from './CompactSearchAccess';
 import {workflowState} from '@/services/activityWorkflow';
@@ -123,12 +124,14 @@ export function ResultsViewHost({
   ]);
   const [activeTabId, setActiveTabId] = useState("tab_1");
   const [tabsOwner,setTabsOwner]=useState('');
-  const tabsKey='anfeta_search_tabs_v1:'+normalizePerson(currentUser||'');
+  const [hasLegacyTabs,setHasLegacyTabs]=useState(false);
+  const tabsKey='anfeta_search_tabs_v2:'+normalizePerson(currentUser||'');
   useEffect(()=>{
     const owner=normalizePerson(currentUser||'');
     let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
     setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
-    let saved=null;try{saved=parseSearchTabs(localStorage.getItem(tabsKey));}catch{}
+    let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);setGroupBy(view.groupBy);setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
+    let saved=null;try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+owner));setHasLegacyTabs(!!legacy);saved=parseSearchTabs(localStorage.getItem(tabsKey))||legacy;}catch{setHasLegacyTabs(false);}
     const next=personalFirstSearch(saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'},owner);
     setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
     setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
@@ -154,24 +157,8 @@ export function ResultsViewHost({
   const [currentMonth,setCurrentMonth]=useState('');
   useEffect(()=>{const refresh=()=>setCurrentMonth(currentSearchMonth());refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
   const selectedMonth=effectiveSearchMonth(monthSelection,currentMonth,deferredQuery);
-  const [viewZoom, setViewZoom] = useState<"list" | "small" | "medium" | "large">(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("anfeta_view_zoom");
-        if (saved && ["list", "small", "medium", "large"].includes(saved)) {
-          return saved as "list" | "small" | "medium" | "large";
-        }
-      } catch {}
-    }
-    return "list";
-  });
-
-  const handleChangeViewZoom = (newZoom: "list" | "small" | "medium" | "large") => {
-    setViewZoom(newZoom);
-    try {
-      localStorage.setItem("anfeta_view_zoom", newZoom);
-    } catch {}
-  };
+  const [viewZoom,setViewZoom]=useState<"list"|"small"|"medium"|"large">('list');
+  const handleChangeViewZoom=(zoom:"list"|"small"|"medium"|"large")=>setViewZoom(zoom);
 
   const [resultSort,setResultSort]=useState("default");
   const [searchOptions, setSearchOptions] = useState<{
@@ -183,6 +170,8 @@ export function ResultsViewHost({
     matchWholeWord: false,
     matchRegex: false,
   });
+
+  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
 
   const handleToggleSearchOption = (key: "matchCase" | "matchWholeWord" | "matchRegex") => {
     setSearchOptions((prev) => ({
@@ -338,12 +327,6 @@ export function ResultsViewHost({
   // Carga e hidratación segura de configuraciones desde localStorage sin romper SSR
   useEffect(() => {
     try {
-      const savedScale = localStorage.getItem("anfeta_text_scale");
-      if (savedScale) setTextScale(savedScale);
-
-      const savedGroup = localStorage.getItem("anfeta_group_by");
-      if (savedGroup) setGroupBy(savedGroup);
-
       const savedBg = localStorage.getItem("anfeta_theme_bg");
       if (savedBg) setThemeBg(savedBg);
 
@@ -460,19 +443,9 @@ export function ResultsViewHost({
     handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
   };
 
-  const handleGroupByChange = (group: string) => {
-    setGroupBy(group);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("anfeta_group_by", group);
-    }
-  };
+  const handleGroupByChange=(group:string)=>setGroupBy(group);
 
-  const handleTextScaleChange = (scale: string) => {
-    setTextScale(scale);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("anfeta_text_scale", scale);
-    }
-  };
+  const handleTextScaleChange=(scale:string)=>setTextScale(scale);
 
   // Selection logic: When row is selected, toggle check and update selection
   const handleSelectRow = (item: SearchResultRow) => {
@@ -738,7 +711,10 @@ export function ResultsViewHost({
   };
 
   // Flujo Global de Pegar en ANFETA con Ctrl + V (Abre Modal en el centro)
+  const globalPasteOpening=useRef(false);
   const triggerGlobalPaste = async (clipboardData?: DataTransfer | null) => {
+    if(globalPasteOpening.current)return;globalPasteOpening.current=true;
+    try{
     setGlobalFiles([]);
     try {
       if (clipboardData) {
@@ -758,6 +734,7 @@ export function ResultsViewHost({
       }
     } catch (error) { setStatusError(error instanceof Error ? error.message : 'No se pudo leer el portapapeles.'); }
     setGlobalPasteImage(null); setGlobalPasteText(''); setIsGlobalPasteOpen(true);
+    }finally{globalPasteOpening.current=false;}
   };
 
   React.useEffect(() => {
@@ -1327,6 +1304,7 @@ export function ResultsViewHost({
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
+        onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
         textScale={textScale}
       />
 
@@ -1613,7 +1591,7 @@ export function ResultsViewHost({
       />
 
       {/* Grabador flotante persistente entre módulos */}
-      <ScreenRecorder disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async (file,target)=>{onShowResults?.();setRecordingDestination(target?{id:target.id,externalId:target.id,name:target.title,source:'Notion',type:'PAGE'} as SearchResultRow:null);setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
+      <ScreenRecorder onOpenDetailed={()=>void triggerGlobalPaste(null)} disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async (file,target)=>{onShowResults?.();setRecordingDestination(target?{id:target.id,externalId:target.id,name:target.title,source:'Notion',type:'PAGE'} as SearchResultRow:null);setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
       <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>

@@ -8,7 +8,7 @@ import {
   mergeWhatsappGroups,
 } from "@/lib/whatsappDirectory";
 import { normalizePerson, PERSON_ALIASES } from "@/services/identityNormalizer";
-import { sessionActor } from "@/services/serverAuth";
+import { sessionActor,requireActor,assertSameOrigin } from "@/services/serverAuth";
 import { supabaseConfigured, supabaseAdmin } from "@/services/supabaseServer";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -193,6 +193,7 @@ async function fetchFromSupabase(ownerName?: string): Promise<WhatsappGroupItem[
 }
 
 export async function GET(req: NextRequest) {
+  try{await requireActor(req);}catch{return NextResponse.json({error:"Inicia sesión para consultar grupos."},{status:401});}
   const userParam = req.nextUrl.searchParams.get("user");
   const isAll = req.nextUrl.searchParams.get("all") === "1" || userParam === "__all__";
 
@@ -252,11 +253,15 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  try{await requireActor(req);assertSameOrigin(req);}catch{return NextResponse.json({error:"Inicia sesión para actualizar grupos desde ANFETA."},{status:401});}
   try {
     const body = await req.json();
     const incoming: any[] = Array.isArray(body?.groups) ? body.groups : Array.isArray(body) ? body : [];
     const userParam = body?.user || req.nextUrl.searchParams.get("user") || sessionActor(req) || "Neftali";
+    const actor=await requireActor(req);assertSameOrigin(req);
     const normUser = normalizePerson(userParam);
+    if(!PERSON_ALIASES[normUser])return NextResponse.json({error:'Selecciona una persona del equipo.'},{status:400});
+    if(normUser!==normalizePerson(actor)&&!["John","Neftali"].includes(normalizePerson(actor)))return NextResponse.json({error:"No puedes modificar el directorio de otra persona."},{status:403});
 
     const current = readStoredGroups(normUser);
     const mergeResult = mergeWhatsappGroups(current.groups, incoming, normUser);

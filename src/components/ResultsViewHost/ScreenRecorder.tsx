@@ -1,4 +1,5 @@
 "use client";
+import {revisionPhaseTitle} from '@/services/progressiveWorkflow';
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Video,Square,X,ClipboardPaste,Trash2} from 'lucide-react';
@@ -46,7 +47,8 @@ const QUICK_NOTION_DESTINATIONS = [
   { code: 'sso00', label: 'sso00 notion', person: 'Sotelo' },
 ] as const;
 
-export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null)=>Promise<boolean>;disabled?:boolean}){
+export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDetailed?:()=>void;onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null)=>Promise<boolean>;disabled?:boolean}){
+  const clipboardSubmission=useRef(false);
   const [target,setTarget]=useState<RecordingTarget|null>(null),targetRef=useRef<RecordingTarget|null>(null);
   const [phase,setPhase]=useState<'idle'|'configure'|'starting'|'recording'|'preview'>('idle');
   const [microphone,setMicrophone]=useState(true),[bytes,setBytes]=useState(0);
@@ -115,7 +117,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
         body: JSON.stringify({
           action: 'create-activity',
           payload: {
-            title,
+            title:revisionPhaseTitle(title,'pending'),
             domain: cleanDom || undefined,
             person: dest.person,
             start,
@@ -192,7 +194,8 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
   }
 
   async function quickUploadClipboard(dest: typeof QUICK_NOTION_DESTINATIONS[number]) {
-    if (sending || clipboardSavingCode) return;
+    if (sending || clipboardSavingCode || clipboardSubmission.current) return;
+    clipboardSubmission.current=true;
     setClipboardSavingCode(dest.code);
     setNotice(`Subiendo directo a Notion para ${dest.person} (${dest.code})...`);
     try {
@@ -216,7 +219,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
         body: JSON.stringify({
           action: 'create-activity',
           payload: {
-            title,
+            title:revisionPhaseTitle(title,'pending'),
             domain: cleanDom || undefined,
             person: dest.person,
             start,
@@ -231,8 +234,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
       }
       playCheckChime();
       sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) a las 9:00 AM`);
-      window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
-      window.dispatchEvent(new CustomEvent('anfeta_calendar_refresh'));
+      if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
       setNotice(`✅ Creada en Notion para ${dest.person} (${dest.code}) a las 9am`);
       setTimeout(() => {
         if (mounted.current) {
@@ -246,6 +248,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
     } catch (err: any) {
       setNotice(err instanceof Error ? err.message : 'Error al subir a Notion');
     } finally {
+      clipboardSubmission.current=false;
       if (mounted.current) setClipboardSavingCode(null);
     }
   }
@@ -340,7 +343,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
       </button>
       <div className="flex items-center gap-2 mb-2">
         <ClipboardPaste className="w-4 h-4 text-amber-400" />
-        <h2 className="font-bold text-amber-300">Asignar Portapapeles a Notion (9am hoy)</h2>
+        <h2 className="font-bold text-amber-300">Asignación rápida · Notion (9am hoy)</h2>
       </div>
       <p className="text-[11px] text-slate-400 mb-2">
         Pega texto o captura con <kbd className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">Ctrl+V</kbd> o escribe la tarea.
@@ -420,17 +423,18 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
   const label=phase==='recording'?'Grabando: mostrar u ocultar controles':phase==='preview'?'Revisar grabación':phase==='starting'?'Preparando grabación':'Grabar pantalla y micrófono';
   return client?createPortal(
     <>
-      {/* Botón flotante de Asignación por Portapapeles (Ctrl+V) */}
+      {onOpenDetailed&&<button type="button" disabled={disabled||!!clipboardSavingCode} onClick={()=>{if(clipboardSubmission.current)return;setClipboardOpen(false);onOpenDetailed();}} title="Elegir destino y detalles · mismo flujo de Ctrl+V" className="fixed bottom-24 right-20 z-[401] flex items-center gap-2 rounded-full border border-cyan-500 bg-slate-950 px-3 py-2.5 text-xs font-semibold text-cyan-200 shadow-lg disabled:opacity-50"><ClipboardPaste size={17}/>Asignación detallada</button>}
+      {/* Asignación rápida conserva su flujo de portapapeles. */}
       <button
         type="button"
         disabled={disabled}
         onClick={() => (clipboardOpen ? setClipboardOpen(false) : void openClipboardModal())}
         aria-label="Asignación rápida desde portapapeles"
-        title="Asignación rápida desde portapapeles (Ctrl+V / texto a Notion 9am)"
+        title="Asignación rápida desde portapapeles · completar detalles después"
         aria-expanded={clipboardOpen}
-        className="fixed bottom-12 right-20 z-[401] w-11 h-11 rounded-full border border-amber-400/50 bg-gradient-to-tr from-amber-600 to-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.45)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+        className="fixed bottom-12 right-20 z-[401] px-3 h-11 gap-2 rounded-full border border-amber-400/50 bg-gradient-to-tr from-amber-600 to-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.45)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform cursor-pointer"
       >
-        <ClipboardPaste className="w-5 h-5 text-white" />
+        <ClipboardPaste className="w-5 h-5 text-white" /><span className="text-xs font-semibold">Asignación rápida</span>
       </button>
 
       {/* Botón flotante de Grabadora de Pantalla */}

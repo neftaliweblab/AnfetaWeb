@@ -25,7 +25,7 @@ assert.equal(reviewPreflight(a,{...a,start:day+'T16:00:00Z',end:day+'T17:00:00.0
 assert.equal(reviewPreflight(a,{...a,end:day+'T18:00:00Z'}).changed,true);
 const row={id:'a'.repeat(32),source:'Notion',name:'Actual',assignedPerson:'Neftali',status:'POR HACER',scheduledDate:day,serverModified:day+'T16:00:00Z'};
 assert.equal(applyNotionStates([row],[{id:row.id,serverModified:day+'T15:00:00Z',name:'Viejo'}])[0],row);
-const sparse=applyNotionStates([row],[{id:row.id,name:'Nuevo'}])[0];assert.equal(sparse.name,'Nuevo');assert.equal(sparse.assignedPerson,'Neftali');assert.equal(sparse.status,'POR HACER');
+const sparse=applyNotionStates([row],[{id:row.id,name:'Nuevo',serverModified:day+'T17:00:00Z'}])[0];assert.equal(sparse.name,'Nuevo');assert.equal(sparse.assignedPerson,'Neftali');assert.equal(sparse.status,'POR HACER');
 const calendar={pageId:row.id,title:'Actual',person:'Neftali',status:'POR HACER',start:day+'T10:00:00-06:00',ftfVerified:true};const changed=applyNotionStates([calendar],[{id:row.id,ftfVerified:false}])[0];assert.equal(changed.ftfVerified,false);assert.equal(changed.title,'Actual');assert.equal(changed.person,'Neftali');
 (async()=>{
  const settings={notionToken:'test',currentUser:'Neftali'};assert.equal((await resetDailyFtf(settings,'Neftali',day,new Date(day+'T10:59:00Z'))).skipped,'before_0500_or_other_day');

@@ -1,7 +1,8 @@
+import {PROGRESSIVE_WORKFLOW_PRIMARY,stripProgressiveStage,progressiveStage} from './progressiveWorkflow';
 import {normalizePerson} from './identityNormalizer';
 import {ACTIVITY_TAGS,ActivityPerson,scanActivityTags,pendingReviewTag} from './activityTags';
 
-export function reviewTitle(title:string,original:string,reviewer:string,state:'pending'|'returned'|'approved',previousReviewer='',mode:'compatible'|'new'='compatible'){
+export function reviewTitle(title:string,original:string,reviewer:string,state:'pending'|'returned'|'approved',previousReviewer='',mode:'compatible'|'new'=PROGRESSIVE_WORKFLOW_PRIMARY?'new':'compatible'){
   const ownerKey=normalizePerson(original) as ActivityPerson,reviewKey=normalizePerson(reviewer) as ActivityPerson;
   const owner=ACTIVITY_TAGS[ownerKey],review=ACTIVITY_TAGS[reviewKey];
   if((!owner&&normalizePerson(original)!=='Sin asignar')||!review)throw Error('No se encontró la configuración de tags de revisión.');
@@ -27,9 +28,10 @@ export function reviewTitle(title:string,original:string,reviewer:string,state:'
   });
   let body=title;
   for(const tag of remove.reverse())body=body.slice(0,tag.index)+' '+body.slice(tag.index+tag.token.length);
+  if(progressiveStage(body)?.category==='revision')body=stripProgressiveStage(body);
   body=body.replace(/[\s·|—–-]+$/, '').trim();
   const phase=/(?<![\p{L}\p{N}_])(?:sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\p{L}\p{N}_])/giu;
-  const target=state==='pending'?'rtuzREVISION':state==='approved'?'zREVISION':'prtuzREVISION';
+  const target=mode==='new'?(state==='pending'?'rtuzR':state==='approved'?'tuzR':'prtuzR'):(state==='pending'?'rtuzREVISION':state==='approved'?'zREVISION':'prtuzREVISION');
   body=phase.test(body)?body.replace(phase,target):target+' '+body;
   const reviewerToken=state==='pending'&&mode==='new'?pendingReviewTag(reviewer):(state==='pending'?review.review:review.passive)+legacyReviewSuffix;
   const newToken=state==='pending'&&useNew&&mode!=='new'?pendingReviewTag(reviewer):'';

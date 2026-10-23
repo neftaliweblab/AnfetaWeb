@@ -1,3 +1,4 @@
+import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from './progressiveWorkflow';
 /** Title tokens only. Identity/login aliases remain a separate concern. */
 export const ACTIVITY_TAGS = {
   Neftali:{active:'nne',reference:'ne',review:'nneft',aliases:['nneft','nnetf','neft','netf','neftali'],passive:'neft'},
@@ -68,7 +69,7 @@ export function setTaskUrgent(title:string,person:string,urgent:boolean){
   return result.replace(/\s+00$/,'').replace(/\s{2,}/g,' ').trim();
 }
 export function inferActivityPerson(title:string,status=''){
-  const tags=scanActivityTags(title),review=/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
+  const tags=scanActivityTags(title),review=(PROGRESSIVE_WORKFLOW_PRIMARY&&(progressiveStage(status)?.state==='review'||progressiveStage(title)?.state==='review'))||/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
   const candidate=review?tags.findLast(tag=>tag.role==='review'):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy');
   return candidate?.person||'';
 }

@@ -1,3 +1,4 @@
+import {staleActivity} from './activityRevision';
 import type {NotionCalendarActivity} from '../types/anfeta';
 import {pageIdentity} from './deletedPages';
 import {mexicoDate} from '../services/calendarPresentation';
@@ -6,7 +7,7 @@ import {retainedReviewFlow} from './retainedReviewFlow';
 import {applyNotionStates} from './applyNotionStates';
 const equal=(a:any,b:any)=>Object.keys(b).every(key=>a[key]===b[key])&&Object.keys(a).every(key=>key in b);
 function merge(old:NotionCalendarActivity|undefined,incoming:Partial<NotionCalendarActivity>){
-  if(old&&Date.parse((old as any).serverModified||'')>Date.parse((incoming as any).serverModified||''))return old;
+  if(old&&staleActivity(incoming,old))return old;
   const patch=Object.fromEntries(Object.entries(incoming).filter(([,v])=>v!==undefined));
   const next={...old,...patch} as NotionCalendarActivity;
   if(old?.checklistScanned&&incoming.checklistScanned===false)for(const key of ['checklistScanned','checklistTotal','checklistCompleted','checklistItems','completedChecks','todayChecklistCompleted'] as const)(next as any)[key]=old[key];
@@ -40,7 +41,7 @@ export function applyCalendarStates(rows:NotionCalendarActivity[],states:any[],d
     if(state.unverified)continue;
     const id=pageIdentity(state.id);
     const known=next.find(a=>!a.isHandoffMirror&&pageIdentity(a)===id);
-    if(known&&Date.parse(known.serverModified||'')>Date.parse(state.serverModified||''))continue;
+    if(staleActivity(state,known))continue;
     if(state.deleted){const filtered=next.filter(a=>pageIdentity(a)!==id);if(filtered.length!==next.length)next=filtered;continue;}
     if(state.scheduledDate===''){next=next.filter(a=>a.isHandoffMirror||pageIdentity(a)!==id);continue;}
     const existing=next.find(a=>!a.isReviewMirror&&!a.isHandoffMirror&&pageIdentity(a)===id);
@@ -55,12 +56,12 @@ export function applyCalendarStates(rows:NotionCalendarActivity[],states:any[],d
   }
   return next;
 }
-export function mergeCalendarSnapshot(previous:NotionCalendarActivity[],incoming:NotionCalendarActivity[],day:string){
+export function mergeCalendarSnapshot(previous:NotionCalendarActivity[],incoming:NotionCalendarActivity[],day:string,readStartedAt?:number){
   const history=incoming.filter(a=>a.isHandoffMirror&&mexicoDate(a.start)===day);let next:NotionCalendarActivity[]=[...history];
   for(const row of incoming.filter(a=>!a.isReviewMirror&&!a.isHandoffMirror)){
     const old=previous.find(a=>!a.isReviewMirror&&pageIdentity(a)===pageIdentity(row));
     next=upsertCalendarActivity(next,row.pageId,merge(old,row),day);
   }
-  for(const row of previous)if(!row.isReviewMirror&&!row.isHandoffMirror&&row.localConfirmedAt&&Date.now()-row.localConfirmedAt<60000&&row.start&&mexicoDate(row.start)===day&&!next.some(a=>pageIdentity(a)===pageIdentity(row)))next=upsertCalendarActivity(next,row.pageId,row,day);
+  for(const row of previous)if(!row.isReviewMirror&&!row.isHandoffMirror&&((row.localConfirmedAt&&Date.now()-row.localConfirmedAt<60000)||(readStartedAt!==undefined&&Date.parse(row.serverModified||'')>=readStartedAt))&&row.start&&mexicoDate(row.start)===day&&!next.some(a=>pageIdentity(a)===pageIdentity(row)))next=upsertCalendarActivity(next,row.pageId,row,day);
   return next.length===previous.length&&next.every((a,i)=>a===previous[i])?previous:next;
 }

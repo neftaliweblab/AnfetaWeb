@@ -1,3 +1,4 @@
+import {revisionPhaseTitle} from './progressiveWorkflow';
 import {isFtfActivity} from './progressKpis';
 import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
 import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
@@ -244,14 +245,11 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     if (titleField) {
       const currentTitle = (properties[titleField[0]]?.title || []).map((t: any) => t.text?.content || "").join("") || title;
       if (desired === 'rtuzREVISION' || updates.status === 'rtuzREVISION') {
-        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
-        properties[titleField[0]] = { title: [{ text: { content: `rtuzREVISION ${clean.trim()}` } }] };
+        properties[titleField[0]] = { title: [{ text: { content: revisionPhaseTitle(currentTitle,'review') } }] };
       } else if (['pending','suspended'].includes(workflowState(desired))) {
-        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
-        properties[titleField[0]] = {title:[{text:{content:(workflowState(desired) === 'suspended' ? 'sprtuzREVISION ' : 'prtuzREVISION ') + clean.trim()}}]};
+        properties[titleField[0]] = {title:[{text:{content:revisionPhaseTitle(currentTitle,workflowState(desired)==='suspended'?'suspended':'pending',/^ARRANCAR ASIGNAR$/i.test(desired))}}]};
       } else if (desired === 'zREVISION' || updates.status === 'zREVISION' || workflowState(desired) === 'completed') {
-        const clean = currentTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
-        properties[titleField[0]] = { title: [{ text: { content: `zREVISION ${clean.trim()}` } }] };
+        properties[titleField[0]] = { title: [{ text: { content: revisionPhaseTitle(currentTitle,'completed') } }] };
       }
     }
   }
@@ -432,7 +430,7 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   const canonicalPerson = normalizePerson(person || actor);
   const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
   const personTag=scanActivityTags(description).some(tag=>tag.person===canonicalPerson&&tag.role==='active')?'':activePersonTag(canonicalPerson);
-  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? ['prtuzREVISION', domain, personTag, description].filter(Boolean).join(' ') : [domain, person, title.trim()].filter(Boolean).join(' ');
+  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? revisionPhaseTitle([domain,personTag,description].filter(Boolean).join(' '),'pending') : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
     const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));
@@ -461,7 +459,7 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   children.push(...await notionFileBlocks(settings,payload.files||[]));
   if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
   const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
-  return { page, activity: normalizeActivity({ pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
+  return { page, activity: normalizeActivity({ serverModified:page.last_edited_time||page.created_time,pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
 }
 
 export async function notionFileBlocks(settings:Settings,files:any[]){

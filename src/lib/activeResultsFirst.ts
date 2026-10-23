@@ -1,3 +1,4 @@
+import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
 import {parseVisualParts} from '@/lib/visualTitleParser';
 import {normalizePerson} from '@/services/identityNormalizer';
@@ -15,7 +16,8 @@ export function isCompletedResult(item: any): boolean {
 export function isBillingItem(item: any): boolean {
   const src = String(item?.sourceName || '').toLowerCase();
   const name = String(item?.name || item?.title || '').toLowerCase();
-  return src.includes("pagar") || src.includes("cobrar") || name.includes("cobrar") || name.includes("pagar");
+  const category=PROGRESSIVE_WORKFLOW_PRIMARY?progressiveStage(name)?.category:null;
+  return category==='cobro'||category==='pago'||src.includes("pagar") || src.includes("cobrar") || name.includes("cobrar") || name.includes("pagar");
 }
 
 export function getItemGroupKey(item: any, groupBy: string): string {

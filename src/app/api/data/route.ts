@@ -1,3 +1,4 @@
+import {activityFinancialFields} from '@/services/activityFinancialFields';
 import {ftfJobHealth} from '@/services/ftfJobHealth';
 import {calendarActivityFromPage} from '@/services/notionEventSync';
 import {documentationKind,assertDocumentationMode} from '@/lib/uploadActivityTypes';
@@ -1080,7 +1081,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
-              return normalizeActivity({...old, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
+              return normalizeActivity({...old, financialFields:activityFinancialFields(page),pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 serverModified:page.last_edited_time,person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
                 reviewFlow, reviewFlowScanned, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
@@ -2428,7 +2429,7 @@ async function POSTLive(req: NextRequest) {
       try {
         const page = await mutateActivity({...settings,deferReviewNotice:job=>after(job)}, actor, id, input, cached);
         const live = extractNotionPageData(page); liveNotionOverrides.set(live.id, live);
-        const activity = normalizeActivity({ ...cached, pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
+        const activity = normalizeActivity({ ...cached, financialFields:activityFinancialFields(page),pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
           person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, isUrgent:undefined }, 0);

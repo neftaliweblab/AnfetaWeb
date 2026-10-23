@@ -1,3 +1,4 @@
+import {stripProgressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY,progressiveStage} from './progressiveWorkflow';
 
 import {scanActivityTags,stripActivityTags} from './activityTags';
 const TYPES: [RegExp, string][] = [
@@ -18,6 +19,8 @@ export function calendarDomain(title: string, project = '') {
   return match[0].replace(/^https?:\/\//i,'').replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'').toLowerCase();
 }
 export function calendarType(title: string, project = '') {
+  const category=PROGRESSIVE_WORKFLOW_PRIMARY?progressiveStage(title)?.category:null;
+  if(category==='software')return 'PROGRAMAS';if(category==='cobro')return 'COBRO';if(category==='pago')return 'PAGO';
   // Official tokens take priority over words in the description.
   const official = title.match(/\b(aads|sseo|wwebs|mmaps|ddise|aapli|pprog|rrede)\b/i)?.[0];
   return TYPES.find(([pattern]) => pattern.test(official || title + ' ' + (/^(sin|no content|general)/i.test(project) ? '' : project)))?.[1] || null;
@@ -26,7 +29,7 @@ export function calendarUrgent(title: string) {
   return scanActivityTags(title).some(tag=>tag.role==='active'&&tag.priority==='00');
 }
 export function calendarDisplayTitle(title: string, domain = '') {
-  let text = stripActivityTags(title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
+  let text = stripActivityTags(PROGRESSIVE_WORKFLOW_PRIMARY?stripProgressiveStage(title):title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
     .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, '')
     .replace(/\b(?:aads|sseo|wwebs|mmaps|ddise|aapli|pprog|rrede|cchat|rrapi|mmapi|bblib|ccoti|coti)\b/gi, '')

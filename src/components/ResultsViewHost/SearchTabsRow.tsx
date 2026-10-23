@@ -15,6 +15,7 @@ interface SearchTabsRowProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
+  onRestorePrevious?:()=>void;
   textScale?: string;
 }
 
@@ -24,6 +25,7 @@ export function SearchTabsRow({
   onSelectTab,
   onCloseTab,
   onNewTab,
+  onRestorePrevious,
   textScale = "100%",
 }: SearchTabsRowProps) {
   const scale = (() => {
@@ -101,6 +103,7 @@ export function SearchTabsRow({
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
+        {onRestorePrevious&&<button type="button" onClick={onRestorePrevious} title="Añade búsquedas del respaldo anterior sin borrar las actuales" className="ml-2 shrink-0 rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-300">Recuperar búsquedas anteriores</button>}
       </div>
     </div>
   );

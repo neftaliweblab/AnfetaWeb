@@ -1,3 +1,4 @@
+import {projectDomains,normalizeProjectDomain} from './whatsappActivityLinks';
 import { normalizePerson } from "@/services/identityNormalizer";
 
 export interface WhatsappGroupItem {
@@ -25,6 +26,7 @@ export function getWhatsappStorageKey(user?: string): string {
 }
 
 export function detectGroupDomain(name: string): string | undefined {
+  const exact=projectDomains(name)[0];if(exact)return exact;
   if (!name) return undefined;
   // Check for domain pattern like domain.com, domain.mx, domain.app, etc.
   const domainMatch = name.match(/\b([a-zA-Z0-9-]+\.(?:com|mx|org|net|io|app|dev|me|tech|co|site|online|store))\b/i);
@@ -45,11 +47,7 @@ export function detectGroupDomain(name: string): string | undefined {
 
 export function cleanInviteUrl(url?: string | null): string | undefined {
   if (!url || typeof url !== "string") return undefined;
-  const trimmed = url.trim();
-  if (/^https:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9_-]+/i.test(trimmed)) {
-    return trimmed;
-  }
-  return undefined;
+  try{const parsed=new URL(url.trim());return parsed.protocol==='https:'&&parsed.hostname==='chat.whatsapp.com'&&!parsed.username&&!parsed.password&&/^\/[a-zA-Z0-9_-]+\/?$/.test(parsed.pathname)?parsed.toString():undefined;}catch{return undefined;}
 }
 
 export interface MergeResult {
@@ -59,101 +57,22 @@ export interface MergeResult {
   unchangedCount: number;
 }
 
-export function mergeWhatsappGroups(
-  existingList: WhatsappGroupItem[],
-  incomingList: WhatsappGroupItem[],
-  defaultOwner?: string
-): MergeResult {
-  const existingMap = new Map<string, WhatsappGroupItem>();
-  const nameToId = new Map<string, string>();
-
-  for (const g of existingList) {
-    if (g.id) existingMap.set(g.id, g);
-    if (g.name) nameToId.set(g.name.trim().toLowerCase(), g.id || g.name);
-  }
-
-  let addedCount = 0;
-  let updatedCount = 0;
-  let unchangedCount = 0;
-  const now = new Date().toISOString();
-
-  for (const item of incomingList) {
-    if (!item || !item.name) continue;
-
-    const trimmedName = String(item.name).trim();
-    if (!trimmedName) continue;
-
-    let prev: WhatsappGroupItem | undefined = undefined;
-    if (item.id && existingMap.has(item.id)) {
-      prev = existingMap.get(item.id);
-    } else {
-      const matchId = nameToId.get(trimmedName.toLowerCase());
-      if (matchId && existingMap.has(matchId)) {
-        prev = existingMap.get(matchId);
-      }
-    }
-
-    const detectedDomain = item.domain || detectGroupDomain(trimmedName) || prev?.domain;
-    const incomingInvite = cleanInviteUrl(item.inviteUrl);
-    // Never wipe out an existing valid invite URL
-    const effectiveInvite = incomingInvite || prev?.inviteUrl;
-    const effectiveOwner = item.owner || prev?.owner || (prev ? undefined : defaultOwner);
-
-    if (prev) {
-      // Check if there are real changes
-      const inviteChanged = Boolean(incomingInvite && incomingInvite !== prev.inviteUrl);
-      const nameChanged = trimmedName !== prev.name.trim();
-      const countChanged = typeof item.participantsCount === "number" && item.participantsCount !== prev.participantsCount;
-      const unreadChanged = typeof item.unreadCount === "number" && item.unreadCount !== prev.unreadCount;
-      const ownerChanged = Boolean(item.owner && item.owner !== prev.owner);
-
-      const hasUpdates = inviteChanged || nameChanged || countChanged || unreadChanged || ownerChanged;
-
-      if (hasUpdates) {
-        const updated: WhatsappGroupItem = {
-          ...prev,
-          name: trimmedName,
-          domain: detectedDomain,
-          inviteUrl: effectiveInvite,
-          participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : prev.participantsCount,
-          owner: effectiveOwner,
-          unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : prev.unreadCount,
-          lastSynced: now,
-        };
-        existingMap.set(prev.id || updated.id, updated);
-        updatedCount++;
-      } else {
-        unchangedCount++;
-      }
-    } else {
-      // New group!
-      const newId = item.id || `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const newItem: WhatsappGroupItem = {
-        id: newId,
-        name: trimmedName,
-        domain: detectedDomain,
-        inviteUrl: effectiveInvite,
-        participantsCount: typeof item.participantsCount === "number" ? item.participantsCount : undefined,
-        owner: effectiveOwner,
-        unreadCount: typeof item.unreadCount === "number" ? item.unreadCount : 0,
-        notes: item.notes,
-        lastSynced: now,
-      };
-      existingMap.set(newId, newItem);
-      nameToId.set(trimmedName.toLowerCase(), newId);
-      addedCount++;
-    }
-  }
-
-  const finalGroups = Array.from(existingMap.values());
-  finalGroups.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
-
-  return {
-    groups: finalGroups,
-    addedCount,
-    updatedCount,
-    unchangedCount,
-  };
+export function mergeWhatsappGroups(existingList:WhatsappGroupItem[],incomingList:WhatsappGroupItem[],defaultOwner?:string):MergeResult{
+ const map=new Map<string,WhatsappGroupItem>();
+ const key=(g:WhatsappGroupItem)=>normalizePerson(g.owner||defaultOwner||'')+':'+g.id;
+ for(const g of existingList)if(g.id)map.set(key(g),g);
+ let addedCount=0,updatedCount=0,unchangedCount=0;
+ for(const item of incomingList){
+  if(!item||!String(item.name||'').trim())continue;
+  const name=String(item.name).trim(),owner=item.owner||defaultOwner;
+  const prev=item.id?map.get(key({...item,owner})):Array.from(map.values()).find(g=>normalizePerson(g.owner||defaultOwner||'')===normalizePerson(owner||'')&&g.name.trim().toLowerCase()===name.toLowerCase());
+  const next:WhatsappGroupItem={...prev,...item,id:prev?.id||item.id||'group_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),name,owner:item.owner||prev?.owner||(!prev?defaultOwner:undefined),domain:item.domain||detectGroupDomain(name)||prev?.domain,inviteUrl:cleanInviteUrl(item.inviteUrl)||prev?.inviteUrl,notes:item.notes??prev?.notes,linkedActivityId:item.linkedActivityId||prev?.linkedActivityId,linkedPageId:item.linkedPageId||prev?.linkedPageId};
+  for(const field of ['participantsCount','unreadCount'] as const)if(item[field]===undefined)next[field]=prev?.[field];
+  const changed=!prev||Object.keys(next).some(k=>k!=='lastSynced'&&(next as any)[k]!==(prev as any)[k]);
+  if(!prev)addedCount++;else if(changed)updatedCount++;else unchangedCount++;
+  map.set(key(next),changed?{...next,lastSynced:new Date().toISOString()}:prev!);
+ }
+ return {groups:[...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'})),addedCount,updatedCount,unchangedCount};
 }
 
 export function getLocalWhatsappGroups(user?: string): WhatsappGroupItem[] {
@@ -194,7 +113,7 @@ export function saveLocalWhatsappGroups(groups: WhatsappGroupItem[], user?: stri
   } catch {}
 }
 
-export async function fetchRemoteWhatsappGroups(user?: string): Promise<WhatsappGroupItem[]> {
+export async function fetchRemoteWhatsappGroups(user?: string,options:{syncLocal?:boolean}={}): Promise<WhatsappGroupItem[]> {
   const local = getLocalWhatsappGroups(user);
   const norm = normalizePerson(user);
 
@@ -208,7 +127,7 @@ export async function fetchRemoteWhatsappGroups(user?: string): Promise<Whatsapp
       saveLocalWhatsappGroups(merged.groups, user);
       return merged.groups;
     }
-    if (local.length > 0) {
+    if (local.length > 0 && options.syncLocal!==false) {
       // Sync local to remote in background
       fetch("/api/whatsapp-directory", {
         method: "POST",

@@ -1,5 +1,6 @@
 "use client";
-import {sharedCalendarFetch} from "@/lib/sharedCalendarFetch";
+import {recordAppLog} from '@/lib/appDiagnostics';
+import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
 import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
@@ -267,17 +268,19 @@ export function CalendarHost({
   }, [selectedActivity, activitiesList]);
 
   useNotionPageWatch(currentUser, watchCalendarRows, active, (states) => {
-    if(pending.current.size)return false;
-    setActivitiesList(prev => filterDeletedPages(applyCalendarStates(prev, states,currentDate), currentUser));
+    const ready=states.filter(state=>![...pending.current.keys()].some(id=>pageIdentity(id)===pageIdentity(state.id)));
+    if(!ready.length)return [];
+    setActivitiesList(prev => filterDeletedPages(applyCalendarStates(prev, ready,currentDate), currentUser));
     setSelectedActivity(prev => {
       if (!prev) return null;
-      const updated = applyCalendarStates([prev], states,currentDate);
+      const updated = applyCalendarStates([prev], ready,currentDate);
       if (!updated.length) {
         setIsDetailOpen(false);
         return null;
       }
       return updated[0];
     });
+    return ready.map(state=>pageIdentity(state.id));
   },true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
@@ -305,7 +308,7 @@ export function CalendarHost({
   },[notificationTarget,currentDate]);
 
   useEffect(() => {
-    setActivitiesList(prev=>pending.current.size?[...initialActivities.filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:protectSaved(initialActivities));
+    setActivitiesList(prev=>pending.current.size?[...mergeCalendarSnapshot(prev,protectSaved(initialActivities),currentDate,initialCacheMeta?.readStartedAt||Date.parse(initialCacheMeta?.updatedAt||'')||undefined).filter(a=>!pending.current.has(a.pageId)&&!pending.current.has(a.pageId.replace(/^review-mirror-/,''))),...prev.filter(a=>pending.current.has(a.pageId)||pending.current.has(a.pageId.replace(/^review-mirror-/,'')))]:mergeCalendarSnapshot(prev,protectSaved(initialActivities),currentDate,initialCacheMeta?.readStartedAt||Date.parse(initialCacheMeta?.updatedAt||'')||undefined));
   }, [initialActivities]);
   useEffect(() => {setRefreshWarning(loadError||'');}, [loadError]);
 
@@ -313,12 +316,12 @@ export function CalendarHost({
   useEffect(() => {
     const unsubscribe = anfetaSync.subscribe((msg) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
-        if(!pending.current.size)setActivitiesList(prev=>mergeCalendarSnapshot(prev,protectSaved(msg.activities!),currentDate));
+        if(!pending.current.size)setActivitiesList(prev=>mergeCalendarSnapshot(prev,protectSaved(msg.activities!),currentDate,msg.readStartedAt));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         if(msg.confirmed)mutationVersion.current++;
         setActivitiesList(prev=>upsertCalendarActivity(prev,msg.pageId!,msg.updates,currentDate));
         setSelectedActivity((prev) =>
-          prev && prev.pageId === msg.pageId ? { ...prev, ...msg.updates } : prev
+          prev && prev.pageId === msg.pageId ? upsertCalendarActivity([prev],msg.pageId!,msg.updates!,currentDate)[0]||null : prev
         );
       } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
         mutationVersion.current++;
@@ -330,17 +333,21 @@ export function CalendarHost({
 
   useEffect(() => {
     if(!active)return;
-    let stopped = false, busy = false, lightBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0;
+    let stopped = false, busy = false, lightBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0, refreshQueued=false;
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
     const controller = new AbortController();
     const refresh = async (light=false) => {
-      if (stopped || busy || lightBusy || document.hidden || pending.current.size) return;
+      if(stopped||document.hidden)return;
+      if(pending.current.size||(light?lightBusy:(busy||lightBusy))){if(light)refreshQueued=true;return;}
       if(light)lightBusy=true;else busy = true;
+      const startedAt=Date.now();
       const version = mutationVersion.current;
       const requestSequence=++sequence;
       try {
         const response = await sharedCalendarFetch('/api/data?type=calendar&'+(light||basic?'basic=1&':'')+'date='+encodeURIComponent(currentDate)+(light||basic?'':'&enrichOffset='+enrichOffset),currentUser, {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
         const data = await readApiJson(response);
+        const readBoundary=calendarReadBoundary(response,data.cacheMeta,startedAt);
+        if(Date.now()-startedAt>8000)recordAppLog(currentUser,'Calendario · sincronización','Lectura '+(light?'básica':'de enriquecimiento')+' del '+currentDate+' demoró '+Math.round((Date.now()-startedAt)/1000)+' s; origen '+String(data.cacheMeta?.source||'Notion')+'. Se conservan los cambios confirmados.');
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
@@ -356,7 +363,7 @@ export function CalendarHost({
         setRefreshWarning('');
         setActivitiesList(prev=>{
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed}));return confirmed;
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;
@@ -366,14 +373,16 @@ export function CalendarHost({
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setRefreshWarning(data.warning || '');
       } catch (e) { if (!stopped) {const message=e instanceof Error && e.name==='TimeoutError'?'Actualización demorada; se conserva el calendario y se volverá a intentar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.';setRefreshWarning(message);} }
-      finally {if(light)lightBusy=false;else busy = false;}
+      finally {if(light)lightBusy=false;else busy = false;if(refreshQueued&&!stopped){refreshQueued=false;enrichmentTimer=setTimeout(()=>void refresh(true),250);}}
     };
     void refresh();
     // Enrichment runs once, then only explicit invalidations reload this day.
     const fastRefresh=()=>{void refresh(true);};
+    const resumeRefresh=()=>{if(refreshQueued)void refresh(true);};
+    window.addEventListener('anfeta_calendar_idle',resumeRefresh);
 
     window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('online',fastRefresh);window.addEventListener('anfeta_calendar_refresh',fastRefresh);
-    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);};
+    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);window.removeEventListener('anfeta_calendar_idle',resumeRefresh);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
@@ -446,7 +455,7 @@ export function CalendarHost({
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
-    } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1); }
+    } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
   };
 
   const startHour = 8;
