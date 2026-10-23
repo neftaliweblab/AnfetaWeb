@@ -97,6 +97,7 @@ export function CalendarHost({
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const activitiesListRef = React.useRef(activitiesList); activitiesListRef.current = activitiesList;
   const [error, setError] = useState('');
+  const [scheduleConflict, setScheduleConflict] = useState<{pageId:string;conflictTitle:string;suggestedSlot?:{start:string;end:string};updates?:any;newSchedule?:{start:string;end:string};targetPerson?:string;reassignment?:boolean}|null>(null);
   const [refreshWarning,setRefreshWarning]=useState('');
   const [gridTheme,setGridTheme]=useState(calendarThemes.soft),[themeOwner,setThemeOwner]=useState('');
   const themeKey='anfeta_calendar_theme_v1:'+normalizePerson(currentUser);
@@ -408,7 +409,7 @@ export function CalendarHost({
     }
   };
 
-  const handleUpdateActivity = React.useCallback(async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string }) => {
+  const handleUpdateActivity = React.useCallback(async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string;allowOverlap?:boolean }) => {
     const original = activitiesListRef.current.find((a: NotionCalendarActivity) => a.pageId === pageId);
     if (!original || !canEditActivity(currentUser, original)) { setError('No puedes modificar esta actividad o está bloqueada.'); return false; }
     if (pending.current.has(pageId)) { setError('Espera a que termine el guardado de esta actividad.'); return false; }
@@ -450,9 +451,16 @@ export function CalendarHost({
       window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start&&saved.start){const date=mexicoDate(saved.start);if(date!==currentDate)onSelectDate(date);}
       return true;
-    } catch (error) {
+    } catch (error: any) {
       restoreSchedule();
       recentSaves.current.delete(pageId);
+      const msg = error instanceof Error ? error.message : 'No se pudo guardar la actividad.';
+      const isConflict = error?.code === 'SCHEDULE_CONFLICT' || (typeof msg === 'string' && msg.includes('El horario se empalma con'));
+      if (isConflict) {
+        const match = typeof msg === 'string' ? msg.match(/El horario se empalma con «([^»]+)».+Horario libre sugerido:\s*(\d{2}:\d{2})[–-](\d{2}:\d{2})/i) : null;
+        const freeMatch = match ? { start: mexicoDate(updates.start || original.start) + 'T' + match[2] + ':00-06:00', end: mexicoDate(updates.end || original.end) + 'T' + match[3] + ':00-06:00' } : undefined;
+        setScheduleConflict({ pageId, conflictTitle: error?.conflictTitle || (match ? match[1] : 'otra actividad'), suggestedSlot: error?.suggestedSlot || freeMatch, updates });
+      }
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
       return false;
@@ -597,7 +605,7 @@ export function CalendarHost({
       const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
       const moving={...activity,...newSchedule,person:colPerson};
       const conflict=calendarConflict(activitiesList,moving);
-      if(conflict){const free=nearbyFreeCalendarSlots(activitiesList,moving)[0];setError('Se empalma con «'+conflict.title+'». '+(free?'Puedes moverla a '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio en la jornada.')+' No se movió la actividad.');return;}
+      if(conflict){const free=nearbyFreeCalendarSlots(activitiesList,moving)[0];setScheduleConflict({pageId,conflictTitle:conflict.title,suggestedSlot:free?{start:free.start,end:free.end}:undefined,newSchedule,targetPerson:colPerson,reassignment});return;}
 
       void handleUpdateActivity(pageId, {...newSchedule,...(reassignment?{person:colPerson}:{})});
     } catch (error) {
@@ -620,6 +628,7 @@ export function CalendarHost({
       {/* Notificación de Error / Alerta Visible y Elegante */}
       <DiagnosticMessage owner={currentUser} source="Calendario · acción" message={error} level="error"/>
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
+      {scheduleConflict && (<div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"><div className="w-full max-w-md rounded-2xl border border-amber-500/60 bg-[#0C121D] p-5 shadow-2xl text-slate-100"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 font-bold text-lg">⚠️</span><div className="min-w-0 flex-1"><h3 className="font-semibold text-amber-200 text-sm">Conflicto de Horario (Empalme)</h3><p className="mt-1 text-xs text-slate-300 leading-relaxed">El horario propuesto coincide con <strong className="text-white">«{scheduleConflict.conflictTitle}»</strong>.</p></div></div><div className="mt-5 flex flex-col gap-2.5"><button type="button" onClick={()=>{const sc=scheduleConflict;setScheduleConflict(null);if(sc.updates){void handleUpdateActivity(sc.pageId,{...sc.updates,allowOverlap:true});}else if(sc.newSchedule){void handleUpdateActivity(sc.pageId,{...sc.newSchedule,...(sc.reassignment?{person:sc.targetPerson}:{}),allowOverlap:true});}}} className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/60 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-2.5 text-xs font-semibold text-amber-200 transition-colors cursor-pointer">⚡ Aceptar que se empalme (Permitir traslape)</button>{scheduleConflict.suggestedSlot&&<button type="button" onClick={()=>{const sc=scheduleConflict;setScheduleConflict(null);const free=sc.suggestedSlot!;if(sc.updates){void handleUpdateActivity(sc.pageId,{...sc.updates,start:free.start,end:free.end});}else if(sc.newSchedule){void handleUpdateActivity(sc.pageId,{start:free.start,end:free.end,...(sc.reassignment?{person:sc.targetPerson}:{})});}}} className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/60 bg-cyan-500/20 hover:bg-cyan-500/30 px-3 py-2.5 text-xs font-semibold text-cyan-200 transition-colors cursor-pointer">🕒 Mover a hora más cercana ({scheduleConflict.suggestedSlot.start.slice(11,16)} – {scheduleConflict.suggestedSlot.end.slice(11,16)})</button>}<button type="button" onClick={()=>setScheduleConflict(null)} className="w-full rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-2 text-xs font-medium text-slate-300 transition-colors cursor-pointer">Cancelar movimiento</button></div></div></div>)}
       {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
       {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:activity}));}} />}
       {showCreate && (

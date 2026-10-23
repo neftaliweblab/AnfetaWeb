@@ -120,6 +120,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
   useNotionPageWatch(currentUser,activities,active,states=>{const ready=states.filter(s=>!pendingId.current||pageIdentity(s.id)!==pageIdentity(pendingId.current));if(ready.length)setItems(old=>filterDeletedPages(applyCalendarStates(old,ready,day),currentUser));return ready.map(s=>pageIdentity(s.id));},true);
   const menuActivity=activities.find(a=>a.pageId===menu?.pageId);
   const closeMenu=useCallback(()=>setMenu(null),[]);
+  const [conflictNotice, setConflictNotice] = useState<{pageId:string;updates:AgendaUpdate;conflictTitle:string;suggestedSlot?:{start:string;end:string}}|null>(null);
   const updateActivity=async(pageId:string,updates:AgendaUpdate)=>{
     if(pending.current)return false;
     const original=itemsRef.current.find(a=>a.pageId===pageId);if(!original)return false;
@@ -143,7 +144,18 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
       window.dispatchEvent(new Event('anfeta_review_saved'));
       if(updates.start)setDay(mexicoDate(saved.start));
       return true;
-    }catch(e){setNotice(e instanceof Error?e.message:'No se pudo guardar.');return false;}
+    }catch(e:any){
+      const msg = e instanceof Error ? e.message : 'No se pudo guardar.';
+      const isConflict = e?.code === 'SCHEDULE_CONFLICT' || (typeof msg === 'string' && msg.includes('El horario se empalma con'));
+      if (isConflict) {
+        const match = typeof msg === 'string' ? msg.match(/El horario se empalma con «([^»]+)».+Horario libre sugerido:\s*(\d{2}:\d{2})[–-](\d{2}:\d{2})/i) : null;
+        const freeMatch = match ? { start: day + 'T' + match[2] + ':00-06:00', end: day + 'T' + match[3] + ':00-06:00' } : undefined;
+        setConflictNotice({ pageId, updates, conflictTitle: e?.conflictTitle || (match ? match[1] : 'otra actividad'), suggestedSlot: e?.suggestedSlot || freeMatch });
+      } else {
+        setNotice(msg);
+      }
+      return false;
+    }
     finally{pending.current=false;pendingId.current=null;setSaving(false);}
   };
 
@@ -216,6 +228,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
           <p className="py-8 text-center text-slate-400">No hay actividades para {person} en esta fecha.</p>
         )}
         {notice&&<p role="status" className="rounded-lg border border-cyan-900/60 bg-cyan-950/30 p-2 text-cyan-100 break-words">{notice}</p>}
+        {conflictNotice && (<div className="rounded-xl border border-amber-500/70 bg-[#16120D] p-3 text-xs text-amber-200 space-y-2.5 shadow-xl animate-in fade-in duration-150"><div className="flex items-start gap-2"><span className="text-amber-400 font-bold text-base leading-none">⚠️</span><div className="min-w-0 flex-1 leading-snug"><p className="font-semibold text-amber-300">Conflicto de horario (Empalme)</p><p className="mt-0.5 text-[11px] text-slate-300">Se empalma con <strong className="text-white">«{conflictNotice.conflictTitle}»</strong>.</p></div></div><div className="flex flex-col gap-1.5 pt-1"><button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,allowOverlap:true});}} className="w-full rounded-lg border border-amber-500/80 bg-amber-500/20 hover:bg-amber-500/30 py-2 px-2 text-center font-semibold text-amber-200 transition-colors cursor-pointer">⚡ Aceptar que se empalme</button>{conflictNotice.suggestedSlot&&<button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,start:cn.suggestedSlot!.start,end:cn.suggestedSlot!.end,allowOverlap:false});}} className="w-full rounded-lg border border-cyan-500/80 bg-cyan-500/20 hover:bg-cyan-500/30 py-2 px-2 text-center font-semibold text-cyan-200 transition-colors cursor-pointer">🕒 Mover a hora más cercana ({conflictNotice.suggestedSlot.start.slice(11,16)} – {conflictNotice.suggestedSlot.end.slice(11,16)})</button>}<button type="button" disabled={saving} onClick={()=>setConflictNotice(null)} className="text-slate-400 hover:text-slate-200 text-center text-[11px] py-1 cursor-pointer">Descartar cambio</button></div></div>)}
         {activities.map(a => {
           const appearance=agendaAppearance(a),active=expanded&&selected?.pageId===a.pageId;
           return <article key={a.pageId} className={'relative rounded-lg border-l-4 border p-2.5 transition-colors '+appearance.className+(active?' ring-1 ring-cyan-400/70':'')} onContextMenu={e=>{e.preventDefault();if(!saving)setMenu({pageId:a.pageId,x:e.clientX,y:e.clientY});}}>

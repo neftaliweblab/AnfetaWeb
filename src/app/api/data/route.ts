@@ -2447,7 +2447,7 @@ async function POSTLive(req: NextRequest) {
           }catch(error){ftfWarning='La casilla se guardó; el aviso FTF queda pendiente de comprobar al actualizar los avisos.';}
         }
         return NextResponse.json({ success:true, activity, handoffCopies:input.handoff?await handoffMirrors(settings,mexicoDate(activity.start),new Date(Date.parse(mexicoDate(activity.start)+'T12:00:00Z')+86400000).toISOString().slice(0,10)).catch(()=>[]):undefined, warning:[page.__notificationWarning,page.__historyWarning,ftfWarning].filter(Boolean).join(' · ') || undefined });
-      } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.' }, { status: 400 }); }
+      } catch (error: any) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.', code: error?.code, conflictTitle: error?.conflict?.title, suggestedSlot: error?.suggestedSlot }, { status: 400 }); }
     }
 
     if (action === 'get-review-thread' || action === 'reply-review-thread') {
@@ -2497,7 +2497,7 @@ async function POSTLive(req: NextRequest) {
       const results:any[]=[];let halted=false;
       for (const change of input.changes) {
         if(halted){results.push({success:false,pageId:change.pageId,error:'Movimiento pendiente: el lote se detuvo tras un fallo. Actualiza los horarios antes de repetir.'});continue;}
-        try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);activity.serverModified=page.last_edited_time;persistCalendarActivity(activity);await publishCalendarPage(settings,page,activity);results.push({success:true,activity});}
+        try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle,allowOverlap:change.allowOverlap});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);activity.serverModified=page.last_edited_time;persistCalendarActivity(activity);await publishCalendarPage(settings,page,activity);results.push({success:true,activity});}
         catch(error){halted=true;results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
       }
       return NextResponse.json({success:results.every(result=>result.success),results});

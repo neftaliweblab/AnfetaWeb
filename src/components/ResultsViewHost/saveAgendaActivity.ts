@@ -5,7 +5,7 @@ import {offlineAwareFetch} from '@/services/offlineQueue';
 
 export type AgendaUpdate=Partial<NotionCalendarActivity>&{
   handoff?:boolean;reviewer?:string;reviewAction?:'return'|'reassign';note?:string;
-  leaveVisualCopy?:boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string;
+  leaveVisualCopy?:boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string;allowOverlap?:boolean;
 };
 
 export async function saveAgendaActivity(original:NotionCalendarActivity,updates:AgendaUpdate,currentUser:string,onFresh:(fresh:Partial<NotionCalendarActivity>)=>void) {
@@ -25,6 +25,6 @@ export async function saveAgendaActivity(original:NotionCalendarActivity,updates
   });
   const data=await response.json();
   if(data.queued)throw Error('Cambio guardado localmente. Se confirmará al recuperar conexión; se conservan los datos del servidor.');
-  if(!response.ok||!data.success||!data.activity)throw Error(data.error||'Notion no confirmó el guardado.');
+  if(!response.ok||!data.success||!data.activity){const err:any=new Error(data.error||'Notion no confirmó el guardado.');err.code=data.code;err.conflictTitle=data.conflictTitle;err.suggestedSlot=data.suggestedSlot;throw err;}
   return data as {activity:NotionCalendarActivity;handoffCopies?:NotionCalendarActivity[];warning?:string};
 }

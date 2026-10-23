@@ -86,9 +86,16 @@ export async function calendarScheduleAvailability(settings:Settings,moving:Cale
   const conflict=calendarConflict(slots,moving);
   return {conflict:conflict?{title:conflict.title}:null,suggestions:conflict?nearbyFreeCalendarSlots(slots,moving):[]};
 }
-async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot){
+async function assertFreeCalendarSchedule(settings:Settings,moving:CalendarSlot,allowOverlap?:boolean){
+  if(allowOverlap)return;
   const {conflict,suggestions}=await calendarScheduleAvailability(settings,moving),free=suggestions[0];
-  if(conflict)throw new Error('El horario se empalma con «'+conflict.title+'» de '+moving.person+'. '+(free?'Horario libre sugerido: '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio disponible entre las 08:00 y las 22:00.')+' No se guardaron cambios.');
+  if(conflict){
+    const err:any=new Error('El horario se empalma con «'+conflict.title+'» de '+moving.person+'. '+(free?'Horario libre sugerido: '+free.start.slice(11,16)+'–'+free.end.slice(11,16)+'.':'No hay espacio disponible entre las 08:00 y las 22:00.')+' No se guardaron cambios.');
+    err.code='SCHEDULE_CONFLICT';
+    err.conflict=conflict;
+    err.suggestedSlot=free;
+    throw err;
+  }
 }
 export async function mutateActivity(settings: Settings, actor: string, id: string, updates: any, cached?: any) {
   const key = settings.notionToken + ':' + id;
@@ -286,7 +293,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   }
   if(checkSchedule&&!ftfRollover){
     const schedule:any=fields.find(([n,p])=>p.type==='date'&&/^fecha por hacer$/i.test(n.trim()))?.[1]?.date;
-    if(schedule?.start){const start=updates.start||(schedule.start.length===10?schedule.start+'T08:00:00-06:00':schedule.start);await assertFreeCalendarSchedule(settings,{pageId:id,title:nextTitle,person:normalizePerson(updates.reviewer||updates.person||activity.person),start,end:updates.end||schedule.end||new Date(Date.parse(start)+3600000).toISOString()});}
+    if(schedule?.start){const start=updates.start||(schedule.start.length===10?schedule.start+'T08:00:00-06:00':schedule.start);await assertFreeCalendarSchedule(settings,{pageId:id,title:nextTitle,person:normalizePerson(updates.reviewer||updates.person||activity.person),start,end:updates.end||schedule.end||new Date(Date.parse(start)+3600000).toISOString()},Boolean(updates.allowOverlap));}
   }
   if(handoff){
     const date:any=fields.find(([name,p])=>p.type==='date'&&/^fecha por hacer$/i.test(name.trim()))?.[1]?.date;
@@ -422,7 +429,7 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
   if (person && !PERSON_ALIASES[normalizePerson(person)] && normalizePerson(person) !== 'Sin asignar') throw new Error('Selecciona un responsable válido del equipo.');
-  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end});
+  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end},Boolean(payload.allowOverlap));
   const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload.quickRevision?{...payload,useCalendarSource:true}:payload);
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');

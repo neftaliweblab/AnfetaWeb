@@ -34,7 +34,7 @@ interface CalendarDetailPanelProps {
   isSaving?: boolean;
   onClose: () => void;
   currentUser: string;
-  onActivityUpdated?: (updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
+  onActivityUpdated?: (updates: Partial<NotionCalendarActivity> & { [key: string]: any }) => Promise<boolean | void> | void;
   onChecklistUpdated?: (updates: Partial<NotionCalendarActivity>) => void;
   allActivities?: NotionCalendarActivity[];
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
