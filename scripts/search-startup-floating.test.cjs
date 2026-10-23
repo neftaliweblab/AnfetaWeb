@@ -1,0 +1,20 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+for(const ext of ['.ts','.tsx'])Module._extensions[ext]=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,p);
+const {personalFirstSearch,isExternalSearchChange}=require('../src/lib/searchTabsStorage.ts');
+const saved={tabs:[{id:'personal:Neftali',query:'',canClose:false},{id:'custom',query:'cliente.com',canClose:true}],activeTabId:'custom'};
+const restored=personalFirstSearch(saved,'Neftali');
+assert.match(restored.tabs[0].query,/\bnne00\b/);assert.match(restored.tabs[0].query,/\bne00\b/);assert.equal(restored.tabs[1].query,'cliente.com');
+assert.equal(isExternalSearchChange({owner:'Neftali',value:''},'Neftali',''),false,'Initial empty prop must not erase restored query');
+assert.equal(isExternalSearchChange({owner:'John',value:'jo00'},'Neftali',''),false,'Owner transition must restore its own search');
+assert.equal(isExternalSearchChange({owner:'Neftali',value:'ne00'},'Neftali',''),true,'Explicit clear still works');
+assert.equal(isExternalSearchChange({owner:'Neftali',value:''},'Neftali','otro'),true);
+const edited=personalFirstSearch({...restored,tabs:restored.tabs.map((t,i)=>i? t:{...t,query:'otra consulta'})},'Neftali');
+assert.equal(edited.tabs.filter(t=>t.query==='otra consulta').length,1);assert.equal(personalFirstSearch(edited,'Neftali').tabs.length,edited.tabs.length);
+const {ACTIVITY_TAGS}=require('../src/services/activityTags.ts');
+for(const [person,tag]of Object.entries(ACTIVITY_TAGS)){const result=personalFirstSearch(saved,person);for(const p of ['00','11','22','33']){assert.ok(result.tabs[0].query.split(' OR ').includes(tag.active+p));assert.ok(result.tabs[0].query.split(' OR ').includes(tag.reference+p));}}
+const React=require('react'),{renderToStaticMarkup}=require('react-dom/server'),{FloatingActionButton}=require('../src/components/ResultsViewHost/FloatingActionButton.tsx');
+const html=renderToStaticMarkup(React.createElement(FloatingActionButton,{label:'Asignación rápida',tone:'amber'},React.createElement('svg')));
+assert.match(html,/aria-label="Asignación rápida"/);assert.match(html,/role="tooltip"/);assert.match(html,/opacity-0/);assert.match(html,/group-focus-visible:opacity-100/);assert.equal((html.match(/Asignación rápida/g)||[]).length,2,'Only accessible label and hidden tooltip carry text');
+console.log('OK: personal startup for all owners, both tag forms, blank recovery, saved searches, external clear and icon tooltip accessibility.');

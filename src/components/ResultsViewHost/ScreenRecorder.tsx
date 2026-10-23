@@ -1,8 +1,9 @@
 "use client";
+import {FloatingActionButton} from './FloatingActionButton';
 import {revisionPhaseTitle} from '@/services/progressiveWorkflow';
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Video,Square,X,ClipboardPaste,Trash2} from 'lucide-react';
+import {Video,Square,X,ClipboardPaste,Trash2,ListPlus} from 'lucide-react';
 import {startScreenRecording,recordingMime,RECORDING_MAX_BYTES} from '@/lib/screenRecording';
 import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
@@ -423,33 +424,11 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const label=phase==='recording'?'Grabando: mostrar u ocultar controles':phase==='preview'?'Revisar grabación':phase==='starting'?'Preparando grabación':'Grabar pantalla y micrófono';
   return client?createPortal(
     <>
-      {onOpenDetailed&&<button type="button" disabled={disabled||!!clipboardSavingCode} onClick={()=>{if(clipboardSubmission.current)return;setClipboardOpen(false);onOpenDetailed();}} title="Elegir destino y detalles · mismo flujo de Ctrl+V" className="fixed bottom-24 right-20 z-[401] flex items-center gap-2 rounded-full border border-cyan-500 bg-slate-950 px-3 py-2.5 text-xs font-semibold text-cyan-200 shadow-lg disabled:opacity-50"><ClipboardPaste size={17}/>Asignación detallada</button>}
-      {/* Asignación rápida conserva su flujo de portapapeles. */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => (clipboardOpen ? setClipboardOpen(false) : void openClipboardModal())}
-        aria-label="Asignación rápida desde portapapeles"
-        title="Asignación rápida desde portapapeles · completar detalles después"
-        aria-expanded={clipboardOpen}
-        className="fixed bottom-12 right-20 z-[401] px-3 h-11 gap-2 rounded-full border border-amber-400/50 bg-gradient-to-tr from-amber-600 to-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.45)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform cursor-pointer"
-      >
-        <ClipboardPaste className="w-5 h-5 text-white" /><span className="text-xs font-semibold">Asignación rápida</span>
-      </button>
-
-      {/* Botón flotante de Grabadora de Pantalla */}
-      <button
-        type="button"
-        disabled={(disabled&&phase==='idle')||phase==='starting'}
-        onClick={()=>phase==='idle'?configure():setPanelOpen(open=>!open)}
-        aria-label={label}
-        title={label}
-        aria-expanded={phase!=='idle'&&panelOpen}
-        aria-controls={phase!=='idle'&&panelOpen?'anfeta-recording-controls':undefined}
-        className={`fixed bottom-12 right-6 z-[401] w-11 h-11 rounded-full border flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 ${phase==='recording'?'bg-rose-600 border-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.6)]':'bg-gradient-to-tr from-[#0284C7] to-[#38BDF8] border-[#7DD3FC]/50 shadow-[0_0_15px_rgba(56,189,248,0.5)]'}`}
-      >
-        {phase==='recording'?<Square className="w-4 h-4 fill-current animate-pulse"/>:<Video className="w-5 h-5"/>}
-      </button>
+      {onOpenDetailed&&<FloatingActionButton label="Asignación detallada · elegir destino y detalles" tone="cyan" className="bottom-24 right-20" disabled={disabled||!!clipboardSavingCode} onClick={()=>{if(clipboardSubmission.current)return;setClipboardOpen(false);onOpenDetailed();}}><ListPlus size={21}/></FloatingActionButton>}
+      <FloatingActionButton label="Asignación rápida desde portapapeles" tone="amber" className="bottom-12 right-20" disabled={disabled} onClick={()=>(clipboardOpen?setClipboardOpen(false):void openClipboardModal())} aria-expanded={clipboardOpen}><ClipboardPaste size={21}/></FloatingActionButton>
+      <FloatingActionButton label={label} tone={phase==='recording'?'rose':'sky'} className="bottom-12 right-6" disabled={(disabled&&phase==='idle')||phase==='starting'} onClick={()=>phase==='idle'?configure():setPanelOpen(open=>!open)} aria-expanded={phase!=='idle'&&panelOpen} aria-controls={phase!=='idle'&&panelOpen?'anfeta-recording-controls':undefined}>
+        {phase==='recording'?<Square className="w-4 h-4 fill-current"/>:<Video size={21}/>}
+      </FloatingActionButton>
 
       {phase==='idle'&&notice&&<p role="status" className="fixed bottom-28 right-5 z-[400] max-w-sm rounded-lg bg-slate-950 p-3 text-xs text-amber-200">{notice}</p>}
       {overlay}

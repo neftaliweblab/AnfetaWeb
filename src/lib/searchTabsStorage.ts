@@ -9,15 +9,24 @@ export function parseSearchTabs(raw:string|null):{tabs:{id:string;query:string;c
   }catch{return null;}
 }
 
-/** Prepend once without rewriting saved queries, tab IDs or other searches. */
+/** Restore personal work on startup while retaining edited searches in another tab. */
 export function personalFirstSearch(saved:NonNullable<ReturnType<typeof parseSearchTabs>>,owner:string){
  const person=normalizePerson(owner),entry=ACTIVITY_TAGS[person as ActivityPerson];
  if(!entry)return saved;
  const id='personal:'+person;
+ const query=['00','11','22','33'].flatMap(p=>[entry.active+p,entry.reference+p]).join(' OR ');
  const existing=saved.tabs.find(t=>t.id===id);
- const personal=existing||{id,query:['00','11','22','33'].map(p=>entry.active+p).join(' OR '),canClose:false};
- const tabs=[{...personal,canClose:false},...saved.tabs.filter(t=>t.id!==id).map(t=>({...t,canClose:true}))];
- return {tabs,activeTabId:id};
+ const others=saved.tabs.filter(t=>t.id!==id).map(t=>({...t,canClose:true}));
+ if(existing?.query.trim()&&existing.query!==query&&!others.some(t=>t.query===existing.query)){
+  let recovered=id+':saved';while(others.some(t=>t.id===recovered))recovered+=':copy';
+  others.push({...existing,id:recovered,canClose:true});
+ }
+ return {tabs:[{id,query,canClose:false},...others],activeTabId:id};
+}
+
+/** Initial props and owner changes must not overwrite restored personal searches. */
+export function isExternalSearchChange(previous:{owner:string;value:string|undefined},owner:string,value:string|undefined){
+ return previous.owner===owner&&previous.value!==value&&value!==undefined;
 }
 
 /** Recover legacy tabs by merging; never replace current searches. */

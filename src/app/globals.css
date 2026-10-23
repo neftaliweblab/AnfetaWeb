@@ -118,3 +118,10 @@ body {
   border-color: #38BDF8;
   transform: translateY(-1px);
 }
+
+@keyframes anfeta-action-float { 0%,100% {transform:translateY(0)} 50% {transform:translateY(-4px)} }
+@keyframes anfeta-action-glow { 0%,100% {box-shadow:0 0 8px rgba(var(--action-rgb),.3);background-color:rgba(var(--action-rgb),.8)} 50% {box-shadow:0 0 20px rgba(var(--action-rgb),.65);background-color:rgb(var(--action-rgb))} }
+.anfeta-floating-action {background-color:rgb(var(--action-rgb));border-color:rgba(var(--action-rgb),.7);animation:anfeta-action-float 3.6s ease-in-out infinite,anfeta-action-glow 3s ease-in-out infinite;cursor:pointer}
+.anfeta-floating-action:hover,.anfeta-floating-action:focus-visible {animation-play-state:paused;outline:2px solid white;outline-offset:3px}
+.anfeta-floating-action:disabled {animation:none;cursor:default}
+@media(prefers-reduced-motion:reduce){.anfeta-floating-action {animation:none}}

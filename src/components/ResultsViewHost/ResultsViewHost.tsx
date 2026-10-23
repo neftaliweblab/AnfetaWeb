@@ -10,7 +10,7 @@ import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
 import {readSearchView,searchViewKey} from '@/lib/searchViewPreferences';
-import {parseSearchTabs,personalFirstSearch,recoverSearchTabs} from '@/lib/searchTabsStorage';
+import {parseSearchTabs,personalFirstSearch,recoverSearchTabs,isExternalSearchChange} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
 import {CompactSearchAccess} from './CompactSearchAccess';
 import {workflowState} from '@/services/activityWorkflow';
@@ -384,12 +384,15 @@ export function ResultsViewHost({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
 
+  const externalSearchRef=useRef({owner:tabsKey,value:externalQuery});
   React.useEffect(() => {
-    if (externalQuery !== undefined && externalQuery !== query) {
+    const previous=externalSearchRef.current;
+    externalSearchRef.current={owner:tabsKey,value:externalQuery};
+    if (isExternalSearchChange(previous,tabsKey,externalQuery) && externalQuery !== undefined && externalQuery !== query) {
       setQuery(externalQuery);
       setTabs(prev=>prev.map(t=>t.id===activeTabId?{...t,query:externalQuery}:t));
     }
-  }, [externalQuery]);
+  }, [externalQuery,tabsKey]);
 
   const handleQueryChange = (newQ: string) => {
     setQuery(newQ);
