@@ -1,6 +1,7 @@
 import {mexicoDate,mexicoMinutes} from './calendarPresentation';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
 import {NotionCalendarActivity} from '@/types/anfeta';
+import {isFtfReminder} from './progressKpis';
 
 // Only real activities starting today before 18:00 count; checklist progress is unrelated.
 export function completedFtfPeople(activities:NotionCalendarActivity[],now=new Date()) {
@@ -9,7 +10,7 @@ export function completedFtfPeople(activities:NotionCalendarActivity[],now=new D
   const groups=new Map<string,NotionCalendarActivity[]>();
   for(const activity of activities){
     const person=normalizePerson(activity.person);
-    if(!PERSON_ALIASES[person]||person==='Emmanuel'||activity.isReviewMirror||activity.isHandoffMirror||!activity.start||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
+    if(!PERSON_ALIASES[person]||person==='Emmanuel'||activity.isReviewMirror||activity.isHandoffMirror||isFtfReminder(activity)||!activity.start||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
     const list=groups.get(person)||[];
     if(!list.some(a=>a.pageId===activity.pageId))list.push(activity);
     groups.set(person,list);

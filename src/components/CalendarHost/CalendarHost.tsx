@@ -27,6 +27,7 @@ import {CalendarBatchModal} from './CalendarBatchModal';
 import {CalendarReviewNotifications} from './CalendarReviewNotifications';
 import {CalendarFtfPanel} from './CalendarFtfPanel';
 import {canViewFtfDashboard} from '@/services/ftfDashboard';
+import {countedCalendarActivities} from '@/services/progressKpis';
 
 import React, { useState, useMemo, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -652,7 +653,7 @@ export function CalendarHost({
         onSoloPerson={(name) => setVisiblePeople([name])}
         onShowAllPeople={() => setVisiblePeople(DEFAULT_COLLABORATORS)}
         onOpenPeoplePicker={() => setShowPeoplePicker(true)}
-        totalActivitiesCount={filteredActivities.filter(a => !a.isReviewMirror).length}
+        totalActivitiesCount={countedCalendarActivities(filteredActivities).length}
         pixelsPerHour={pixelsPerHour}
         gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
         onChangeZoom={handleChangeZoom}
@@ -762,6 +763,7 @@ export function CalendarHost({
             ) : (
               displayedPeople.map((person,columnIndex) => {
                 const personActivities = activitiesByPerson[person] || [];
+                const countedActivities=countedCalendarActivities(personActivities);
                 const positioned = computeActivityOverlaps(personActivities, currentDate);
 
                 // Compute person KPIs
@@ -769,7 +771,7 @@ export function CalendarHost({
                 let doneChecks = 0;
                 let totalCoverageHours = 0;
 
-                personActivities.forEach((act) => {
+                countedActivities.forEach((act) => {
                   if (act.isReviewMirror) return;
                   totalChecks += act.checklistTotal || 0;
                   doneChecks += act.checklistCompleted || 0;
@@ -795,7 +797,7 @@ export function CalendarHost({
                     <CalendarColHeader
                       personName={person}
                       onAction={action=>{if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
-                      activityCount={personActivities.length}
+                      activityCount={countedActivities.length}
                       checklistPercent={checklistPercent}
                       totalChecklistItems={totalChecks}
                       completedChecklistItems={doneChecks}

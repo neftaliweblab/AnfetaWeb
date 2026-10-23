@@ -4,6 +4,7 @@ import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {titlePriority} from '@/services/activityTags';
 
 import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
+import {isFtfReminder} from '@/services/progressKpis';
 import React, { useState, useRef, useMemo } from "react";
 import {createPortal} from 'react-dom';
 import {offlineAwareFetch} from '@/services/offlineQueue';
@@ -636,6 +637,7 @@ export function ActivityCard({
         <div className="my-auto py-0.5 min-w-0">
           <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
             {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.">{activity.isHandoffMirror?'TRANSFERIDA':'COPIA REVISIÓN'}</span>}
+            {isFtfReminder(activity)&&<span className="mr-1 rounded border border-cyan-800 px-1 text-[9px] text-cyan-200" title="Recordatorio FTF: visible, sin sumar actividades ni carga de trabajo">FTF · Recordatorio</span>}
             <span className={wf==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':''}>{cleanTitle}</span>
           </h5>
         </div>

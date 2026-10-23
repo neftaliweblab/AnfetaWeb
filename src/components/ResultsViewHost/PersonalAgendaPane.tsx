@@ -9,6 +9,7 @@ import {CalendarDetailPanel} from '../CalendarHost/CalendarDetailPanel';
 import {AgendaActivityActions} from './AgendaActivityActions';
 import {saveAgendaActivity,type AgendaUpdate} from './saveAgendaActivity';
 import {personalAgendaActivities,agendaSelection,agendaAppearance} from '@/lib/personalAgenda';
+import {isFtfReminder} from '@/services/progressKpis';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
@@ -217,7 +218,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true}:{cur
             <div className="flex items-start gap-2">
               <button type="button" disabled={saving} aria-expanded={active} aria-label={'Ver pasos de '+calendarDisplayTitle(a.title,a.domain||'')} onClick={()=>{setSelectedId(a.pageId);setExpanded(true);}} className="min-w-0 flex-1 text-left">
                 <span className="font-mono text-[11px] text-slate-300">{calendarTime(a.start)} – {calendarTime(a.end)}</span>
-                <span className={'mt-1 block text-[10px] font-semibold '+appearance.text}>{appearance.label}{a.isReviewMirror?' · Copia de revisión':a.isHandoffMirror?' · Copia histórica':''}</span>
+                <span className={'mt-1 block text-[10px] font-semibold '+appearance.text}>{isFtfReminder(a)?'FTF · Recordatorio · No cuenta como actividad':appearance.label}{a.isReviewMirror?' · Copia de revisión':a.isHandoffMirror?' · Copia histórica':''}</span>
                 <span className={'mt-1 block break-words font-medium leading-snug '+(appearance.state==='completed'?'text-slate-400 line-through':'text-slate-100')}>{calendarDisplayTitle(a.title,a.domain||'')}</span>
                 {a.checklistScanned&&<span className="mt-1 block text-[10px] text-slate-400">{a.checklistCompleted} / {a.checklistTotal} pasos</span>}
               </button>

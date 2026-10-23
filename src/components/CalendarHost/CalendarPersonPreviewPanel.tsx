@@ -6,7 +6,7 @@ import React, { useState, useMemo } from "react";
 import { X, CheckCircle2, AlertTriangle, Calendar, CheckSquare, Clock, ExternalLink } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { PERSON_METADATA, getPersonColor, getPersonInitials } from "@/services/identityNormalizer";
-import { evaluateLagStatus } from "@/services/progressKpis";
+import { evaluateLagStatus,countedCalendarActivities } from "@/services/progressKpis";
 import { openNotionPage } from "@/services/windowsIntegration";
 import { formatLongCalendarDate } from "@/lib/dateUtils";
 
@@ -38,7 +38,7 @@ export function CalendarPersonPreviewPanel({
     let progressMin = 0;
     let totalChecksToday = 0;
 
-    activities.filter(act=>!act.isReviewMirror).forEach((act) => {
+    countedCalendarActivities(activities).forEach((act) => {
       const startD = act.start ? new Date(act.start).getTime() : 0;
       const endD = act.end ? new Date(act.end).getTime() : 0;
       const dur = endD > startD ? Math.round((endD - startD) / 60000) : 60;
@@ -68,7 +68,7 @@ export function CalendarPersonPreviewPanel({
       totalScheduledMin > 0 ? Math.round((progressMin / totalScheduledMin) * 100) : 0;
 
     return {
-      total: activities.length,
+      total: countedCalendarActivities(activities).length,
       completed: completedCount,
       lagging: laggingCount,
       coverage: coveragePct,
@@ -87,7 +87,7 @@ export function CalendarPersonPreviewPanel({
       url: string;
     }> = [];
 
-    activities.filter(act=>!act.isReviewMirror).forEach(act => {
+    countedCalendarActivities(activities).forEach(act => {
       for (const item of act.completedChecks || []) list.push({id:item.id,domain:act.domain || 'general',activityTitle:calendarDisplayTitle(act.title,act.domain),text:item.text,timeStr:calendarTime(item.markedAt || item.editedAt || ''),url:act.pageUrl});
     });
 
@@ -187,7 +187,7 @@ export function CalendarPersonPreviewPanel({
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>Todas las actividades ({activities.length})</span>
+          <span>Actividades ({stats.total}) · FTF visible como recordatorio</span>
         </button>
       </div>
 
