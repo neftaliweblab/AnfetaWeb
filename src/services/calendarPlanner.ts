@@ -2,6 +2,7 @@ import {normalizePerson} from './identityNormalizer';
 import {mexicoMinutes,mexicoDate} from './calendarPresentation';
 import {workflowState} from './activityWorkflow';
 import {canEditActivity} from './activityPermissions';
+import {calendarEntryAllowsOverlap} from './calendarEntryPolicy';
 const at=(day:string,m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';
 export function planDurationCascade(activities:any[],pageId:string,actor:string,delta:number){
   const root=activities.find(a=>a.pageId===pageId);
@@ -12,8 +13,8 @@ export function planDurationCascade(activities:any[],pageId:string,actor:string,
   const add=(a:any,start:number,end:number)=>{if(end>1320)throw new Error('El ajuste supera las 22:00. No se aplicaron cambios.');changes.push({pageId:a.pageId,title:a.title,expectedTitle:a.title,expectedStart:a.start,expectedEnd:a.end,start:at(day,start),end:at(day,end)});};
   let cursor=mexicoMinutes(root.start)+duration+delta;
   add(root,mexicoMinutes(root.start),cursor);
-  if(delta>0){
-    const others=activities.filter(a=>a.pageId!==root.pageId&&!a.isReviewMirror&&normalizePerson(a.person)===normalizePerson(root.person)&&mexicoDate(a.start)===day).sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
+  if(delta>0&&!calendarEntryAllowsOverlap(root.title)){
+    const others=activities.filter(a=>a.pageId!==root.pageId&&!a.isReviewMirror&&!calendarEntryAllowsOverlap(a.title)&&normalizePerson(a.person)===normalizePerson(root.person)&&mexicoDate(a.start)===day).sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
     for(const a of others){
       if(Date.parse(a.end)<=Date.parse(root.start))continue;
       if(Date.parse(a.start)<Date.parse(root.start))throw new Error('La actividad ya tiene un empalme anterior; corrígelo antes del ajuste.');
@@ -29,8 +30,8 @@ export function planDurationCascade(activities:any[],pageId:string,actor:string,
   return changes.reverse();
 }
 export function planOneClick(activities:any[],day:string,person:string,startMinute=480) {
-  const selected=activities.filter(a=>normalizePerson(a.person)===normalizePerson(person)&&!a.isReviewMirror&&!a.isLocked&&workflowState(a.status,a.title)==='pending');
-  const fixed=activities.filter(a=>!selected.includes(a)&&normalizePerson(a.person)===normalizePerson(person)&&!a.isReviewMirror).map(a=>[mexicoMinutes(a.start),mexicoMinutes(a.end)]);
+  const selected=activities.filter(a=>!calendarEntryAllowsOverlap(a.title)&&normalizePerson(a.person)===normalizePerson(person)&&!a.isReviewMirror&&!a.isLocked&&workflowState(a.status,a.title)==='pending');
+  const fixed=activities.filter(a=>!calendarEntryAllowsOverlap(a.title)&&!selected.includes(a)&&normalizePerson(a.person)===normalizePerson(person)&&!a.isReviewMirror).map(a=>[mexicoMinutes(a.start),mexicoMinutes(a.end)]);
   const changes:any[]=[]; let cursor=startMinute;
   for (const activity of selected) {
     const duration=Math.ceil((Date.parse(activity.end)-Date.parse(activity.start))/900000)*15;

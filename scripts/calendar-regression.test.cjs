@@ -33,8 +33,10 @@ state={page:fixture(),calls:[],flow:undefined,failMetadata:false,failChecklist:f
 function response(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});}
 global.fetch=async(url,options={})=>{
   assert.ok(String(url).startsWith('https://api.notion.com/v1/'),'Tests must not call an external service');
-  const target=String(url).split('/v1/')[1].replace(pid.replace(/-/g,''),pid).replace(other.replace(/-/g,''),other),method=options.method || 'GET',body=options.body?JSON.parse(options.body):undefined;
+  const target=String(url).split('/v1/')[1].replace(pid.replace(/-/g,''),pid).replace(other.replace(/-/g,''),other),method=options.method || 'GET',body=typeof options.body==='string'?JSON.parse(options.body):undefined;
   state.calls.push({target,method,body});
+  if(target==='file_uploads'&&method==='POST')return response({id:'upload-test'});
+  if(target==='file_uploads/upload-test/send'&&method==='POST')return response({id:'upload-test',status:'uploaded'});
   if(target==='pages' && method==='POST') {
     if(state.failAlert || state.failCreate)return response({message:'Creation rejected'},403);
     const properties={};for(const [name,prop] of Object.entries(body.properties)) {assert.ok(!Array.isArray(prop),'Notion properties must be objects');const type=Object.keys(prop)[0];properties[name]={type,...prop};if(type==='people')properties[name].people=prop.people.map(u=>({...u,name:({'neft-id':'Neftali','john-id':'John','karla-id':'Karla','acalli-id':'Acalli','brian-id':'Brian'})[u.id] || (u.id==='neft-id'?'Neftali':'John')}));}
@@ -429,6 +431,16 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     let job;await mutations.mutateActivity({...settings,deferReviewNotice:run=>{job=run;}},'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});
     state.flow={...state.flow,State:'approved',UpdatedAt:'2099-01-01T00:00:00Z'};
     await job();assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,0);assert.equal(state.flow.State,'approved');
+  });
+  await test('Grabación adjunta se guarda aunque el horario esté ocupado',async()=>{
+    process.env.NOTION_PERSON_IDS=JSON.stringify({Neftali:'neft-id'});
+    const payload={title:'Video de prueba',person:'Neftali',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00',calendarEntryKind:'recording',files:[{filename:'Grabacion.webm',contentType:'video/webm',base64:Buffer.from('video-test').toString('base64')}]};
+    const result=await mutations.createActivity(settings,'Neftali',payload);assert.match(result.activity.title,/\[GRABACIÓN\]/);assert.ok(state.calls.some(c=>c.target==='file_uploads/upload-test/send'));assert.ok(state.calls.some(c=>c.target==='pages'&&c.method==='POST'));assert.ok(!state.calls.some(c=>c.target.endsWith('/query')),'Recording does not scan occupied slots');
+  });
+  await test('Excepción de grabación no permite falsear adjunto ni saltar horario válido',async()=>{
+    const normal={title:'Actividad real',person:'Neftali',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00',calendarEntryKind:'recording',files:[]};
+    await assert.rejects(()=>mutations.createActivity(settings,'Neftali',normal),/empalma/);assert.ok(!state.calls.some(c=>c.target==='pages'&&c.method==='POST'));
+    await assert.rejects(()=>mutations.createActivity(settings,'Neftali',{...normal,title:'Video [GRABACIÓN]',start:'2026-10-05T23:00:00-06:00',end:'2026-10-06T00:00:00-06:00'}),/horario|Horario/);
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

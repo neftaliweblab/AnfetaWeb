@@ -1,8 +1,10 @@
 import {normalizePerson} from './identityNormalizer';
+import {calendarEntryAllowsOverlap} from './calendarEntryPolicy';
 export type CalendarSlot={pageId:string;person:string;title:string;start:string;end:string;isReviewMirror?:boolean};
 const id=(value:string)=>value.replace(/-/g,'');
 export function calendarConflict(slots:CalendarSlot[],moving:CalendarSlot){
-  return slots.find(a=>!a.isReviewMirror&&id(a.pageId)!==id(moving.pageId)&&normalizePerson(a.person)===normalizePerson(moving.person)&&Date.parse(moving.start)<Date.parse(a.end)&&Date.parse(moving.end)>Date.parse(a.start));
+  if(calendarEntryAllowsOverlap(moving.title))return undefined;
+  return slots.find(a=>!a.isReviewMirror&&!calendarEntryAllowsOverlap(a.title)&&id(a.pageId)!==id(moving.pageId)&&normalizePerson(a.person)===normalizePerson(moving.person)&&Date.parse(moving.start)<Date.parse(a.end)&&Date.parse(moving.end)>Date.parse(a.start));
 }
 export function nextFreeCalendarSlot(slots:CalendarSlot[],moving:CalendarSlot){
   const duration=Date.parse(moving.end)-Date.parse(moving.start),day=moving.start.slice(0,10);

@@ -6,6 +6,7 @@ import {startScreenRecording,recordingMime,RECORDING_MAX_BYTES} from '@/lib/scre
 import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
 import {playCheckChime,sendWindowsNotification} from '@/services/windowsIntegration';
+import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -119,6 +120,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
             person: dest.person,
             start,
             end,
+            calendarEntryKind:'recording',
             files: [{
               filename: `Grabacion_${dest.code}_${today}_${Date.now()}.webm`,
               contentType: video.type || 'video/webm',
@@ -133,8 +135,7 @@ export function ScreenRecorder({onReady,disabled=false}:{onReady:(file:GlobalPas
       }
       playCheckChime();
       sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) a las 9:00 AM`);
-      window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
-      window.dispatchEvent(new CustomEvent('anfeta_calendar_refresh'));
+      if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
       setNotice(`✅ Actividad creada en Notion con éxito para ${dest.person} (${dest.code}) a las 9am`);
       setTimeout(() => {
         if (mounted.current) {

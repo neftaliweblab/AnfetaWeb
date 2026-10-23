@@ -10,6 +10,12 @@ const at=time=>'2026-10-14T'+time+':00-06:00';
 const moving={pageId:id,person:'Neftali',title:'Trabajo',start:at('10:00'),end:at('11:00')};
 const occupied={...moving,pageId:other,title:'Ocupada',start:at('10:30'),end:at('12:00')};
 assert.equal(calendarConflict([occupied],moving),occupied);
+for(const title of ['[RESPUESTA] Actividad lista para revisión','[respuesta] Mensaje temporal','Grabación 2026-10-22 09:00','Video [GRABACIÓN]']){
+ assert.equal(calendarConflict([{...occupied,title}],moving),undefined,title+' must not block work');
+ assert.equal(calendarConflict([occupied],{...moving,title}),undefined,title+' may overlap');
+}
+assert.equal(calendarConflict([{...occupied,title:'Respuesta al cliente'}],moving).pageId,other,'Plain work titles stay protected');
+assert.equal(calendarConflict([{...occupied,title:'Preparar grabación de tutorial'}],moving).pageId,other,'A task about recording is still actual work');
 assert.equal(calendarConflict([{...occupied,person:'John'}],moving),undefined);
 assert.equal(calendarConflict([{...occupied,isReviewMirror:true}],moving),undefined);
 assert.equal(calendarConflict([{...occupied,start:at('11:00')}],moving),undefined);
@@ -24,6 +30,8 @@ assert.deepEqual(nearbyFreeCalendarSlots([{...occupied,start:at('08:00'),end:at(
 const {planDurationCascade}=require(root+'/src/services/calendarPlanner.ts');
 const first={...moving,status:'Por hacer'},second={...occupied,status:'Por hacer',start:at('11:00'),end:at('12:00')},third={...second,pageId:'third',start:at('12:00'),end:at('13:00')};
 const cascade=planDurationCascade([first,second,third],id,'Neftali',15);
+assert.equal(planDurationCascade([first,{...second,title:'[RESPUESTA] Temporal',isLocked:true}],id,'Neftali',15).length,1);
+assert.equal(planDurationCascade([{...first,title:'Video [GRABACIÓN]'},second],id,'Neftali',15).length,1,'Extending a recording must not move actual work');
 assert.deepEqual(cascade.map(a=>a.pageId),['third',other,id]);assert.equal(cascade[0].end,at('13:15'));assert.equal(cascade[2].end,at('11:15'));
 assert.equal(planDurationCascade([first,second],id,'Neftali',-15).length,1);
 assert.throws(()=>planDurationCascade([first,{...second,isLocked:true}],id,'Neftali',15),/fija/);

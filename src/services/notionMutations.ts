@@ -19,6 +19,7 @@ import { mexicoDate,calendarDomain } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 import {queryCalendarPages} from './notionCalendar';
 import {calendarConflict,nearbyFreeCalendarSlots, type CalendarSlot} from './calendarConflicts';
+import {calendarEntryAllowsOverlap,recordingCalendarTitle} from './calendarEntryPolicy';
 
 type Settings = { notionToken: string; currentUser: string; notionApiVersion?: string; notionDatabaseId?: string; notionDataSourceId?: string; notionSignal?: AbortSignal; deferReviewNotice?:(job:()=>Promise<void>)=>void };
 type Property = { type: string; [key: string]: any };
@@ -68,6 +69,7 @@ async function withCalendarSchedule<T>(settings:Settings,run:()=>Promise<T>):Pro
 }
 export async function calendarScheduleAvailability(settings:Settings,moving:CalendarSlot){
   if(!Number.isFinite(Date.parse(moving.start))||!Number.isFinite(Date.parse(moving.end))||Date.parse(moving.end)<=Date.parse(moving.start))throw new Error('No se pudo verificar el horario de la actividad.');
+  if(calendarEntryAllowsOverlap(moving.title))return {conflict:null,suggestions:[]};
   const day=mexicoDate(moving.start),next=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
   // Incluir el día anterior para detectar actividades que atraviesan medianoche.
   const previous=new Date(Date.parse(day+'T12:00:00Z')-86400000).toISOString().slice(0,10);
@@ -368,7 +370,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
 }
 export async function createActivity(settings: Settings, actor: string, payload: any) {
   const bounded={...settings,notionSignal:settings.notionSignal?AbortSignal.any([settings.notionSignal,AbortSignal.timeout(110000)]):AbortSignal.timeout(110000)};
-  return payload.start?withCalendarSchedule(bounded,()=>createActivityUnlocked(bounded,actor,payload)):createActivityUnlocked(bounded,actor,payload);
+  return payload.start&&!calendarEntryAllowsOverlap(recordingCalendarTitle(payload))?withCalendarSchedule(bounded,()=>createActivityUnlocked(bounded,actor,payload)):createActivityUnlocked(bounded,actor,payload);
 }
 export async function validateNotionCreationTarget(settings:Settings,payload:any={}){
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion en el servidor.');
@@ -412,7 +414,8 @@ export async function validateNotionCreationTarget(settings:Settings,payload:any
   return {database,databaseId,sourceId};
 }
 async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
-  const { start, end, domain, title } = payload;
+  const { start, end, domain } = payload;
+  const title=recordingCalendarTitle(payload);
   const person=payload.quickRevision?payload.person||actor:payload.person;
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
   if (start) validateSchedule(start, end);

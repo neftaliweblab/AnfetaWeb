@@ -5,17 +5,20 @@ import { mexicoDate, mexicoMinutes } from './calendarPresentation';
 import { workflowState } from './activityWorkflow';
 import { normalizePerson } from './identityNormalizer';
 import {calendarConflict,nearbyFreeCalendarSlots,type CalendarSlot} from './calendarConflicts';
+import {calendarEntryAllowsOverlap} from './calendarEntryPolicy';
+const pageTitle=(page:any)=>Object.values(page.properties||{}).filter((p:any)=>p.type==='title').flatMap((p:any)=>p.title||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('');
 const shift=(day:string,n:number)=>new Date(Date.parse(day+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 const at=(day:string,m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';
 export async function planDailyAutomation(settings:any,actor:string,today:string,now=new Date(),excluded:string[]=[]) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || today !== mexicoDate(now.toISOString())) throw new Error('El robot solo puede preparar la jornada de hoy.');
   if (mexicoMinutes(now.toISOString()) < 300) throw new Error('La corrida diaria se habilita a las 05:00.');
   const pages=await queryCalendarPages(settings,shift(today,-14),shift(today,1),true), movements:any[]=[];
-  const occupied:CalendarSlot[]=pages.flatMap(page=>{const date:any=Object.entries(page.properties||{}).find(([n,p]:any)=>/^fecha por hacer$/i.test(n.trim())&&p.type==='date')?.[1];if(!date?.date?.start)return [];const start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;return [{pageId:page.id,title:'Actividad existente',person:assignedPerson(page),start,end:date.date.end||new Date(Date.parse(start)+3600000).toISOString()}];});
+  const occupied:CalendarSlot[]=pages.flatMap(page=>{const date:any=Object.entries(page.properties||{}).find(([n,p]:any)=>/^fecha por hacer$/i.test(n.trim())&&p.type==='date')?.[1];if(!date?.date?.start)return [];const start=date.date.start.length===10?date.date.start+'T08:00:00-06:00':date.date.start;return [{pageId:page.id,title:pageTitle(page),person:assignedPerson(page),start,end:date.date.end||new Date(Date.parse(start)+3600000).toISOString()}];});
   let skippedCompleted=0,skippedReview=0,skippedLocked=0,skippedSuspended=0;
   for (const page of pages) {
     if(excluded.includes(page.id))continue;
     const title=Object.values(page.properties || {}).filter((p:any)=>p.type==='title').flatMap((p:any)=>p.title || []).map((t:any)=>t.plain_text || t.text?.content || '').join('');
+    if(calendarEntryAllowsOverlap(title))continue;
     const status=calendarStatusField(page)?.[1], state=workflowState(status?.[status.type]?.name || '',title);
     const activity={title,person:assignedPerson(page),isLocked:Object.entries(page.properties || {}).some(([n,p]:any)=>/lock|bloquead/i.test(n)&&p.checkbox)};
     if (!canEditActivity(actor,activity)) {skippedLocked++;continue;}
