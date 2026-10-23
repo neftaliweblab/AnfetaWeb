@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Search, Plus, X } from "lucide-react";
+import { TopBarUtilities } from "../TopBarUtilities";
 
 export interface SearchTab {
   id: string;
@@ -15,8 +16,11 @@ interface SearchTabsRowProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
-  onRestorePrevious?:()=>void;
+  onRestorePrevious?: () => void;
   textScale?: string;
+  currentUser?: string;
+  onTriggerAutomation?: () => void;
+  onOpenAnnouncements?: () => void;
 }
 
 export function SearchTabsRow({
@@ -27,6 +31,9 @@ export function SearchTabsRow({
   onNewTab,
   onRestorePrevious,
   textScale = "100%",
+  currentUser,
+  onTriggerAutomation,
+  onOpenAnnouncements,
 }: SearchTabsRowProps) {
   const scale = (() => {
     if (!textScale) return 1.0;
@@ -41,11 +48,11 @@ export function SearchTabsRow({
         paddingBottom: `${Math.max(2, Math.round(2 * scale))}px`,
         gap: `${Math.round(4 * scale)}px`,
       }}
-      className="flex items-center px-3 bg-[#0A0E17] select-none border-b border-[#1A2332]/50 transition-all"
+      className="flex items-center justify-between px-3 bg-[#0A0E17] select-none border-b border-[#1A2332]/50 transition-all gap-2 min-h-[34px]"
     >
       <div
         style={{ gap: `${Math.round(4 * scale)}px` }}
-        className="flex items-center overflow-x-auto scrollbar-none flex-1"
+        className="flex items-center overflow-x-auto scrollbar-none flex-1 min-w-0"
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -98,13 +105,30 @@ export function SearchTabsRow({
         <button
           type="button"
           onClick={onNewTab}
-          className="w-6 h-6 flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#38BDF8] hover:bg-[#1E293B] hover:border-[#38BDF8] text-xs font-bold transition-colors ml-1"
+          className="w-6 h-6 flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#38BDF8] hover:bg-[#1E293B] hover:border-[#38BDF8] text-xs font-bold transition-colors ml-1 shrink-0"
           title="Abrir nueva pestaña de búsqueda (Ctrl+T)"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
-        {onRestorePrevious&&<button type="button" onClick={onRestorePrevious} title="Añade búsquedas del respaldo anterior sin borrar las actuales" className="ml-2 shrink-0 rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-300">Recuperar búsquedas anteriores</button>}
+        {onRestorePrevious && (
+          <button
+            type="button"
+            onClick={onRestorePrevious}
+            title="Añade búsquedas del respaldo anterior sin borrar las actuales"
+            className="ml-2 shrink-0 rounded border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 transition-colors"
+          >
+            Recuperar búsquedas anteriores
+          </button>
+        )}
       </div>
+
+      {/* Lado derecho: Herramientas secundarias reubicadas desde la barra superior */}
+      <TopBarUtilities
+        currentUser={currentUser}
+        onTriggerAutomation={onTriggerAutomation}
+        onOpenAnnouncements={onOpenAnnouncements}
+        className="shrink-0 ml-auto hidden sm:flex"
+      />
     </div>
   );
 }

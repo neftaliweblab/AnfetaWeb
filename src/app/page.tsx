@@ -626,6 +626,8 @@ export default function AnfetaApp() {
             remindersCount={0}
             currentUser={currentUser}
             onChangeCurrentUser={()=>setPersonPickerOpen(true)}
+            onTriggerAutomation={() => setShowAutomation(true)}
+            onOpenAnnouncements={() => setIsAnnounceOpen(true)}
           />
         </div>
 
@@ -649,6 +651,7 @@ export default function AnfetaApp() {
             onClearSearchFilter={() => handleSearchChange("")}
             onOpenStandaloneWindow={handleOpenStandaloneCalendar}
             onRunAutomation={() => setShowAutomation(true)}
+            onOpenAnnouncements={() => setIsAnnounceOpen(true)}
             onOpenDailyProgress={() => setActiveView("dailyProgress")}
             onRefresh={async () => {
               const context=currentUser+':'+currentDate;

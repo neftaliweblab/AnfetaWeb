@@ -9,16 +9,12 @@ import {
   TrendingUp,
   Settings,
   X,
-  Clock,
-  Sparkles,
   LogOut,
 } from "lucide-react";
-import {TeamPresence} from './TeamPresence';
-import {DiagnosticsLogs} from './Diagnostics/DiagnosticsLogs';
 import { ActiveHostView } from "@/types/anfeta";
 import { SearchPredictiveFlyout } from "./ResultsViewHost/SearchPredictiveFlyout";
 import { buildPredictiveData } from "@/lib/searchPredictiveService";
-import { normalizePerson } from "@/services/identityNormalizer";
+import { TopBarUtilities } from "./TopBarUtilities";
 
 interface TopBarProps {
   activeView: ActiveHostView;
@@ -51,24 +47,13 @@ export function TopBar({
   onTriggerAutomation,
   searchIndex = [],
 }: TopBarProps) {
-  const [timeStr, setTimeStr] = React.useState("");
   const [isPredictiveOpen, setIsPredictiveOpen] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setTimeStr(
-        now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      );
-    };
-    updateTime();
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const predictiveData = useMemo(() => {
-    if (activeView === "calendar" || !isPredictiveOpen) return { headerText: "", suggestions: [], savedSearches: [], hintText: "" };
+    if (activeView === "calendar" || !isPredictiveOpen) {
+      return { headerText: "", suggestions: [], savedSearches: [], hintText: "" };
+    }
     return buildPredictiveData(searchQuery, searchIndex);
   }, [searchQuery, searchIndex, activeView, isPredictiveOpen]);
 
@@ -86,228 +71,223 @@ export function TopBar({
   }, []);
 
   return (
-    <header className="h-14 bg-[#0F141A] border-b border-[#26323E] px-4 flex items-center justify-between gap-3 sm:gap-4 select-none flex-shrink-0 z-50">
-      {/* Brand logo */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div
-          className="flex items-center gap-2.5 cursor-pointer group"
-          onClick={() => onSelectView("results")}
-          title="ANFETA - Productividad Ejecutiva"
-        >
-          <img
-            src="/anfeta-logo.png"
-            alt="ANFETA"
-            className="w-7 h-7 rounded-md object-contain shadow-[0_0_12px_rgba(0,168,255,0.45)] group-hover:scale-105 transition-transform"
-          />
-          <div className="hidden xl:flex items-baseline gap-1.5">
-            <span className="text-xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#00A8FF] via-[#38BDF8] to-[#4ADE80] drop-shadow-[0_0_12px_rgba(0,168,255,0.45)]">
-              ANFETA
-            </span>
-            <span className="hidden sm:inline-block text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#131A22] text-[#38BDF8] border border-[#223848]">
-              v2.0
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Indicador En Línea y Persona activa */}
-      <div className="flex items-center gap-2 shrink-0">
-        <TeamPresence />
-        {onChangePerson && (
-          <button
-            onClick={onChangePerson}
-            className="shrink-0 rounded border border-cyan-900 bg-slate-900 px-2 py-1 text-xs text-cyan-200 hover:bg-slate-800 transition-colors"
-            title="Cambiar persona activa"
+    <div className="flex flex-col flex-shrink-0 z-50">
+      {/* Barra Principal (Fila 1): Logo, Selector de usuario, Buscador amplio, Navegación y Sesión */}
+      <header className="h-13 sm:h-14 bg-[#0F141A] border-b border-[#26323E] px-3 sm:px-4 flex items-center justify-between gap-2.5 sm:gap-3 select-none flex-shrink-0">
+        {/* Logo ANFETA y Selector de Persona Activa */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <div
+            className="flex items-center gap-2 cursor-pointer group"
+            onClick={() => onSelectView("results")}
+            title="ANFETA - Productividad Ejecutiva"
           >
-            {currentUser || 'Elegir persona'} ▾
-          </button>
-        )}
-      </div>
+            <img
+              src="/anfeta-logo.png"
+              alt="ANFETA"
+              className="w-7 h-7 rounded-md object-contain shadow-[0_0_12px_rgba(0,168,255,0.45)] group-hover:scale-105 transition-transform shrink-0"
+            />
+            <div className="hidden md:flex items-baseline gap-1.5">
+              <span className="text-lg sm:text-xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#00A8FF] via-[#38BDF8] to-[#4ADE80] drop-shadow-[0_0_12px_rgba(0,168,255,0.45)]">
+                ANFETA
+              </span>
+              <span className="hidden 2xl:inline-block text-[10px] font-mono uppercase px-1 py-0.2 rounded bg-[#131A22] text-[#38BDF8] border border-[#223848]">
+                v2.0
+              </span>
+            </div>
+          </div>
 
-      {/* Global Search Bar con Flyout Predictivo */}
-      <div ref={searchContainerRef} className="flex-1 max-w-xl relative">
-        <div className="relative flex items-center">
-          <Search className="absolute left-3 w-4 h-4 text-[#94A3B8]" />
-          <input
-            id="anfeta-search-input"
-            type="text"
-            value={searchQuery}
-            onFocus={() => {
-              if (activeView !== "calendar") setIsPredictiveOpen(true);
-            }}
-            onClick={() => {
-              if (activeView !== "calendar") setIsPredictiveOpen(true);
-            }}
-            onKeyDown={(e) => {
-              if(e.key==='Tab'&&!e.shiftKey&&activeView==='results'&&!e.nativeEvent.isComposing){e.preventDefault();setIsPredictiveOpen(false);window.dispatchEvent(new Event('anfeta_focus_first_result'));}
-              else if (e.key === "Escape") {
-                setIsPredictiveOpen(false);
-              } else if (e.key === "Enter") {
-                setIsPredictiveOpen(false);
-              }
-            }}
-            onChange={(e) => {
-              onSearchChange(e.target.value);
-              if (activeView !== "calendar") {
-                setIsPredictiveOpen(true);
-                if (activeView !== "results") onSelectView("results");
-              }
-            }}
-            placeholder={
-              activeView === "calendar"
-                ? "Filtrar calendario por título, dominio, persona... (Ctrl+Alt+B buscador)"
-                : "Buscar por término, ext:pdf, folder:dropbox, dm:3, regex:, o *comodín* (Ctrl+Alt+B)..."
-            }
-            className="w-full h-9 pl-9 pr-8 bg-[#080B0F] text-[#F1F5F9] text-xs placeholder-[#64748B] rounded border border-[#26323E] focus:border-[#00A8FF] focus:outline-none focus:ring-1 focus:ring-[#00A8FF] transition-all shadow-[0_0_10px_rgba(0,168,255,0.12)]"
-          />
-          {searchQuery && (
+          {onChangePerson && (
             <button
-              onClick={onClearSearch}
-              className="absolute right-2 p-1 text-[#94A3B8] hover:text-[#F1F5F9]"
+              onClick={onChangePerson}
+              className="shrink-0 rounded border border-cyan-900 bg-slate-900/90 px-2 py-1 text-xs text-cyan-200 hover:bg-slate-800 transition-colors shadow-sm font-medium flex items-center gap-1"
+              title="Cambiar persona activa"
             >
-              <X className="w-3.5 h-3.5" />
+              <span className="truncate max-w-[80px] sm:max-w-[120px]">{currentUser || "Persona"}</span>
+              <span className="text-[10px] text-cyan-400">▾</span>
             </button>
           )}
         </div>
 
-        {/* Panel Predictivo Flotante */}
-        {activeView !== "calendar" && (
-          <SearchPredictiveFlyout
-            isOpen={isPredictiveOpen}
-            onClose={() => setIsPredictiveOpen(false)}
-            headerText={predictiveData.headerText}
-            suggestions={predictiveData.suggestions}
-            savedSearches={predictiveData.savedSearches}
-            hintText={predictiveData.hintText}
-            currentQuery={searchQuery}
-            onApplyQuery={(newQ) => {
-              onSearchChange(newQ);
-              if (activeView !== "results") onSelectView("results");
-            }}
-          />
-        )}
-      </div>
-
-      {/* Navigation Host Buttons */}
-      <nav className="flex items-center gap-1 flex-shrink-0">
-        <button
-          onClick={() => onSelectView("results")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-            activeView === "results"
-              ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
-              : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
-          }`}
-          title="Buscador"
+        {/* Campo de Búsqueda Global Amplio (Máximo espacio disponible y nunca aplastado) */}
+        <div
+          ref={searchContainerRef}
+          className="flex-1 min-w-[180px] sm:min-w-[260px] md:min-w-[340px] lg:min-w-[420px] max-w-4xl relative"
         >
-          <Search className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Buscador</span>
-        </button>
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 w-4 h-4 text-[#94A3B8] shrink-0 pointer-events-none" />
+            <input
+              id="anfeta-search-input"
+              type="text"
+              value={searchQuery}
+              onFocus={() => {
+                if (activeView !== "calendar") setIsPredictiveOpen(true);
+              }}
+              onClick={() => {
+                if (activeView !== "calendar") setIsPredictiveOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Tab" &&
+                  !e.shiftKey &&
+                  activeView === "results" &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  setIsPredictiveOpen(false);
+                  window.dispatchEvent(new Event("anfeta_focus_first_result"));
+                } else if (e.key === "Escape") {
+                  setIsPredictiveOpen(false);
+                } else if (e.key === "Enter") {
+                  setIsPredictiveOpen(false);
+                }
+              }}
+              onChange={(e) => {
+                onSearchChange(e.target.value);
+                if (activeView !== "calendar") {
+                  setIsPredictiveOpen(true);
+                  if (activeView !== "results") onSelectView("results");
+                }
+              }}
+              placeholder={
+                activeView === "calendar"
+                  ? "Filtrar calendario (título, persona...) · (Ctrl+Alt+B buscador)"
+                  : "Buscar por término, ext:pdf, folder:dropbox, dm:3... (Ctrl+Alt+B)"
+              }
+              className="w-full h-9 pl-9 pr-8 bg-[#080B0F] text-[#F1F5F9] text-xs placeholder-[#64748B] rounded-lg border border-[#26323E] focus:border-[#00A8FF] focus:outline-none focus:ring-1 focus:ring-[#00A8FF] transition-all shadow-[0_0_10px_rgba(0,168,255,0.12)]"
+            />
+            {searchQuery && (
+              <button
+                onClick={onClearSearch}
+                className="absolute right-2 p-1 text-[#94A3B8] hover:text-[#F1F5F9] transition-colors"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-        <button
-          onClick={() => onSelectView("calendar")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-            activeView === "calendar"
-              ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
-              : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
-          }`}
-          title="Calendario"
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Calendario</span>
-        </button>
-
-        <button
-          onClick={() => onSelectView("dailyProgress")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-            activeView === "dailyProgress"
-              ? "bg-[#18212B] text-[#4ADE80] border border-[#4ADE80]/40 shadow-[0_0_8px_rgba(74,222,128,0.25)]"
-              : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
-          }`}
-          title="Avance Diario"
-        >
-          <TrendingUp className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Avance Diario</span>
-        </button>
-
-        <button
-          onClick={() => onSelectView("messages")}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-            activeView === "messages"
-              ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40"
-              : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
-          }`}
-          title="Mensajes"
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Mensajes</span>
-        </button>
-
-        <button
-          onClick={() => onSelectView("reminders")}
-          className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-            activeView === "reminders"
-              ? "bg-[#18212B] text-[#A855F7] border border-[#A855F7]/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
-              : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
-          }`}
-          title="Recordatorios"
-        >
-          <Bell className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Recordatorios</span>
-          {unreadCount > 0 && (
-            <span className="w-2 h-2 rounded-full bg-[#FB7185] animate-pulse" />
+          {/* Panel Predictivo Flotante */}
+          {activeView !== "calendar" && (
+            <SearchPredictiveFlyout
+              isOpen={isPredictiveOpen}
+              onClose={() => setIsPredictiveOpen(false)}
+              headerText={predictiveData.headerText}
+              suggestions={predictiveData.suggestions}
+              savedSearches={predictiveData.savedSearches}
+              hintText={predictiveData.hintText}
+              currentQuery={searchQuery}
+              onApplyQuery={(newQ) => {
+                onSearchChange(newQ);
+                if (activeView !== "results") onSelectView("results");
+              }}
+            />
           )}
-        </button>
-      </nav>
-
-      {/* Right controls: clock, automation robot, settings */}
-      <div className="flex items-center gap-2">
-        <DiagnosticsLogs owner={currentUser||''}/>
-        {onTriggerAutomation && (
-          <button
-            onClick={onTriggerAutomation}
-            title="Ejecutar robot de rezagadas de las 05:00 AM"
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-[#131A22] hover:bg-[#18212B] text-[#38BDF8] border border-[#223848]"
-          >
-            <Sparkles className="w-3 h-3 text-[#00A8FF]" />
-            <span>Robot 05:00</span>
-          </button>
-        )}
-
-        <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 bg-[#080B0F] border border-[#26323E] rounded text-xs font-mono text-[#94A3B8]">
-          <Clock className="w-3 h-3 text-[#38BDF8]" />
-          <span>{timeStr}</span>
         </div>
 
-        {normalizePerson(currentUser) === "Neftali" && onOpenAnnouncements && (
+        {/* Botones de Navegación Responsive (Iconos compactos en pantallas pequeñas/medianas) */}
+        <nav className="flex items-center gap-1 shrink-0">
           <button
-            onClick={onOpenAnnouncements}
-            title="Publicar novedades y ver lecturas del equipo (Solo visible para ti)"
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-700/60 rounded-lg transition-colors shadow-sm"
+            onClick={() => onSelectView("results")}
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+              activeView === "results"
+                ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
+                : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
+            }`}
+            title="Buscador"
           >
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden xl:inline">Novedades</span>
+            <Search className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden xl:inline">Buscador</span>
           </button>
-        )}
 
-        <button
-          onClick={onOpenSettings}
-          title="Configuración general"
-          className="p-2 text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-[#131A22] rounded transition-colors"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-
-        {onLogout && (
           <button
-            onClick={onLogout}
-            title={currentUser ? `Cerrar sesión (${currentUser})` : "Cerrar sesión"}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 border border-rose-900/40 rounded transition-colors"
+            onClick={() => onSelectView("calendar")}
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+              activeView === "calendar"
+                ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
+                : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
+            }`}
+            title="Calendario"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden md:inline font-mono text-[11px]">{currentUser || "Salir"}</span>
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden xl:inline">Calendario</span>
           </button>
-        )}
-      </div>
-    </header>
+
+          <button
+            onClick={() => onSelectView("dailyProgress")}
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+              activeView === "dailyProgress"
+                ? "bg-[#18212B] text-[#4ADE80] border border-[#4ADE80]/40 shadow-[0_0_8px_rgba(74,222,128,0.25)]"
+                : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
+            }`}
+            title="Avance Diario"
+          >
+            <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden xl:inline">Avance Diario</span>
+          </button>
+
+          <button
+            onClick={() => onSelectView("messages")}
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+              activeView === "messages"
+                ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40"
+                : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
+            }`}
+            title="Mensajes"
+          >
+            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden xl:inline">Mensajes</span>
+          </button>
+
+          <button
+            onClick={() => onSelectView("reminders")}
+            className={`relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+              activeView === "reminders"
+                ? "bg-[#18212B] text-[#A855F7] border border-[#A855F7]/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
+                : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
+            }`}
+            title="Recordatorios"
+          >
+            <Bell className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden xl:inline">Recordatorios</span>
+            {unreadCount > 0 && (
+              <span className="w-2 h-2 rounded-full bg-[#FB7185] animate-pulse" />
+            )}
+          </button>
+        </nav>
+
+        {/* Acciones de Ajustes y Salir */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onOpenSettings}
+            title="Configuración general"
+            className="p-1.5 sm:p-2 text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-[#131A22] rounded transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              title={currentUser ? `Cerrar sesión (${currentUser})` : "Cerrar sesión"}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 border border-rose-900/40 rounded transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden 2xl:inline font-mono text-[11px]">{currentUser || "Salir"}</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Fila Secundaria (Sub-barra para vistas sin barra de pestañas o layout propio) */}
+      {activeView !== "calendar" && activeView !== "results" && (
+        <div className="h-8 bg-[#0A0E17] border-b border-[#1E2836] px-3 sm:px-4 flex items-center justify-end select-none shrink-0">
+          <TopBarUtilities
+            currentUser={currentUser}
+            onTriggerAutomation={onTriggerAutomation}
+            onOpenAnnouncements={onOpenAnnouncements}
+          />
+        </div>
+      )}
+    </div>
   );
 }

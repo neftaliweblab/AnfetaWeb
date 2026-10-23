@@ -89,6 +89,8 @@ interface ResultsViewHostProps {
   remindersCount?: number;
   currentUser?: string;
   onChangeCurrentUser?: (user: string) => void;
+  onTriggerAutomation?: () => void;
+  onOpenAnnouncements?: () => void;
 }
 
 export function ResultsViewHost({
@@ -117,6 +119,8 @@ export function ResultsViewHost({
   remindersCount = 0,
   currentUser = "nneft",
   onChangeCurrentUser,
+  onTriggerAutomation,
+  onOpenAnnouncements,
 }: ResultsViewHostProps) {
   // Tabs state
   const [tabs, setTabs] = useState<SearchTab[]>([
@@ -1309,6 +1313,9 @@ export function ResultsViewHost({
         onNewTab={handleNewTab}
         onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
         textScale={textScale}
+        currentUser={currentUser}
+        onTriggerAutomation={onTriggerAutomation}
+        onOpenAnnouncements={onOpenAnnouncements}
       />
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
