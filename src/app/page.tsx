@@ -7,6 +7,7 @@ import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT} from '@/lib/
 import {usePendingTasks} from "@/components/usePendingTasks";
 import {DiagnosticMessage} from '@/components/Diagnostics/DiagnosticsLogs';
 import {openCalendarWindow} from '@/services/windowsIntegration';
+import {indexSyncPolling} from '@/lib/indexSyncPolling';
 import {indexAvailability} from '@/lib/indexAvailability';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -193,7 +194,28 @@ export default function AnfetaApp() {
     let stopped=false,indexTimer:ReturnType<typeof setTimeout>|undefined,indexFocus:(()=>void)|undefined,indexBusy=false,indexPolling=false,indexStarted=Date.now(),indexVersion:string|undefined;const initialController=new AbortController();
     async function loadInitialData() {
       try {
-        const loadIndex=async()=>{if(stopped||indexBusy||document.hidden)return;indexBusy=true;const revision=indexMutationRevision.current;if(indexTimer)clearTimeout(indexTimer);try{const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:(partial)=>{if(!stopped&&revision===indexMutationRevision.current&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}}});indexVersion=data.indexVersion;if(stopped)return;if(Array.isArray(data.items)){setSearchIndex(previous=>filterDeletedPages(retainSearchResults(previous,{...data,...(revision!==indexMutationRevision.current?{loadingIndex:true}:{})}),currentUser));void saveCachedIndex(data,currentUser);}window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:data}));if(data.cacheMeta?.syncing){if(!indexPolling){indexPolling=true;indexStarted=Date.now();}if(Date.now()-indexStarted<120000)indexTimer=setTimeout(()=>void loadIndex(),15000);else window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{...data,warning:'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.',cacheMeta:{...data.cacheMeta,syncing:false}}}));}else indexPolling=false;}catch(error){if(!stopped){window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));}}finally{indexBusy=false;}};
+        const loadIndex=async()=>{
+          if(stopped||indexBusy||document.hidden)return;
+          indexBusy=true;const revision=indexMutationRevision.current;
+          if(indexTimer)clearTimeout(indexTimer);
+          try{
+            const data=await loadSearchIndex({signal:initialController.signal,knownVersion:indexVersion,onPartial:partial=>{
+              if(!stopped&&revision===indexMutationRevision.current&&partial?.items?.length){setSearchIndex(previous=>retainSearchResults(previous,partial));setIndexSyncLabel(`Cargando catálogo (${partial.items.length.toLocaleString()}...`);}
+            }});
+            indexVersion=data.indexVersion;if(stopped)return;
+            if(Array.isArray(data.items)){
+              setSearchIndex(previous=>filterDeletedPages(retainSearchResults(previous,{...data,...(revision!==indexMutationRevision.current?{loadingIndex:true}:{})}),currentUser));
+              void saveCachedIndex(data,currentUser);
+            }
+            if(data.cacheMeta?.syncing&&!indexPolling){indexPolling=true;indexStarted=Date.now();}
+            const poll=indexSyncPolling(data,Date.now()-indexStarted);
+            window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:poll.status}));
+            if(poll.delay!==null)indexTimer=setTimeout(()=>void loadIndex(),poll.delay);
+            else indexPolling=false; // Manual refresh gets a fresh bounded checking window.
+          }catch(error){
+            if(!stopped)window.dispatchEvent(new CustomEvent('anfeta_index_status',{detail:{warning:error instanceof Error?error.message:'No se pudo actualizar el índice.'}}));
+          }finally{indexBusy=false;}
+        };
         void loadIndex();indexFocus=()=>void loadIndex();window.addEventListener('anfeta_settings_changed',indexFocus);
 
         // Daily automation report

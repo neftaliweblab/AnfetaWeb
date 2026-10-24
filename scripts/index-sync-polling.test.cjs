@@ -1,0 +1,9 @@
+const fs=require('fs'),assert=require('assert/strict'),ts=require('typescript');require.extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,p);
+const {indexSyncPolling,INDEX_POLL_BUDGET_MS}=require('../src/lib/indexSyncPolling.ts'),{indexAvailability}=require('../src/lib/indexAvailability.ts');
+const data={unchanged:true,total:4428,indexVersion:'v1',cacheMeta:{syncing:true,source:'supabase'}};
+for(const elapsed of [0,60000,120000,180000,239999]){const poll=indexSyncPolling(data,elapsed);assert.ok(poll.delay>=15000);assert.equal(poll.status.warning,undefined);assert.equal(poll.status.indexVersion,'v1');}
+const paused=indexSyncPolling(data,INDEX_POLL_BUDGET_MS);assert.equal(paused.delay,null);assert.equal(paused.status.cacheMeta.pollingPaused,true);assert.equal(paused.status.cacheMeta.syncing,true,'Do not falsely report server completion');assert.match(paused.status.warning,/4 minutos/);assert.match(indexAvailability(paused.status),/Registros disponibles/);
+assert.equal(indexSyncPolling({cacheMeta:{syncing:false}},0).delay,null);assert.equal(indexSyncPolling({...data,warning:'Notion 429'},300000).status.warning,'Notion 429');assert.equal(indexSyncPolling({...data,cacheMeta:{syncing:true,lastError:'Supabase no respondió'}},300000).status.warning,'Supabase no respondió');
+assert.equal(indexSyncPolling(data,0).delay,15000,'Manual retry starts a new bounded window');
+const {diagnosticAdvice}=require('../src/lib/appDiagnostics.ts');for(const message of [paused.status.warning,'La sincronización sigue pendiente. Usa Refrescar para consultar su estado.'])assert.match(diagnosticAdvice(message).title,/catálogo sin confirmar/);
+console.log('OK index checks: 180-second lease respected, spaced bounded checks, version-only responses, truthful paused state, retained service errors and specific advice.');
