@@ -1,7 +1,7 @@
 "use client";
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
-import {filterDeletedPages,rememberDeletedPages,pageIdentity,DELETED_PAGES_EVENT,deletedPages} from '@/lib/deletedPages';
+import {filterDeletedPages,isDeletedPagesEvent,rememberDeletedPages,pageIdentity,DELETED_PAGES_EVENT,deletedPages} from '@/lib/deletedPages';
 import {scanActivityTags} from '@/services/activityTags';
 import {resultAssignedPerson} from '@/services/activityTags';
 import {QuickPendingCapture} from './QuickPendingCapture';
@@ -348,7 +348,7 @@ export function ResultsViewHost({
 
   const favoriteBusy=useRef(false);
   const favoriteKey=(item:any)=>String(item.externalId||item.path||item.id);
-  useEffect(()=>{let stopped=false,loading=false;const refresh=async()=>{if(loading||favoriteBusy.current||!isActive||document.hidden)return;loading=true;try{const state=await loadAccountPreferences();if(!stopped)setFavorites(new Set((state.values?.favorites||[]).filter((id:any)=>typeof id==='string')));}catch(error){if(!stopped)setStatusError(error instanceof Error?error.message:'No se pudieron cargar los favoritos.');}finally{loading=false}};void refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);window.addEventListener('anfeta_preferences_changed',refresh);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('anfeta_preferences_changed',refresh)}},[isActive,currentUser]);
+  useEffect(()=>{let stopped=false,loading=false;const refresh=async()=>{if(loading||favoriteBusy.current||!isActive||document.hidden)return;loading=true;try{const state=await loadAccountPreferences();if(!stopped)setFavorites(previous=>{const next=new Set<string>((state.values?.favorites||[]).filter((id:any)=>typeof id==='string'));return previous.size===next.size&&[...next].every(id=>previous.has(id))?previous:next;});}catch(error){if(!stopped)setStatusError(error instanceof Error?error.message:'No se pudieron cargar los favoritos.');}finally{loading=false}};void refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);window.addEventListener('anfeta_preferences_changed',refresh);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('anfeta_preferences_changed',refresh)}},[isActive,currentUser]);
   const handleToggleBookmark=async(item:any)=>{if(favoriteBusy.current)return;favoriteBusy.current=true;try{const state=await loadAccountPreferences();const next=new Set<string>((state.values?.favorites||[]).filter((id:any)=>typeof id==='string'));const key=favoriteKey(item);if(next.has(key))next.delete(key);else next.add(key);const saved=await saveAccountPreferences({favorites:Array.from(next)},state.revision);setFavorites(new Set(saved.values.favorites));setStatusError('');playCheckChime();}catch(error){setStatusError(error instanceof Error?error.message:'No se pudo guardar el favorito.');}finally{favoriteBusy.current=false}};
 
   // Action Dialogs state
@@ -1240,7 +1240,7 @@ export function ResultsViewHost({
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
-  useEffect(()=>{const remove=(event?:Event)=>{if(event instanceof CustomEvent&&event.detail?.owner!==currentUser)return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
+  useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const pagedItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredItems.slice(start, start + pageSize);

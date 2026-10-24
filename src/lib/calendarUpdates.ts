@@ -57,11 +57,22 @@ export function applyCalendarStates(rows:NotionCalendarActivity[],states:any[],d
   return next;
 }
 export function mergeCalendarSnapshot(previous:NotionCalendarActivity[],incoming:NotionCalendarActivity[],day:string,readStartedAt?:number){
-  const history=incoming.filter(a=>a.isHandoffMirror&&mexicoDate(a.start)===day);let next:NotionCalendarActivity[]=[...history];
-  for(const row of incoming.filter(a=>!a.isReviewMirror&&!a.isHandoffMirror)){
-    const old=previous.find(a=>!a.isReviewMirror&&pageIdentity(a)===pageIdentity(row));
-    next=upsertCalendarActivity(next,row.pageId,merge(old,row),day);
+  const history=incoming.filter(a=>a.isHandoffMirror&&mexicoDate(a.start)===day);
+  const previousById=new Map<string,NotionCalendarActivity>(),previousByPage=new Map<string,NotionCalendarActivity>();
+  for(const row of previous){const id=pageIdentity(row);if(!row.isReviewMirror&&!previousById.has(id))previousById.set(id,row);if(!previousByPage.has(row.pageId))previousByPage.set(row.pageId,row);}
+  const groups=new Map<string,NotionCalendarActivity[]>();
+  for(const row of incoming){
+    if(row.isReviewMirror||row.isHandoffMirror)continue;
+    const id=pageIdentity(row);
+    // Upsert only within this page's group (original and review mirror), not the entire day.
+    const group=upsertCalendarActivity(groups.get(id)||[],row.pageId,merge(previousById.get(id),row),day);
+    if(group.length)groups.set(id,group);else groups.delete(id);
   }
-  for(const row of previous)if(!row.isReviewMirror&&!row.isHandoffMirror&&((row.localConfirmedAt&&Date.now()-row.localConfirmedAt<60000)||(readStartedAt!==undefined&&Date.parse(row.serverModified||'')>=readStartedAt))&&row.start&&mexicoDate(row.start)===day&&!next.some(a=>pageIdentity(a)===pageIdentity(row)))next=upsertCalendarActivity(next,row.pageId,row,day);
+  const present=new Set([...history.map(pageIdentity),...[...groups].filter(([,rows])=>rows.length).map(([id])=>id)]),now=Date.now();
+  for(const row of previous){
+    if(row.isReviewMirror||row.isHandoffMirror||present.has(pageIdentity(row)))continue;
+    if(((row.localConfirmedAt&&now-row.localConfirmedAt<60000)||(readStartedAt!==undefined&&Date.parse(row.serverModified||'')>=readStartedAt))&&row.start&&mexicoDate(row.start)===day){const id=pageIdentity(row);groups.set(id,upsertCalendarActivity([],row.pageId,row,day));present.add(id);}
+  }
+  const next=[...history,...[...groups.values()].flat()].map(row=>{const old=previousByPage.get(row.pageId);return old&&equal(old,row)?old:row;});
   return next.length===previous.length&&next.every((a,i)=>a===previous[i])?previous:next;
 }

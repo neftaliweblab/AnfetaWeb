@@ -43,10 +43,12 @@ export function calendarDisplayTitle(title: string, domain = '') {
   text = text.replace(/\s+\b(?:en|de|del|la|el|los|las|por|para|con)\s*$/i, '').replace(/^\s*\d+(?:\.\d+)?(?:\s*[-–]\s*|\s+)/, '').replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g,'').trim();
   return text || 'Actividad';
 }
+const mexicoDayFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'});
+const mexicoTimeFormatter=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 export function mexicoDate(value: string | Date = new Date()) {
   const date = typeof value === 'string' ? new Date(value.length === 10 ? value + 'T12:00:00-06:00' : /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : value + '-06:00') : value;
   if (!Number.isFinite(date.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(date);
+  const parts = mexicoDayFormatter.formatToParts(date);
   const part = (type: string) => parts.find(p => p.type === type)?.value;
   return part('year') + '-' + part('month') + '-' + part('day');
 }
@@ -54,7 +56,7 @@ export function mexicoMinutes(value: string) {
   if (!value) return 480;
   const date = new Date(value.length === 10 ? value + 'T08:00:00-06:00' : /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : value + '-06:00');
   if (!Number.isFinite(date.getTime())) return 480;
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone:'America/Mexico_City', hour:'2-digit', minute:'2-digit', hourCycle:'h23' }).formatToParts(date);
+  const parts = mexicoTimeFormatter.formatToParts(date);
   return Number(parts.find(p => p.type === 'hour')?.value) * 60 + Number(parts.find(p => p.type === 'minute')?.value);
 }
 export function calendarTime(value: string) {

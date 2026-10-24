@@ -3,7 +3,7 @@ import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
-import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
+import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
 import {DiagnosticMessage} from '@/components/Diagnostics/DiagnosticsLogs';
 import {openCalendarWindow} from '@/services/windowsIntegration';
@@ -181,7 +181,7 @@ export default function AnfetaApp() {
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
   const calendarContextRef=useRef('');calendarContextRef.current=currentUser+':'+currentDate;
-  useEffect(()=>{const remove=()=>{setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
+  useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
@@ -231,6 +231,7 @@ export default function AnfetaApp() {
       stopped = true;
       initialController.abort();
       if (indexTimer) clearTimeout(indexTimer);
+      if(indexFocus)window.removeEventListener("anfeta_settings_changed",indexFocus);
       window.removeEventListener("anfeta_settings_changed", handleSettingsChanged);
       window.removeEventListener("anfeta_data_refreshed", handleDataRefreshed);
     };

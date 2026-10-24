@@ -23,7 +23,7 @@ const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
   ['22', '22'], ['2', '22'],
   ['33', '33'], ['3', '33'],
 ];
-export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
+function resolveActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
   for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
     if(lower===entry.reference+'000')return {person:person as ActivityPerson,role:'review',suffix:'000',token,legacy:false};
@@ -37,6 +37,16 @@ export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefin
     }
     if(lower===entry.active[0]+'-'+entry.passive)return {person:person as ActivityPerson,role:'legacy',suffix:'',token,legacy:true};
   }
+}
+// Bound the cache: ordinary words and repeated OR clauses should not rescan every user's aliases.
+const tagParseCache=new Map<string,Omit<ActivityTag,'index'>|undefined>();
+export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
+ const key=token.toLowerCase();
+ if(!tagParseCache.has(key)){
+  if(tagParseCache.size>=2048)tagParseCache.delete(tagParseCache.keys().next().value!);
+  tagParseCache.set(key,resolveActivityTag(key));
+ }
+ const tag=tagParseCache.get(key);return tag?{...tag,token}:undefined;
 }
 export function scanActivityTags(text:string):ActivityTag[]{
   const found:ActivityTag[]=[];

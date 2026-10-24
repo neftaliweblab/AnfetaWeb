@@ -1,4 +1,10 @@
 export const DELETED_PAGES_EVENT = 'anfeta_deleted_pages';
+/** Other storage writes (layout, sync payloads, queries) are unrelated to deletions. */
+export function isDeletedPagesEvent(event:Event|undefined,owner:string){
+ if(!event)return true;
+ if(event.type==='storage'){const key=(event as StorageEvent).key;return key===null||key==='anfeta-deleted-pages:'+owner;}
+ return event.type===DELETED_PAGES_EVENT&&(!(event as CustomEvent).detail?.owner||(event as CustomEvent).detail.owner===owner);
+}
 export const PAGE_SYNC_CHANNEL = 'anfeta_page_sync';
 export const pageIdentity = (value: any) =>
   String(value?.externalId || value?.originalPageId || value?.pageId || value?.id || value || '')

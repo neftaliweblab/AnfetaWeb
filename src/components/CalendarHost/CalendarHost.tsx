@@ -2,7 +2,7 @@
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
-import {filterDeletedPages,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
+import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
@@ -260,7 +260,7 @@ export function CalendarHost({
   });
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
-  useEffect(()=>{const remove=()=>{setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
+  useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const watchCalendarRows = useMemo(() => {
     const list = selectedActivity ? [selectedActivity] : [];
     for (const a of activitiesList) {
@@ -365,8 +365,9 @@ export function CalendarHost({
         appliedSequence=requestSequence;
         setRefreshWarning('');
         setActivitiesList(prev=>{
-          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=prev.find(a=>a.pageId===activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,prev.find(old=>old.pageId===a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
+          const oldById=new Map(prev.map(row=>[row.pageId,row]));
+          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=oldById.get(activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,oldById.get(a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;
@@ -505,7 +506,7 @@ export function CalendarHost({
       }
       return true;
     });
-  }, [activitiesList, filterCobros, filterPagos, searchFilterQuery, phaseFilter,currentDate]);
+  }, [activitiesList, searchFilterQuery, phaseFilter,currentDate,currentUser]);
 
   useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>(old&&available.find(a=>a.pageId===old.pageId))||available[0]||null);},[filteredActivities,visiblePeople]);
   const activitiesByPerson = useMemo(() => {
@@ -521,6 +522,8 @@ export function CalendarHost({
     });
     return map;
   }, [filteredActivities, visiblePeople]);
+
+  const positionedByPerson=useMemo(()=>Object.fromEntries(Object.entries(activitiesByPerson).map(([person,rows])=>[person,computeActivityOverlaps(rows,currentDate)])),[activitiesByPerson,currentDate]);
 
   const [createSlotSeed, setCreateSlotSeed] = useState<{
     person: string;
@@ -539,7 +542,9 @@ export function CalendarHost({
   });
 
   useEffect(() => {
+    if(!active)return;
     const updateTime = () => {
+      if(document.hidden)return;
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       if (currentDate === todayStr) {
@@ -551,7 +556,7 @@ export function CalendarHost({
     updateTime();
     const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
-  }, [currentDate, startHour]);
+  }, [currentDate, startHour,active]);
 
   // Double click on an empty slot; one click must not open a modal.
   const handleColumnCanvasDoubleClick = (e: React.MouseEvent<HTMLDivElement>, colPerson: string) => {
@@ -795,7 +800,7 @@ export function CalendarHost({
               displayedPeople.map((person,columnIndex) => {
                 const personActivities = activitiesByPerson[person] || [];
                 const countedActivities=countedCalendarActivities(personActivities);
-                const positioned = computeActivityOverlaps(personActivities, currentDate);
+                const positioned = positionedByPerson[person] || [];
 
                 // Compute person KPIs
                 let totalChecks = 0;
