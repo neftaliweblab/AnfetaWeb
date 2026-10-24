@@ -45,13 +45,13 @@ export async function planDailyAutomation(settings:any,actor:string,today:string
 export async function executeDailyAutomation(settings:any,actor:string,day:string,excluded:string[]=[]) {
   const report=await planDailyAutomation(settings,actor,day,new Date(),excluded); const confirmed:any[]=[];
   const errors:string[]=[];
-  const eligible=report.movements.filter(move=>!excluded.includes(move.activityId)),batch=eligible.slice(0,10);
+  const blocked=report.movements.filter(move=>move.noSpace);
+  const eligible=report.movements.filter(move=>!move.noSpace&&!excluded.includes(move.activityId)),batch=eligible.slice(0,10);
   for (const move of batch) {
     try {
-      if(move.noSpace)throw Error('No hay espacio suficiente entre 08:00 y 22:00.');
       const page=await mutateActivity(settings,actor,move.activityId,{start:move.start,end:move.end,expectedStart:move.previousStart,expectedEnd:move.previousEnd,expectedTitle:move.title,expectedStatus:move.previousStatus,automationMove:true});
       confirmed.push({...move,page});
     } catch(e) {errors.push(move.title+': '+(e instanceof Error?e.message:'No se pudo mover'));}
   }
-  return {...report,moved:confirmed.length,failed:errors.length,movements:confirmed.map(({page,...move})=>move),errors,attemptedIds:batch.map(move=>move.activityId),remaining:Math.max(0,eligible.length-batch.length),pages:confirmed.map(move=>move.page)};
+  return {...report,blocked,skippedNoSpace:blocked.length,moved:confirmed.length,failed:errors.length,movements:confirmed.map(({page,...move})=>move),errors,attemptedIds:batch.map(move=>move.activityId),remaining:Math.max(0,eligible.length-batch.length),pages:confirmed.map(move=>move.page)};
 }

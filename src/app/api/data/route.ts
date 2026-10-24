@@ -1077,7 +1077,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status?old.reviewFlow:undefined),reviewFlowScanned=!!known;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
-              if (!basic || (state === 'review' && !reviewFlow)) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
+              if (!basic || (enrichOffset===undefined && state === 'review' && !reviewFlow)) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }

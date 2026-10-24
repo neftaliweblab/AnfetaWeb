@@ -69,6 +69,7 @@ export function AutomationReportModal({
           </div>
         </div>
 
+        {!!report.blocked?.length&&<div className="p-4 border-b border-amber-800 text-xs text-amber-200"><h4 className="font-semibold">Sin espacio: {report.blocked.length}</h4><p className="my-2">Conservan su fecha. Elige otro día, un hueco libre o una duración adecuada; no se forzaron empalmes.</p><ul className="max-h-40 overflow-auto space-y-1">{report.blocked.map((m:any)=><li key={m.activityId}>{m.person} · {m.title}</li>)}</ul></div>}
         {/* Movements list */}
         <div className="p-4 max-h-80 overflow-y-auto space-y-2 scrollbar-thin">
           <h4 className="text-xs font-semibold text-[#E2E8F0] mb-2">
@@ -76,7 +77,7 @@ export function AutomationReportModal({
           </h4>
           {movements.length === 0 ? (
             <p className="text-xs text-[#64748B] text-center py-6">
-              No hubo movimientos pendientes de días anteriores para reprogramar
+              No se realizaron movimientos en esta corrida
             </p>
           ) : (
             movements.map((m: any, idx: number) => (

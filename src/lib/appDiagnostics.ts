@@ -15,18 +15,20 @@ export function getAppLogs(owner:string):AppLog[]{
 export function serverAppLogs(){return EMPTY;}
 function publish(owner:string,entries:AppLog[]){stores.set(owner,entries);try{sessionStorage.setItem(key(owner),JSON.stringify(entries));}catch{}listeners.get(owner)?.forEach(fn=>fn());}
 export function subscribeAppLogs(owner:string,fn:()=>void){if(!listeners.has(owner))listeners.set(owner,new Set());listeners.get(owner)!.add(fn);return()=>{listeners.get(owner)?.delete(fn);};}
+const diagnosticFingerprint=(message:string)=>message.replace(/demoró \d+ s/g,'demoró [duración] s');
 export function recordAppLog(owner:string,source:string,message:string,level:LogLevel='warning'){
  if(typeof window==='undefined'||!owner||!message.trim())return;
  const entries=[...getAppLogs(owner)],clean=sanitizeDiagnostic(message.trim()),label=sanitizeDiagnostic(source),now=new Date().toISOString();
- const index=entries.findIndex(e=>e.message===clean&&e.source===label&&e.level===level&&Date.now()-Date.parse(e.lastAt)<60000);
+ const index=entries.findIndex(e=>diagnosticFingerprint(e.message)===diagnosticFingerprint(clean)&&e.source===label&&e.level===level);
  const old=index>=0?entries.splice(index,1)[0]:null;
- entries.unshift(old?{...old,lastAt:now,count:old.count+1,read:false}:{id:crypto.randomUUID(),source:label,message:clean,level,firstAt:now,lastAt:now,count:1,read:false});
+ entries.unshift(old?{...old,message:clean,lastAt:now,count:old.count+1,read:false}:{id:crypto.randomUUID(),source:label,message:clean,level,firstAt:now,lastAt:now,count:1,read:false});
  publish(owner,entries.slice(0,80));
 }
 export function markAppLogsRead(owner:string){const entries=getAppLogs(owner);if(entries.some(e=>!e.read))publish(owner,entries.map(e=>({...e,read:true})));}
 export function clearAppLogs(owner:string){publish(owner,[]);}
 export function diagnosticAdvice(message:string){
  const value=message.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
+ if(/lectura.*finalizo correctamente/.test(value))return {title:'Lectura completada con demora',cause:'Notion tardó en devolver los metadatos o checklists; la consulta terminó correctamente.',next:'No repitas guardados ni recargues por este aviso. El calendario conserva los cambios confirmados y aplica los datos recibidos.'};
  if(/no hay espacio|no cabe|empalm|entre 08:00 y 22:00/.test(value))return {title:'No hay espacio en la jornada',cause:'La duración de la actividad o los horarios ocupados impiden acomodarla entre 08:00 y 22:00.',next:'Revisa el calendario y elige otro día, un hueco libre o una duración adecuada. Recargar no libera horarios.'};
  if(/actividad se guardo|horario se guardo|casilla se guardo/.test(value))return {title:'Guardado con aviso pendiente',cause:'El cambio principal se guardó, pero una operación complementaria no se pudo confirmar.',next:'No repitas el cambio guardado. Revisa el aviso pendiente y comparte este registro si continúa.'};
  if(/no confirmo|no se confirmo|parte del cambio|no confirmado|guardado a tiempo/.test(value))return {title:'Guardado sin confirmar',cause:'La respuesta pudo interrumpirse después de enviar el cambio.',next:'Consulta primero el estado actual de la actividad en ANFETA o Notion antes de repetir la acción, para evitar duplicados.'};

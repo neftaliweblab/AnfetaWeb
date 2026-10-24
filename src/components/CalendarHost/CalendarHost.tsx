@@ -350,8 +350,8 @@ export function CalendarHost({
         const response = await sharedCalendarFetch('/api/data?type=calendar&'+(light||basic?'basic=1&':'')+'date='+encodeURIComponent(currentDate)+(light||basic?'':'&enrichOffset='+enrichOffset),currentUser, {cache:'no-store', signal:AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])});
         const data = await readApiJson(response);
         const readBoundary=calendarReadBoundary(response,data.cacheMeta,startedAt);
-        if(Date.now()-startedAt>8000)recordAppLog(currentUser,'Calendario · sincronización','Lectura '+(light?'básica':'de enriquecimiento')+' del '+currentDate+' demoró '+Math.round((Date.now()-startedAt)/1000)+' s; origen '+String(data.cacheMeta?.source||'Notion')+'. Se conservan los cambios confirmados.');
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
+        if(!stopped&&Date.now()-startedAt>30000)recordAppLog(currentUser,'Calendario · sincronización','Lectura '+(light||basic?'básica':'de enriquecimiento')+' del '+currentDate+' demoró '+Math.round((Date.now()-startedAt)/1000)+' s y finalizó correctamente; origen '+String(data.cacheMeta?.source||'Notion')+'. Se conservan los cambios confirmados.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
         // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
         if(requestSequence<appliedSequence){

@@ -1,4 +1,5 @@
 "use client";
+import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
@@ -282,6 +283,7 @@ export default function AnfetaApp() {
         const report=await runCalendarAutomation(currentUser,today,partial=>{if(!stopped)setAutomationReport(partial);},true);
         if(!stopped){setAutomationReport(report);if(report.moved||report.ftfReset)window.dispatchEvent(new Event('anfeta_calendar_refresh'));}
         if(!report.failed&&!report.remaining)try{localStorage.setItem(key,'done');localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}
+        if(report.skippedNoSpace&&!stopped)recordAppLog(currentUser,'Robot 05:00',`${report.skippedNoSpace} actividades sin espacio entre 08:00 y 22:00. Se conservan en su fecha y no se reintentan automáticamente durante esta jornada. Consulta el Reporte para ver el detalle y reprogramarlas.`, 'warning');
         if(report.failed&&!stopped)setCalendarLoadError(report.errors.join(' · '));
       }catch(e){if(!stopped)setCalendarLoadError('Robot 05:00: '+(e instanceof Error?e.message:'No se pudo preparar la jornada.'));}
       finally{running=false;}

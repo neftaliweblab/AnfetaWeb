@@ -345,6 +345,16 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.equal(mirrors.length,1);
     assert.equal(data.activities.filter(a=>a.pageId===pid&&a.person==='John').length,1);
   });
+  await test('Enriquecimiento respeta lote y no relee revisiones fuera del intervalo',async()=>{
+    state.queryCurrent=true;
+    state.page.properties.Name.title=[{text:{content:'rtuzREVISION ge11 jjohn anfeta.com Trabajo'}}];
+    state.page.properties.Estado.status.name='En revisión';
+    state.flow={State:'pending',OriginalPerson:'Genaro',ReviewAssignee:'John',LeaveVisualCopy:true};
+    const response=await route.GET(new Request('http://localhost/api/data?type=calendar&date=2026-10-05&enrichOffset=6'));
+    assert.equal(response.status,200);
+    assert.ok(!(state.calls.some(c=>c.target.startsWith('blocks/'+pid+'/children'))),'No metadata requests outside the selected batch');
+    const data=await response.json();assert.ok(data.activities.length);
+  });
   await test('Documentación rechaza Dropbox antes de escribir contenido',async()=>{
     for(const mode of ['dropbox','both']){
       const res=await route.POST(request('unified-upload',{quickType:'Documentar contraseña',mode,body:'Contenido de prueba',files:[],uploadId:'44444444-4444-4444-8444-444444444444'}));
