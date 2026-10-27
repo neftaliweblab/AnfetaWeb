@@ -1,10 +1,11 @@
+import {templateBlockPolicy} from './templateBlockPolicy';
 import {inspectTemplateBody} from './notionTemplateBody';
 import {readBlocks} from './notionCalendar';
 import {notionRequest} from './notionMutations';
 import type {CalendarSettings} from './notionCalendar';
 export async function auditTemplateAccess(settings:CalendarSettings,pageId:string){
  const issues:{blockId:string;originId?:string;message:string}[]=[],path=new Set<string>();
- const stats={blocks:0,checklists:0,columns:0,synced:0,localFallbacks:0};
+ const stats={blocks:0,checklists:0,columns:0,synced:0,localFallbacks:0,toggles:0,toggleHeadings:0,types:{} as Record<string,number>};
  const cache=new Map<string,Promise<any[]>>();
  const key=(id:string)=>id.replace(/-/g,'').toLowerCase();
  const children=(id:string)=>{settings.notionSignal?.throwIfAborted();const clean=key(id);let result=cache.get(clean);if(!result){result=readBlocks(settings,id);cache.set(clean,result);}return result;};
@@ -19,15 +20,20 @@ export async function auditTemplateAccess(settings:CalendarSettings,pageId:strin
    let list:any[];
    try{list=await children(id);}catch(error){
     if(fallback&&key(fallback)!==clean){try{list=await children(fallback);if(!list.length)throw Error('Copia local vacía.');stats.localFallbacks++;}
-     catch{issues.push({blockId:fallback,originId:id,message:'Origen sincronizado y copia local inaccesibles. Notion no distingue entre un bloque eliminado y falta de permisos. Comparte la página original con la integración o desvincula el bloque en Notion conservando todo su contenido.'});return;}}
+     catch{issues.push({blockId:fallback,originId:id,message:'La página plantilla sí se pudo leer, pero el origen sincronizado y su copia local no. Notion no distingue entre un bloque eliminado y falta de permisos. Comparte la página original con la integración o desvincula el bloque en Notion conservando todo su contenido.'});return;}}
     else {issues.push({blockId:id,message:error instanceof Error?error.message:'No se pudieron leer los bloques.'});return;}
    }
    for(const block of list){
     if(++stats.blocks>5000)throw Error('La auditoría alcanzó 5000 bloques.');
+    stats.types[block.type]=(stats.types[block.type]||0)+1;
+    if(block.type==='toggle')stats.toggles++;
+    if(/^heading_[1-4]$/.test(block.type)&&block[block.type]?.is_toggleable)stats.toggleHeadings++;
+    const policy=templateBlockPolicy(block.type);
+    if(policy.mode==='restricted'||policy.mode==='unknown'){issues.push({blockId:block.id,message:block.type+': '+policy.detail});continue;}
     if(block.type==='to_do')stats.checklists++;
     if(block.type==='column')stats.columns++;
     if(block.type==='synced_block'){stats.synced++;await walk(block.synced_block?.synced_from?.block_id||block.id,depth+1,block.id);}
-    else if(block.has_children)await walk(block.id,depth+1);
+    else if(block.has_children||block.type==='child_page'||block.type==='tab')await walk(block.id,depth+1);
    }
   }finally{path.delete(clean);}
  };

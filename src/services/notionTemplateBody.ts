@@ -1,3 +1,4 @@
+import {templateBlockPolicy} from './templateBlockPolicy';
 import {readBlocks} from './notionCalendar';
 import {notionRequest} from './notionMutations';
 import type {CalendarSettings} from './notionCalendar';
@@ -14,7 +15,7 @@ export function validateTemplateBody(nodes:Node[]) {
       if(!body)throw Error('Bloque de plantilla sin contenido: '+block.type);
       if(node.children.length&&!['paragraph','heading_1','heading_2','heading_3','bulleted_list_item','numbered_list_item','to_do','toggle','quote','callout','column','column_list','table'].includes(block.type))throw Error('El bloque '+block.type+' no admite contenido anidado.');
       if(block.type==='column'&&parent?.type!=='column_list')throw Error('La plantilla contiene una columna fuera de su grupo.');
-      if(['bookmark','embed'].includes(block.type)){
+      if(['bookmark','embed'].includes(block.type)&&!(block.type==='embed'&&body.type==='file_upload'&&body.file_upload?.id)){
         try{const url=new URL(body.url);if(!/^https?:$/.test(url.protocol)||body.url.length>2000)throw Error();}
         catch{throw Error('El bloque '+block.type+' no tiene una URL web válida.');}
       }
@@ -51,7 +52,7 @@ const fields: Record<string, string[]> = {
   divider: [],
   equation: ['expression'],
   bookmark: ['url', 'caption'],
-  embed: ['url'],
+  embed: ['url', 'caption'],
   table: ['table_width', 'has_column_header', 'has_row_header'],
   table_row: ['cells'],
   table_of_contents: ['color'],
@@ -174,6 +175,7 @@ export async function transferNotionInternalFile(
 async function planTemplateBody(settings: CalendarSettings, pageId: string) {
   let count = 0;
   const seen = new Set<string>();
+  const conversions:{blockId:string;type:string;detail:string}[]=[];
   const transfers:Array<()=>Promise<void>>=[];
   const queueTransfer=(source:any,run:()=>Promise<void>)=>transfers.push(async()=>{
     try{await run();}catch(error){throw Error('Archivo del bloque '+source.id+' ('+source.type+'): '+(error instanceof Error?error.message:'No se pudo transferir.'));}
@@ -199,7 +201,7 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
     return pending;
   };
 
-  async function read(id: string, depth: number, fallbackId?:string): Promise<Node[]> {
+  async function read(id: string, depth: number, fallbackId?:string,insideTab=false): Promise<Node[]> {
     const key=sourceKey(id);
     if (depth > 30) throw new Error('La plantilla supera 30 niveles de anidación.');
     if (seen.has(key)) throw new Error('La plantilla contiene una referencia circular entre bloques.');
@@ -227,10 +229,17 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
 
       if (/^(?:\[ANFETA_[A-Z0-9_]+\]|Datos internos de ANFETA$)/i.test(text.trim())) continue;
       if (++count > 5000) throw new Error('La plantilla supera el límite de seguridad de ANFETA de 5000 bloques. No se creó la actividad.');
+      const policy=templateBlockPolicy(type);
+      if(policy.mode==='restricted'||policy.mode==='unknown')throw Error('La plantilla contiene un bloque que aún no se puede copiar: '+type+(content.block_type?' ('+content.block_type+')':'')+'. '+policy.detail+' No se creó una página incompleta.');
+      if(policy.mode==='convert')conversions.push({blockId:source.id,type,detail:policy.detail});
       if (type === 'heading_4') {
         type = 'heading_3';
       }
       if(type==='template')type='toggle';
+      if(type==='child_page'){type='toggle';content={rich_text:[{type:'text',text:{content:content.title||'Subpágina'}}]};}
+      if(type==='tab'){type='toggle';content={rich_text:[{type:'text',text:{content:'Pestañas'}}]};}
+      if(insideTab&&type==='paragraph'&&content.icon)type='callout';
+      if(type==='link_to_page'){const target=content[content.type];if(!['page_id','database_id','data_source_id'].includes(content.type)||typeof target!=='string'||!/^[a-f0-9-]{32,36}$/i.test(target))throw Error('Enlace de Notion sin destino válido.');type='bookmark';content={url:'https://www.notion.so/'+target.replace(/-/g,'')};}
       if(type==='link_preview'){type='bookmark';content={url:source.link_preview?.url};}
       if(type==='synced_block'){
         if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
@@ -254,6 +263,12 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
         }
       }
 
+      if(type==='embed'){
+        if(content.type==='file_upload'&&content.file_upload?.id){delete body.url;body.type='file_upload';body.file_upload={id:content.file_upload.id};}
+        else {const url=content.file?.url||content.url;let html=false;try{const parsed=new URL(url);html=/\.html?$/i.test(parsed.pathname)&&/\.(amazonaws\.com|notion\.so|notion-static\.com|notion\.com)$/i.test(parsed.hostname);}catch{}
+          if(content.type==='file'||html){validateNotionInternalUrl(url);delete body.url;body.type='file_upload';body.file_upload={id:'pending'};queueTransfer(source,async()=>{body.file_upload={id:await transfer(url,'file','embed.html')};});}
+        }
+      }
       if(body.icon?.type==='file'&&body.icon.file?.url){const url=body.icon.file.url;validateNotionInternalUrl(url);queueTransfer(source,async()=>{body.icon={type:'file_upload',file_upload:{id:await transfer(url,'image')}};});}
       if (['image', 'video', 'audio', 'pdf', 'file'].includes(type)) {
         if (content.type === 'file_upload' && content.file_upload?.id) {
@@ -275,7 +290,9 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
         }
       }
 
-      const children = source.has_children ? await read(source.id, depth + 1) : [];
+      const children = source.has_children||source.type==='child_page'||source.type==='tab' ? await read(source.id, depth + 1,undefined,source.type==='tab') : [];
+
+      if(/^heading_[1-3]$/.test(type)&&children.length)body.is_toggleable=true;
 
       if (type === 'column_list') {
         if (children.length < 2 || children.length > 100 || children.some(n => n.block.type !== 'column')) {
@@ -312,16 +329,16 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
 
   const nodes=await read(pageId, 0);
   validateTemplateBody(nodes);
-  return {nodes,transfers};
+  return {nodes,transfers,conversions};
 }
 
 /** Exercise the exact copy preparation without uploading files or creating pages. */
 export async function inspectTemplateBody(settings:CalendarSettings,pageId:string){
-  const {nodes,transfers}=await planTemplateBody(settings,pageId);
+  const {nodes,transfers,conversions}=await planTemplateBody(settings,pageId);
   let blocks=0,checklists=0,columns=0;
   const walk=(list:Node[])=>{for(const node of list){blocks++;if(node.block.type==='to_do')checklists++;if(node.block.type==='column')columns++;walk(node.children);}};
   walk(nodes);
-  return {compatible:true,blocks,checklists,columns,pendingFileTransfers:transfers.length};
+  return {compatible:true,blocks,checklists,columns,pendingFileTransfers:transfers.length,conversions};
 }
 
 export async function prepareTemplateBody(settings:CalendarSettings,pageId:string):Promise<Node[]>{
