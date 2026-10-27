@@ -25,6 +25,8 @@ import {readUserState,updateUserState} from '@/services/userState';
 import {recordChecklistMark} from '@/services/checklistHistory';
 import {executeCoordinatedAutomation} from '@/services/coordinatedAutomation';
 import {drxFolder,uploadFilename} from '@/lib/drxUploadPlan';
+import {consolidateInternalMetadata} from '@/services/internalMetadataConsolidation';
+import {readActivityPreview} from '@/services/notionActivityPreview';
 import {auditTemplateAccess} from '@/services/templateAccessAudit';
 import {prepareTemplateBody,appendTemplateBody} from '@/services/notionTemplateBody';
 import {createHash} from 'node:crypto';
@@ -419,86 +421,8 @@ async function duplicateNotionPageWithoutBody({
   };
 }
 
-async function fetchNotionBlocksRecursive(
-  cleanId: string,
-  token: string,
-  depth = 0,
-  maxDepth = 3,
-  output: any[] = [],
-  seen: Set<string> = new Set()
-): Promise<any[]> {
-  if (depth > maxDepth || output.length >= 250 || seen.has(cleanId)) return output;
-  seen.add(cleanId);
-
-  try {
-    const res = await fetch(`https://api.notion.com/v1/blocks/${cleanId}/children?page_size=100`, {
-      headers: {
-        Authorization: `Bearer ${token.trim()}`,
-        "Notion-Version": "2022-06-28",
-      },
-    });
-
-    if (!res.ok) return output;
-    const data = await res.json();
-    const results = data.results || [];
-
-    for (const b of results) {
-      if (output.length >= 250) break;
-      const bType = b.type;
-      const payload = b[bType] || {};
-
-      let text = "";
-      let isStrikethrough = false;
-      if (payload.rich_text && Array.isArray(payload.rich_text)) {
-        text = payload.rich_text.map((rt: any) => rt.plain_text || "").join("").trim();
-        isStrikethrough = payload.rich_text.some((rt: any) => rt.annotations && rt.annotations.strikethrough);
-      } else if (payload.title && Array.isArray(payload.title)) {
-        text = payload.title.map((t: any) => t.plain_text || "").join("").trim();
-      }
-
-      if (text && TECHNICAL_PREFIXES.some((prefix) => text.startsWith(prefix))) {
-        continue;
-      }
-
-      let url = "";
-      if (payload.file && payload.file.url) url = payload.file.url;
-      else if (payload.external && payload.external.url) url = payload.external.url;
-      else if (payload.url) url = payload.url;
-
-      if(bType==='equation')text=payload.expression||text;
-      if(bType==='table_row')text=(payload.cells||[]).map((cell:any[])=>cell.map(part=>part.plain_text||part.text?.content||'').join('')).join(' | ');
-      const isStructural = STRUCTURAL_CONTAINERS.has(bType);
-
-      if (!isStructural && (text || url || bType === "divider")) {
-        output.push({
-          id: b.id,
-          kind: bType,
-          text,
-          isStrikethrough,
-          isChecked: !!payload.checked,
-          language: payload.language || "",
-          caption: (payload.caption||[]).map((part:any)=>part.plain_text||part.text?.content||'').join(''),
-          url,
-          depth,
-          cells: bType === "table_row" ? (payload.cells || []).map((cell:any[])=>cell.map(part=>part.plain_text||part.text?.content||"" ).join("")) : undefined,
-          lastEditedTime: b.last_edited_time,
-        });
-      }
-
-      // Si tiene hijos y no hemos llegado a maxDepth, explorar recursivamente
-      if (b.has_children && depth < maxDepth) {
-        if (bType === "synced_block" && payload.synced_from) {
-          // Bloque sincronizado duplicado de otro lado: omitir duplicación
-          continue;
-        }
-        await fetchNotionBlocksRecursive(b.id, token, depth + 1, maxDepth, output, seen);
-      }
-    }
-  } catch (err) {
-    console.warn("Error fetching children in recursion:", err);
-  }
-
-  return output;
+async function fetchNotionBlocksRecursive(cleanId:string,token:string,depth=0,maxDepth=3){
+ return readActivityPreview(token,cleanId,maxDepth);
 }
 
 function resolveNotionToken(req: Request | NextRequest, searchParams?: URLSearchParams): string {
@@ -1338,7 +1262,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       // 0. Revisar memoria caché (TTL 15 min)
       const now = Date.now();
-      const cachedEntry = previewMemoryCache.get(cleanId);
+      const previewKey=cleanId+(searchParams.get('full')==='1'?':full':'');
+      const cachedEntry = previewMemoryCache.get(previewKey);
       if (cachedEntry && now - cachedEntry.timestamp < PREVIEW_CACHE_TTL) {
         return NextResponse.json(cachedEntry.payload);
       }
@@ -1350,7 +1275,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       // 1. Si hay token configurado de Notion, obtener bloques recursivamente
       if (token && token.trim()) {
         try {
-          blocks = await fetchNotionBlocksRecursive(cleanId, token, 0, 3);
+          blocks = await fetchNotionBlocksRecursive(cleanId, token, 0, searchParams.get('full')==='1'?20:3);
           if (blocks.length > 0 && blocks.some((b) => b.text?.trim() || b.url || b.kind === "image")) {
             source = "notion-api";
             contentText = blocks
@@ -1442,8 +1367,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           blocks,
           content: contentText,
           count: blocks.length,
+          warning:blocks.filter((block:any)=>block.kind==='warning').map((block:any)=>block.text).join(' '),
         };
-        previewMemoryCache.set(cleanId, { timestamp: now, payload });
+        if(!payload.warning)previewMemoryCache.set(previewKey, { timestamp: now, payload });
         return NextResponse.json(payload);
       }
 
@@ -2502,6 +2428,11 @@ async function POSTLive(req: NextRequest) {
         catch(error){halted=true;results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
       }
       return NextResponse.json({success:results.every(result=>result.success),results});
+    }
+    if(action==='consolidate-internal-metadata'){
+      const settings={...getSettings(),notionSignal:AbortSignal.timeout(85000)};
+      const report=await consolidateInternalMetadata(settings,actor,payload.pageId);
+      previewMemoryCache.clear();return NextResponse.json({success:true,report});
     }
     if(action==='get-notion-block-editor'||action==='edit-notion-block-text'||action==='append-notion-block'){try{const settings=getSettings();const block=action==='append-notion-block'?await appendEditableBlock(settings,actor,payload):action==='get-notion-block-editor'?await readEditableBlock(settings,actor,payload.pageId,payload.blockId):await saveEditableBlock(settings,actor,payload);if(action!=='get-notion-block-editor'){previewMemoryCache.clear();await publishContentChange(settings,payload.pageId);}return NextResponse.json({success:true,block},{headers:{'Cache-Control':'no-store'}});}catch(error){if(action==='append-notion-block')previewMemoryCache.clear();const message=error instanceof Error?error.message:'No se pudo editar el bloque.';return NextResponse.json({error:message},{status:message.includes('otro dispositivo')?409:400});}}
     if (action === 'get-checklist' || action === 'toggle-checklist') {

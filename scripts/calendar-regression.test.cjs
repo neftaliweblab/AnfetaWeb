@@ -85,6 +85,17 @@ let passed=0;const lines=[];
 async function test(name,fn){if(process.env.ANFETA_TEST_FILTER&&!new RegExp(process.env.ANFETA_TEST_FILTER,'i').test(name))return;reset();await fn();passed++;lines.push('OK '+name);console.log('OK '+name);}
 const request=(action,payload)=>new Request('http://localhost/api/data',{method:'POST',headers:{'Content-Type':'application/json','x-test-user':payload?.currentUser || 'nneft'},body:JSON.stringify({action,payload})});
 (async()=>{
+  await test('Revisión con título actual de Acalli conserva responsable y copia en calendario',async()=>{
+    state.page.properties.Name.title=[{text:{content:'prtuzR rrede 26-[08AGO] Redes Video - Facebook Campaña aads cercaspararancho.com jo11 aac11 jjohn'}}];
+    state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'acalli-id',name:'aacal@pprin.com'}];
+    const updated=await mutations.mutateActivity(settings,'Acalli',pid,{reviewer:'John',leaveVisualCopy:true});
+    assert.equal(state.flow.OriginalPerson,'Acalli');assert.equal(state.flow.ReviewAssignee,'John');assert.equal(state.flow.State,'pending');assert.equal(state.flow.LeaveVisualCopy,true);
+    assert.equal(updated.properties['Assignee/Ejecutor Principal'].people[0].name,'John');
+    state.queryCurrent=true;
+    const response=await route.GET(new Request('http://localhost/api/data?type=calendar&date=2026-10-05&basic=1'));assert.equal(response.status,200);const data=await response.json();
+    assert.ok(data.activities.some(a=>a.pageId===pid&&a.person==='John'));
+    assert.ok(data.activities.some(a=>a.isReviewMirror&&a.person==='Acalli'));
+  });
   await test('Auditoría de plantillas valida ID y prepara sin escribir',async()=>{
     const invalid=await route.POST(request('audit-template-access',{pageId:'../invalid'}));assert.equal(invalid.status,400);assert.equal(state.calls.length,0);
     const response=await route.POST(request('audit-template-access',{pageId:pid}));assert.equal(response.status,200);

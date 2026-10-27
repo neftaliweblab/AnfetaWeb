@@ -1,4 +1,7 @@
 "use client";
+import {WorkflowStageBadge} from '../WorkflowStageBadge';
+import {dailyChecklist} from '@/lib/dailyChecklist';
+import {ActivityContentPanel} from './ActivityContentPanel';
 import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {titlePriority} from '@/services/activityTags';
@@ -130,6 +133,7 @@ function ActivityCardComponent({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  const contentEditing=useRef(false);
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
@@ -215,8 +219,9 @@ function ActivityCardComponent({
             const completed = items.filter((i: any) => i.isChecked).length;
             const todayStr = mexicoDate(activity.start || new Date());
             const completedChecks = items.filter((item: any) => item.isChecked && (item.markingSource === "verified" ? item.markedAt && mexicoDate(item.markedAt) === todayStr : item.markingSource === "estimated" && item.editedAt && mexicoDate(item.editedAt) === todayStr));
-            const activeCompleted = completedChecks.length > 0 ? completedChecks : items.filter((item: any) => item.isChecked);
-            const today = completedChecks.length > 0 ? completedChecks.length : completed;
+            const dayProgress=dailyChecklist(items,todayStr);
+            const activeCompleted = dayProgress.completed;
+            const today = dayProgress.done;
             const entry: ChecklistCardCacheEntry = {
               total,
               completed,
@@ -444,7 +449,7 @@ function ActivityCardComponent({
   async function toggleCardCheck(chk:any){
     if(!editable||isSaving||checkBusy.current||!(chk.blockId||chk.id))return;
     checkBusy.current=true;setCheckSaving(true);setCheckMessage('');
-    const previous=checklistData,items=effectiveItems.map((i:any)=>(i.id||i.blockId)===(chk.id||chk.blockId)?{...i,isChecked:!chk.isChecked}:i);
+    const previous=checklistData,items=effectiveItems.map((i:any)=>(i.id||i.blockId)===(chk.id||chk.blockId)?{...i,isChecked:!chk.isChecked,...(!chk.isChecked?{markedAt:new Date().toISOString(),markingSource:'verified'}:{})}:i);
     const optimistic={total:effectiveTotal,completed:Math.max(0,effectiveCompleted+(chk.isChecked?-1:1)),today:effectiveToday,items,completedChecks:previous?.completedChecks||[]};
     setChecklistData(optimistic);
     try{const response=await offlineAwareFetch('/api/data',{action:'toggle-checklist',payload:{pageId:activity.pageId,blockId:chk.blockId||chk.id,checked:!chk.isChecked,expectedChecked:!!chk.isChecked,currentUser}});const data=await response.json();
@@ -456,13 +461,13 @@ function ActivityCardComponent({
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
   const isScanned = !!(activity.checklistScanned || checklistData);
-  const totalChecklist = effectiveTotal;
-  const completedChecklist = effectiveCompleted;
+  const daily=dailyChecklist(effectiveItems,displayDate||mexicoDate(activity.start));
+  const totalChecklist = daily.total;
+  const completedChecklist = daily.done;
   const pct = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
 
   // Hover handlers con protección mejorada de zoom y colisiones en pantalla
   const handleMouseEnter = () => {
-    void fetchChecklistIfNeeded();
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (cardRef.current) {
@@ -476,10 +481,12 @@ function ActivityCardComponent({
         setHoverPos({ x: Math.max(12, left), y: Math.max(12, top) });
         setShowHover(true);
       }
-    }, 120);
+      void fetchChecklistIfNeeded();
+    }, 650);
   };
 
   const handleMouseLeave = () => {
+    if(contentEditing.current)return;
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       setShowHover(false);
@@ -491,6 +498,7 @@ function ActivityCardComponent({
   };
 
   const handlePopoverMouseLeave = () => {
+    if(contentEditing.current)return;
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       setShowHover(false);
@@ -683,6 +691,8 @@ function ActivityCardComponent({
               : "w-[440px] max-w-[94vw]"
           }`}
         >
+          <WorkflowStageBadge status={activity.status} title={activity.title}/>
+          <ActivityContentPanel activity={activity} currentUser={currentUser} onEditingChange={value=>{contentEditing.current=value;}}/>
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -819,7 +829,7 @@ function ActivityCardComponent({
             {!loadingChecklist && isScanned && totalChecklist === 0 && (
               <div className="pt-2 border-t border-[#1E2E40] py-1.5 flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
                 <CheckSquare className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>Sin tareas checklist en esta actividad</span>
+                <span>Sin checks pendientes para esta fecha</span>
               </div>
             )}
 
@@ -828,7 +838,7 @@ function ActivityCardComponent({
                 <div className="flex items-center justify-between text-[10.5px]">
                   <span className="text-slate-300 flex items-center gap-1 font-semibold">
                     <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-                    Checks de la actividad:
+                    Checks del día:
                   </span>
                   <div className="flex items-center gap-1.5 font-mono">
                     <span className="text-emerald-400 font-bold">
@@ -855,7 +865,7 @@ function ActivityCardComponent({
                   <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
                     showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
                   }`}>
-                    {effectiveItems.slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
+                    {daily.items.slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
                       const isDone = Boolean(chk.isChecked);
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
                       const doneDate = chk.markedAt || chk.editedAt ? formatSmartDate(chk.markedAt || chk.editedAt) : null;
@@ -959,7 +969,7 @@ function ActivityCardComponent({
               checklistTotal: totalChecklist,
               checklistCompleted: completedChecklist,
               todayChecklistCompleted: effectiveToday,
-              checklistItems: effectiveItems,
+              checklistItems: daily.items,
               completedChecks: checklistData?.completedChecks || activity.completedChecks || [],
             }}
             onClose={() => setShowPopup(false)}

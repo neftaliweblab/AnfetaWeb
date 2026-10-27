@@ -1,4 +1,5 @@
 "use client";
+import {dailyActivityChecks} from '@/lib/dailyChecklist';
 
 import {calendarTime, calendarDisplayTitle} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
@@ -51,12 +52,13 @@ export function CalendarPersonPreviewPanel({
         laggingCount++;
       }
 
-      const checks = act.todayChecklistCompleted || 0;
+      const daily=dailyActivityChecks(act);
+      const checks = daily.done;
       totalChecksToday += checks;
 
       const pct =
-        act.checklistTotal > 0
-          ? Math.min(100, (checks / act.checklistTotal) * 100)
+        daily.total > 0
+          ? Math.min(100, (checks / daily.total) * 100)
           : act.isFinalized
           ? 100
           : 0;

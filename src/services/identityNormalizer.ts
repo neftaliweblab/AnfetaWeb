@@ -8,7 +8,7 @@ export const PERSON_ALIASES: Record<string, string[]> = {
   Genaro: ["ggena", "gena", "genaro"],
   John: ["jjohn", "john"],
   Sotelo: ["ssote", "sote", "eedua", "edua", "sotelo"],
-  Acalli: ["aacal", "acal", "acalli"],
+  Acalli: ["aacal", "acal", "acalli", "acali"],
 };
 
 export const PERSON_METADATA: Record<
@@ -19,7 +19,7 @@ export const PERSON_METADATA: Record<
   Karla: { color: "#F472B6", avatar: "KA", role: "Diseño & Web", notionUrl: "https://app.notion.com/p/36eabd7d91b7800facbcd6cf9514277c?source=copy_link" },
   Isaias: { color: "#4ADE80", avatar: "IS", role: "SEO & Contenido", notionUrl: "https://app.notion.com/p/384abd7d91b7801499bdff6ed5a4a2fc?source=copy_link" },
   Sotelo: { color: "#FB923C", avatar: "SO", role: "Cobranza & Operaciones" },
-  Acalli: { color: "#A78BFA", avatar: "AC", role: "Diseño & Multimedia" },
+  Acalli: { color: "#A78BFA", avatar: "AC", role: "Diseño & Multimedia", notionUrl: "https://app.notion.com/p/36eabd7d91b780edb495c5278bf84fe0?source=copy_link" },
   Andrade: { color: "#FBBF24", avatar: "AN", role: "ADS & Campañas", notionUrl: "https://app.notion.com/p/380abd7d91b7803292cdd39271df4865?source=copy_link" },
   Brian: { color: "#2DD4BF", avatar: "BR", role: "Desarrollo Web", notionUrl: "https://app.notion.com/p/36eabd7d91b780988946c81705570b78?source=copy_link" },
   Genaro: { color: "#E879F9", avatar: "GE", role: "Desarrollo & Sistemas", notionUrl: "https://app.notion.com/p/36eabd7d91b780bea0a4dc662d32b03a?source=copy_link" },

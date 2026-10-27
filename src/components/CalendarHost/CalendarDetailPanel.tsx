@@ -1,4 +1,6 @@
 "use client";
+import {dailyChecklist} from '@/lib/dailyChecklist';
+import {ActivityContentPanel} from './ActivityContentPanel';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {ActivityWhatsappGroups} from '../ActivityWhatsappGroups';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
@@ -8,7 +10,7 @@ import {ActivityQuickEntry} from './ActivityQuickEntry';
 import {requestActivityRecording} from '@/lib/activityRecording';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 
-import { calendarDisplayTitle, calendarTime } from "@/services/calendarPresentation";
+import { calendarDisplayTitle, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { workflowState } from "@/services/activityWorkflow";
@@ -116,8 +118,10 @@ export function CalendarDetailPanel({
     phaseTextColor = "#FDBA74";
   }
 
-  const checklistTotal = items.length;
-  const checklistDone = items.filter((i) => i.isChecked).length;
+  const daily=dailyChecklist(items,mexicoDate(activity.start));
+  const [showHistory,setShowHistory]=useState(false);
+  const checklistTotal = daily.total;
+  const checklistDone = daily.done;
   const pct = checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : 0;
 
   useEffect(() => {
@@ -181,7 +185,7 @@ export function CalendarDetailPanel({
       aria-label="Detalle de actividad"
       className={embedded ? "min-w-0 rounded-lg border border-slate-700 bg-[#101720] p-3 text-slate-200" : "fixed top-14 bottom-0 right-0 w-full max-w-[380px] xl:static xl:w-[380px] shrink-0 shadow-2xl border-l border-[#27272A] bg-[#141416] p-4 flex flex-col justify-between overflow-y-auto select-none z-50 text-slate-200"}
     >
-      <div className="space-y-4">
+      <div className="space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-[#27272A] pb-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -318,6 +322,9 @@ export function CalendarDetailPanel({
 
         {onActivityUpdated && <CalendarActivityTools activity={activity} currentUser={currentUser} onSave={onActivityUpdated} />}
         </>}
+        <ActivityContentPanel activity={activity} currentUser={currentUser}/>
+        {!!daily.unknown&&<p className="text-xs text-amber-300">{daily.unknown} checks completados sin fecha de marcado verificable: se conservan en historial y no se atribuyen a hoy.</p>}
+        {!!daily.history.length&&<button type="button" onClick={()=>setShowHistory(v=>!v)} className="text-xs text-slate-400 underline">{showHistory?'Ocultar':'Ver'} historial ({daily.history.length} checks; no cuentan hoy)</button>}
         {/* Pestañas: Checklist de Notion vs Actividades del Proyecto (Dominio) */}
         <div className="flex items-center justify-between border-b border-[#27272A] pt-2">
           <div className="flex gap-2">
@@ -330,7 +337,7 @@ export function CalendarDetailPanel({
               }`}
             >
               <ListChecks className="w-3.5 h-3.5" />
-              <span>Tareas Notion ({items.length})</span>
+              <span>Pasos del día ({daily.total})</span>
             </button>
             <button
               onClick={() => setActiveTab("project")}
@@ -354,7 +361,7 @@ export function CalendarDetailPanel({
         {activeTab === "checklist" && (
 
           <div className="rounded-lg border border-[#27272A] bg-[#18181B] p-3 space-y-2">
-            <ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[item,...old]);}}/>
+            <details><summary className="cursor-pointer text-xs text-slate-400">Agregar check o comentario</summary><ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[item,...old]);}}/></details>
             {checklistError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"><p>{checklistError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 underline font-semibold">Volver a cargar</button></div>}
             {loading ? (
               <div className="flex items-center gap-2 py-4 text-xs text-slate-400 italic">
@@ -367,7 +374,7 @@ export function CalendarDetailPanel({
               </p>
             ) : (
               <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {items.map((item) => (
+                {(showHistory?items:daily.items).map((item) => (
                   <li
                     key={item.id}
                     onClick={() => handleToggle(item)}

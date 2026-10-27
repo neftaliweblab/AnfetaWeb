@@ -1,5 +1,6 @@
-export const EDITABLE_NOTION_TEXT_TYPES=['paragraph','heading_1','heading_2','heading_3','bulleted_list_item','numbered_list_item','to_do','quote','callout','code'];
+export const EDITABLE_NOTION_TEXT_TYPES=['paragraph','heading_1','heading_2','heading_3','heading_4','bulleted_list_item','numbered_list_item','to_do','toggle','quote','callout','code'];
 export function newTextBlock(input:any){
+ if(input?.type==='heading_4')throw Error('Para agregar un encabezado nuevo usa heading_3. Los encabezados 4 existentes se editan conservando su estructura.');
  if(!EDITABLE_NOTION_TEXT_TYPES.includes(input?.type)||typeof input.text!=='string'||!input.text.trim()||input.text.length>4000)throw new Error('Selecciona un tipo compatible y escribe entre 1 y 4000 caracteres.');
  if(/\[anfeta_|datos internos de anfeta/i.test(input.text))throw new Error('Los identificadores internos de ANFETA están reservados.');
  const annotations:Record<string,boolean>={};

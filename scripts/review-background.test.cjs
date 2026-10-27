@@ -15,5 +15,7 @@ const {submitReviewInBackground}=require('../src/lib/reviewSubmission.ts');
  const failure=nodes[0].children[1];assert.equal(failure.attributes.role,'alert');assert.match(failure.children[0].textContent,/No se confirmó/);assert.equal(failure.removed,undefined);
  await submitReviewInBackground('two','Karla',async()=>{throw Error('Notion rechazó el cambio');},()=>{});
  assert.match(nodes[0].children[2].children[0].textContent,/Notion rechazó/);
+ await submitReviewInBackground('three','John',async()=>{require('../src/lib/reviewOutcome.ts').rememberReviewFailure('three','El revisor no tiene permiso para esta actividad');return false;},()=>{});
+ assert.match(nodes[0].children[3].children[0].textContent,/El revisor no tiene permiso/);
  console.log('OK revisión en segundo plano: cierre inmediato, bloqueo duplicado, éxito confirmado y errores persistentes.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

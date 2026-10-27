@@ -424,8 +424,8 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const label=phase==='recording'?'Grabando: mostrar u ocultar controles':phase==='preview'?'Revisar grabación':phase==='starting'?'Preparando grabación':'Grabar pantalla y micrófono';
   return client?createPortal(
     <>
-      {onOpenDetailed&&<FloatingActionButton label="Asignación detallada · elegir destino y detalles" tone="cyan" className="bottom-24 right-20" disabled={disabled||!!clipboardSavingCode} onClick={()=>{if(clipboardSubmission.current)return;setClipboardOpen(false);onOpenDetailed();}}><ListPlus size={21}/></FloatingActionButton>}
-      <FloatingActionButton label="Asignación rápida desde portapapeles" tone="amber" className="bottom-12 right-20" disabled={disabled} onClick={()=>(clipboardOpen?setClipboardOpen(false):void openClipboardModal())} aria-expanded={clipboardOpen}><ClipboardPaste size={21}/></FloatingActionButton>
+      {onOpenDetailed&&<FloatingActionButton label="Asignación detallada · elegir destino y detalles" tone="cyan" className="anfeta-assignment-action bottom-24 right-20" disabled={disabled||!!clipboardSavingCode} onClick={()=>{if(clipboardSubmission.current)return;setClipboardOpen(false);onOpenDetailed();}}><ListPlus size={21}/></FloatingActionButton>}
+      <FloatingActionButton label="Asignación rápida desde portapapeles" tone="amber" className="anfeta-assignment-action bottom-12 right-20" disabled={disabled} onClick={()=>(clipboardOpen?setClipboardOpen(false):void openClipboardModal())} aria-expanded={clipboardOpen}><ClipboardPaste size={21}/></FloatingActionButton>
       <FloatingActionButton label={label} tone={phase==='recording'?'rose':'sky'} className="bottom-12 right-6" disabled={(disabled&&phase==='idle')||phase==='starting'} onClick={()=>phase==='idle'?configure():setPanelOpen(open=>!open)} aria-expanded={phase!=='idle'&&panelOpen} aria-controls={phase!=='idle'&&panelOpen?'anfeta-recording-controls':undefined}>
         {phase==='recording'?<Square className="w-4 h-4 fill-current"/>:<Video size={21}/>}
       </FloatingActionButton>

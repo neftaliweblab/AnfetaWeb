@@ -1,3 +1,4 @@
+import {appendInternalMetadata} from './notionCalendar';
 import {revisionPhaseTitle} from './progressiveWorkflow';
 import {isFtfActivity} from './progressKpis';
 import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
@@ -324,7 +325,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     if(old?.start !== updates.start || old?.end !== updates.end) {
       try {
         const text='[ANFETA_WEB_MOVE_V1]'+Buffer.from(JSON.stringify({fromStart:old?.start,fromEnd:old?.end,toStart:updates.start,toEnd:updates.end,updatedAt:new Date().toISOString(),updatedBy:actor})).toString('base64');
-        await notionRequest(settings,'blocks/'+id+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{text:{content:'Datos internos de ANFETA'}}],children:[{object:'block',type:'paragraph',paragraph:{rich_text:[{text:{content:text}}]}}]}}]});
+        await appendInternalMetadata(settings,id,text);
       } catch(error) {updated.__historyWarning='El horario se guardó, pero no se pudo guardar su historial. '+(error instanceof Error?error.message:'');}
     }
   }

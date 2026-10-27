@@ -1,4 +1,5 @@
 import {inferActivityPerson} from './activityTags';
+import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
 import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
@@ -170,10 +171,22 @@ export async function readReviewFlow(settings: CalendarSettings, pageId: string)
 }
 export async function saveReviewFlow(settings: CalendarSettings, pageId: string, flow: any) {
   const text = REVIEW_PREFIX + Buffer.from(JSON.stringify(flow)).toString('base64');
-  const rich_text = [];
-  for(let offset=0;offset<text.length;offset+=1800)rich_text.push({type:'text',text:{content:text.slice(offset,offset+1800)}});
-  await notionRequest(settings, `blocks/${pageId}/children`, 'PATCH', { children: [{ object:'block', type:'toggle', toggle: { rich_text:[{type:'text',text:{content:'Datos internos de ANFETA'}}], children:[{object:'block',type:'paragraph',paragraph:{rich_text}}] } }] });
+  await appendInternalMetadata(settings,pageId,text);
 }
+const metadataWrites=new Map<string,Promise<void>>();
+/** Reuse one internal container for new entries; keep all previous records intact. */
+export async function appendInternalMetadata(settings:CalendarSettings,pageId:string,text:string){
+ const key=settings.notionToken+':'+pageId;
+ const task=(metadataWrites.get(key)||Promise.resolve()).catch(()=>{}).then(async()=>{
+  const rich_text=[];for(let offset=0;offset<text.length;offset+=1800)rich_text.push({type:'text',text:{content:text.slice(offset,offset+1800)}});
+  const paragraph={object:'block',type:'paragraph',paragraph:{rich_text}};
+  const container=(await readBlocks(settings,pageId)).find(block=>block.type==='toggle'&&(block.toggle?.rich_text||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('').trim()==='Datos internos de ANFETA');
+  if(container)await notionRequest(settings,'blocks/'+container.id+'/children','PATCH',{children:[paragraph]});
+  else await notionRequest(settings,'blocks/'+pageId+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{type:'text',text:{content:'Datos internos de ANFETA'}}],children:[paragraph]}}]});
+ });
+ metadataWrites.set(key,task);try{await task;}finally{if(metadataWrites.get(key)===task)metadataWrites.delete(key);}
+}
+
 export async function assertChecklistAccess(settings: CalendarSettings, actor: string, pageId: string) {
   if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
   const page = await notionRequest(settings, `pages/${pageId}`);
@@ -194,14 +207,17 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     if (checklistCache.size > 512) checklistCache.delete(checklistCache.keys().next().value!);
     checklistCache.set(key,cached);
   }
-  const completedChecks = cached.items.filter(item=>item.isChecked && (item.markingSource==='verified'?item.markedAt&&mexicoDate(item.markedAt)===day:item.markingSource==='estimated'&&item.editedAt&&mexicoDate(item.editedAt)===day));
-  const activeCompleted = completedChecks.length > 0 ? completedChecks : cached.items.filter(item => item.isChecked);
+  const daily=dailyChecklist(cached.items,day);
+  const completedChecks=daily.completed;
   return {
     checklistScanned:true,
     checklistTotal:cached.items.length,
     checklistCompleted:cached.items.filter(item=>item.isChecked).length,
-    todayChecklistCompleted:completedChecks.length > 0 ? completedChecks.length : cached.items.filter(item=>item.isChecked).length,
-    completedChecks:activeCompleted,
+    todayChecklistCompleted:daily.done,
+    dailyChecklistTotal:daily.total,
+    dailyChecklistCompleted:daily.done,
+    historicalChecklistCompleted:daily.history.length,
+    completedChecks,
     checklistItems:cached.items,
     checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,
     checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),

@@ -71,7 +71,7 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-[#94A3B8] flex items-center gap-1">
             <CheckSquare className="w-3.5 h-3.5 text-[#4ADE80]" />
-            Checklist v9:
+            Pasos del día:
           </span>
           <span className="font-mono text-[#4ADE80]">
             {total > 0 ? `${completed} / ${total} (${pct}%)` : "Sin tareas"}

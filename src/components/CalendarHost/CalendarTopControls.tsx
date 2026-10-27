@@ -266,6 +266,7 @@ export function CalendarTopControls({
           <span className="hidden xl:inline">Plantillas</span>
         </button>
 
+        <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('anfeta_open_daily_workspace',{detail:{day:currentDate}}))} className="rounded border border-cyan-700 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-200">Jornada</button>
         {/* Botón Reporte 05:00 */}
         <button
           onClick={onOpenReport}

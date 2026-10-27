@@ -125,3 +125,5 @@ body {
 .anfeta-floating-action:hover,.anfeta-floating-action:focus-visible {animation-play-state:paused;outline:2px solid white;outline-offset:3px}
 .anfeta-floating-action:disabled {animation:none;cursor:default}
 @media(prefers-reduced-motion:reduce){.anfeta-floating-action {animation:none}}
+
+[data-anfeta-workspace="open"] .anfeta-assignment-action {visibility:hidden;pointer-events:none}

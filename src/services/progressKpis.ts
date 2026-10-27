@@ -1,3 +1,4 @@
+import {dailyChecklist,dailyActivityChecks} from '../lib/dailyChecklist';
 import {mexicoDate} from './calendarPresentation';
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
 import { workflowState } from './activityWorkflow';
@@ -10,8 +11,8 @@ export function countedCalendarActivities(activities:NotionCalendarActivity[]){r
 export function executiveActivities(activities: NotionCalendarActivity[], day: string) {
   return countedCalendarActivities(activities).filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
 }
-export function currentActivityRatio(a: NotionCalendarActivity) {
-  if(a.checklistScanned&&a.checklistTotal>0)return Math.max(0,Math.min(1,a.checklistCompleted/a.checklistTotal));
+export function currentActivityRatio(a: NotionCalendarActivity,day=mexicoDate(a.start)) {
+  if(a.checklistScanned&&a.checklistTotal>0){if(a.checklistItems){const daily=dailyChecklist(a.checklistItems,day);return daily.total?daily.done/daily.total:0;}return a.dailyChecklistTotal?Math.max(0,Math.min(1,(a.dailyChecklistCompleted||0)/a.dailyChecklistTotal)):0;}
   if(a.estimatedWorkMinutes>0)return Math.max(0,Math.min(1,(a.workedMinutes||0)/a.estimatedWorkMinutes));
   return ['review','completed'].includes(workflowState(a.status,a.title))?1:0;
 }
@@ -42,10 +43,8 @@ export function evaluateLagStatus(
     };
   }
 
-  const progressTodayPct =
-    activity.checklistTotal > 0
-      ? (activity.todayChecklistCompleted / activity.checklistTotal) * 100
-      : 0;
+  const progressTodayPct=currentActivityRatio(activity)*100;
+  if(activity.checklistItems&&dailyChecklist(activity.checklistItems,mexicoDate(activity.start)).total===0)return {isLagging:false,isMissingChecklist:false};
 
   if (isPastEnd && progressTodayPct < 33) {
     return {
@@ -78,7 +77,7 @@ export function computeDailyKPIs(
     const durMin = endD > startD ? Math.round((endD - startD) / 60000) : 60;
 
     scheduledMinutes += durMin;
-    currentMinutes += durMin * currentActivityRatio(act);
+    currentMinutes += durMin * currentActivityRatio(act,dateStr);
 
     const lag = evaluateLagStatus(act, now);
     if (lag.isLagging) laggingCount++;
@@ -91,12 +90,7 @@ export function computeDailyKPIs(
       completedCount++;
     }
 
-    const pctToday =
-      act.checklistTotal > 0
-        ? Math.min(100, (act.todayChecklistCompleted / act.checklistTotal) * 100)
-        : act.isFinalized
-        ? 100
-        : 0;
+    const pctToday=act.checklistTotal>0?currentActivityRatio(act,dateStr)*100:act.isFinalized?100:0;
 
     progressMinutes += durMin * (pctToday / 100);
   }
@@ -126,10 +120,7 @@ export function getForecastStatus(
 ): string {
   const budget =
     act.estimatedWorkMinutes > 0 ? act.estimatedWorkMinutes : 60;
-  const pct =
-    act.checklistTotal > 0
-      ? (act.todayChecklistCompleted / act.checklistTotal) * 100
-      : 0;
+  const pct=currentActivityRatio(act)*100;
   const remainingMin = Math.max(0, budget - (budget * pct) / 100);
 
   if (remainingMin <= 0 || act.isFinalized) {
@@ -169,7 +160,8 @@ export function generateMarkdownReport(
     const person = normalizePerson(act.person);
     const domain = act.domain || "general";
     const status = act.status || "P";
-    const checks = `${act.todayChecklistCompleted}/${act.checklistTotal}`;
+    const daily=dailyActivityChecks(act,kpis.date);
+    const checks = `${daily.done}/${daily.total}`;
     lines.push(
       `- [${person}] **${domain}**: ${act.shortTitle || act.title} (${status}) — Checklist: ${checks}`
     );

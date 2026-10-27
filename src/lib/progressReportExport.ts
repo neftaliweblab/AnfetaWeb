@@ -1,3 +1,4 @@
+import {dailyActivityChecks} from './dailyChecklist';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { computeDailyKPIs, evaluateLagStatus, getForecastStatus, isFtfActivity } from '@/services/progressKpis';
 import { normalizePerson, getPersonColor } from '@/services/identityNormalizer';
@@ -56,9 +57,10 @@ export function reportHtml(
           ? '<span class="badge badge-lag">🚨 REZAGO</span>'
           : '<span class="badge badge-pending">⏳ PENDIENTE</span>';
 
+      const daily=dailyActivityChecks(act,date);
       const pct =
-        act.checklistTotal > 0
-          ? Math.round((act.todayChecklistCompleted / act.checklistTotal) * 100)
+        daily.total > 0
+          ? Math.round((daily.done / daily.total) * 100)
           : act.isFinalized
           ? 100
           : 0;
@@ -98,7 +100,7 @@ export function reportHtml(
           <div class="activity-body">
             <div class="meta-row">
               <span>🕒 Horario: <strong>${escape(act.start?.slice(11, 16) || '—')} – ${escape(act.end?.slice(11, 16) || '—')}</strong></span>
-              <span>📋 Checks: <strong>${act.todayChecklistCompleted} / ${act.checklistTotal}</strong> (${pct}%)</span>
+              <span>📋 Checks: <strong>${daily.done} / ${daily.total}</strong> (${pct}%)</span>
             </div>
             <div class="progress-bar-bg">
               <div class="progress-bar-fill" style="width: ${pct}%"></div>

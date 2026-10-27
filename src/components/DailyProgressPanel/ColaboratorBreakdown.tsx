@@ -1,4 +1,5 @@
 "use client";
+import {dailyActivityChecks} from '@/lib/dailyChecklist';
 
 import React, { useState } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -89,6 +90,7 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
   return (
     <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 select-none scrollbar-thin">
       {activities.map((act) => {
+        const daily=dailyActivityChecks(act);
         const lagStatus = evaluateLagStatus(act);
         const forecast = getForecastStatus(act);
         const person = normalizePerson(act.person);
@@ -96,9 +98,9 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
         const isExpanded = expandedActIds.has(act.pageId);
 
         const pct =
-          act.checklistTotal > 0
+          daily.total > 0
             ? Math.round(
-                (act.todayChecklistCompleted / act.checklistTotal) * 100
+                (daily.done / daily.total) * 100
               )
             : act.isFinalized
             ? 100
@@ -161,7 +163,7 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                   <div className="flex items-center justify-between text-[10.5px] font-mono">
                     <span className="text-[#94A3B8] flex items-center gap-1 font-medium">
                       <CheckSquare className="w-3.5 h-3.5 text-[#4ADE80]" />
-                      <span>{act.todayChecklistCompleted}/{act.checklistTotal} checks</span>
+                      <span>{daily.done}/{daily.total} checks</span>
                     </span>
                     <span className="text-[#F1F5F9] font-bold">{pct}%</span>
                   </div>
@@ -203,7 +205,7 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
               <div className="border-t border-[#1C2736] bg-[#0A0E15] p-3 space-y-2 rounded-b-xl animate-in fade-in duration-150">
                 <div className="flex items-center justify-between text-[11px] text-[#64748B] font-mono">
                   <span>ELEMENTOS DE CHECKLIST DE NOTION</span>
-                  <span>{act.todayChecklistCompleted} de {act.checklistTotal} completados hoy</span>
+                  <span>{daily.done} de {daily.total} completados hoy</span>
                 </div>
 
                 {loadingChecks[act.pageId] ? (
@@ -244,8 +246,8 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                   </div>
                 ) : (
                   <div className="p-3 text-center text-xs text-[#64748B] bg-[#0F141C] rounded-lg border border-[#1A2534]">
-                    {act.checklistTotal > 0
-                      ? `Esta actividad tiene ${act.checklistTotal} items de checklist en Notion (${act.todayChecklistCompleted} marcados hoy). Haz clic en Notion ↗ para interactuar con ellos.`
+                    {daily.total > 0
+                      ? `Esta actividad tiene ${daily.total} items del día de checklist en Notion (${daily.done} marcados hoy). Haz clic en Notion ↗ para interactuar con ellos.`
                       : "Esta actividad no tiene lista de tareas o checklist registrada en su contenido."}
                   </div>
                 )}

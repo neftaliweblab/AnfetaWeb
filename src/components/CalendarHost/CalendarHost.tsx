@@ -1,4 +1,7 @@
 "use client";
+import {DailyWorkspace} from '../DailyWorkspace';
+import {rememberReviewFailure} from '@/lib/reviewOutcome';
+import {dailyChecklist} from '@/lib/dailyChecklist';
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
@@ -425,7 +428,7 @@ export function CalendarHost({
         const preflight=reviewPreflight(original,fresh);
         if(preflight.changed){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?{...a,...fresh}:a));setSelectedActivity(prev=>prev?.pageId===pageId?{...prev,...fresh}:prev);throw Error('Se actualizaron los datos de la actividad porque cambiaron. Conserva tu selección, revisa el cambio y confirma de nuevo.');}
         expectedReviewUpdatedAt=preflight.expectedReviewUpdatedAt;
-      }catch(e){pending.current.delete(pageId);setSaveRevision(v=>v+1);setError(e instanceof Error?e.message:'No se pudo verificar el flujo.');return false;}
+      }catch(e){pending.current.delete(pageId);setSaveRevision(v=>v+1);setError(e instanceof Error?e.message:'No se pudo verificar el flujo.');if(updates.reviewer)rememberReviewFailure(pageId,e);return false;}
     }
     const originalMirror=activitiesListRef.current.find((a: NotionCalendarActivity)=>a.pageId==='review-mirror-'+pageId);
     const restoreSchedule=()=>{if(updates.start){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?original:a));setSelectedActivity(prev=>prev?.pageId===pageId?original:prev);}};
@@ -465,6 +468,7 @@ export function CalendarHost({
       }
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
+      if(updates.reviewer)rememberReviewFailure(pageId,error);
       return false;
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
   }, [currentUser, currentDate, onSelectDate]);
@@ -630,6 +634,7 @@ export function CalendarHost({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-grid-step':`${pixelsPerHour*gridInterval/60}px`,'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
+      <DailyWorkspace currentUser={currentUser}/>
       <UpdateNotice message={refreshWarning} owner={currentUser}/>
       {/* Notificación de Error / Alerta Visible y Elegante */}
       <DiagnosticMessage owner={currentUser} source="Calendario · acción" message={error} level="error"/>
@@ -809,8 +814,9 @@ export function CalendarHost({
 
                 countedActivities.forEach((act) => {
                   if (act.isReviewMirror) return;
-                  totalChecks += act.checklistTotal || 0;
-                  doneChecks += act.checklistCompleted || 0;
+                  const dayChecks=dailyChecklist(act.checklistItems||[],currentDate);
+                  totalChecks += dayChecks.total;
+                  doneChecks += dayChecks.done;
                   if (act.start && act.end) {
                     const st = new Date(act.start).getTime();
                     const en = new Date(act.end).getTime();
@@ -843,7 +849,7 @@ export function CalendarHost({
                     <div
                       onDoubleClick={(e) => handleColumnCanvasDoubleClick(e, person)}
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
-                      style={{ height: `${canvasHeight}px`,backgroundColor:'var(--anfeta-calendar-bg)' }}
+                      style={{ height: `${canvasHeight}px`,backgroundColor:columnIndex%2?'color-mix(in srgb, var(--anfeta-calendar-bg) 92%, #4338ca 8%)':'color-mix(in srgb, var(--anfeta-calendar-bg) 96%, #0284c7 4%)' }}
                     >
                       <CalendarHourGrid pixelsPerHour={pixelsPerHour} interval={gridInterval}/>
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
