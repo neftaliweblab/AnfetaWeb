@@ -1,4 +1,5 @@
 "use client";
+import {TemplateAccessCheck} from '../TemplateAccessCheck';
 import {SoftwareTemplatePhases} from '../ResultsViewHost/SoftwareTemplatePhases';
 import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 import { mexicoDate } from "@/services/calendarPresentation";
@@ -608,6 +609,7 @@ export function CalendarTemplatesModal({
 
             {/* Formulario y Previsualización */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+              <TemplateAccessCheck pageIds={selectedTemplatesList.map(t=>t.PageId||t.pageId)} />
               {/* Notificación informativa estilo ANFETA */}
               <div className="p-3 rounded-lg bg-[#0B2538] border border-[#0284C7]/50 text-xs text-[#7DD3FC] flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />

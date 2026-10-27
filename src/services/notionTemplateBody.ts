@@ -171,7 +171,7 @@ export async function transferNotionInternalFile(
   return upload.id;
 }
 
-export async function prepareTemplateBody(settings: CalendarSettings, pageId: string): Promise<Node[]> {
+async function planTemplateBody(settings: CalendarSettings, pageId: string) {
   let count = 0;
   const seen = new Set<string>();
   const transfers:Array<()=>Promise<void>>=[];
@@ -216,7 +216,7 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
         sources=await readSource(fallbackId);
         if(!sources.length)throw Error('La copia local no devolvió contenido.');
       }catch{
-        throw Error('No se pudo leer el origen del bloque sincronizado ni su copia local. Revisa el acceso de la integración a la página original. Detalle: '+(error instanceof Error?error.message:''));
+        throw Error('No se pudo leer el origen del bloque sincronizado ni su copia local. Origen: '+id+'. Copia local: '+fallbackId+'. No se creó una actividad incompleta. Comparte la página original con la integración o, desde Notion, convierte el bloque en contenido independiente conservando ambas secciones y todos sus checks. Detalle: '+(error instanceof Error?error.message:''));
       }
     }
     for (const source of sources) {
@@ -312,6 +312,20 @@ export async function prepareTemplateBody(settings: CalendarSettings, pageId: st
 
   const nodes=await read(pageId, 0);
   validateTemplateBody(nodes);
+  return {nodes,transfers};
+}
+
+/** Exercise the exact copy preparation without uploading files or creating pages. */
+export async function inspectTemplateBody(settings:CalendarSettings,pageId:string){
+  const {nodes,transfers}=await planTemplateBody(settings,pageId);
+  let blocks=0,checklists=0,columns=0;
+  const walk=(list:Node[])=>{for(const node of list){blocks++;if(node.block.type==='to_do')checklists++;if(node.block.type==='column')columns++;walk(node.children);}};
+  walk(nodes);
+  return {compatible:true,blocks,checklists,columns,pendingFileTransfers:transfers.length};
+}
+
+export async function prepareTemplateBody(settings:CalendarSettings,pageId:string):Promise<Node[]>{
+  const {nodes,transfers}=await planTemplateBody(settings,pageId);
   for(const run of transfers)await run();
   validateTemplateBody(nodes);
   return nodes;

@@ -25,6 +25,7 @@ import {readUserState,updateUserState} from '@/services/userState';
 import {recordChecklistMark} from '@/services/checklistHistory';
 import {executeCoordinatedAutomation} from '@/services/coordinatedAutomation';
 import {drxFolder,uploadFilename} from '@/lib/drxUploadPlan';
+import {auditTemplateAccess} from '@/services/templateAccessAudit';
 import {prepareTemplateBody,appendTemplateBody} from '@/services/notionTemplateBody';
 import {createHash} from 'node:crypto';
 import {supabaseConfigured} from '@/services/supabaseServer';
@@ -2710,6 +2711,14 @@ async function POSTLive(req: NextRequest) {
         removedIds,
         errors: errors.length ? errors : undefined,
       });
+    }
+
+    if(action==='audit-template-access'){
+      const pageId=payload?.pageId;
+      if(typeof pageId!=='string'||!/^([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i.test(pageId))return NextResponse.json({error:'Selecciona una plantilla válida.'},{status:400});
+      const settings=getSettings();
+      const report=await auditTemplateAccess({...settings,notionSignal:AbortSignal.timeout(60000)},pageId);
+      return NextResponse.json({success:true,report},{headers:{'Cache-Control':'no-store'}});
     }
 
     if (action === 'create-from-template') {

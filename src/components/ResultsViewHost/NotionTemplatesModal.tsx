@@ -1,4 +1,5 @@
 "use client";
+import {TemplateAccessCheck} from '../TemplateAccessCheck';
 import {SoftwareTemplatePhases} from './SoftwareTemplatePhases';
 import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 
@@ -710,6 +711,7 @@ export function NotionTemplatesModal({
 
             {/* Formulario y Previsualización */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+              <TemplateAccessCheck pageIds={templatesToConfig.map(t=>t.PageId)} />
               {/* Notificación informativa estilo ANFETA */}
               <div className="p-3 rounded-lg bg-[#0B2538] border border-[#0284C7]/50 text-xs text-[#7DD3FC] flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
