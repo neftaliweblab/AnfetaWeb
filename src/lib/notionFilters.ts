@@ -1,7 +1,8 @@
+import {matchesSearchDatabase} from './searchDatabase';
 import { ResultItem } from "@/components/ResultsViewHost/ResultsVirtualTable";
 
 export function isNotionItem(x: ResultItem): boolean {
-  const s = (x.source || "").toLowerCase();
+  const s = String(x.source || "").toLowerCase();
   const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
   const p = (x.path || x.target || "").toLowerCase();
 
@@ -29,7 +30,7 @@ export function isNotionItem(x: ResultItem): boolean {
 }
 
 export function isDropboxItem(x: ResultItem): boolean {
-  const s = (x.source || "").toLowerCase();
+  const s = String(x.source || "").toLowerCase();
   const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
   const p = (x.path || x.target || "").toLowerCase();
   return s === "dropbox" || (x as any).source === 1 || src === "dropbox" || p.includes("dropbox");
@@ -40,6 +41,7 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
     return items;
   }
 
+  if(baseTag.startsWith('base:'))return items.filter(x=>isNotionItem(x)&&matchesSearchDatabase(x,baseTag));
   const tag = baseTag.toLowerCase().trim();
 
   switch (tag) {

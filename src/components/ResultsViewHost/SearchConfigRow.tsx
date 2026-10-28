@@ -1,4 +1,5 @@
 "use client";
+import {SearchChoice,type SearchChoiceOption} from './SearchChoice';
 import {SEARCH_SORTS} from "@/lib/searchPresentation";
 
 import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
@@ -27,6 +28,9 @@ interface SearchConfigRowProps {
   onChangeCustomTag?: (tag: string) => void;
   textScale: string;
   onChangeTextScale: (scale: string) => void;
+  databaseScope?:string;
+  databaseOptions?:SearchChoiceOption[];
+  onChangeDatabaseScope?:(value:string)=>void;
   groupBy: string;
   onChangeGroupBy: (group: string) => void;
   selectedMonth: string;
@@ -100,6 +104,7 @@ export function SearchConfigRow({
   onChangeCustomTag,
   textScale,
   onChangeTextScale,
+  databaseScope='Notion',databaseOptions=[],onChangeDatabaseScope,
   groupBy,
   onChangeGroupBy,
   selectedMonth,
@@ -458,31 +463,31 @@ export function SearchConfigRow({
           </select>
         </div>
 
+        {onChangeDatabaseScope&&<div className="flex shrink-0 items-center gap-1.5"><span style={{fontSize:11*scale}} className="text-slate-400">Base:</span><SearchChoice label="Filtrar por base de datos" value={databaseScope} onChange={onChangeDatabaseScope} scale={scale} options={[
+          {value:'Notion',label:'Todas las bases de Notion'},
+          ...(!['Notion','Todas bases'].includes(databaseScope)&&!databaseScope.startsWith('base:')?[{value:databaseScope,label:'Ámbito actual: '+databaseScope}]:[]),
+          ...(databaseScope==='Todas bases'?[{value:'Todas bases',label:'Todas las bases'}]:[]),
+          ...databaseOptions
+        ]}/></div>}
+
         {/* Agrupar */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">
             Agrupar:
           </span>
-          <select
-            value={groupBy}
-            onChange={(e) => onChangeGroupBy(e.target.value)}
-            style={{
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-              minHeight: `${Math.round(26 * scale)}px`,
-              padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
-            }}
-            className="bg-[#141B26] text-[#FFFFFF] border border-[#26354A] rounded focus:outline-none cursor-pointer"
-          >
-            <option value="none">Ninguno</option>
-            <option value="domain">Proyecto / estado</option>
-            <option value="domain_nobilling">Proyecto / estado (sin cobrar/pagar)</option>
-            <option value="project_suffix">📁 Proyecto / Sufijo (.webs, .ads...)</option>
-            <option value="month">Mes</option>
-            <option value="name">Nombre asignado</option>
-            <option value="name_noterminated">Nombre asignado (activas primero)</option>
-            <option value="area">Tipo / área</option>
-            <option value="area_nobilling">Tipo / área (sin cobrar/pagar)</option>
-          </select>
+          <SearchChoice label="Agrupar resultados" value={groupBy} onChange={onChangeGroupBy} scale={scale} options={[
+            {value:'none',label:'Ninguno',description:'Lista continua, con actividades activas primero.'},
+            {value:'database',label:'Base de datos',description:'Separa Revisiones, Clientes, Dominios y las demás bases.'},
+            {value:'domain',label:'Proyecto / estado'},
+            {value:'domain_nobilling',label:'Proyecto / estado (sin cobrar/pagar)'},
+            {value:'project_suffix',label:'Proyecto / Sufijo (.webs, .ads...)'},
+            {value:'month',label:'Mes',description:'Conserva todos los meses; el actual aparece primero.'},
+            {value:'name',label:'Nombre asignado'},
+            {value:'name_noterminated',label:'Nombre asignado (activas primero)'},
+            {value:'area',label:'Tipo / área'},
+            {value:'area_nobilling',label:'Tipo / área (sin cobrar/pagar)'}
+          ]}/>
+
         </div>
 
         {/* Mes */}
@@ -490,23 +495,11 @@ export function SearchConfigRow({
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">
             Mes:
           </span>
-          <select
-            value={selectedMonth}
-            onChange={(e) => onChangeMonth(e.target.value)}
-            style={{
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-              minHeight: `${Math.round(26 * scale)}px`,
-              padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
-            }}
-            className="bg-[#141B26] text-[#FFFFFF] border border-[#26354A] rounded focus:outline-none cursor-pointer"
-          >
-            <option value="Actual">Todos · actual primero{currentMonth?' ('+currentMonth+')':''}</option>
-            {MONTHS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+          <SearchChoice label="Filtrar por mes" value={selectedMonth} onChange={onChangeMonth} scale={scale} options={[
+            {value:'Actual',label:'Todos · actual primero'+(currentMonth?' ('+currentMonth+')':''),description:'No oculta los demás meses.'},
+            ...MONTHS.map(m=>({value:m,label:m}))
+          ]}/>
+
         </div>
 
         {/* Vista: − [Lista] + */}

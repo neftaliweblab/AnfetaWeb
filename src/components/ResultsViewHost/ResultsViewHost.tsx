@@ -46,7 +46,9 @@ import {detectUpload} from '@/lib/drxUploadPlan';
 import { DropboxUploadModal } from "./DropboxUploadModal";
 import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
 import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
-import { filterByNotionBase } from "@/lib/notionFilters";
+import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus';
+import {searchDatabaseOptions} from '@/lib/searchDatabase';
+import { filterByNotionBase,isNotionItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
@@ -372,6 +374,7 @@ export function ResultsViewHost({
   const [activityAction,setActivityAction]=useState<{item:any;mode:SearchActivityAction;position:{x:number;y:number}}|null>(null);
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
+  const databaseOptions=useMemo(()=>searchDatabaseOptions(items.filter(isNotionItem)),[items]);
   React.useEffect(() => {
     setItems(previous=>retainSearchResults(previous,{items:filterDeletedPages(initialItems,currentUser).filter(it=>!isExpiredResponsePage(it)),loadingIndex:true}));
   }, [initialItems,currentUser]);
@@ -1255,6 +1258,16 @@ export function ResultsViewHost({
   function focusFirstResult(){const first=resultsRoot.current?.querySelector<HTMLElement>('[data-search-result]');const item=pagedItems.find(item=>item.id===first?.dataset.searchResult);if(item)focusResult(item);else setStatusError('No hay resultados para recorrer.');}
   useEffect(()=>{if(!keyboardStart.current||deferredQuery!==query)return;keyboardStart.current=false;focusFirstResult();},[pagedItems,deferredQuery,query]);
   useEffect(()=>{if(!isActive)return;const start=()=>{keyboardStart.current=true;setSettledQuery(query);if(deferredQuery===query){keyboardStart.current=false;focusFirstResult();}};window.addEventListener('anfeta_focus_first_result',start);return()=>window.removeEventListener('anfeta_focus_first_result',start);},[isActive,query,deferredQuery,pagedItems]);
+  const typingQueryRef=useRef(query);typingQueryRef.current=query;
+  const typingChangeRef=useRef(handleQueryChange);typingChangeRef.current=handleQueryChange;
+  useEffect(()=>{
+    if(!isActive||tabsOwner!==tabsKey||!resultsRoot.current)return;
+    return installSearchTypingFocus(resultsRoot.current,(text,input)=>{
+      const next=insertSearchText(typingQueryRef.current,text,input.selectionStart,input.selectionEnd);
+      input.focus({preventScroll:true});typingQueryRef.current=next.value;typingChangeRef.current(next.value);
+      requestAnimationFrame(()=>{if(document.activeElement===input)input.setSelectionRange(next.caret,next.caret);});
+    });
+  },[isActive,tabsOwner,tabsKey]);
   function handleResultKeys(event:React.KeyboardEvent){
     if(!isActive||event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey||event.nativeEvent.isComposing)return;
     const target=event.target as HTMLElement;
@@ -1365,6 +1378,9 @@ export function ResultsViewHost({
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
+        databaseScope={selectedScope}
+        databaseOptions={databaseOptions}
+        onChangeDatabaseScope={setSelectedScope}
         resultSort={resultSort} onChangeResultSort={setResultSort}
         currentUser={resultPerson}
         onChangeCurrentUser={setResultPerson}

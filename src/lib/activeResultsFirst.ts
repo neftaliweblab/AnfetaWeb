@@ -1,3 +1,4 @@
+import {searchDatabaseName} from './searchDatabase';
 import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
 import {parseVisualParts} from '@/lib/visualTitleParser';
@@ -22,6 +23,7 @@ export function isBillingItem(item: any): boolean {
 
 export function getItemGroupKey(item: any, groupBy: string): string {
   if (!item) return "";
+  if(groupBy==='database')return '🗃️ '+(searchDatabaseName(item)||(String(item.source||'').toLowerCase()==='dropbox'?'Dropbox · sin base de Notion':'Base sin identificar'));
   const name = String(item.name || item.title || item.Name || "").toLowerCase();
   const parsed = parseVisualParts(item.name || item.title || item.Name || "", item.updateStatus || item.status || "", item.contentSnippet);
 
