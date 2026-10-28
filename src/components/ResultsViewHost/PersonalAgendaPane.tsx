@@ -58,7 +58,11 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
   const [query,setQuery]=useState(''),[preloading,setPreloading]=useState(false),[loaded,setLoaded]=useState(0);
   const preloadAbort=useRef<AbortController|null>(null);
   useEffect(()=>{setPreloading(false);setLoaded(0);return()=>preloadAbort.current?.abort();},[day,person,currentUser]);
-  const [selectedId,setSelectedId]=useState<string|null>(null),[expanded,setExpanded]=useState(true);
+  const [selectedId,setSelectedId]=useState<string|null>(null);
+  const [expandedIds,setExpandedIds]=useState<Set<string>>(()=>new Set());
+  const [layoutMode,setLayoutMode]=useState<'accordion'|'split'>('split');
+  const [sortBy,setSortBy]=useState<'schedule'|'pendingFirst'>('schedule');
+
   const [menu,setMenu]=useState<{pageId:string;x:number;y:number}|null>(null);
   const [saving,setSaving]=useState(false),[notice,setNotice]=useState('');
   const loadingRef=useRef(false);
@@ -67,7 +71,14 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
   const itemsRef=useRef(items);itemsRef.current=items;
   const recentSaves=useRef(new Map<string,{activity:NotionCalendarActivity;until:number}>());
   useEffect(()=>{recentSaves.current.clear();setItems([]);},[currentUser]);
-  useEffect(()=>{setSelectedId(requestedSelection.current);requestedSelection.current=null;setExpanded(true);setMenu(null);setNotice('');},[day,person,currentUser]);
+  useEffect(()=>{
+    if(requestedSelection.current){
+      setSelectedId(requestedSelection.current);
+      setExpandedIds(new Set([requestedSelection.current]));
+      requestedSelection.current=null;
+    }
+    setMenu(null);setNotice('');
+  },[day,person,currentUser]);
 
 
   const selectPerson = (newPerson: string) => {
@@ -122,8 +133,41 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
   },[currentUser,day,active]);
 
   const activities=useMemo(()=>personalAgendaActivities(items.filter(a=>mexicoDate(a.start)===day),person),[items,person,day]);
-  const listed=useMemo(()=>workspace?activities.filter(a=>(a.title+' '+a.domain).toLowerCase().includes(query.trim().toLowerCase())).sort((a,b)=>Number(workflowState(a.status,a.title)==='completed')-Number(workflowState(b.status,b.title)==='completed')||Date.parse(a.start)-Date.parse(b.start)):activities,[activities,workspace,query]);
-  const effectiveSelected=agendaSelection(listed,selectedId);
+  const listed=useMemo(()=>{
+    const filtered=activities.filter(a=>(a.title+' '+(a.domain||'')).toLowerCase().includes(query.trim().toLowerCase()));
+    if(sortBy==='pendingFirst'){
+      return [...filtered].sort((a,b)=>Number(workflowState(a.status,a.title)==='completed')-Number(workflowState(b.status,b.title)==='completed')||Date.parse(a.start)-Date.parse(b.start)||a.pageId.localeCompare(b.pageId));
+    }
+    return [...filtered].sort((a,b)=>Date.parse(a.start)-Date.parse(b.start)||a.pageId.localeCompare(b.pageId));
+  },[activities,query,sortBy]);
+
+  const toggleExpanded = useCallback((pageId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(pageId)) next.delete(pageId);
+      else next.add(pageId);
+      return next;
+    });
+    setSelectedId(pageId);
+  }, []);
+
+  const expandAll = useCallback(() => {
+    setExpandedIds(new Set(listed.map(a => a.pageId)));
+  }, [listed]);
+
+  const collapseAll = useCallback(() => {
+    setExpandedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (listed.length > 0 && expandedIds.size === 0) {
+      setExpandedIds(new Set([listed[0].pageId]));
+      setSelectedId(listed[0].pageId);
+    }
+  }, [listed, day, person]);
+  const effectiveSelected=workspace
+    ?(selectedId&&listed.some(a=>a.pageId===selectedId)?selectedId:(listed[0]?.pageId??null))
+    :agendaSelection(listed,selectedId);
   const selected=activities.find(a=>a.pageId===effectiveSelected);
   useNotionPageWatch(currentUser,activities,active,states=>{const ready=states.filter(s=>!pendingId.current||pageIdentity(s.id)!==pageIdentity(pendingId.current));if(ready.length)setItems(old=>filterDeletedPages(applyCalendarStates(old,ready,day),currentUser));return ready.map(s=>pageIdentity(s.id));},true);
   const menuActivity=activities.find(a=>a.pageId===menu?.pageId);
@@ -170,7 +214,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
 
   const preload=async()=>{
     if(preloading)return;const abort=new AbortController();preloadAbort.current=abort;setPreloading(true);setLoaded(0);let cursor=0;
-    const worker=async()=>{while(cursor<listed.length&&!abort.signal.aborted){const row=listed[cursor++],version=revision.current;try{
+    const worker=async()=>{while(cursor<listed.length&&!abort.signal.aborted){const row=listed[cursor++],version=revision.current;if(row.checklistScanned){if(!abort.signal.aborted)setLoaded(n=>n+1);continue;}try{
       const response=await fetch('/api/data',{method:'POST',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(45000)]),headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get-checklist',payload:{pageId:row.pageId.replace(/^review-mirror-/, '')}})});const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'No se pudieron leer los pasos.');
       if(!abort.signal.aborted&&version===revision.current&&!pending.current){setItems(old=>old.map(a=>a.pageId===row.pageId?{...a,checklistScanned:true,checklistItems:data.items,checklistTotal:data.items.length,checklistCompleted:data.items.filter((i:any)=>i.isChecked).length,todayChecklistCompleted:dailyChecklist(data.items,day).done}:a));setLoaded(n=>n+1);}
     }catch(error){if(!abort.signal.aborted)setNotice(error instanceof Error?error.message:'No se pudo cargar una actividad.');}}};
@@ -186,7 +230,42 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
           </span>
         </div>
 
-        {workspace?<div className="flex flex-wrap gap-2"><input aria-label="Buscar actividad del día" placeholder="Buscar actividad o dominio…" value={query} onChange={e=>setQuery(e.target.value)} className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 p-2"/><button type="button" disabled={preloading} onClick={()=>void preload()} className="rounded border border-cyan-700 px-2 text-cyan-200">{preloading?'Cargando '+loaded+'…':'Cargar pasos de esta lista'}</button></div>:<button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('anfeta_open_daily_workspace',{detail:{person,day}}))} className="text-cyan-300 underline">Abrir jornada en vista amplia</button>}
+        {workspace ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <input aria-label="Buscar actividad del día" placeholder="Buscar actividad o dominio…" value={query} onChange={e=>setQuery(e.target.value)} className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 p-2 text-xs"/>
+            <button type="button" onClick={()=>setSortBy(s=>s==='schedule'?'pendingFirst':'schedule')} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-2 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer" title={sortBy==='schedule'?'Orden cronológico por horario (10:30 → 18:00)':'Orden con pendientes primero'}>
+              <span>{sortBy==='schedule'?'⏰ Horario':'⚡ Pendientes'}</span>
+            </button>
+            <button type="button" onClick={()=>setLayoutMode(m=>m==='accordion'?'split':'accordion')} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-2 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer" title={layoutMode==='accordion'?'Cambiar a vista dividida de 2 columnas':'Cambiar a acordeón amplio'}>
+              <span>{layoutMode==='accordion'?'📑 Acordeón amplio':'◫ 2 Columnas'}</span>
+            </button>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={saving||!listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-300 hover:text-white text-xs font-medium cursor-pointer" title="Desplegar todas las actividades">
+                ▼ Desplegar todos
+              </button>
+              <button type="button" disabled={saving||!expandedIds.size} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-400 hover:text-slate-200 text-xs font-medium cursor-pointer" title="Colapsar todas las actividades">
+                ▲ Colapsar
+              </button>
+            </div>
+            <button type="button" disabled={preloading} onClick={()=>void preload()} className="rounded border border-cyan-700 bg-cyan-950/40 hover:bg-cyan-900/60 px-2.5 py-2 text-cyan-200 text-xs font-medium cursor-pointer">
+              {preloading?'Cargando '+loaded+'…':'Cargar pasos de esta lista'}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('anfeta_open_daily_workspace',{detail:{person,day}}))} className="text-cyan-300 underline font-semibold">
+              Abrir jornada en vista amplia ↗
+            </button>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={saving||!listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-cyan-300 cursor-pointer" title="Desplegar todas las actividades">
+                ▼ Desplegar todos
+              </button>
+              <button type="button" disabled={saving||!expandedIds.size} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer" title="Colapsar todas las actividades">
+                ▲ Colapsar
+              </button>
+            </div>
+          </div>
+        )}
         {/* Fila compacta de botones rápidos de personas: J, K, A, N, G, I, S */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {SHORT_COLLABORATORS.map(({ short, name }) => {
@@ -238,8 +317,8 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
         </div>
       </header>
 
-      <div className={workspace?"grid min-h-0 flex-1 gap-2 overflow-hidden md:grid-cols-[minmax(260px,35%)_1fr]":"contents"}>
-      {/* Lista de actividades con texto suave / neutro para evitar fatiga visual */}
+      <div className={workspace ? (layoutMode === 'accordion' ? 'flex flex-col min-h-0 flex-1 gap-2 overflow-hidden' : 'grid min-h-0 flex-1 gap-2 overflow-hidden md:grid-cols-[minmax(260px,35%)_1fr]') : 'contents'}>
+      {/* Lista de actividades con acordeón desplegable inline (▶ / ▼) */}
       <div className="min-h-0 flex-1 overflow-y-auto space-y-2 py-3">
         {loading && <p role="status" className="animate-pulse text-slate-400 text-center py-4">Cargando actividades…</p>}
         {error && <p role="alert" className="rounded border border-amber-900/60 bg-amber-950/30 p-2 text-amber-300 text-xs">{error}</p>}
@@ -249,26 +328,148 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
         {notice&&<p role="status" className="rounded-lg border border-cyan-900/60 bg-cyan-950/30 p-2 text-cyan-100 break-words">{notice}</p>}
         {conflictNotice && (<div className="rounded-xl border border-amber-500/70 bg-[#16120D] p-3 text-xs text-amber-200 space-y-2.5 shadow-xl animate-in fade-in duration-150"><div className="flex items-start gap-2"><span className="text-amber-400 font-bold text-base leading-none">⚠️</span><div className="min-w-0 flex-1 leading-snug"><p className="font-semibold text-amber-300">Conflicto de horario (Empalme)</p><p className="mt-0.5 text-[11px] text-slate-300">Se empalma con <strong className="text-white">«{conflictNotice.conflictTitle}»</strong>.</p></div></div><div className="flex flex-col gap-1.5 pt-1"><button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,allowOverlap:true});}} className="w-full rounded-lg border border-amber-500/80 bg-amber-500/20 hover:bg-amber-500/30 py-2 px-2 text-center font-semibold text-amber-200 transition-colors cursor-pointer">⚡ Aceptar que se empalme</button>{conflictNotice.suggestedSlot&&<button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,start:cn.suggestedSlot!.start,end:cn.suggestedSlot!.end,allowOverlap:false});}} className="w-full rounded-lg border border-cyan-500/80 bg-cyan-500/20 hover:bg-cyan-500/30 py-2 px-2 text-center font-semibold text-cyan-200 transition-colors cursor-pointer">🕒 Mover a hora más cercana ({conflictNotice.suggestedSlot.start.slice(11,16)} – {conflictNotice.suggestedSlot.end.slice(11,16)})</button>}<button type="button" disabled={saving} onClick={()=>setConflictNotice(null)} className="text-slate-400 hover:text-slate-200 text-center text-[11px] py-1 cursor-pointer">Descartar cambio</button></div></div>)}
         {listed.map(a => {
-          const appearance=agendaAppearance(a),active=expanded&&selected?.pageId===a.pageId;
-          return <article key={a.pageId} className={'relative rounded-lg border-l-4 border p-2.5 transition-colors '+appearance.className+(active?' ring-1 ring-cyan-400/70':'')} onContextMenu={e=>{e.preventDefault();if(!saving)setMenu({pageId:a.pageId,x:e.clientX,y:e.clientY});}}>
-            <div className="flex items-start gap-2">
-              <button type="button" disabled={saving} aria-expanded={active} aria-label={'Ver pasos de '+calendarDisplayTitle(a.title,a.domain||'')} onClick={()=>{setSelectedId(a.pageId);setExpanded(true);}} className="min-w-0 flex-1 text-left">
-                <span className="font-mono text-[11px] text-slate-300">{calendarTime(a.start)} – {calendarTime(a.end)}</span>
-                <span className={'mt-1 block text-[10px] font-semibold '+appearance.text}>{isFtfReminder(a)?'FTF · Recordatorio · No cuenta como actividad':workflowPresentation(a.status,a.title).label}{a.isReviewMirror?' · Copia de revisión':a.isHandoffMirror?' · Copia histórica':''}</span>
-                <span className={'mt-1 block break-words font-medium leading-snug '+(appearance.state==='completed'?'text-slate-400 line-through':'text-slate-100')}>{calendarDisplayTitle(a.title,a.domain||'')}</span>
-                {a.checklistScanned&&<span className="mt-1 block text-[10px] text-slate-400">{dailyChecklist(a.checklistItems||[],day).done} / {dailyChecklist(a.checklistItems||[],day).total} pasos del día</span>}
-              </button>
-              <button type="button" disabled={saving} aria-label={'Acciones de '+calendarDisplayTitle(a.title,a.domain||'')} aria-haspopup="menu" className="rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-700" onClick={e=>{e.stopPropagation();const box=e.currentTarget.getBoundingClientRect();setMenu({pageId:a.pageId,x:box.left,y:box.bottom+4});}}>⋯</button>
-            </div>
-            {a.ftfVerified&&<span aria-label="Pasos FTF verificados para hoy" className="pointer-events-none absolute right-0 top-3 h-8 w-1 rounded-l bg-emerald-400 shadow-[0_0_8px_#34d399]"/>}
-            {active&&!workspace&&<div className="mt-3" aria-busy={saving}><CalendarDetailPanel key={a.pageId} embedded isSaving={saving} activity={a} currentUser={currentUser} onClose={()=>setExpanded(false)} allActivities={activities} onSelectActivity={next=>{if(mexicoDate(next.start)!==day||normalizePerson(next.person)!==person)requestedSelection.current=next.pageId;setSelectedId(next.pageId);setExpanded(true);setItems(old=>old.some(a=>a.pageId===next.pageId)?old:[...old,next]);if(mexicoDate(next.start)!==day)setDay(mexicoDate(next.start));if(normalizePerson(next.person)!==person)selectPerson(next.person);}} onActivityUpdated={updates=>updateActivity(a.pageId,updates)} onChecklistUpdated={updates=>setItems(old=>old.map(item=>item.pageId===a.pageId?{...item,...updates}:item))}/></div>}
-            {!active&&!workspace&&<div className="mt-2 flex justify-between border-t border-slate-700/50 pt-2 text-[11px]"><button type="button" disabled={saving} onClick={()=>{setSelectedId(a.pageId);setExpanded(true);}} className="text-cyan-300">Ver pasos y detalle</button><button type="button" className="text-sky-300" onClick={()=>openNotionPage(a.pageUrl||'https://www.notion.so/'+a.pageId.replace(/^review-mirror-/,'').replace(/-/g,''))}>Abrir Notion ↗</button></div>}
-          </article>;
-        })}
+          const appearance = agendaAppearance(a);
+          const isItemExpanded = expandedIds.has(a.pageId);
+          return (
+            <article
+              key={a.pageId}
+              className={'relative rounded-lg border-l-4 border p-2.5 transition-colors ' + appearance.className + (isItemExpanded ? ' ring-1 ring-cyan-400/70 bg-slate-900/60' : '')}
+              onContextMenu={e => {
+                e.preventDefault();
+                if (!saving) setMenu({ pageId: a.pageId, x: e.clientX, y: e.clientY });
+              }}
+            >
+              <div className="flex items-start gap-2">
+                {/* Botón triangulito desplegable inline (▶ / ▼) */}
+                <button
+                  type="button"
+                  disabled={saving}
+                  aria-expanded={isItemExpanded}
+                  aria-label={(isItemExpanded ? 'Colapsar ' : 'Desplegar ') + calendarDisplayTitle(a.title, a.domain || '')}
+                  onClick={e => {
+                    e.stopPropagation();
+                    toggleExpanded(a.pageId);
+                  }}
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border border-cyan-800/70 bg-cyan-950/60 text-cyan-300 hover:bg-cyan-900/80 hover:text-white transition-all cursor-pointer shadow-sm"
+                  title={isItemExpanded ? 'Colapsar detalles de esta actividad' : 'Desplegar contenido completo de la página'}
+                >
+                  <span className="text-[11px] font-bold leading-none select-none">
+                    {isItemExpanded ? '▼' : '▶'}
+                  </span>
+                </button>
 
+                <button
+                  type="button"
+                  disabled={saving}
+                  aria-expanded={isItemExpanded}
+                  aria-label={'Ver pasos de ' + calendarDisplayTitle(a.title, a.domain || '')}
+                  onClick={() => toggleExpanded(a.pageId)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span>
+                    <span className={'text-[10px] font-semibold ' + appearance.text}>
+                      {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : workflowPresentation(a.status, a.title).label}
+                      {a.isReviewMirror ? ' · Copia de revisión' : a.isHandoffMirror ? ' · Copia histórica' : ''}
+                    </span>
+                  </div>
+                  <span className={'mt-1 block break-words font-medium leading-snug ' + (appearance.state === 'completed' ? 'text-slate-400 line-through' : 'text-slate-100')}>
+                    {calendarDisplayTitle(a.title, a.domain || '')}
+                  </span>
+                  {a.checklistScanned && (
+                    <span className="mt-1 block text-[10px] text-slate-400">
+                      {dailyChecklist(a.checklistItems || [], day).done} / {dailyChecklist(a.checklistItems || [], day).total} pasos del día
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={saving}
+                  aria-label={'Acciones de ' + calendarDisplayTitle(a.title, a.domain || '')}
+                  aria-haspopup="menu"
+                  className="rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-700 shrink-0 cursor-pointer"
+                  onClick={e => {
+                    e.stopPropagation();
+                    const box = e.currentTarget.getBoundingClientRect();
+                    setMenu({ pageId: a.pageId, x: box.left, y: box.bottom + 4 });
+                  }}
+                >
+                  ⋯
+                </button>
+              </div>
+
+              {a.ftfVerified && (
+                <span aria-label="Pasos FTF verificados para hoy" className="pointer-events-none absolute right-0 top-3 h-8 w-1 rounded-l bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              )}
+
+              {/* Contenido inline desplegado en acordeón amplio */}
+              {isItemExpanded && (!workspace || layoutMode === 'accordion') && (
+                <div className="mt-3 border-t border-slate-800/90 pt-3" aria-busy={saving}>
+                  <CalendarDetailPanel
+                    key={a.pageId}
+                    embedded
+                    isSaving={saving}
+                    activity={a}
+                    currentUser={currentUser}
+                    onClose={() => toggleExpanded(a.pageId)}
+                    allActivities={activities}
+                    onSelectActivity={next => {
+                      if (mexicoDate(next.start) !== day || normalizePerson(next.person) !== person) requestedSelection.current = next.pageId;
+                      setSelectedId(next.pageId);
+                      setExpandedIds(new Set([next.pageId]));
+                      setItems(old => old.some(item => item.pageId === next.pageId) ? old : [...old, next]);
+                      if (mexicoDate(next.start) !== day) setDay(mexicoDate(next.start));
+                      if (normalizePerson(next.person) !== person) selectPerson(next.person);
+                    }}
+                    onActivityUpdated={updates => updateActivity(a.pageId, updates)}
+                    onChecklistUpdated={updates => setItems(old => old.map(item => item.pageId === a.pageId ? { ...item, ...updates } : item))}
+                  />
+                </div>
+              )}
+
+              {!isItemExpanded && (!workspace || layoutMode === 'accordion') && (
+                <div className="mt-2 flex justify-between border-t border-slate-700/50 pt-2 text-[11px]">
+                  <button type="button" disabled={saving} onClick={() => toggleExpanded(a.pageId)} className="text-cyan-300 font-medium hover:underline flex items-center gap-1 cursor-pointer">
+                    <span>▶</span><span>Ver pasos y editar contenido</span>
+                  </button>
+                  <button type="button" className="text-sky-300 hover:underline" onClick={() => openNotionPage(a.pageUrl || 'https://www.notion.so/' + a.pageId.replace(/^review-mirror-/, '').replace(/-/g, ''))}>
+                    Abrir Notion ↗
+                  </button>
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
 
-      {workspace&&<div className="min-h-0 overflow-auto rounded-lg bg-[#111b2b] p-2">{selected&&expanded?<CalendarDetailPanel key={selected.pageId} embedded isSaving={saving} activity={selected} currentUser={currentUser} onClose={()=>setExpanded(false)} allActivities={activities} onSelectActivity={next=>{if(mexicoDate(next.start)!==day||normalizePerson(next.person)!==person)requestedSelection.current=next.pageId;setSelectedId(next.pageId);setExpanded(true);setItems(old=>old.some(a=>a.pageId===next.pageId)?old:[...old,next]);if(mexicoDate(next.start)!==day)setDay(mexicoDate(next.start));if(normalizePerson(next.person)!==person)selectPerson(next.person);}} onActivityUpdated={updates=>updateActivity(selected.pageId,updates)} onChecklistUpdated={updates=>setItems(old=>old.map(item=>item.pageId===selected.pageId?{...item,...updates}:item))}/>:<p className="p-4 text-slate-400">Selecciona una actividad para revisar su contenido.</p>}</div>}
+      {workspace && layoutMode === 'split' && (
+        <div className="min-h-0 overflow-auto rounded-lg bg-[#111b2b] p-2">
+          {selected && expandedIds.has(selected.pageId) ? (
+            <CalendarDetailPanel
+              key={selected.pageId}
+              embedded
+              isSaving={saving}
+              activity={selected}
+              currentUser={currentUser}
+              onClose={() => toggleExpanded(selected.pageId)}
+              allActivities={activities}
+              onSelectActivity={next => {
+                if (mexicoDate(next.start) !== day || normalizePerson(next.person) !== person) requestedSelection.current = next.pageId;
+                setSelectedId(next.pageId);
+                setExpandedIds(new Set([next.pageId]));
+                setItems(old => old.some(a => a.pageId === next.pageId) ? old : [...old, next]);
+                if (mexicoDate(next.start) !== day) setDay(mexicoDate(next.start));
+                if (normalizePerson(next.person) !== person) selectPerson(next.person);
+              }}
+              onActivityUpdated={updates => updateActivity(selected.pageId, updates)}
+              onChecklistUpdated={updates => setItems(old => old.map(item => item.pageId === selected.pageId ? { ...item, ...updates } : item))}
+            />
+          ) : (
+            <p className="p-4 text-slate-400">Selecciona una actividad para revisar su contenido.</p>
+          )}
+        </div>
+      )}
       </div>
       {menu&&menuActivity&&<AgendaActivityActions key={menuActivity.pageId} activity={menuActivity} currentUser={currentUser} position={menu} busy={saving} onClose={closeMenu} onSave={updates=>updateActivity(menuActivity.pageId,updates)}/>}
       {onOpenCalendar && (

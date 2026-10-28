@@ -432,7 +432,7 @@ export function ResultsVirtualTable({
           paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
           paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
         }}
-        className={`flex flex-wrap items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
+        className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
           isSelected
             ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
             : isChecked
@@ -440,7 +440,7 @@ export function ResultsVirtualTable({
             : "hover:bg-[#172230] text-[#CBD5E1]"
         }`}
       >
-        <div className="basis-full pb-1"><ResultIdentityBadges item={item} query={searchQuery}/></div>
+
         {showPath && (
           <div
             style={{
@@ -504,17 +504,20 @@ export function ResultsVirtualTable({
           >
             {highlightMatch(parsed.title)}
           </span>
-          {(parsed.domain || item.domainChip || item.domain) && (
-            <span
-              style={{
-                fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
-              }}
-              className="shrink-0 max-w-[140px] truncate ml-auto rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
-            >
-              {highlightMatch(parsed.domain || item.domainChip || item.domain)}
-            </span>
-          )}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 overflow-hidden">
+            {(parsed.domain || item.domainChip || item.domain) && (
+              <span
+                style={{
+                  fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
+                }}
+                className="shrink-0 max-w-[140px] truncate rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
+              >
+                {highlightMatch(parsed.domain || item.domainChip || item.domain)}
+              </span>
+            )}
+            <ResultIdentityBadges item={item} query={searchQuery}/>
+          </div>
         </div>
 
         {/* Estado */}
@@ -523,7 +526,7 @@ export function ResultsVirtualTable({
             style={{ width: `${colWidths.status}px` }}
             className="shrink-0 px-1 flex items-center gap-1 overflow-hidden"
           >
-            {progressiveStage(item.name)||progressiveStage(item.updateStatus||'') ? (<WorkflowStageBadge status={item.updateStatus||''} title={item.name}/>) : parsed.workflow ? (
+            {progressiveStage(item.name)||progressiveStage(item.updateStatus||'') ? (<WorkflowStageBadge status={item.updateStatus||''} title={item.name} scale={scale}/>) : parsed.workflow ? (
               <span
                 style={{
                   fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,

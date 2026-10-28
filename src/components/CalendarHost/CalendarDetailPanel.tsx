@@ -322,10 +322,10 @@ export function CalendarDetailPanel({
 
         {onActivityUpdated && <CalendarActivityTools activity={activity} currentUser={currentUser} onSave={onActivityUpdated} />}
         </>}
-        <ActivityContentPanel activity={activity} currentUser={currentUser}/>
-        {!!daily.unknown&&<p className="text-xs text-amber-300">{daily.unknown} checks completados sin fecha de marcado verificable: se conservan en historial y no se atribuyen a hoy.</p>}
-        {!!daily.history.length&&<button type="button" onClick={()=>setShowHistory(v=>!v)} className="text-xs text-slate-400 underline">{showHistory?'Ocultar':'Ver'} historial ({daily.history.length} checks; no cuentan hoy)</button>}
-        {/* Pestañas: Checklist de Notion vs Actividades del Proyecto (Dominio) */}
+
+
+
+        {/* Pestañas: Contenido y Pasos vs Actividades del Proyecto (Dominio) */}
         <div className="flex items-center justify-between border-b border-[#27272A] pt-2">
           <div className="flex gap-2">
             <button
@@ -337,7 +337,7 @@ export function CalendarDetailPanel({
               }`}
             >
               <ListChecks className="w-3.5 h-3.5" />
-              <span>Pasos del día ({daily.total})</span>
+              <span>Contenido y pasos ({daily.total})</span>
             </button>
             <button
               onClick={() => setActiveTab("project")}
@@ -356,58 +356,64 @@ export function CalendarDetailPanel({
           </span>
         </div>
 
-        {embedded && <p className="text-xs text-emerald-300" role="status">{loading ? "Cargando pasos…" : `${checklistDone} / ${checklistTotal} pasos completados (${pct}%)`}</p>}
-        {/* Tab 1: Checklist To-Do Box */}
+        {/* Tab 1: Vista unificada de Contenido y Pasos de Notion */}
         {activeTab === "checklist" && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-[#151c27] px-3 py-2 text-xs">
+              <span className="text-slate-300 font-medium">Pasos verificados de hoy:</span>
+              <span className="font-mono font-bold text-emerald-400">
+                {loading ? "Cargando…" : `${checklistDone} / ${checklistTotal} (${pct}%)`}
+              </span>
+            </div>
 
-          <div className="rounded-lg border border-[#27272A] bg-[#18181B] p-3 space-y-2">
-            <details><summary className="cursor-pointer text-xs text-slate-400">Agregar check o comentario</summary><ActivityQuickEntry key={activity.pageId} pageId={activity.pageId} disabled={!editable||loading} onChecklistAdded={item=>{if(activePage.current===activity.pageId)setItems(old=>[item,...old]);}}/></details>
-            {checklistError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"><p>{checklistError}</p><button onClick={() => setRetry(n => n + 1)} className="mt-2 underline font-semibold">Volver a cargar</button></div>}
-            {loading ? (
-              <div className="flex items-center gap-2 py-4 text-xs text-slate-400 italic">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                Cargando tareas de Notion...
+            <details className="rounded-lg border border-slate-800 bg-[#12161f] p-2 text-xs text-slate-400">
+              <summary className="cursor-pointer font-medium text-cyan-300 hover:text-cyan-200">
+                + Agregar check o comentario rápido
+              </summary>
+              <div className="mt-2">
+                <ActivityQuickEntry
+                  key={activity.pageId}
+                  pageId={activity.pageId}
+                  disabled={!editable || loading}
+                  onChecklistAdded={item => {
+                    if (activePage.current === activity.pageId) {
+                      setItems(old => [item, ...old]);
+                      window.dispatchEvent(new CustomEvent('anfeta_page_content_changed', { detail: { pageId: activity.pageId } }));
+                    }
+                  }}
+                />
               </div>
-            ) : items.length === 0 ? (
-              <p className="text-xs italic text-slate-500 py-2">
-                Esta actividad no contiene tareas de checklist.
+            </details>
+
+            {checklistError && (
+              <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/40 p-2 text-xs text-rose-100 flex items-center justify-between">
+                <span>{checklistError}</span>
+                <button onClick={() => setRetry(n => n + 1)} className="underline font-semibold text-rose-200">Reintentar</button>
+              </div>
+            )}
+
+            {!!daily.unknown && (
+              <p className="text-xs text-amber-300">
+                {daily.unknown} checks completados sin fecha de marcado verificable: se conservan en historial y no se atribuyen a hoy.
               </p>
-            ) : (
-              <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {(showHistory?items:daily.items).map((item) => (
-                  <li
-                    key={item.id}
-                    onClick={() => handleToggle(item)}
-                    role="checkbox" aria-checked={item.isChecked} aria-disabled={!editable || item.isUpdating}
-                    tabIndex={editable ? 0 : -1}
-                    onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); handleToggle(item); } }}
-                    className={`flex items-start gap-2.5 p-1.5 rounded cursor-pointer transition-colors text-xs ${
-                      item.isChecked
-                        ? "text-slate-400 line-through bg-emerald-950/20"
-                        : "text-slate-200 hover:bg-[#202026]"
-                    }`}
-                  >
-                    <div
-                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                        item.isChecked
-                          ? "border-emerald-500 bg-emerald-600 text-white"
-                          : "border-slate-600 bg-slate-900"
-                      }`}
-                    >
-                      {item.isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
-                    <span className={`flex-1 break-words leading-tight ${item.text.startsWith('⚡')?'font-bold text-amber-300':''}`}>{item.text}</span>
-                    {item.isUpdating && (
-                      <Loader2 className="w-3 h-3 animate-spin text-cyan-400 shrink-0" />
-                    )}
-                  </li>
-                ))}
-              </ul>
+            )}
+            {!!daily.history.length && (
+              <p className="text-xs text-slate-400">
+                Historial: {daily.history.length} checks completados en días anteriores (no cuentan hoy).
+              </p>
             )}
 
             {statusMessage && (
               <p className="text-xs text-cyan-200 pt-1">{statusMessage}</p>
             )}
+
+            {/* Vista unificada e interactiva: contenido enriquecido, multimedia y checks de Notion */}
+            <ActivityContentPanel
+              activity={activity}
+              currentUser={currentUser}
+              defaultOpen={true}
+              onChecklistUpdated={onChecklistUpdated}
+            />
           </div>
         )}
 

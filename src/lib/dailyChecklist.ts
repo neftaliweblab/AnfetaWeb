@@ -9,6 +9,7 @@ export function dailyChecklist<T extends {isChecked:boolean;markedAt?:string;mar
 
 export function dailyActivityChecks(activity:any,day=mexicoDate(activity.start)){
  if(Array.isArray(activity.checklistItems))return dailyChecklist(activity.checklistItems,day);
- const total=activity.dailyChecklistTotal||0,done=activity.dailyChecklistCompleted||0;
+ const total=(activity.dailyChecklistTotal!==undefined?activity.dailyChecklistTotal:(activity.todayChecklistCompleted!==undefined?activity.checklistTotal:0))||0;
+ const done=activity.dailyChecklistCompleted??activity.todayChecklistCompleted??0;
  return {total,done,percent:total?Math.round(done*100/total):0};
 }

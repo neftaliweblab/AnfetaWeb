@@ -692,7 +692,7 @@ function ActivityCardComponent({
           }`}
         >
           <WorkflowStageBadge status={activity.status} title={activity.title}/>
-          <ActivityContentPanel activity={activity} currentUser={currentUser} onEditingChange={value=>{contentEditing.current=value;}}/>
+          <ActivityContentPanel activity={activity} currentUser={currentUser} defaultOpen={false} onEditingChange={value=>{contentEditing.current=value;}}/>
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
             <div className="flex items-center gap-1.5 min-w-0">

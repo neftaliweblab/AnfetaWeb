@@ -203,10 +203,11 @@ function getCompiledHighlight(query: string): CompiledHighlight {
   if (terms.length > 0) {
     const sorted = [...terms].sort((a, b) => b.length - a.length);
     const escapedPattern = sorted
-      .map((w) => parseActivityTag(w) ? '(?<![\p{L}\p{N}_@./-])' + makeAccentRegexPattern(w) + '(?![\p{L}\p{N}_@./-])' : makeAccentRegexPattern(w))
+      .map((w) => parseActivityTag(w) ? '(?<![\\p{L}\\p{N}_@./-])' + makeAccentRegexPattern(w) + '(?![\\p{L}\\p{N}_@./-])' : makeAccentRegexPattern(w))
       .join("|");
     try {
       regex = new RegExp('(' + escapedPattern + ')', 'giu');
+
     } catch {
       regex = null;
     }

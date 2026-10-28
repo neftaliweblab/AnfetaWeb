@@ -43,8 +43,10 @@ export function evaluateLagStatus(
     };
   }
 
-  const progressTodayPct=currentActivityRatio(activity)*100;
-  if(activity.checklistItems&&dailyChecklist(activity.checklistItems,mexicoDate(activity.start)).total===0)return {isLagging:false,isMissingChecklist:false};
+  const dailyTotal = activity.checklistItems ? dailyChecklist(activity.checklistItems, mexicoDate(activity.start)).total : (activity.dailyChecklistTotal ?? 0);
+  if (dailyTotal === 0) return { isLagging: false, isMissingChecklist: false };
+  const progressTodayPct = currentActivityRatio(activity) * 100;
+
 
   if (isPastEnd && progressTodayPct < 33) {
     return {
@@ -77,7 +79,8 @@ export function computeDailyKPIs(
     const durMin = endD > startD ? Math.round((endD - startD) / 60000) : 60;
 
     scheduledMinutes += durMin;
-    currentMinutes += durMin * currentActivityRatio(act,dateStr);
+    const actRatio = act.checklistItems ? currentActivityRatio(act, dateStr) : (act.checklistScanned && act.checklistTotal > 0 ? Math.max(0, Math.min(1, act.checklistCompleted / act.checklistTotal)) : currentActivityRatio(act, dateStr));
+    currentMinutes += durMin * actRatio;
 
     const lag = evaluateLagStatus(act, now);
     if (lag.isLagging) laggingCount++;
@@ -90,7 +93,8 @@ export function computeDailyKPIs(
       completedCount++;
     }
 
-    const pctToday=act.checklistTotal>0?currentActivityRatio(act,dateStr)*100:act.isFinalized?100:0;
+    const dailyChecks = dailyActivityChecks(act, dateStr);
+    const pctToday = act.checklistTotal > 0 ? (dailyChecks.total > 0 ? (dailyChecks.done / dailyChecks.total) * 100 : 0) : act.isFinalized ? 100 : 0;
 
     progressMinutes += durMin * (pctToday / 100);
   }

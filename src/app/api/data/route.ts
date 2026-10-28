@@ -43,7 +43,7 @@ import {financeRowsForDay} from '@/services/calendarFinance';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
-import { clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
+import { appendInternalMetadata, clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
 import { workflowState } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken } from '@/services/dropboxUpload';
@@ -2403,7 +2403,7 @@ async function POSTLive(req: NextRequest) {
         }
         const value={...session,person:input.currentUser || settings.currentUser};
         const text='[ANFETA_WEB_WORK_SESSION_V1]'+Buffer.from(JSON.stringify(value)).toString('base64');
-        await notionRequest(settings,'blocks/'+input.pageId+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{text:{content:'Datos internos de ANFETA'}}],children:[{object:'block',type:'paragraph',paragraph:{rich_text:[{text:{content:text}}]}}]}}]});
+        await appendInternalMetadata(settings,input.pageId,text);
         return NextResponse.json({success:true});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se guardó la sesión.'},{status:400});}
     }

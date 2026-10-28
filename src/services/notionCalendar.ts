@@ -180,8 +180,22 @@ export async function appendInternalMetadata(settings:CalendarSettings,pageId:st
  const task=(metadataWrites.get(key)||Promise.resolve()).catch(()=>{}).then(async()=>{
   const rich_text=[];for(let offset=0;offset<text.length;offset+=1800)rich_text.push({type:'text',text:{content:text.slice(offset,offset+1800)}});
   const paragraph={object:'block',type:'paragraph',paragraph:{rich_text}};
-  const container=(await readBlocks(settings,pageId)).find(block=>block.type==='toggle'&&(block.toggle?.rich_text||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('').trim()==='Datos internos de ANFETA');
-  if(container)await notionRequest(settings,'blocks/'+container.id+'/children','PATCH',{children:[paragraph]});
+  const blocks=await readBlocks(settings,pageId);
+  const containers=blocks.filter(block=>block.type==='toggle'&&(block.toggle?.rich_text||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('').trim()==='Datos internos de ANFETA');
+  const container=containers[0];
+  if(container){
+    await notionRequest(settings,'blocks/'+container.id+'/children','PATCH',{children:[paragraph]});
+    if(containers.length>1){
+      for(const extra of containers.slice(1)){
+        try{
+          const children=await readBlocks(settings,extra.id);
+          const valid=children.filter(b=>b.type==='paragraph'&&!b.has_children&&/^\[ANFETA_[A-Z0-9_]+\]/.test((b.paragraph?.rich_text||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('')));
+          if(valid.length)await notionRequest(settings,'blocks/'+container.id+'/children','PATCH',{children:valid.map(b=>({object:'block',type:'paragraph',paragraph:{rich_text:(b.paragraph.rich_text||[]).map((t:any)=>({type:'text',text:{content:t.plain_text||t.text?.content||''}}))}}))});
+          await notionRequest(settings,'blocks/'+extra.id,'DELETE');
+        }catch(e){console.warn('No se pudo fusionar contenedor interno extra:',e);}
+      }
+    }
+  }
   else await notionRequest(settings,'blocks/'+pageId+'/children','PATCH',{children:[{object:'block',type:'toggle',toggle:{rich_text:[{type:'text',text:{content:'Datos internos de ANFETA'}}],children:[paragraph]}}]});
  });
  metadataWrites.set(key,task);try{await task;}finally{if(metadataWrites.get(key)===task)metadataWrites.delete(key);}

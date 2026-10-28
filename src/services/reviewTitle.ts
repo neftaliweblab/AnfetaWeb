@@ -20,10 +20,14 @@ export function reviewTitle(title:string,original:string,reviewer:string,state:'
   const ownerTokens=[...new Set(ownerTags.map(tag=>tag.legacy?(state==='returned'?ACTIVITY_TAGS[ownerKey].review:ACTIVITY_TAGS[ownerKey].passive)+tag.suffix:(state==='returned'?ACTIVITY_TAGS[ownerKey].active:ACTIVITY_TAGS[ownerKey].reference)+tag.suffix))];
   if(owner&&!ownerTokens.length)ownerTokens.push(state==='returned'?owner.review:owner.passive);
   const legacyReviewSuffix=tags.find(tag=>tag.person===reviewKey&&tag.legacy&&tag.suffix)?.suffix||'';
-  const reviewerReferences=useNew&&reviewKey!==ownerKey?tags.filter(tag=>tag.person===reviewKey&&(tag.role==='active'||tag.role==='reference')&&!tag.legacy).map(tag=>review.reference+tag.suffix):[];
+  const reviewerReferences=(state==='pending'&&useNew&&reviewKey!==ownerKey)?tags.filter(tag=>tag.person===reviewKey&&(tag.role==='active'||tag.role==='reference')&&!tag.legacy).map(tag=>review.reference+tag.suffix):[];
   const remove=tags.filter(tag=>{
     if(tag.person===ownerKey)return tag.role!=='legacy'||tag.token===tag.token.toLowerCase();
-    if(tag.person===reviewKey)return tag.role==='review'||useNew&&(tag.role==='active'||tag.role==='reference')||tag.legacy&&(!!tag.suffix||tag.token===tag.token.toLowerCase());
+    if(tag.person===reviewKey){
+      if(state==='approved'||state==='returned')return true;
+      return tag.role==='review'||useNew&&(tag.role==='active'||tag.role==='reference')||tag.legacy&&(!!tag.suffix||tag.token===tag.token.toLowerCase());
+    }
+    if(state==='approved'&&tag.role==='review')return true;
     return false;
   });
   let body=title;
@@ -33,7 +37,7 @@ export function reviewTitle(title:string,original:string,reviewer:string,state:'
   const phase=/(?<![\p{L}\p{N}_])(?:sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\p{L}\p{N}_])/giu;
   const target=mode==='new'?(state==='pending'?'rtuzR':state==='approved'?'tuzR':'prtuzR'):(state==='pending'?'rtuzREVISION':state==='approved'?'zREVISION':'prtuzREVISION');
   body=phase.test(body)?body.replace(phase,target):target+' '+body;
-  const reviewerToken=state==='pending'&&mode==='new'?pendingReviewTag(reviewer):(state==='pending'?review.review:review.passive)+legacyReviewSuffix;
+  const reviewerToken=state==='pending'?(mode==='new'?pendingReviewTag(reviewer):(review.review+legacyReviewSuffix)):'';
   const newToken=state==='pending'&&useNew&&mode!=='new'?pendingReviewTag(reviewer):'';
-  return [body,...ownerTokens,...new Set(reviewerReferences),reviewerToken,newToken].join(' ').replace(/\s{2,}/g,' ').trim();
+  return [body,...ownerTokens,...new Set(reviewerReferences),reviewerToken,newToken].filter(Boolean).join(' ').replace(/\s{2,}/g,' ').trim();
 }
