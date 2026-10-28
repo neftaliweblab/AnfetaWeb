@@ -524,31 +524,43 @@ export function ResultsVirtualTable({
               type="button"
               aria-expanded={isExpanded}
               aria-label={isExpanded ? "Ocultar contenido de " + item.name : "Desplegar contenido de " + item.name}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleRowExpanded(item.id);
               }}
               style={{
-                width: `${Math.round(16 * scale)}px`,
-                height: `${Math.round(16 * scale)}px`,
+                width: `${Math.max(22, Math.round(22 * scale))}px`,
+                height: `${Math.max(20, Math.round(20 * scale))}px`,
               }}
-              className="shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-cyan-300 hover:bg-slate-700/50 transition-colors cursor-pointer"
+              className={`shrink-0 flex items-center justify-center rounded border transition-all cursor-pointer ${
+                isExpanded
+                  ? "bg-cyan-950/60 border-cyan-500/60 text-cyan-300 shadow-xs"
+                  : "bg-[#141F2D] border-slate-700/80 text-slate-300 hover:text-cyan-200 hover:border-cyan-400/70 hover:bg-[#1A2A3D]"
+              }`}
               title={isExpanded ? "Ocultar contenido y checks" : "Desplegar contenido y checks"}
             >
               {isExpanded ? (
                 <ChevronDown
                   style={{
-                    width: `${Math.round(13 * scale)}px`,
-                    height: `${Math.round(13 * scale)}px`,
+                    width: `${Math.max(14, Math.round(14 * scale))}px`,
+                    height: `${Math.max(14, Math.round(14 * scale))}px`,
                   }}
-                  className="text-cyan-400"
+                  className="text-cyan-300"
                 />
               ) : (
                 <ChevronRight
                   style={{
-                    width: `${Math.round(13 * scale)}px`,
-                    height: `${Math.round(13 * scale)}px`,
+                    width: `${Math.max(14, Math.round(14 * scale))}px`,
+                    height: `${Math.max(14, Math.round(14 * scale))}px`,
                   }}
+                  className="text-slate-300"
                 />
               )}
             </button>
@@ -756,15 +768,17 @@ export function ResultsVirtualTable({
 
       {isExpanded && (
         <div
-          className="bg-[#090E17] border-t border-[#1E293B] pl-8 pr-4 py-3 shadow-inner select-text"
+          className="w-full bg-[#080D15] border-t border-b border-[#1E293B] px-3 sm:px-6 py-3.5 shadow-2xl select-text transition-all"
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <div className="max-w-4xl space-y-2">
+          <div className="w-full max-w-5xl mx-auto">
             <ActivityContentPanel
               activity={activity}
               currentUser={currentUser}
               defaultOpen={true}
+              embedded={true}
+              maxHeight="max-h-[350px]"
             />
           </div>
         </div>
@@ -840,31 +854,43 @@ export function ResultsVirtualTable({
               type="button"
               aria-expanded={isExpanded}
               aria-label={isExpanded ? "Ocultar contenido de " + item.name : "Desplegar contenido de " + item.name}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleRowExpanded(item.id);
               }}
               style={{
-                width: `${Math.round(16 * scale)}px`,
-                height: `${Math.round(16 * scale)}px`,
+                width: `${Math.max(22, Math.round(22 * scale))}px`,
+                height: `${Math.max(20, Math.round(20 * scale))}px`,
               }}
-              className="shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-cyan-300 hover:bg-slate-700/50 transition-colors cursor-pointer"
+              className={`shrink-0 flex items-center justify-center rounded border transition-all cursor-pointer ${
+                isExpanded
+                  ? "bg-cyan-950/60 border-cyan-500/60 text-cyan-300 shadow-xs"
+                  : "bg-[#141F2D] border-slate-700/80 text-slate-300 hover:text-cyan-200 hover:border-cyan-400/70 hover:bg-[#1A2A3D]"
+              }`}
               title={isExpanded ? "Ocultar contenido y checks" : "Desplegar contenido y checks"}
             >
               {isExpanded ? (
                 <ChevronDown
                   style={{
-                    width: `${Math.round(13 * scale)}px`,
-                    height: `${Math.round(13 * scale)}px`,
+                    width: `${Math.max(14, Math.round(14 * scale))}px`,
+                    height: `${Math.max(14, Math.round(14 * scale))}px`,
                   }}
-                  className="text-cyan-400"
+                  className="text-cyan-300"
                 />
               ) : (
                 <ChevronRight
                   style={{
-                    width: `${Math.round(13 * scale)}px`,
-                    height: `${Math.round(13 * scale)}px`,
+                    width: `${Math.max(14, Math.round(14 * scale))}px`,
+                    height: `${Math.max(14, Math.round(14 * scale))}px`,
                   }}
+                  className="text-slate-300"
                 />
               )}
             </button>
@@ -1060,7 +1086,7 @@ export function ResultsVirtualTable({
 
         {isExpanded && (
           <div
-            className="mt-2.5 pt-2 border-t border-[#1E293B] bg-[#090E17] -mx-2.5 -mb-2.5 p-3 rounded-b-lg shadow-inner select-text"
+            className="mt-2.5 pt-2 border-t border-[#1E293B] bg-[#080D15] -mx-2.5 -mb-2.5 p-3 rounded-b-lg shadow-inner select-text"
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
           >
@@ -1068,6 +1094,8 @@ export function ResultsVirtualTable({
               activity={activity}
               currentUser={currentUser}
               defaultOpen={true}
+              embedded={true}
+              maxHeight="max-h-[280px]"
             />
           </div>
         )}
