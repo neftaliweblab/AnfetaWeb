@@ -1,4 +1,5 @@
 'use client';
+import {fetchWithScheduleChoice} from '@/lib/scheduleChoice';
 import {createPortal} from 'react-dom';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
@@ -221,7 +222,7 @@ export function CreateActivityModal({
             setSaving(true);
             setError('');
             try {
-              const response = await fetch('/api/data', {
+              const response = await fetchWithScheduleChoice('/api/data', {
                 method: 'POST',
                 signal:AbortSignal.timeout(115000),
                 headers: { 'Content-Type': 'application/json' },

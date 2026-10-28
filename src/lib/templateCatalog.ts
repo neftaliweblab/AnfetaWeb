@@ -1,3 +1,4 @@
+import {revisionPhaseTitle} from '../services/progressiveWorkflow';
 import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags,pendingReviewTag} from '../services/activityTags';
 /**
  * templateCatalog.ts
@@ -309,6 +310,10 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     }
   }
 
+  // Preserve the classification and suffixes already configured in the source template.
+  const classified=templateOriginalTitle.match(/\[([pd]\.)dominio\.com([^\]]*)\]/i);
+  if(classified&&cleanDom)formattedDomain='['+classified[1]+cleanDom.replace(/^[pd]\./i,'')+classified[2]+']';
+
   const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle)) : "";
   const reviewerTag = reviewerName ? getCalendarReviewerTag(reviewerName) : "";
   const incomingReviewTags=scanActivityTags(templateOriginalTitle).filter(tag=>tag.role==='review'&&!tag.legacy);
@@ -334,7 +339,7 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     teamTags,
   ].filter(Boolean);
 
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  return revisionPhaseTitle(parts.join(' '),'pending');
 }
 
 /**

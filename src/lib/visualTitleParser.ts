@@ -1,3 +1,4 @@
+import {calendarDomain} from '../services/calendarPresentation';
 import {workflowPresentation} from '../services/activityWorkflow';
 import {stripProgressiveStage,progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
 export interface VisualParts {
@@ -80,6 +81,9 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
 
   // 4. Extraer Dominio (ej. webs.apantallante.com, seo.lcacalderas.com, novakid.com)
   let domain = '';
+  const classifiedToken=display.match(/(?:\[|\()?([pd]\.(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|app|dev|info)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*)(?:\]|\))?(?=\s|$)/i);
+  if(classifiedToken){domain=calendarDomain(classifiedToken[1]);display=display.replace(classifiedToken[0],' ');}
+
   let area = areaFromStage;
   const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co)))\b\s*(?:\]|\))?/i;
   const domainMatch = display.match(domainRegex);

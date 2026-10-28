@@ -1,4 +1,5 @@
 "use client";
+import {NotesPanel} from '@/components/ResultsViewHost/NotesPanel';
 import {mergeCalendarSnapshot} from '@/lib/calendarUpdates';
 import {DiagnosticsLogs} from '@/components/Diagnostics/DiagnosticsLogs';
 import {sharedCalendarFetch} from '@/lib/sharedCalendarFetch';
@@ -161,7 +162,7 @@ export default function StandaloneCalendarPage() {
         {sharedMode&&<button onClick={()=>setPersonPickerOpen(true)} className="text-xs text-cyan-300">{currentUser} · Cambiar persona</button>}
         {/* Estado de Enlace / Sincronización */}
         <div className="flex items-center gap-2">
-          <DiagnosticsLogs owner={currentUser}/>
+          <NotesPanel key={currentUser} currentUser={currentUser}/><DiagnosticsLogs owner={currentUser}/>
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#10201C] border border-[#166534]/50 text-[#86EFAC] text-[10px] font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
             <span>{syncStatus}</span>

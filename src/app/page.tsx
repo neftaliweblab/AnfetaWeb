@@ -1,4 +1,5 @@
 "use client";
+import {NotesPanel} from '@/components/ResultsViewHost/NotesPanel';
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
@@ -782,6 +783,8 @@ export default function AnfetaApp() {
           onPreview={(data) => setPreviewAnnouncement(data)}
         />
       )}
+
+      {isAuthenticated&&<NotesPanel key={currentUser} currentUser={currentUser} showTrigger={false} onCreated={row=>window.dispatchEvent(new CustomEvent('anfeta_note_created',{detail:{owner:currentUser,row}}))}/>}
 
       {/* Login Corporativo Modal */}
       {!isAuthenticated && (

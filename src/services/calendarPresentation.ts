@@ -1,3 +1,4 @@
+import {classifiedDomain} from '../lib/contentClassification';
 import {stripProgressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY,progressiveStage} from './progressiveWorkflow';
 
 import {scanActivityTags,stripActivityTags} from './activityTags';
@@ -14,9 +15,9 @@ const TYPES: [RegExp, string][] = [
   [/\b(?:soporte|ticket|mantenimiento)\b/i, 'SOPORTE'],
 ];
 export function calendarDomain(title: string, project = '') {
-  const match = (project + ' ' + title).match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?=[\s/\](),:;]|$)/i);
+  const match = (project + ' ' + title).match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*(?=[\s/\](),:;]|$)/i);
   if (!match) return 'general';
-  return match[0].replace(/^https?:\/\//i,'').replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'').toLowerCase();
+  return classifiedDomain(match[0].replace(/^https?:\/\//i,'').replace(/(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))+$/i,'')).replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'').toLowerCase();
 }
 export function calendarType(title: string, project = '') {
   const category=PROGRESSIVE_WORKFLOW_PRIMARY?progressiveStage(title)?.category:null;

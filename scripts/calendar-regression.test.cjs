@@ -85,6 +85,14 @@ let passed=0;const lines=[];
 async function test(name,fn){if(process.env.ANFETA_TEST_FILTER&&!new RegExp(process.env.ANFETA_TEST_FILTER,'i').test(name))return;reset();await fn();passed++;lines.push('OK '+name);console.log('OK '+name);}
 const request=(action,payload)=>new Request('http://localhost/api/data',{method:'POST',headers:{'Content-Type':'application/json','x-test-user':payload?.currentUser || 'nneft'},body:JSON.stringify({action,payload})});
 (async()=>{
+  await test('Crear actividad devuelve empalme estructurado y permite confirmarlo',async()=>{
+    state.queryCurrent=true;
+    const payload={title:'Nueva actividad',person:'Neftali',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00'};
+    const response=await route.POST(request('create-activity',payload));const conflict=await response.json();
+    assert.equal(response.status,409);assert.equal(conflict.code,'SCHEDULE_CONFLICT');assert.ok(conflict.conflictTitle);assert.ok(conflict.suggestedSlot?.start);assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,0);
+    process.env.NOTION_PERSON_IDS=JSON.stringify({Neftali:'neft-id'});
+    const confirmed=await route.POST(request('create-activity',{...payload,allowOverlap:true}));const data=await confirmed.json();assert.equal(confirmed.status,200,data.error);assert.equal(data.success,true);assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,1);
+  });
   await test('Cierre de plantilla y rápida desactiva tags sin historial de revisión',async()=>{
     for(const initial of ['prtuzR 26-[10OCT] Reporte ADS nne11','prtuzR [Actividad rápida] Grabación nne00']){
       reset();state.page.properties.Name.title=[{text:{content:initial}}];

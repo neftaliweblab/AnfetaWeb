@@ -28,6 +28,7 @@ interface SearchConfigRowProps {
   onChangeCustomTag?: (tag: string) => void;
   textScale: string;
   onChangeTextScale: (scale: string) => void;
+  classification?:string;onChangeClassification?:(value:string)=>void;
   databaseScope?:string;
   databaseOptions?:SearchChoiceOption[];
   onChangeDatabaseScope?:(value:string)=>void;
@@ -104,6 +105,7 @@ export function SearchConfigRow({
   onChangeCustomTag,
   textScale,
   onChangeTextScale,
+  classification='all',onChangeClassification,
   databaseScope='Notion',databaseOptions=[],onChangeDatabaseScope,
   groupBy,
   onChangeGroupBy,
@@ -470,6 +472,7 @@ export function SearchConfigRow({
           ...databaseOptions
         ]}/></div>}
 
+        {onChangeClassification&&<SearchChoice label="Proyecto o documentación" value={classification} onChange={onChangeClassification} scale={scale} options={[{value:'all',label:'Proyecto + documentación'},{value:'project',label:'P · Proyecto'},{value:'documentation',label:'D · Documentación'},{value:'unclassified',label:'Sin clasificar'}]}/>}
         {/* Agrupar */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">

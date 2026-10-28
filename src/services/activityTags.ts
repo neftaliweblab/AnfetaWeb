@@ -25,6 +25,11 @@ const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
 ];
 function resolveActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
+  // New template annotations (n-ne11, g-ge000) retain the same semantic tag.
+  for(const [person,entry] of Object.entries(ACTIVITY_TAGS))if(lower.startsWith(entry.active[0]+'-')){
+    const compact=resolveActivityTag(lower.slice(2));if(compact&&!compact.legacy&&compact.person===person)return {...compact,token};
+  }
+
   for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
     if(lower===entry.reference+'000')return {person:person as ActivityPerson,role:'review',suffix:'000',token,legacy:false};
     for(const [suffix, priority] of PRIORITY_SUFFIXES){
@@ -93,8 +98,8 @@ export function resultAssignedPerson(item:any){
 export function activityTagPattern(){
   const tokens:string[]=[];
   for(const entry of Object.values(ACTIVITY_TAGS)){
-    tokens.push(entry.reference+'000');
-    for(const [suffix] of PRIORITY_SUFFIXES)tokens.push(entry.active+suffix,entry.reference+suffix);
+    tokens.push(entry.reference+'000',entry.active[0]+'-'+entry.reference+'000');
+    for(const [suffix] of PRIORITY_SUFFIXES)tokens.push(entry.active+suffix,entry.reference+suffix,entry.active[0]+'-'+entry.active+suffix,entry.active[0]+'-'+entry.reference+suffix);
     for(const alias of entry.aliases){tokens.push(alias);for(const suffix of suffixes)tokens.push(alias+suffix);}
     tokens.push(entry.active[0]+'-'+entry.passive);
   }

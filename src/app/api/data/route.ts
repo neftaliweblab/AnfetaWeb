@@ -1,3 +1,4 @@
+import {notionBaseLinks} from '@/services/notionBaseLinks';
 import {activityFinancialFields} from '@/services/activityFinancialFields';
 import {ftfJobHealth} from '@/services/ftfJobHealth';
 import {calendarActivityFromPage} from '@/services/notionEventSync';
@@ -649,6 +650,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         dropboxAccountEmail: (publicSettings as any).dropboxAccountEmail || "",
       });
     }
+
+    if(type==='notion-base-links')return NextResponse.json(await notionBaseLinks({...getSettings(),notionToken:resolveNotionToken(req,searchParams),notionSignal:AbortSignal.timeout(55000)}),{headers:{'Cache-Control':'no-store'}});
 
     if (type === "templates") {
       const catalog = readLocalJson<any>("notion_template_phase1_catalog_v2.json", null) ||
@@ -1389,7 +1392,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Internal Error" },
-      { status: /Inicia sesión/.test(error?.message || '')?401:500 }
+      { status: error?.code==='SCHEDULE_CONFLICT'?409:/Inicia sesión/.test(error?.message || '')?401:500 }
     );
   }
 }
@@ -1664,11 +1667,16 @@ async function POSTLive(req: NextRequest) {
       });
     }
 
-    if (action === 'create-activity' || action === 'create-notion-page') {
+    if (action === 'create-activity' || action === 'create-notion-page' || action === 'create-note') {
       const settings = {...getSettings(),notionToken:resolveNotionToken(req)};
       const actor = payload?.currentUser || settings.currentUser;
       if (action === 'create-activity' && (!payload?.start || !payload?.end || !payload?.person)) return NextResponse.json({ error: 'Completa responsable, fecha y horario.' }, { status: 400 });
-      const result = await createActivity(settings, actor, payload || {});
+      if(action==='create-note'&&(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(payload?.draftId||'')||String(payload?.body||'').length>40000||!Array.isArray(payload?.files)||payload.files.length>6))throw Error('La nota tiene un formato inválido.');
+      if(action==='create-note'){
+        if(typeof payload.title!=='string'||!payload.title.trim()||payload.title.length>1000||payload.files.some((f:any)=>!f||!/^image\/(png|jpeg|webp|gif)$/.test(f.contentType||'')||typeof f.base64!=='string')||payload.files.reduce((sum:number,f:any)=>sum+f.base64.length,0)>2800000)throw Error('Revisa el título y las imágenes de la nota (2 MB en total).');
+        await validateNotionCreationTarget(settings,payload);
+      }
+      const result = action==='create-note'?await durableStep(operationKey(settings.notionToken,actor,'note',payload.draftId),()=>createActivity(settings,actor,{...payload,start:undefined,end:undefined})):await createActivity(settings, actor, payload || {});
       if (result.activity.start) persistCalendarActivity(result.activity);
       const live = extractNotionPageData(result.page); liveNotionOverrides.set(live.id, live); previewMemoryCache.clear();
       await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:result.page.id,state:'active',eventType:'page.created',serverModified:result.page.last_edited_time,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,calendarActivity:result.activity}});
@@ -2678,8 +2686,8 @@ async function POSTLive(req: NextRequest) {
     return NextResponse.json({ error: "Action not supported" }, { status: 400 });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error?.message || "Error writing data" },
-      { status: /Inicia sesión/.test(error?.message || '')?401:500 }
+      { error: error?.message || "Error writing data", ...(error?.code==='SCHEDULE_CONFLICT'?{code:error.code,conflictTitle:error.conflict?.title,suggestedSlot:error.suggestedSlot}: {}) },
+      { status: error?.code==='SCHEDULE_CONFLICT'?409:/Inicia sesión/.test(error?.message || '')?401:500 }
     );
   }
 }
@@ -2696,7 +2704,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 
 async function POSTWithInvalidation(req:NextRequest){
  const body=await req.clone().json().catch(()=>null),response=await POSTLive(req);
- const changes=['unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
+ const changes=['create-note','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
  if(!supabaseConfigured()||!response.ok||!changes.includes(body?.action))return response;
  if(body.action==='update-activity-status'&&typeof body.payload?.ftfVerified==='boolean'&&!body.payload.status)return response;
  if(body.action==='calendar-automation-run'){const result=await response.clone().json();if(!result.report?.moved&&!result.report?.ftf?.reset)return response;}

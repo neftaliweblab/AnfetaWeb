@@ -33,6 +33,7 @@ import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
 import { FolderOpen, ChevronRight, ArrowUpLeft, X } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
+import {PersistentSearchAccess} from './PersistentSearchAccess';
 import { ScopePillsRow } from "./ScopePillsRow";
 import { SearchConfigRow } from "./SearchConfigRow";
 import { PendientesColumn } from "./PendientesColumn";
@@ -47,6 +48,7 @@ import { DropboxUploadModal } from "./DropboxUploadModal";
 import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
 import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus';
+import {matchesContentClassification} from '@/lib/contentClassification';
 import {searchDatabaseOptions} from '@/lib/searchDatabase';
 import { filterByNotionBase,isNotionItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
@@ -136,7 +138,7 @@ export function ResultsViewHost({
     const owner=normalizePerson(currentUser||'');
     let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
     setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
-    let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);setGroupBy(view.groupBy);setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
+    let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setClassification(view.classification);setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);setGroupBy(view.groupBy);setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
     let saved=null;try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+owner));setHasLegacyTabs(!!legacy);saved=parseSearchTabs(localStorage.getItem(tabsKey))||legacy;}catch{setHasLegacyTabs(false);}
     const next=personalFirstSearch(saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'},owner);
     setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
@@ -158,6 +160,7 @@ export function ResultsViewHost({
   const [customTag, setCustomTag] = useState("");
   useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchDefaultsKey(normalizePerson(currentUser||'')),JSON.stringify({selectedTag,customTag}));}catch{}},[selectedTag,customTag,tabsOwner,tabsKey,currentUser]);
   const [textScale, setTextScale] = useState("100%");
+  const [classification,setClassification]=useState('all');
   const [groupBy, setGroupBy] = useState("none");
   const [monthSelection,setSelectedMonth]=useState('Actual');
   const [currentMonth,setCurrentMonth]=useState('');
@@ -177,7 +180,7 @@ export function ResultsViewHost({
     matchRegex: false,
   });
 
-  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
+  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
 
   const handleToggleSearchOption = (key: "matchCase" | "matchWholeWord" | "matchRegex") => {
     setSearchOptions((prev) => ({
@@ -374,6 +377,7 @@ export function ResultsViewHost({
   const [activityAction,setActivityAction]=useState<{item:any;mode:SearchActivityAction;position:{x:number;y:number}}|null>(null);
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
+  useEffect(()=>{const receive=(event:Event)=>{const detail=(event as CustomEvent).detail;if(detail?.owner!==currentUser||!detail.row?.id)return;setItems(previous=>[detail.row,...previous.filter(row=>row.id!==detail.row.id)]);};window.addEventListener('anfeta_note_created',receive);return()=>window.removeEventListener('anfeta_note_created',receive);},[currentUser]);
   const databaseOptions=useMemo(()=>searchDatabaseOptions(items.filter(isNotionItem)),[items]);
   React.useEffect(() => {
     setItems(previous=>retainSearchResults(previous,{items:filterDeletedPages(initialItems,currentUser).filter(it=>!isExpiredResponsePage(it)),loadingIndex:true}));
@@ -440,6 +444,10 @@ export function ResultsViewHost({
     onSearchChange?.(initialQuery);
   };
 
+  const openPersonSearch=(query:string)=>{
+    if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
+    const id='tab_'+crypto.randomUUID();setTabs(previous=>[...previous,{id,query,canClose:true}]);setActiveTabId(id);setQuery(query);onSearchChange?.(query);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');
+  };
   const handleTagChange = (newTag: string) => {
     const next={selectedTag:newTag,customTag};
     setSelectedTag(newTag);
@@ -1236,11 +1244,12 @@ export function ResultsViewHost({
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
 
+    res=res.filter(item=>matchesContentClassification(item.name,classification));
     res = [...res].sort((a,b)=>compareSearchRows(a,b,resultSort));
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
@@ -1378,6 +1387,8 @@ export function ResultsViewHost({
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
+        classification={classification}
+        onChangeClassification={setClassification}
         databaseScope={selectedScope}
         databaseOptions={databaseOptions}
         onChangeDatabaseScope={setSelectedScope}
@@ -1450,8 +1461,9 @@ export function ResultsViewHost({
 
         {/* Col 2: RESULTADOS (Central) */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <PersistentSearchAccess onSearch={openPersonSearch}/>
               {query.includes("folder:") && (
                 <div className="flex items-center gap-1.5 text-xs bg-[#161F2C] border border-[#223848] px-2 py-0.5 rounded text-amber-300">
                   <FolderOpen className="w-3.5 h-3.5 text-[#F59E0B]" />
@@ -1496,7 +1508,7 @@ export function ResultsViewHost({
               </button>
               <NotionConnectionCheck/>
               <ExportResults rows={filteredItems}/>
-            </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
+            </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setClassification("all");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
           <ResultsVirtualTable
           headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}

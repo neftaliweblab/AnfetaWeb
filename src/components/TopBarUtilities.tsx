@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Clock, Sparkles } from "lucide-react";
+import { Clock, Sparkles, StickyNote } from "lucide-react";
 import { TeamPresence } from "./TeamPresence";
 import { DiagnosticsLogs } from "./Diagnostics/DiagnosticsLogs";
 import { normalizePerson } from "@/services/identityNormalizer";
@@ -44,6 +44,8 @@ export function TopBarUtilities({
     >
       {/* Equipo en línea y avatares */}
       <TeamPresence />
+
+      {currentUser&&<button type="button" title="Notas · texto e imágenes" aria-label="Abrir notas" onClick={()=>window.dispatchEvent(new CustomEvent('anfeta_open_notes',{detail:{owner:currentUser}}))} className="rounded border border-amber-700 bg-amber-950/40 p-1 text-amber-200"><StickyNote size={15}/></button>}
 
       {/* Visor de Logs y Diagnósticos */}
       <DiagnosticsLogs owner={currentUser || ""} />

@@ -1,4 +1,5 @@
 "use client";
+import {fetchWithScheduleChoice} from '@/lib/scheduleChoice';
 import {FloatingActionButton} from './FloatingActionButton';
 import {revisionPhaseTitle} from '@/services/progressiveWorkflow';
 import {useEffect,useRef,useState} from 'react';
@@ -112,7 +113,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       const domainTitlePart = cleanDom ? ` ${cleanDom}` : '';
       const title = `prtuzREVISION ${dest.code}${domainTitlePart} Grabación ${today} 09:00`;
 
-      const response = await fetch('/api/data', {
+      const response = await fetchWithScheduleChoice('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -137,9 +138,9 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
       }
       playCheckChime();
-      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) a las 9:00 AM`);
+      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) en el horario confirmado`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
-      setNotice(`✅ Actividad creada en Notion con éxito para ${dest.person} (${dest.code}) a las 9am`);
+      setNotice(`✅ Actividad creada en Notion con éxito para ${dest.person} (${dest.code}) en el horario confirmado`);
       setTimeout(() => {
         if (mounted.current) {
           setVideo(null);
@@ -214,7 +215,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         base64: clipboardImage.base64
       }] : undefined;
 
-      const response = await fetch('/api/data', {
+      const response = await fetchWithScheduleChoice('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -234,9 +235,9 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
       }
       playCheckChime();
-      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) a las 9:00 AM`);
+      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) en el horario confirmado`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
-      setNotice(`✅ Creada en Notion para ${dest.person} (${dest.code}) a las 9am`);
+      setNotice(`✅ Creada en Notion para ${dest.person} (${dest.code}) en el horario confirmado`);
       setTimeout(() => {
         if (mounted.current) {
           setClipboardOpen(false);
