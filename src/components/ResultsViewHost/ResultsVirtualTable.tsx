@@ -32,11 +32,62 @@ import {
   FolderPlus,
   CopyPlus,
   ChevronRight,
+  ChevronDown,
   Eye,
   Download,
 } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { playCopyChime } from "@/services/windowsIntegration";
+import { ActivityContentPanel } from "../CalendarHost/ActivityContentPanel";
+import { resultAssignedPerson } from "@/services/activityTags";
+import type { NotionCalendarActivity } from "@/types/anfeta";
+
+function itemToActivity(item: any): NotionCalendarActivity {
+  const rawId = item.originalPageId || item.externalId || item.pageId || item.id || "";
+  let cleanId = String(rawId).replace(/^review-mirror-/, "").replace(/-/g, "");
+  if (!cleanId || cleanId.startsWith("idx") || cleanId.startsWith("Item")) {
+    const match = (item.target || item.externalUrl || item.url || "").match(/[a-f0-9]{32}/i);
+    if (match) cleanId = match[0];
+    else if (item.target || item.path) {
+      cleanId = item.target || item.path || "";
+    }
+  }
+  const person = item.assignedPerson || item.AssignedPerson || item.person || resultAssignedPerson(item) || "";
+  const title = String(item.name || item.title || "");
+  const domain = item.domainChip || item.domain || "";
+  const status = item.updateStatus || item.statusLabel || item.status || "POR HACER";
+  const start = item.scheduledDate || item.start || new Date().toISOString();
+  const end = item.scheduledEnd || item.end || start;
+
+  return {
+    pageId: cleanId,
+    originalPageId: cleanId,
+    title,
+    shortTitle: title,
+    person,
+    originalPerson: person,
+    project: item.project || "",
+    domain,
+    status,
+    start,
+    end,
+    originalScheduledDate: start,
+    currentScheduledDate: start,
+    moveCount: 0,
+    routeDates: [],
+    checklistScanned: Boolean(item.hasChecklistProgress || item.checklistTotal),
+    checklistTotal: item.checklistTotal || 0,
+    checklistCompleted: item.checklistCompleted || 0,
+    todayChecklistCompleted: 0,
+    isUrgent: false,
+    isCompletedForReview: /rtuzREVISION|rtuzR/i.test(title) || /REVISI/i.test(status),
+    isFinalized: /zREVISION|tuzR/i.test(title) || /TERMINADA|FINALIZADA/i.test(status),
+    isSuspended: /sprtuz/i.test(title),
+    isLocked: /Bloqueada_ANFETA/i.test(title),
+    pageUrl: item.externalUrl || item.url || item.pageUrl || (cleanId && !cleanId.includes("/") && !cleanId.includes("\\") ? `https://www.notion.so/${cleanId}` : ""),
+    estimatedWorkMinutes: item.estimatedWorkMinutes || 0,
+  };
+}
 
 export interface ResultItem {
   id: string;
@@ -139,6 +190,15 @@ export function ResultsVirtualTable({
   const viewZoomRef = useRef(viewZoom);
   const [zoomBadge, setZoomBadge] = useState<string | null>(null);
   const zoomBadgeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(() => new Set());
+  const toggleRowExpanded = (id: string) => {
+    setExpandedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     viewZoomRef.current = viewZoom;
@@ -396,9 +456,11 @@ export function ResultsVirtualTable({
   const renderRow = (item: any) => {
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
+    const isExpanded = expandedRowIds.has(item.id);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
+    const activity = itemToActivity(item);
     // Para Dropbox: mostrar la carpeta contenedora real (ej. /DRX/apartallante.com o el folder) en lugar de solo "Dropbox"
     let displayPath = "—";
     if (item.source === "Dropbox" || item.sourceName === "Dropbox") {
@@ -415,54 +477,88 @@ export function ResultsVirtualTable({
     }
 
     return (
-      <div
-        key={item.id}
-        data-search-result={item.id}
-        data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
-        tabIndex={-1}
-        aria-label={item.name}
-        onClick={() => onSelect(item)}
-        onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu({ item, x: e.clientX, y: e.clientY });
-        }}
-        style={{
-          minHeight: `${Math.round(30 * scale)}px`,
-          paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
-          paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
-        }}
-        className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
-          isSelected
-            ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
-            : isChecked
-            ? "bg-[#131F2E] border-l-2 border-[#1E3A5F] text-[#F1F5F9]"
-            : "hover:bg-[#172230] text-[#CBD5E1]"
-        }`}
-      >
+      <div key={item.id} className="flex flex-col border-b border-[#17212F]/70">
+        <div
+          data-search-result={item.id}
+          data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
+          tabIndex={-1}
+          aria-label={item.name}
+          onClick={() => onSelect(item)}
+          onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;onDoubleClick(item);}}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu({ item, x: e.clientX, y: e.clientY });
+          }}
+          style={{
+            minHeight: `${Math.round(30 * scale)}px`,
+            paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
+            paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
+          }}
+          className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
+            isSelected
+              ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
+              : isChecked
+              ? "bg-[#131F2E] border-l-2 border-[#1E3A5F] text-[#F1F5F9]"
+              : isExpanded
+              ? "bg-[#15202E] border-l-2 border-[#0284C7] text-white"
+              : "hover:bg-[#172230] text-[#CBD5E1]"
+          }`}
+        >
 
-        {showPath && (
-          <div
-            style={{
-              fontSize: `${(10 * scale).toFixed(1)}px`,
-              width: `${colWidths.path}px`,
-            }}
-            className="shrink-0 truncate text-[#74808B] font-mono pr-2"
-            title={displayPath}
-          >
-            {highlightMatch(displayPath)}
-          </div>
-        )}
+          {showPath && (
+            <div
+              style={{
+                fontSize: `${(10 * scale).toFixed(1)}px`,
+                width: `${colWidths.path}px`,
+              }}
+              className="shrink-0 truncate text-[#74808B] font-mono pr-2"
+              title={displayPath}
+            >
+              {highlightMatch(displayPath)}
+            </div>
+          )}
 
-        {/* Nombre + Chips + Dominio */}
-        <div className="flex-1 flex items-center min-w-0 pr-2 gap-1.5 overflow-hidden">
-          <span
-            className="shrink-0 flex items-center justify-center"
-            style={{
-              width: `${Math.round(14 * scale)}px`,
-              height: `${Math.round(14 * scale)}px`,
-            }}
-          >
+          {/* Nombre + Chips + Dominio */}
+          <div className="flex-1 flex items-center min-w-0 pr-2 gap-1.5 overflow-hidden">
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? "Ocultar contenido de " + item.name : "Desplegar contenido de " + item.name}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleRowExpanded(item.id);
+              }}
+              style={{
+                width: `${Math.round(16 * scale)}px`,
+                height: `${Math.round(16 * scale)}px`,
+              }}
+              className="shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-cyan-300 hover:bg-slate-700/50 transition-colors cursor-pointer"
+              title={isExpanded ? "Ocultar contenido y checks" : "Desplegar contenido y checks"}
+            >
+              {isExpanded ? (
+                <ChevronDown
+                  style={{
+                    width: `${Math.round(13 * scale)}px`,
+                    height: `${Math.round(13 * scale)}px`,
+                  }}
+                  className="text-cyan-400"
+                />
+              ) : (
+                <ChevronRight
+                  style={{
+                    width: `${Math.round(13 * scale)}px`,
+                    height: `${Math.round(13 * scale)}px`,
+                  }}
+                />
+              )}
+            </button>
+            <span
+              className="shrink-0 flex items-center justify-center"
+              style={{
+                width: `${Math.round(14 * scale)}px`,
+                height: `${Math.round(14 * scale)}px`,
+              }}
+            >
             {renderIcon(item)}
           </span>
           {parsed.area && (
@@ -657,12 +753,31 @@ export function ResultsVirtualTable({
           </button>
         </div>
       </div>
-    );
-  };
+
+      {isExpanded && (
+        <div
+          className="bg-[#090E17] border-t border-[#1E293B] pl-8 pr-4 py-3 shadow-inner select-text"
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <div className="max-w-4xl space-y-2">
+            <ActivityContentPanel
+              activity={activity}
+              currentUser={currentUser}
+              defaultOpen={true}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
   const renderCard = (item: any) => {
     const isSelected = selectedId === item.id;
     const isChecked = selectedIds.has(item.id);
+    const isExpanded = expandedRowIds.has(item.id);
+    const activity = itemToActivity(item);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
@@ -721,6 +836,38 @@ export function ResultsVirtualTable({
       >
         <div className="flex items-start justify-between gap-1 mb-1.5">
           <div className="flex items-center gap-1.5 overflow-hidden">
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? "Ocultar contenido de " + item.name : "Desplegar contenido de " + item.name}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleRowExpanded(item.id);
+              }}
+              style={{
+                width: `${Math.round(16 * scale)}px`,
+                height: `${Math.round(16 * scale)}px`,
+              }}
+              className="shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-cyan-300 hover:bg-slate-700/50 transition-colors cursor-pointer"
+              title={isExpanded ? "Ocultar contenido y checks" : "Desplegar contenido y checks"}
+            >
+              {isExpanded ? (
+                <ChevronDown
+                  style={{
+                    width: `${Math.round(13 * scale)}px`,
+                    height: `${Math.round(13 * scale)}px`,
+                  }}
+                  className="text-cyan-400"
+                />
+              ) : (
+                <ChevronRight
+                  style={{
+                    width: `${Math.round(13 * scale)}px`,
+                    height: `${Math.round(13 * scale)}px`,
+                  }}
+                />
+              )}
+            </button>
             <span className="shrink-0">{renderIcon(item)}</span>
             {parsed.area && (
               <span
@@ -910,6 +1057,20 @@ export function ResultsVirtualTable({
             </span>
           )}
         </div>
+
+        {isExpanded && (
+          <div
+            className="mt-2.5 pt-2 border-t border-[#1E293B] bg-[#090E17] -mx-2.5 -mb-2.5 p-3 rounded-b-lg shadow-inner select-text"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <ActivityContentPanel
+              activity={activity}
+              currentUser={currentUser}
+              defaultOpen={true}
+            />
+          </div>
+        )}
       </div>
     );
   };
@@ -956,6 +1117,16 @@ export function ResultsVirtualTable({
           Ruta / Base: {items[0]?.sourceName || "Sin resultados"}
         </span>
         <div className="flex items-center gap-2">
+          {expandedRowIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setExpandedRowIds(new Set())}
+              className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-[9.5px] transition-colors cursor-pointer"
+              title="Colapsar todo el contenido desplegado"
+            >
+              Colapsar contenido ({expandedRowIds.size})
+            </button>
+          )}
           <span className="text-[#94A3B8] font-mono">{items.length} páginas</span>
           {selectedIds.size > 0 && (
             <span className="text-[#38BDF8] font-semibold text-[10px]">
@@ -1013,7 +1184,32 @@ export function ResultsVirtualTable({
             </div>
           )}
 
-          <div className="flex-1 px-1 min-w-[120px] truncate">Título ▲</div>
+          <div className="flex-1 px-1 min-w-[120px] truncate flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (expandedRowIds.size === items.length && items.length > 0) {
+                  setExpandedRowIds(new Set());
+                } else {
+                  setExpandedRowIds(new Set(items.map((it) => it.id)));
+                }
+              }}
+              className="p-0.5 rounded text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+              title={
+                expandedRowIds.size > 0
+                  ? "Colapsar todos los contenidos"
+                  : "Desplegar todos los contenidos"
+              }
+            >
+              {expandedRowIds.size === items.length && items.length > 0 ? (
+                <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+            <span>Título ▲</span>
+          </div>
 
           {showStatus && (
             <div

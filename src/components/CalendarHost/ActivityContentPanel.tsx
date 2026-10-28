@@ -20,10 +20,12 @@ export function ActivityContentPanel({activity,currentUser,onEditingChange,defau
  useEffect(()=>{setFull(false);setVisible(100);setOpen(defaultOpen);setBlocks([]);setError('');setEditor(null);setAdding(false);},[pageId,currentUser,defaultOpen]);
  useEffect(()=>{const refresh=(e:Event)=>{if((e as CustomEvent).detail?.pageId?.replace(/-/g,'')===pageId.replace(/-/g,'')){cache.delete(currentUser+':'+pageId);cache.delete(currentUser+':'+pageId+':full');setRevision(n=>n+1);}};window.addEventListener('anfeta_page_content_changed',refresh);return()=>window.removeEventListener('anfeta_page_content_changed',refresh);},[pageId,currentUser]);
  useEffect(()=>{
-  if(!open)return;const key=currentUser+':'+pageId+(full?':full':''),previous=cache.get(key),abort=new AbortController();
+  if(!open||!pageId)return;const key=currentUser+':'+pageId+(full?':full':''),previous=cache.get(key),abort=new AbortController();
   if(previous&&Date.now()-previous.at<30000){setBlocks(previous.blocks);setLoading(false);return;}
   setLoading(true);setError('');
-  fetch('/api/data?type=page-preview&pageId='+encodeURIComponent(pageId)+(full?'&full=1':''),{signal:AbortSignal.any([abort.signal,AbortSignal.timeout(full?85000:45000)])}).then(readApiJson).then(data=>{if(abort.signal.aborted)return;if(!Array.isArray(data.blocks))throw Error(data.error||'No se pudo leer el contenido.');setBlocks(data.blocks);setError(data.warning||'');if(cache.size>=60)cache.delete(cache.keys().next().value!);cache.set(key,{blocks:data.blocks,at:Date.now()});}).catch(e=>{if(!abort.signal.aborted)setError(e.message||'No se pudo cargar el contenido.');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();
+  const isFile=pageId.includes('/')||pageId.includes('\\');
+  const previewUrl=isFile?'/api/data?type=page-preview&filePath='+encodeURIComponent(pageId):'/api/data?type=page-preview&pageId='+encodeURIComponent(pageId)+(full?'&full=1':'');
+  fetch(previewUrl,{signal:AbortSignal.any([abort.signal,AbortSignal.timeout(full?85000:45000)])}).then(readApiJson).then(data=>{if(abort.signal.aborted)return;if(!Array.isArray(data.blocks))throw Error(data.error||'No se pudo leer el contenido.');setBlocks(data.blocks);setError(data.warning||'');if(cache.size>=60)cache.delete(cache.keys().next().value!);cache.set(key,{blocks:data.blocks,at:Date.now()});}).catch(e=>{if(!abort.signal.aborted)setError(e.message||'No se pudo cargar el contenido.');}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();
  },[open,pageId,currentUser,revision,full]);
  const edit=(id:string|null)=>{onEditingChange?.(!!id);setEditor(id);};
  const add=(value:boolean)=>{onEditingChange?.(value);setAdding(value);};
