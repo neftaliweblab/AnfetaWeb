@@ -113,3 +113,16 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
     return wanted.priority===tag.priority;
   });
 }
+
+/** Completed titles are references only, regardless of whether review metadata exists. */
+export function completedActivityTags(title:string,reviewer='',original=''){
+  const reviewKey=activityPerson(reviewer),ownerKey=activityPerson(original);
+  let result=title;
+  for(const tag of scanActivityTags(title).reverse()){
+    const legacyOwner=tag.legacy&&tag.person===ownerKey&&tag.token.toLowerCase()===ACTIVITY_TAGS[tag.person].review;
+    const remove=(tag.role==='review'&&!legacyOwner)||(reviewKey&&reviewKey!==ownerKey&&tag.person===reviewKey);
+    const replacement=legacyOwner?ACTIVITY_TAGS[tag.person].passive:remove?' ':tag.role==='active'?(tag.legacy?ACTIVITY_TAGS[tag.person].passive:ACTIVITY_TAGS[tag.person].reference)+tag.suffix:tag.token;
+    result=result.slice(0,tag.index)+replacement+result.slice(tag.index+tag.token.length);
+  }
+  return result.replace(/\s{2,}/g,' ').trim();
+}

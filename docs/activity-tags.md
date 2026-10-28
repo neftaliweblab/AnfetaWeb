@@ -38,3 +38,21 @@ La selección automática muestra todos los meses. Al agrupar por mes se coloca 
 `node --test scripts/activity-tags-regression.test.cjs scripts/review-title-regression.test.cjs scripts/activity-title-edit.test.cjs scripts/handoff-transcription.test.cjs scripts/quick-revision-upload.test.cjs scripts/search-defaults.test.cjs scripts/active-results-first.test.cjs scripts/workflow-safety.test.cjs`
 
 `npm run test:calendar` prueba las rutas y mutaciones con Notion simulado. `npm run build` valida la compilación completa. No se escribe en Notion durante estas pruebas.
+
+
+## Cierre de actividades (28 de octubre de 2026)
+
+| Etapa | Responsable Neftali, revisor Genaro | Efecto |
+| --- | --- | --- |
+| Creada / por hacer | `nne11` | Tag activo y prioridad primaria. |
+| En revisión | `ne11 ge000` | Responsable como referencia; Genaro tiene pendiente de revisión. |
+| Devuelta | `nne11` | Se reactiva al responsable y se retira el tag del revisor. |
+| Terminada / aprobada | `ne11` | Se desactiva el responsable y se retira el tag del revisor. |
+
+El mismo cambio aplica a todas las personas y prioridades: `gge22 → ge22`, `aac00 → ac00`, `kka33 → ka33`, etc. Los códigos antiguos conservan compatibilidad (`nneft11 → neft11`). Se preservan descripción, dominio y prioridad.
+
+El servidor normaliza los tags al finalizar incluso cuando no hay historial de revisión, tanto para plantillas como para actividades rápidas. Esta normalización ocurre después de componer el título y la urgencia, evitando reintroducir un tag activo durante el mismo guardado. Si existe historial, se restaura el responsable original y se quitan los códigos del revisor; sin historial no se inventa quién era el revisor, pero sí se retiran todos los tags explícitos de revisión y se desactivan los activos.
+
+Los títulos de notificaciones `[RESPUESTA]` usan referencias, sin copiar tags activos ni tags pendientes de revisión del título original. Conservan su destinatario y enlace a la actividad; no son otra actividad activa.
+
+La corrección se aplica al guardar la finalización. No se ha ejecutado una modificación masiva de actividades ya terminadas en Notion. La referencia pasiva permite conservar clasificación e historial; una búsqueda por tag activo debe buscar `nne11`, no una coincidencia parcial de `ne11`.

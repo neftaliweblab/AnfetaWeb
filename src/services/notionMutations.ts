@@ -1,7 +1,7 @@
 import {appendInternalMetadata} from './notionCalendar';
 import {revisionPhaseTitle} from './progressiveWorkflow';
 import {isFtfActivity} from './progressKpis';
-import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags} from './activityTags';
+import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags,completedActivityTags} from './activityTags';
 import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
 import {withActivityLease,operationKey} from './reliableOperations';
 import {ftfField,FTF_CHECKBOX} from './ftfVerification';
@@ -276,6 +276,14 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     nextTitle = (properties[titleProp[0]]?.title || []).map((t: any) => t.text?.content || '').join('') || nextTitle;
     nextTitle = setTaskUrgent(nextTitle,activity.person,updates.isUrgent);
     properties[titleProp[0]] = { title: [{ text: { content: nextTitle } }] };
+  }
+  // Run last: phase changes, review composition and urgency must not leave active tags on a completed page.
+  if(completed){
+    const field=fields.find(([,p])=>p.type==='title');
+    if(field){
+      const composed=(properties[field[0]]?.title||[]).map((t:any)=>t.text?.content||t.plain_text||'').join('')||title;
+      properties[field[0]]={title:[{text:{content:completedActivityTags(composed,previousFlow?.ReviewAssignee,previousFlow?.OriginalPerson||activity.person)}}]};
+    }
   }
   if (!Object.keys(properties).length) throw new Error('No hay cambios válidos para guardar.');
   if (updates.reviewer || ((completed || returned || reassigned) && previousFlow)) {

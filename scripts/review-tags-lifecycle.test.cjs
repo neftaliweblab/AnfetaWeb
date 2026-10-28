@@ -32,61 +32,8 @@ const tags = require('../src/services/activityTags.ts');
 const { PROGRESSIVE_WORKFLOW_PRIMARY, stripProgressiveStage, progressiveStage } = require('../src/services/progressiveWorkflow.ts');
 const { normalizePerson } = require('../src/services/identityNormalizer.ts');
 
-function proposedReviewTitle(title, original, reviewer, state, previousReviewer = '', mode = PROGRESSIVE_WORKFLOW_PRIMARY ? 'new' : 'compatible') {
-  const ownerKey = normalizePerson(original);
-  const reviewKey = normalizePerson(reviewer);
-  const owner = tags.ACTIVITY_TAGS[ownerKey];
-  const review = tags.ACTIVITY_TAGS[reviewKey];
-  if ((!owner && normalizePerson(original) !== 'Sin asignar') || !review) throw Error('No se encontró la configuración de tags de revisión.');
-  const previousKey = normalizePerson(previousReviewer);
-  const useNew = mode === 'new' || tags.scanActivityTags(title).some(tag => tag.role === 'review' && !tag.legacy);
-  if (state === 'pending' && tags.ACTIVITY_TAGS[previousKey] && previousKey !== reviewKey && previousKey !== ownerKey) {
-    let source = title;
-    for (const tag of tags.scanActivityTags(title).reverse()) {
-      if (tag.person === previousKey && tag.role === 'review') {
-        source = source.slice(0, tag.index) + (tag.legacy ? tags.ACTIVITY_TAGS[previousKey].passive : ' ') + source.slice(tag.index + tag.token.length);
-      }
-    }
-    if (useNew) source += ' ' + tags.pendingReviewTag(reviewer);
-    return proposedReviewTitle(source, original, reviewer, state, '', mode);
-  }
-  const allTags = tags.scanActivityTags(title);
-  const ownerTags = allTags.filter(tag => tag.person === ownerKey && (tag.role === 'active' || tag.role === 'reference'));
-  const ownerTokens = [...new Set(ownerTags.map(tag => tag.legacy ? (state === 'returned' ? tags.ACTIVITY_TAGS[ownerKey].review : tags.ACTIVITY_TAGS[ownerKey].passive) + tag.suffix : (state === 'returned' ? tags.ACTIVITY_TAGS[ownerKey].active : tags.ACTIVITY_TAGS[ownerKey].reference) + tag.suffix))];
-  if (owner && !ownerTokens.length) ownerTokens.push(state === 'returned' ? owner.review : owner.passive);
-  const legacyReviewSuffix = allTags.find(tag => tag.person === reviewKey && tag.legacy && tag.suffix)?.suffix || '';
-
-  const reviewerReferences = (state === 'pending' && useNew && reviewKey !== ownerKey)
-    ? allTags.filter(tag => tag.person === reviewKey && (tag.role === 'active' || tag.role === 'reference') && !tag.legacy).map(tag => review.reference + tag.suffix)
-    : [];
-
-  const remove = allTags.filter(tag => {
-    if (tag.person === ownerKey) return tag.role !== 'legacy' || tag.token === tag.token.toLowerCase();
-    if (tag.person === reviewKey) {
-      if (state === 'approved' || state === 'returned') return true;
-      return tag.role === 'review' || (useNew && (tag.role === 'active' || tag.role === 'reference')) || (tag.legacy && (!!tag.suffix || tag.token === tag.token.toLowerCase()));
-    }
-    if (state === 'approved' && tag.role === 'review') return true;
-    return false;
-  });
-
-  let body = title;
-  for (const tag of remove.reverse()) body = body.slice(0, tag.index) + ' ' + body.slice(tag.index + tag.token.length);
-  if (progressiveStage(body)?.category === 'revision') body = stripProgressiveStage(body);
-  body = body.replace(/[\s·|—–-]+$/, '').trim();
-  const phase = /(?<![\p{L}\p{N}_])(?:sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\p{L}\p{N}_])/giu;
-  const target = mode === 'new' ? (state === 'pending' ? 'rtuzR' : state === 'approved' ? 'tuzR' : 'prtuzR') : (state === 'pending' ? 'rtuzREVISION' : state === 'approved' ? 'zREVISION' : 'prtuzREVISION');
-  body = phase.test(body) ? body.replace(phase, target) : target + ' ' + body;
-
-  const reviewerToken = state === 'pending'
-    ? (mode === 'new' ? tags.pendingReviewTag(reviewer) : (review.review + legacyReviewSuffix))
-    : '';
-  const newToken = state === 'pending' && useNew && mode !== 'new' ? tags.pendingReviewTag(reviewer) : '';
-
-  return [body, ...ownerTokens, ...new Set(reviewerReferences), reviewerToken, newToken].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
-}
-
-console.log('--- Proposed Lifecycle Results ---');
+const {reviewTitle:proposedReviewTitle}=require('../src/services/reviewTitle.ts');
+console.log('--- Production Lifecycle Results ---');
 const created = 'prtuzR cliente.com webs 26-[10OCT] Diseño nne11';
 console.log('1. Creada:    ', created);
 
@@ -119,4 +66,21 @@ assert.equal(legApproved, 'zREVISION cliente.com webs 26-[10OCT] Diseño neft000
 assert.ok(!legApproved.includes('ggena'));
 assert.ok(!legApproved.includes('gena'));
 
-console.log('ALL PROPOSED TAG TESTS PASSED!');
+console.log('ALL PRODUCTION TAG TESTS PASSED!');
+
+const {completedActivityTags,ACTIVITY_TAGS,scanActivityTags}=tags;
+for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
+ for(const priority of ['00','11','22','33']){
+  const raw=`tuzR cliente.com ${entry.active}${priority}`;
+  const done=completedActivityTags(raw);
+  assert.equal(done,`tuzR cliente.com ${entry.reference}${priority}`);
+  assert.equal(completedActivityTags(done),done);
+  assert.ok(!scanActivityTags(done).some(t=>t.role==='active'||t.role==='review'));
+ }
+}
+assert.equal(completedActivityTags('tuzR Texto nne11 gge22 ge000','Genaro','Neftali'),'tuzR Texto ne11');
+assert.equal(completedActivityTags('tuzR Texto nneft11 ggena','Genaro','Neftali'),'tuzR Texto neft11');
+assert.equal(completedActivityTags('tuzR cliente-nne11.com correo@nne11.com nne11'),'tuzR cliente-nne11.com correo@nne11.com ne11');
+console.log('OK production helpers: all users/priorities, legacy, idempotence, reviewer removal and token boundaries.');
+
+assert.equal(completedActivityTags('zREVISION Texto nneft ggena','Genaro','Neftali'),'zREVISION Texto neft');

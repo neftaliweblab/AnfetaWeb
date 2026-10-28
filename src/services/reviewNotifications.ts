@@ -1,3 +1,4 @@
+import {completedActivityTags} from './activityTags';
 import {sendPwaPush} from './pwaPush';
 import {notificationPageId} from './ftfCompletion';
 import { notionRequest } from './notionMutations';
@@ -31,7 +32,7 @@ export async function sendReviewNotification(settings: CalendarSettings, page: a
   const message = (flow.State === 'returned' ? 'Correcciones solicitadas: ' + flow.Note : approved ? 'Revisión aprobada' : 'Actividad lista para revisión') + ' · ' + title;
   const stamp = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());
   const senderTitle = author.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
-  const alertTitle = stamp + ' ' + tag + ' de:' + senderTitle + ' [RESPUESTA] ' + message;
+  const alertTitle = stamp + ' ' + tag + ' de:' + senderTitle + ' [RESPUESTA] ' + completedActivityTags(message);
   const entry = {Kind:'System',AuthorTag:authorTag,AuthorName:author,RecipientTag:tag,RecipientName:recipient,CreatedAt:new Date().toISOString(),ReferenceEntryId:'',Text:message,Attachments:[]};
   const children = [originalLinkBlock, paragraph(message), hidden('[ANFETA_THREAD_V1]', entry)];
   if (flow.AlertPageId) {

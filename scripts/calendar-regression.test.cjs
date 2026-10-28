@@ -85,6 +85,31 @@ let passed=0;const lines=[];
 async function test(name,fn){if(process.env.ANFETA_TEST_FILTER&&!new RegExp(process.env.ANFETA_TEST_FILTER,'i').test(name))return;reset();await fn();passed++;lines.push('OK '+name);console.log('OK '+name);}
 const request=(action,payload)=>new Request('http://localhost/api/data',{method:'POST',headers:{'Content-Type':'application/json','x-test-user':payload?.currentUser || 'nneft'},body:JSON.stringify({action,payload})});
 (async()=>{
+  await test('Cierre de plantilla y rápida desactiva tags sin historial de revisión',async()=>{
+    for(const initial of ['prtuzR 26-[10OCT] Reporte ADS nne11','prtuzR [Actividad rápida] Grabación nne00']){
+      reset();state.page.properties.Name.title=[{text:{content:initial}}];
+      const page=await mutations.mutateActivity(settings,'Neftali',pid,{status:'Terminada'});
+      const title=page.properties.Name.title[0].text.content;
+      assert.match(title,/\bne(?:11|00)\b/);assert.doesNotMatch(title,/\bnne(?:11|00)\b/);
+      const tags=require('../src/services/activityTags.ts').scanActivityTags(title);
+      assert.ok(!tags.some(t=>t.role==='active'||t.role==='review'));
+    }
+  });
+  await test('Ciclo real de tags revisión aprobación devuelve responsable y limpia respuesta',async()=>{
+    state.page.properties.Name.title=[{text:{content:'prtuzR Reporte ADS nne11'}}];
+    await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John'});
+    assert.match(state.page.properties.Name.title[0].text.content,/\bne11\b/);
+    assert.match(state.page.properties.Name.title[0].text.content,/\bjo000\b/);
+    const approved=await mutations.mutateActivity(settings,'John',pid,{status:'Terminada'});
+    const title=approved.properties.Name.title[0].text.content;
+    assert.match(title,/\bne11\b/);assert.doesNotMatch(title,/\b(?:nne11|jo000|jjo11|jjohn)\b/);
+    assert.equal(approved.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
+    const {sendReviewNotification}=require('../src/services/reviewNotifications.ts');
+    state.flow.AlertPageId='';await sendReviewNotification(settings,approved,state.flow,'John',true);
+    const created=state.calls.filter(c=>c.target==='pages'&&c.method==='POST').at(-1);
+    const notification=Object.values(created.body.properties).find(p=>p.title).title.map(t=>t.text.content).join('');
+    assert.match(notification,/\[RESPUESTA\]/);assert.doesNotMatch(notification,/\b(?:nne11|jo000)\b/);
+  });
   await test('Revisión con título actual de Acalli conserva responsable y copia en calendario',async()=>{
     state.page.properties.Name.title=[{text:{content:'prtuzR rrede 26-[08AGO] Redes Video - Facebook Campaña aads cercaspararancho.com jo11 aac11 jjohn'}}];
     state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'acalli-id',name:'aacal@pprin.com'}];
