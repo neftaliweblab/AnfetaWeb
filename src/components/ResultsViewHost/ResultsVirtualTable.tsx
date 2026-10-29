@@ -1,4 +1,5 @@
 "use client";
+import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {ContentClassificationBadge} from '../ContentClassificationBadge';
 
 import React, { useState, useEffect, useRef } from "react";
@@ -191,6 +192,8 @@ export function ResultsVirtualTable({
   const [zoomBadge, setZoomBadge] = useState<string | null>(null);
   const zoomBadgeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(() => new Set());
+  const visibleExpandedCount=items.filter(item=>expandedRowIds.has(item.id)).length;
+  const allVisibleExpanded=items.length>0&&visibleExpandedCount===items.length;
   const toggleRowExpanded = (id: string) => {
     setExpandedRowIds((prev) => {
       const next = new Set(prev);
@@ -747,13 +750,13 @@ export function ResultsVirtualTable({
           onDoubleClick={(e) => e.stopPropagation()}
         >
           <div className="w-full max-w-5xl mx-auto">
-            <ActivityContentPanel
+            <VisibleActivityDetails><ActivityContentPanel
               activity={activity}
               currentUser={currentUser}
               defaultOpen={true}
               embedded={true}
               maxHeight="max-h-[350px]"
-            />
+            /></VisibleActivityDetails>
           </div>
         </div>
       )}
@@ -1057,13 +1060,13 @@ export function ResultsVirtualTable({
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
           >
-            <ActivityContentPanel
+            <VisibleActivityDetails><ActivityContentPanel
               activity={activity}
               currentUser={currentUser}
               defaultOpen={true}
               embedded={true}
               maxHeight="max-h-[280px]"
-            />
+            /></VisibleActivityDetails>
           </div>
         )}
       </div>
@@ -1112,16 +1115,9 @@ export function ResultsVirtualTable({
           Ruta / Base: {items[0]?.sourceName || "Sin resultados"}
         </span>
         <div className="flex items-center gap-2">
-          {expandedRowIds.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setExpandedRowIds(new Set())}
-              className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300 hover:text-white text-[9.5px] transition-colors cursor-pointer"
-              title="Colapsar todo el contenido desplegado"
-            >
-              Colapsar contenido ({expandedRowIds.size})
-            </button>
-          )}
+          <button type="button" disabled={!items.length||allVisibleExpanded} onClick={()=>setExpandedRowIds(new Set(items.map(item=>item.id)))} className="rounded border border-cyan-800 px-2 py-1 text-[10px] text-cyan-300 disabled:opacity-40" title="Desplegar las actividades de esta página; el contenido carga al acercarse">Desplegar todas</button>
+          <button type="button" disabled={!visibleExpandedCount} onClick={()=>setExpandedRowIds(new Set())} className="rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-300 disabled:opacity-40">Contraer todas</button>
+          <span className="text-[10px] text-slate-400" aria-live="polite">{visibleExpandedCount}/{items.length} abiertas</span>
           <span className="text-[#94A3B8] font-mono">{items.length} páginas</span>
           {selectedIds.size > 0 && (
             <span className="text-[#38BDF8] font-semibold text-[10px]">
@@ -1184,7 +1180,7 @@ export function ResultsVirtualTable({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (expandedRowIds.size === items.length && items.length > 0) {
+                if (allVisibleExpanded) {
                   setExpandedRowIds(new Set());
                 } else {
                   setExpandedRowIds(new Set(items.map((it) => it.id)));
@@ -1192,12 +1188,12 @@ export function ResultsVirtualTable({
               }}
               className="p-0.5 rounded text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
               title={
-                expandedRowIds.size > 0
-                  ? "Colapsar todos los contenidos"
+                allVisibleExpanded
+                  ? "Contraer todos los contenidos"
                   : "Desplegar todos los contenidos"
               }
             >
-              {expandedRowIds.size === items.length && items.length > 0 ? (
+              {allVisibleExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
               ) : (
                 <ChevronRight className="w-3.5 h-3.5" />

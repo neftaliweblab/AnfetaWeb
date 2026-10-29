@@ -1,4 +1,5 @@
 "use client";
+import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {rememberReviewFailure} from '@/lib/reviewOutcome';
 import {dailyChecklist} from '@/lib/dailyChecklist';
 import {workflowState} from '@/services/activityWorkflow';
@@ -153,18 +154,22 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
 
   const expandAll = useCallback(() => {
     setExpandedIds(new Set(listed.map(a => a.pageId)));
-  }, [listed]);
+    if(workspace)setLayoutMode('accordion');
+  }, [listed,workspace]);
 
   const collapseAll = useCallback(() => {
     setExpandedIds(new Set());
   }, []);
 
-  useEffect(() => {
-    if (listed.length > 0 && expandedIds.size === 0) {
-      setExpandedIds(new Set([listed[0].pageId]));
-      setSelectedId(listed[0].pageId);
-    }
-  }, [listed, day, person]);
+  const initializedExpansionScope=useRef('');
+  const visibleExpandedCount=listed.filter(a=>expandedIds.has(a.pageId)).length;
+  useEffect(()=>{
+    const scope=currentUser+':'+person+':'+day;
+    if(!listed.length||initializedExpansionScope.current===scope)return;
+    initializedExpansionScope.current=scope;
+    setExpandedIds(previous=>{const matching=listed.filter(a=>previous.has(a.pageId));return new Set(matching.length?matching.map(a=>a.pageId):[listed[0].pageId]);});
+    setSelectedId(previous=>listed.some(a=>a.pageId===previous)?previous:listed[0].pageId);
+  },[listed,day,person,currentUser]);
   const effectiveSelected=workspace
     ?(selectedId&&listed.some(a=>a.pageId===selectedId)?selectedId:(listed[0]?.pageId??null))
     :agendaSelection(listed,selectedId);
@@ -240,12 +245,13 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
               <span>{layoutMode==='accordion'?'📑 Acordeón amplio':'◫ 2 Columnas'}</span>
             </button>
             <div className="flex items-center gap-1">
-              <button type="button" disabled={saving||!listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-300 hover:text-white text-xs font-medium cursor-pointer" title="Desplegar todas las actividades">
-                ▼ Desplegar todos
+              <button type="button" disabled={saving||!listed.length||visibleExpandedCount===listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-300 hover:text-white text-xs font-medium cursor-pointer" title="Desplegar todas las actividades">
+                ▼ Desplegar todas
               </button>
-              <button type="button" disabled={saving||!expandedIds.size} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-400 hover:text-slate-200 text-xs font-medium cursor-pointer" title="Colapsar todas las actividades">
-                ▲ Colapsar
+              <button type="button" disabled={saving||!visibleExpandedCount} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1.5 text-slate-400 hover:text-slate-200 text-xs font-medium cursor-pointer" title="Contraer todas las actividades">
+                ▲ Contraer todas
               </button>
+              <span className="text-[10px] text-slate-400 font-mono ml-1" aria-live="polite">{visibleExpandedCount}/{listed.length} abiertas</span>
             </div>
             <button type="button" disabled={preloading} onClick={()=>void preload()} className="rounded border border-cyan-700 bg-cyan-950/40 hover:bg-cyan-900/60 px-2.5 py-2 text-cyan-200 text-xs font-medium cursor-pointer">
               {preloading?'Cargando '+loaded+'…':'Cargar pasos de esta lista'}
@@ -257,12 +263,13 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
               Abrir jornada en vista amplia ↗
             </button>
             <div className="flex items-center gap-1">
-              <button type="button" disabled={saving||!listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-cyan-300 cursor-pointer" title="Desplegar todas las actividades">
-                ▼ Desplegar todos
+              <button type="button" disabled={saving||!listed.length||visibleExpandedCount===listed.length} onClick={expandAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-cyan-300 cursor-pointer" title="Desplegar todas las actividades">
+                ▼ Desplegar todas
               </button>
-              <button type="button" disabled={saving||!expandedIds.size} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer" title="Colapsar todas las actividades">
-                ▲ Colapsar
+              <button type="button" disabled={saving||!visibleExpandedCount} onClick={collapseAll} className="rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer" title="Contraer todas las actividades">
+                ▲ Contraer todas
               </button>
+              <span className="text-[10px] text-slate-400 font-mono ml-1" aria-live="polite">{visibleExpandedCount}/{listed.length} abiertas</span>
             </div>
           </div>
         )}
@@ -406,7 +413,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
               {/* Contenido inline desplegado en acordeón amplio */}
               {isItemExpanded && (!workspace || layoutMode === 'accordion') && (
                 <div className="mt-3 border-t border-slate-800/90 pt-3" aria-busy={saving}>
-                  <CalendarDetailPanel
+                  <VisibleActivityDetails><CalendarDetailPanel
                     key={a.pageId}
                     embedded
                     isSaving={saving}
@@ -424,7 +431,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                     }}
                     onActivityUpdated={updates => updateActivity(a.pageId, updates)}
                     onChecklistUpdated={updates => setItems(old => old.map(item => item.pageId === a.pageId ? { ...item, ...updates } : item))}
-                  />
+                  /></VisibleActivityDetails>
                 </div>
               )}
 

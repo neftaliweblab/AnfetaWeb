@@ -1,4 +1,5 @@
 "use client";
+import {runActivityDetailRequest} from '@/lib/activityDetailQueue';
 import {dailyChecklist} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
@@ -112,9 +113,12 @@ export function CalendarDetailPanel({
       busy = true;
       try {
         const pageId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, '') : activity.pageId;
-        const res = await fetch('/api/data', {method:'POST',headers:{'Content-Type':'application/json'}, signal:AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]), body:JSON.stringify({action:'get-checklist',payload:{pageId}})});
-        const data = await res.json();
-        if (!res.ok || !data.success || !Array.isArray(data.items)) throw new Error(data.error || 'No se pudieron cargar las tareas de Notion.');
+        const data = await runActivityDetailRequest(async()=>{
+          const res = await fetch('/api/data', {method:'POST',headers:{'Content-Type':'application/json'}, signal:AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]), body:JSON.stringify({action:'get-checklist',payload:{pageId}})});
+          const data = await res.json();
+          if (!res.ok || !data.success || !Array.isArray(data.items)) throw new Error(data.error || 'No se pudieron cargar las tareas de Notion.');
+          return data;
+        },controller.signal);
         if (!controller.signal.aborted && !updating.current) {
           setChecklistError('');
           setItems(data.items);
