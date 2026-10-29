@@ -22,10 +22,27 @@ export function validateTemplateBody(nodes:Node[]) {
       const bytes=Buffer.byteLength(JSON.stringify(block));totalBytes+=bytes;
       if(bytes>450000)throw Error('Un bloque de la plantilla es demasiado grande: '+block.type+'.');
       if(totalBytes>20*1024*1024)throw Error('El contenido de la plantilla supera el límite de seguridad de 20 MB.');
-      for(const key of ['rich_text','caption'])if(body[key]&&body[key].length>100)throw Error('El bloque '+block.type+' supera 100 fragmentos de texto en '+key+'.');
+      for(const key of ['rich_text','caption']){
+        if(Array.isArray(body[key])){
+          if(body[key].length>100)throw Error('El bloque '+block.type+' supera 100 fragmentos de texto en '+key+'.');
+          for(const item of body[key]){
+            if(item.type==='text'&&item.text?.content&&item.text.content.length>2000){
+              throw Error('El bloque '+block.type+' contiene un fragmento de texto mayor a 2000 caracteres.');
+            }
+          }
+        }
+      }
       if(block.type==='table_row'){
         if(!parent||parent.type!=='table')throw Error('La plantilla contiene una fila fuera de una tabla.');
         if(body.cells.length!==parent.table.table_width)throw Error('Una fila no coincide con el número de columnas de la tabla.');
+        for(const cell of body.cells||[]){
+          if(Array.isArray(cell)&&cell.length>100)throw Error('Una celda de la tabla supera 100 fragmentos de texto.');
+          for(const item of (Array.isArray(cell)?cell:[])){
+            if(item.type==='text'&&item.text?.content&&item.text.content.length>2000){
+              throw Error('Una celda de la tabla contiene un fragmento de texto mayor a 2000 caracteres.');
+            }
+          }
+        }
       }
       if(block.type==='table'){
         if(!Number.isInteger(body.table_width)||body.table_width<1)throw Error('La tabla no tiene un ancho válido.');
@@ -67,18 +84,33 @@ const fields: Record<string, string[]> = {
 };
 
 function rich(value: any[]): any[] {
-  return (value || []).map(part => {
+  return (value || []).flatMap(part => {
     const type = part.type || 'text';
     if (!['text', 'mention', 'equation'].includes(type)) {
       throw new Error('La plantilla contiene texto no compatible.');
     }
-    const payload=part[type]||(type==='text'&&typeof part.plain_text==='string'?{content:part.plain_text}:null);
-    if(!payload||typeof payload!=='object')throw Error('La plantilla contiene un fragmento de '+type+' sin contenido válido.');
-    return {
+    const payload = part[type] || (type === 'text' && typeof part.plain_text === 'string' ? {content: part.plain_text} : null);
+    if (!payload || typeof payload !== 'object') throw Error('La plantilla contiene un fragmento de ' + type + ' sin contenido válido.');
+    if (type === 'text' && typeof payload.content === 'string' && payload.content.length > 2000) {
+      const chunks: any[] = [];
+      const str = payload.content;
+      for (let i = 0; i < str.length; i += 2000) {
+        chunks.push({
+          type: 'text',
+          text: {
+            ...structuredClone(payload),
+            content: str.slice(i, i + 2000)
+          },
+          ...(part.annotations ? {annotations: structuredClone(part.annotations)} : {})
+        });
+      }
+      return chunks;
+    }
+    return [{
       type,
       [type]: structuredClone(payload),
       ...(part.annotations ? {annotations: structuredClone(part.annotations)} : {})
-    };
+    }];
   });
 }
 
