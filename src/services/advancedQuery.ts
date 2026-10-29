@@ -1,3 +1,4 @@
+import {groupedSearch,evaluateGroupedSearch,type SearchExpression} from './groupedSearch';
 import { SearchResultRow } from '@/types/anfeta';
 import {matchesActivityTagQuery} from './activityTags';
 
@@ -328,6 +329,7 @@ interface ParsedQueryPlan {
   matchRegex: boolean;
   rx: RegExp | null;
   activeClauses: ParsedClauseToken[][];
+  expression?:SearchExpression;
 }
 
 const queryPlanLRUCache = new Map<string, ParsedQueryPlan>();
@@ -422,6 +424,7 @@ function getParsedQueryPlan(q: string, options?: SearchMatchOptions): ParsedQuer
     matchRegex: false,
     rx: null,
     activeClauses,
+    expression:groupedSearch(normalizedQ),
   };
 
   if (queryPlanLRUCache.size >= MAX_PLAN_CACHE) {
@@ -533,6 +536,7 @@ export function matchesFlexibleOrQuotedQuery(
     return true;
   }
 
+  if(plan.expression)return evaluateGroupedSearch(plan.expression,(value,isExact)=>checkSingleToken({value,isExact,isNegated:false},item,options,searchable,searchableWithSpaces,searchableCompact));
   if (plan.activeClauses.length === 0) return true;
 
   return plan.activeClauses.some((clause) =>

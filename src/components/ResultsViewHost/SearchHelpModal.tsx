@@ -17,7 +17,7 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
     {title:'🏷 Tags de trabajo y revisión',icon:Tag,commands:[
       {cmd:'iis11',desc:'Trabajo primario de Isaías. Prioridades: 00 urgente, 11 primaria, 22 secundaria, 33 usar / practicar.'},
       {cmd:'is11',desc:'Referencia de Isaías: conserva la prioridad cuando pasa a revisión; no indica el responsable actual.'},
-      {cmd:'jjohn',desc:'Tag completo de revisión de John. Ejemplo al enviar: is11 jjohn. Al devolver: iis11 john.'},
+      {cmd:'gge000',desc:'Revisión enviada a Genaro. ge11 solo indica revisor previsto; gge00 es urgencia. Las anotaciones gg-e000 pertenecen a plantillas.'},
       {cmd:'nne11 OR nne22',desc:'Busca trabajo de Neftalí con cualquiera de estas prioridades. También reconoce tags históricos equivalentes.'},
     ]},
     {

@@ -1,4 +1,5 @@
 "use client";
+import {findSearchTab} from '@/lib/searchTabsStorage';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {filterDeletedPages,isDeletedPagesEvent,rememberDeletedPages,pageIdentity,DELETED_PAGES_EVENT,deletedPages} from '@/lib/deletedPages';
@@ -416,6 +417,7 @@ export function ResultsViewHost({
 
   const handleSelectTab = (tabId: string) => {
     setActiveTabId(tabId);
+    setTabs(previous=>previous.map(tab=>tab.id===tabId?{...tab,unseen:false,pending:false,remindAt:undefined}:tab));
     const target = tabs.find((t) => t.id === tabId);
     if (target) {
       setQuery(target.query);
@@ -446,6 +448,8 @@ export function ResultsViewHost({
   };
 
   const openPersonSearch=(query:string)=>{
+    const existing=findSearchTab(tabs,query);
+    if(existing){handleSelectTab(existing.id);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');return;}
     if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
     const id='tab_'+crypto.randomUUID();setTabs(previous=>[...previous,{id,query,canClose:true}]);setActiveTabId(id);setQuery(query);onSearchChange?.(query);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');
   };
@@ -1332,6 +1336,7 @@ export function ResultsViewHost({
         tabs={tabs}
         activeTabId={activeTabId}
         onSelectTab={handleSelectTab}
+        onMarkPending={(id,pending,minutes)=>setTabs(previous=>previous.map(tab=>tab.id===id?{...tab,pending,unseen:pending&&tab.id!==activeTabId,remindAt:pending&&minutes?Date.now()+minutes*60000:undefined}:tab))}
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
         onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
@@ -1464,7 +1469,7 @@ export function ResultsViewHost({
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <PersistentSearchAccess onSearch={openPersonSearch}/>
+              <PersistentSearchAccess onSearch={openPersonSearch} currentUser={currentUser}/>
               {query.includes("folder:") && (
                 <div className="flex items-center gap-1.5 text-xs bg-[#161F2C] border border-[#223848] px-2 py-0.5 rounded text-amber-300">
                   <FolderOpen className="w-3.5 h-3.5 text-[#F59E0B]" />
@@ -1586,7 +1591,7 @@ export function ResultsViewHost({
         {activityAction&&<SearchActivityActions item={activityAction.item} currentUser={currentUser} mode={activityAction.mode} position={activityAction.position} onClose={()=>setActivityAction(null)} onSaved={()=>setStatusError('')}/>}
         {/* Col 4: DETALLES (320px) */}
         {isDetailsOpen && (
-          <div className="shrink-0 h-full flex flex-col"><div className="flex gap-2 border-b border-slate-800 bg-[#0F141C] p-2 text-xs"><button type="button" aria-pressed={showPersonalAgenda||!(pinnedDetail||selectedItem)} className="text-cyan-300" onClick={()=>setShowPersonalAgenda(true)}>Calendario individual</button><button type="button" disabled={!(pinnedDetail||selectedItem)} aria-pressed={!showPersonalAgenda&&!!(pinnedDetail||selectedItem)} className="text-slate-300 disabled:opacity-40" onClick={()=>setShowPersonalAgenda(false)}>Detalles</button></div><div className="flex-1 min-h-0">
+          <div className="shrink-0 h-full flex flex-col"><div className="flex gap-2 border-b border-slate-800 bg-[#0F141C] p-2 text-xs"><button type="button" aria-pressed={showPersonalAgenda||!(pinnedDetail||selectedItem)} className="text-cyan-300" onClick={()=>setShowPersonalAgenda(true)}>Calendario individual</button><button type="button" disabled={!(pinnedDetail||selectedItem)} aria-pressed={!showPersonalAgenda&&!!(pinnedDetail||selectedItem)} className="text-slate-300 disabled:opacity-40" onClick={()=>setShowPersonalAgenda(false)}>Detalles</button><button type="button" aria-label="Cerrar detalles y calendario individual" title="Cerrar panel" className="ml-auto rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={()=>setIsDetailsOpen(false)}>✕</button></div><div className="flex-1 min-h-0">
           <DetailsPane
             emptyContent={<PersonalAgendaPane active={isActive} currentUser={currentUser} onOpenCalendar={onToggleCalendarView}/>}
             item={showPersonalAgenda?null:(pinnedDetail||selectedItem)}

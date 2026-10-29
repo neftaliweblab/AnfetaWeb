@@ -1,7 +1,7 @@
 import {workflowPresentation} from '@/services/activityWorkflow';
 
 const WORKFLOW_COLORS: Record<string, string> = {
-  pending: '#C084FC',
+  pending: '#FBBF24',
   review: '#7DD3FC',
   completed: '#34D399',
   suspended: '#FACC15',
@@ -12,7 +12,7 @@ export function WorkflowStageBadge({status,title,scale=1}:{status:string;title:s
  const info=workflowPresentation(status,title);
  if(!info.stage)return null;
  const color = info.inconsistent ? '#F59E0B' : (WORKFLOW_COLORS[info.state] || '#38BDF8');
- const label = info.inconsistent ? `⚠ ${info.stage.code} · revisar` : `${info.stage.code} · ${info.label}`;
+ const label = info.inconsistent ? `⚠ ${info.stage.code} · revisar` : info.stage.code==='prtuzR'?'Por hacer':`${info.stage.code} · ${info.label}`;
 
  return (
    <span

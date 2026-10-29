@@ -39,7 +39,7 @@ console.log('1. Creada:    ', created);
 
 const pending = proposedReviewTitle(created, 'Neftali', 'Genaro', 'pending');
 console.log('2. En revisión:', pending);
-assert.equal(pending, 'rtuzR cliente.com webs 26-[10OCT] Diseño ne11 ge000');
+assert.equal(pending, 'rtuzR cliente.com webs 26-[10OCT] Diseño ne11 gge000');
 
 const approved = proposedReviewTitle(pending, 'Neftali', 'Genaro', 'approved');
 console.log('3. Terminada:  ', approved);
@@ -78,7 +78,7 @@ for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
   assert.ok(!scanActivityTags(done).some(t=>t.role==='active'||t.role==='review'));
  }
 }
-assert.equal(completedActivityTags('tuzR Texto nne11 gge22 ge000','Genaro','Neftali'),'tuzR Texto ne11');
+assert.equal(completedActivityTags('tuzR Texto nne11 gge22 gge000','Genaro','Neftali'),'tuzR Texto ne11');
 assert.equal(completedActivityTags('tuzR Texto nneft11 ggena','Genaro','Neftali'),'tuzR Texto neft11');
 assert.equal(completedActivityTags('tuzR cliente-nne11.com correo@nne11.com nne11'),'tuzR cliente-nne11.com correo@nne11.com ne11');
 console.log('OK production helpers: all users/priorities, legacy, idempotence, reviewer removal and token boundaries.');

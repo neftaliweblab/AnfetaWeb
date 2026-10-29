@@ -303,6 +303,11 @@ export function DetailsPane({
       !targetPath.startsWith("http")
     );
 
+    if(isDropboxFile&&(item.type==='FOLDER'||!/\.(txt|md|log|json|csv|js|ts|jsx|tsx|py|html|css|php|sql|sh|bat|ps1|xml|yaml|yml)$/i.test(targetPath))){
+      activePageIdRef.current=targetPath;setIsLoadingPreview(false);setPreviewBlocks([]);setPreviewContent('');
+      setPreviewStatus(item.type==='FOLDER'?'Abre la carpeta para consultar sus archivos.':'Abre la vista previa para consultar el archivo. Si falla la conexión, vuelve a conectar Dropbox; el índice puede seguir mostrando archivos de una sesión anterior.');
+      return;
+    }
     let clientToken = "";
     if (typeof window !== "undefined") {
       try {
@@ -341,7 +346,8 @@ export function DetailsPane({
     setIsLoadingPreview(true);
     setPreviewStatus((isLocalFile || isDropboxFile) ? "Cargando archivo..." : "Cargando contenido de Notion...");
 
-    fetch(fetchUrl)
+    const controller=new AbortController();
+    fetch(fetchUrl,{signal:controller.signal})
       .then(readApiJson)
       .then((data) => {
         if (activePageIdRef.current !== currentKey) return;
@@ -384,6 +390,7 @@ export function DetailsPane({
           setIsLoadingPreview(false);
         }
       });
+    return ()=>{controller.abort();activePageIdRef.current="";};
   }, [item?.externalId, item?.id, item?.target, item?.path,previewRevision]);
 
   if (!item) {
@@ -430,6 +437,8 @@ export function DetailsPane({
   const isPdf = /\.pdf$/i.test(targetPath) || /\.pdf$/i.test(item.name);
   const isDoc = /\.(docx?|odt|rtf)$/i.test(targetPath) || /\.(docx?|odt|rtf)$/i.test(item.name);
   const isSheet = /\.(xlsx?|ods|csv)$/i.test(targetPath) || /\.(xlsx?|ods|csv)$/i.test(item.name);
+  const isVideo = /\.(mp4|webm|mov|m4v|ogv)$/i.test(targetPath||item.name);
+  const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(targetPath||item.name);
   const isText = /\.(txt|md|log|json|xml|yaml|yml|js|ts|py|html|css|sql|sh|bat)$/i.test(targetPath) || /\.(txt|md|log|json)$/i.test(item.name);
 
   const getFilePreviewSrc = (filePath: string) => {
@@ -896,6 +905,7 @@ export function DetailsPane({
           </div>
         )}
 
+        {(isVideo||isAudio)&&targetPath&&<div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900 p-2.5"><span className="text-xs text-cyan-300">{isVideo?'Video':'Audio'} · {item.name}</span>{isVideo?<video key={targetPath} className="w-full rounded" controls preload="none" src={getFilePreviewSrc(targetPath)}>Tu navegador no reproduce este video.</video>:<audio key={targetPath} className="w-full" controls preload="none" src={getFilePreviewSrc(targetPath)}/> }<p className="text-[10px] text-slate-400">Si el formato no es compatible, abre o descarga el archivo.</p><button type="button" onClick={()=>onOpen(item)} className="text-xs text-cyan-300">Abrir archivo ↗</button></div>}
         {/* 2.3 Visor de Documento PDF */}
         {isPdf && targetPath && (
           <div className="bg-[#141B26] border border-[#1E2836] rounded-lg p-2.5 space-y-2">

@@ -14,7 +14,7 @@ export const ACTIVITY_TAGS = {
 export type ActivityPerson=keyof typeof ACTIVITY_TAGS;
 export type ActivityPriority='00'|'11'|'22'|'33';
 export const PRIORITY_LABELS:Record<ActivityPriority,string>={'00':'Urgente','11':'Primaria','22':'Secundaria','33':'Usar / practicar'};
-export interface ActivityTag {person:ActivityPerson;role:'active'|'reference'|'review'|'legacy';priority?:ActivityPriority;suffix:string;token:string;index:number;legacy:boolean}
+export interface ActivityTag {person:ActivityPerson;role:'active'|'reference'|'review'|'legacy'|'template';priority?:ActivityPriority;suffix:string;token:string;index:number;legacy:boolean}
 const suffixes=['0000','000','001','002','003','00','11','22','33','0','1','2','3'];
 const legacyPriority=(suffix:string):ActivityPriority|undefined=>['001','1'].includes(suffix)?'11':['002','2'].includes(suffix)?'22':['003','3'].includes(suffix)?'33':/^0{1,4}$/.test(suffix)?'00':(['11','22','33'].includes(suffix)?suffix as ActivityPriority:undefined);
 const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
@@ -25,13 +25,14 @@ const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
 ];
 function resolveActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
-  // New template annotations (n-ne11, g-ge000) retain the same semantic tag.
-  for(const [person,entry] of Object.entries(ACTIVITY_TAGS))if(lower.startsWith(entry.active[0]+'-')){
-    const compact=resolveActivityTag(lower.slice(2));if(compact&&!compact.legacy&&compact.person===person)return {...compact,token};
+  // Hyphenated annotations belong to templates, never to an active assignment.
+  if(lower.includes('-')){
+    const compact=resolveActivityTag(lower.replace('-', ''))||(/^[a-z]-/.test(lower)?resolveActivityTag(lower.slice(2)):undefined);
+    if(compact)return {...compact,role:'template',token};
   }
 
   for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
-    if(lower===entry.reference+'000')return {person:person as ActivityPerson,role:'review',suffix:'000',token,legacy:false};
+    if(lower===entry.active+'000'||lower===entry.reference+'000')return {person:person as ActivityPerson,role:'review',suffix:'000',token,legacy:false};
     for(const [suffix, priority] of PRIORITY_SUFFIXES){
       if(lower===entry.active+suffix)return {person:person as ActivityPerson,role:'active',priority,suffix:priority,token,legacy:false};
       if(lower===entry.reference+suffix)return {person:person as ActivityPerson,role:'reference',priority,suffix:priority,token,legacy:false};
@@ -67,7 +68,7 @@ export function activityPerson(input:string):ActivityPerson|undefined{
 export function activePersonTag(person:string,priority:ActivityPriority='11'){
   const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+priority:'';
 }
-export function pendingReviewTag(person:string){const key=activityPerson(person);return key?ACTIVITY_TAGS[key].reference+'000':'';}
+export function pendingReviewTag(person:string){const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+'000':'';}
 export function titlePriority(title:string,person?:string){
   const key=person?activityPerson(person):undefined;
   const tags=scanActivityTags(title).filter(tag=>tag.role==='active'&&(!key||tag.person===key));
@@ -91,15 +92,16 @@ export function inferActivityPerson(title:string,status=''){
 export function resultAssignedPerson(item:any){
   for(const value of [item?.assignedPerson,item?.AssignedPerson,item?.person,...(item?.assignmentKeys||[])]){
     if(typeof value!=='string')continue;
-    const person=activityPerson(value.split('@')[0].trim());if(person)return person;
+    const identity=value.split('@')[0].trim();if(parseActivityTag(identity)?.role==='template')continue;
+    const person=activityPerson(identity);if(person)return person;
   }
   return inferActivityPerson(String(item?.name||item?.title||item?.Name||''),String(item?.updateStatus||item?.status||''));
 }
 export function activityTagPattern(){
   const tokens:string[]=[];
   for(const entry of Object.values(ACTIVITY_TAGS)){
-    tokens.push(entry.reference+'000',entry.active[0]+'-'+entry.reference+'000');
-    for(const [suffix] of PRIORITY_SUFFIXES)tokens.push(entry.active+suffix,entry.reference+suffix,entry.active[0]+'-'+entry.active+suffix,entry.active[0]+'-'+entry.reference+suffix);
+    tokens.push(entry.active+'000',entry.reference+'000',entry.active.slice(0,2)+'-'+entry.active.slice(2)+'000',entry.active[0]+'-'+entry.reference+'000');
+    for(const [suffix] of PRIORITY_SUFFIXES)tokens.push(entry.active.slice(0,2)+'-'+entry.active.slice(2)+suffix,entry.active+suffix,entry.reference+suffix,entry.active[0]+'-'+entry.active+suffix,entry.active[0]+'-'+entry.reference+suffix);
     for(const alias of entry.aliases){tokens.push(alias);for(const suffix of suffixes)tokens.push(alias+suffix);}
     tokens.push(entry.active[0]+'-'+entry.passive);
   }
@@ -114,7 +116,8 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
   return scanActivityTags(title).some(tag=>{
     if(matchCase&&tag.token!==query)return false;
     if(tag.person!==wanted.person||tag.role!==wanted.role)return false;
-    if(wanted.role==='review')return tag.token.toLowerCase()===query.toLowerCase();
+    if(wanted.role==='review')return true;
+    if(wanted.role==='template')return tag.token.toLowerCase()===query.toLowerCase();
     return wanted.priority===tag.priority;
   });
 }

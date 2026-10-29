@@ -1,5 +1,5 @@
 import {revisionPhaseTitle} from '../services/progressiveWorkflow';
-import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags,pendingReviewTag} from '../services/activityTags';
+import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags} from '../services/activityTags';
 /**
  * templateCatalog.ts
  * Catálogo y utilidades de Plantillas Fase1 para ANFETA.
@@ -246,10 +246,10 @@ export function buildCalendarTemplateMonthTag(date: Date): string {
 }
 
 /**
- * Genera el tag completo del revisor según ANFETA.
+ * Genera la referencia del revisor previsto; el tag activo 000 solo se agrega al enviar.
  */
-export function getCalendarReviewerTag(personName: string,mode:'compatible'|'new'='compatible'): string {
-  const person=activityPerson(personName);return person?(mode==='new'?ACTIVITY_TAGS[person].reference+'000':ACTIVITY_TAGS[person].review):'';
+export function getCalendarReviewerTag(personName: string,mode:'compatible'|'new'='new'): string {
+  const person=activityPerson(personName);return person?(mode==='new'?ACTIVITY_TAGS[person].reference+'11':ACTIVITY_TAGS[person].review):'';
 }
 
 /**
@@ -314,15 +314,15 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
   const classified=templateOriginalTitle.match(/\[([pd]\.)dominio\.com([^\]]*)\]/i);
   if(classified&&cleanDom)formattedDomain='['+classified[1]+cleanDom.replace(/^[pd]\./i,'')+classified[2]+']';
 
-  const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle)) : "";
+  const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle,personName)||scanActivityTags(templateOriginalTitle).find(tag=>tag.role==='template'&&tag.person===activityPerson(personName)&&tag.priority)?.priority) : "";
   const reviewerTag = reviewerName ? getCalendarReviewerTag(reviewerName) : "";
   const incomingReviewTags=scanActivityTags(templateOriginalTitle).filter(tag=>tag.role==='review'&&!tag.legacy);
-  const pendingTemplateTags=incomingReviewTags.length?(reviewerName?pendingReviewTag(reviewerName):[...new Set(incomingReviewTags.map(tag=>tag.token))].join(' ')):'';
+  const pendingTemplateTags=!reviewerName?[...new Set(incomingReviewTags.map(tag=>ACTIVITY_TAGS[tag.person].reference+'11'))].join(' '):'';
 
   // Conservar tags de equipo originales si no se eligieron personas específicas
   let teamTags = "";
   if (!personTag && !reviewerTag && templateOriginalTitle) {
-    const teamMatch = templateOriginalTitle.match(/(?:\b[a-z]-[a-z0-9]+\s*)+$/i);
+    const teamMatch = templateOriginalTitle.match(/(?:\b[a-z]{1,2}-[a-z0-9]+\s*)+$/i);
     if (teamMatch) teamTags = teamMatch[0].trim();
   }
 

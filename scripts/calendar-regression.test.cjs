@@ -107,16 +107,16 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     state.page.properties.Name.title=[{text:{content:'prtuzR Reporte ADS nne11'}}];
     await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John'});
     assert.match(state.page.properties.Name.title[0].text.content,/\bne11\b/);
-    assert.match(state.page.properties.Name.title[0].text.content,/\bjo000\b/);
+    assert.match(state.page.properties.Name.title[0].text.content,/\bjjo000\b/);
     const approved=await mutations.mutateActivity(settings,'John',pid,{status:'Terminada'});
     const title=approved.properties.Name.title[0].text.content;
-    assert.match(title,/\bne11\b/);assert.doesNotMatch(title,/\b(?:nne11|jo000|jjo11|jjohn)\b/);
+    assert.match(title,/\bne11\b/);assert.doesNotMatch(title,/\b(?:nne11|jo000|jjo000|jjo11|jjohn)\b/);
     assert.equal(approved.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
     const {sendReviewNotification}=require('../src/services/reviewNotifications.ts');
     state.flow.AlertPageId='';await sendReviewNotification(settings,approved,state.flow,'John',true);
     const created=state.calls.filter(c=>c.target==='pages'&&c.method==='POST').at(-1);
     const notification=Object.values(created.body.properties).find(p=>p.title).title.map(t=>t.text.content).join('');
-    assert.match(notification,/\[RESPUESTA\]/);assert.doesNotMatch(notification,/\b(?:nne11|jo000)\b/);
+    assert.match(notification,/\[RESPUESTA\]/);assert.doesNotMatch(notification,/\b(?:nne11|jo000|jjo000)\b/);
   });
   await test('Revisión con título actual de Acalli conserva responsable y copia en calendario',async()=>{
     state.page.properties.Name.title=[{text:{content:'prtuzR rrede 26-[08AGO] Redes Video - Facebook Campaña aads cercaspararancho.com jo11 aac11 jjohn'}}];
@@ -149,13 +149,13 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Empalmes calculados en la misma zona horaria',()=>{const a={start:'2026-10-05T14:00:00Z',end:'2026-10-05T15:00:00Z'},b={start:'2026-10-05T08:30:00-06:00',end:'2026-10-05T09:30:00-06:00'};assert.deepEqual(layout.computeActivityOverlaps([a,b],'2026-10-05').map(p=>p.overlapTotal),[2,2]);});
   await test('Calendario pagina la fuente real con filtro de fecha local',async()=>{const pages=await calendar.queryCalendarPages(settings,'2026-10-05','2026-10-06');assert.equal(pages.length,2);const calls=state.calls.filter(c=>c.target.endsWith('/query'));assert.equal(calls[1].body.start_cursor,'page-two');assert.equal(calls[0].body.filter.and[0].date.on_or_after,'2026-10-05T00:00:00-06:00');});
   await test('Checklist incluye todos los lotes y tareas anidadas reales',async()=>{state.paginatedBlocks=true;const items=await calendar.readChecklist(settings,pid);assert.deepEqual(items.map(i=>i.text),['Primera tarea','Tarea anidada real','Segunda tarea']);});
-  await test('Revisión cambia People y título y guarda metadatos compatibles con escritorio',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',leaveVisualCopy:true});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR).*(?:jjohn|jo000)/);assert.equal(state.flow.OriginalPerson,'Neftali');assert.equal(state.flow.ReviewAssignee,'John');assert.equal(state.flow.OriginalAssigneeUserId,'neft-id');assert.equal(state.flow.LeaveVisualCopy,true);});
+  await test('Revisión cambia People y título y guarda metadatos compatibles con escritorio',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',leaveVisualCopy:true});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR).*(?:jjohn|jo000|jjo000)/);assert.equal(state.flow.OriginalPerson,'Neftali');assert.equal(state.flow.ReviewAssignee,'John');assert.equal(state.flow.OriginalAssigneeUserId,'neft-id');assert.equal(state.flow.LeaveVisualCopy,true);});
   await test('Revisión excluye a Emmanuel sin escribir en Notion',async()=>{await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'Emmanuel',status:'rtuzREVISION'}),/integrante activo/);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('Karla puede recibir y resolver su revisión sin obtener permisos globales',async()=>{process.env.NOTION_PERSON_IDS=JSON.stringify({Karla:'karla-id'});await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'Karla',status:'rtuzREVISION'});state.page.properties['Assignee/Ejecutor Principal'].people[0].name='Karla';assert.equal(state.flow.ReviewAssignee,'Karla');assert.equal(permissions.isReviewer('Karla'),false);await mutations.mutateActivity(settings,'Karla',pid,{status:'zREVISION'});assert.equal(state.flow.State,'approved');assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');});
   await test('Cuenta de revisor no resuelta impide éxito falso',async()=>{state.usersMissing=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/cuenta real/);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('Si falla el metadato se restaura la actividad anterior',async()=>{state.failMetadata=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/restauró/);assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(state.page.properties.Name.title[0].text.content,/^(?:prtuzREVISION|prtuzR)/);});
   await test('Terminar revisión conserva zREVISION y devuelve al responsable original',async()=>{await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});const page=await mutations.mutateActivity(settings,'jjohn',pid,{status:'zREVISION'});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^(?:zREVISION|tuzR).*\bneft\b/);assert.ok(!page.properties.Name.title[0].text.content.includes('john'));assert.equal(state.flow.State,'approved');});
-  await test('Revisión con urgencia conserva prioridad como referencia y revisor completo',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',isUrgent:true});assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR).*ne00 (?:jjohn|jo000)$/);});
+  await test('Revisión con urgencia conserva prioridad como referencia y revisor completo',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',isUrgent:true});assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR).*ne00 (?:jjohn|jo000|jjo000)$/);});
   await test('API de checklist propaga el rechazo de Notion',async()=>{state.failChecklist=true;const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.match((await res.json()).error,/rejected/);});
   await test('API impide editar una tarea de otra actividad',async()=>{const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'foreign-block',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('API de checklist respeta actividad bloqueada',async()=>{state.page.properties.Locked.checkbox=true;const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,currentUser:'ggena'}));assert.equal(res.status,400);});
@@ -218,7 +218,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Al cambiar revisor se reemplaza al responsable real, no a otro mencionado', async () => {
     state.page.properties.Name.title=[{text:{content:'prtuzREVISION aads jjohn Comentario nneft Descripción'}}];
     const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'Genaro',status:'rtuzREVISION'});
-    assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR) aads jjohn Comentario Descripción neft (?:ggena|ge000)$/);
+    assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR) aads jjohn Comentario Descripción neft (?:ggena|ge000|gge000)$/);
   });
   await test('Asignación vacía no se sustituye por creador o etiquetas del título', () => {
     const page=fixture(); page.properties['Assignee/Ejecutor Principal'].people=[];
@@ -373,7 +373,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     state.page.properties.Name.title=[{text:{content:'prtuzREVISION iis22 anfeta.com Trabajo'}}];
     state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'isaias-id',name:'Isaias'}];
     await mutations.mutateActivity(settings,'Isaias',pid,{reviewer:'John',status:'rtuzREVISION'});
-    assert.match(state.page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR) anfeta.com Trabajo is22 (?:jjohn|jo000)$/);
+    assert.match(state.page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR) anfeta.com Trabajo is22 (?:jjohn|jo000|jjo000)$/);
     assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');
     const writes=state.calls.filter(c=>c.method==='PATCH'||c.method==='POST').length;
     await assert.rejects(()=>mutations.mutateActivity(settings,'John',pid,{reviewer:'John',status:'rtuzREVISION'}),/ya está en revisión/);
@@ -483,7 +483,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Flujo primario rtuzR y tuzR guarda revisión y aprobación sin marcar liquidación',async()=>{
     if(process.env.NEXT_PUBLIC_ANFETA_LEGACY_WORKFLOW==='1')return;
     const page=await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John',status:'rtuzREVISION'});
-    assert.match(page.properties.Name.title[0].text.content,/^rtuzR /);assert.match(page.properties.Name.title[0].text.content,/\bjo000\b/);
+    assert.match(page.properties.Name.title[0].text.content,/^rtuzR /);assert.match(page.properties.Name.title[0].text.content,/\bjjo000\b/);
     assert.equal(state.flow.State,'pending');
     const approved=await mutations.mutateActivity(settings,'John',pid,{status:'zREVISION'});
     assert.match(approved.properties.Name.title[0].text.content,/^tuzR /);assert.equal(state.flow.State,'approved');

@@ -366,9 +366,9 @@ export function cloudFolder(domain: string | undefined, target: string | undefin
   throw new Error('La carpeta debe estar dentro de Dropbox.');
 }
 
-export function getDropboxFileContent(filePath:string,tokenOverride:string|undefined,stream:true,original?:boolean):Promise<{body:ReadableStream<Uint8Array>;contentType:string}>;
+export function getDropboxFileContent(filePath:string,tokenOverride:string|undefined,stream:true,original?:boolean,range?:string):Promise<{body:ReadableStream<Uint8Array>;contentType:string;status?:number;contentRange?:string|null;contentLength?:string|null}>;
 export function getDropboxFileContent(filePath:string,tokenOverride?:string):Promise<{buffer:Buffer;contentType:string}>;
-export async function getDropboxFileContent(filePath: string, tokenOverride?: string, stream=false,original=false): Promise<any> {
+export async function getDropboxFileContent(filePath: string, tokenOverride?: string, stream=false,original=false,range?:string): Promise<any> {
   let token = await getDropboxAccessToken(tokenOverride);
   let cleanPath = filePath.replace(/\\/g, '/').trim();
 
@@ -407,6 +407,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
       headers: {
         Authorization: `Bearer ${token}`,
         'Dropbox-API-Arg': bodyArg,
+        ...(!isImg&&range?{Range:range}:{}),
       },
       signal: AbortSignal.timeout(25000),
     });
@@ -419,6 +420,7 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
           headers: {
             Authorization: `Bearer ${token}`,
             'Dropbox-API-Arg': bodyArg,
+            ...(!isImg&&range?{Range:range}:{}),
           },
           signal: AbortSignal.timeout(25000),
         });
@@ -454,8 +456,9 @@ export async function getDropboxFileContent(filePath: string, tokenOverride?: st
       response=dlRes;
     }
 
+    if(stream&&response.status===416&&response.body)return {body:response.body,contentType:'application/json',status:416,contentRange:response.headers.get('content-range')};
     if (response.ok) {
-      if(stream&&response.body)return {body:response.body,contentType:isImg?'image/jpeg':response.headers.get('content-type')||'application/octet-stream'};
+      if(stream&&response.body)return {body:response.body,contentType:isImg?'image/jpeg':response.headers.get('content-type')||'application/octet-stream',status:response.status,contentRange:response.headers.get('content-range'),contentLength:response.headers.get('content-length')};
       const buffer = await boundedDownload(response);
       const contentType = isImg ? 'image/jpeg' : response.headers.get('content-type') || 'application/octet-stream';
       return { buffer, contentType };

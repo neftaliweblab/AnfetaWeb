@@ -2,8 +2,8 @@ import {newestFirst} from './searchResultOrder';
 
 export const SEARCH_SORTS = [
   ['scheduled-today', 'Hoy primero · horario 08:00 → 22:00'],
-  ['scheduled-asc', 'Fecha por hacer · días anteriores primero'],
-  ['scheduled-desc', 'Fecha por hacer · días posteriores primero'],
+  ['scheduled-asc', 'Fecha por hacer · Ayer → Mañana'],
+  ['scheduled-desc', 'Fecha por hacer · Mañana → Ayer'],
   ['modified-desc', 'Última modificación · más reciente primero'],
   ['modified-asc', 'Última modificación · editadas hace más tiempo'],
   ['name-asc', 'Título · A–Z'],

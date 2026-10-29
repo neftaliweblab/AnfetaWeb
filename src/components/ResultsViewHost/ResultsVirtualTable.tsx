@@ -661,7 +661,7 @@ export function ResultsVirtualTable({
                 style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
                 className="text-[#94A3B8] truncate"
               >
-                {item.updateStatus || "—"}
+                {workflowState(item.updateStatus||"",item.name)==='pending'?'Por hacer':item.updateStatus || "—"}
               </span>
             )}
           </div>

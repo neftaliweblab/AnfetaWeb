@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Bell,
 } from "lucide-react";
+import {SearchQueryTools} from './SearchQueryTools';
 import {IndexSyncStatus} from './IndexSyncStatus';
 import {FavoritesBackup} from './FavoritesBackup';
 import {SavedSearches} from './SavedSearches';
@@ -546,6 +547,7 @@ export function SearchInputBar({
           onChangeQuery(newQ);
         }}
       />
+      <SearchQueryTools query={query} onChange={onChangeQuery} onHelp={onOpenHelp} regex={searchOptions?.matchRegex}/>
     </div>
   );
 }

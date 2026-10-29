@@ -532,6 +532,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ".log": "text/plain; charset=utf-8",
           ".csv": "text/csv; charset=utf-8",
           ".pdf": "application/pdf",
+          ".mp4":"video/mp4", ".webm":"video/webm", ".mov":"video/quicktime", ".m4v":"video/mp4", ".ogv":"video/ogg",
+          ".mp3":"audio/mpeg", ".wav":"audio/wav", ".ogg":"audio/ogg", ".m4a":"audio/mp4", ".aac":"audio/aac", ".flac":"audio/flac",
           ".doc": "application/msword",
           ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           ".xls": "application/vnd.ms-excel",
@@ -540,9 +542,15 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         };
 
         const tokenOverride = (searchParams.get("token") || "").trim() || undefined;
-        const result = await getDropboxFileContent(filePath, tokenOverride, true, searchParams.get('original')==='1');
+        const range=req.headers.get('range')||undefined;
+        if(range&&!/^bytes=(?:\d+-\d*|-\d+)$/.test(range))return NextResponse.json({error:'Rango de archivo no válido.'},{status:400});
+        const result = await getDropboxFileContent(filePath, tokenOverride, true, searchParams.get('original')==='1',range);
         return new NextResponse(result.body, {
+          status:result.status||200,
           headers: {
+            "Accept-Ranges":"bytes",
+            ...(result.contentRange?{"Content-Range":result.contentRange}:{}),
+            ...(result.contentLength?{"Content-Length":result.contentLength}:{}),
             "Content-Type": result.contentType && result.contentType!=='application/octet-stream' ? result.contentType : mimeTypes[ext] || "application/octet-stream",
             "Cache-Control": "private, no-store",
           },
@@ -2755,7 +2763,7 @@ async function GETRaw(req:NextRequest){
 }
 export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
 export async function GET(req:NextRequest){
- const response=await GETRaw(req);if(!response.ok)return response;
+ const response=await GETRaw(req);if(!response.ok||!response.headers.get('content-type')?.includes('application/json')||new URL(req.url).searchParams.get('type')==='file-preview')return response;
  const token=resolveNotionToken(req);
  const settings={...getSettings(),notionToken:token};
  const sourceKey=notionSourceKey(settings);
