@@ -106,18 +106,25 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         );
       });
 
+    case "software":
     case "programas":
     case "zprogramas":
       return items.filter((x) => {
         if (!isNotionItem(x)) return false;
         const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
-        return (
-          src.includes("programa") ||
+        const isProgSource = src.includes("programa");
+        const hasProgToken = (
           name.startsWith("[programas") ||
           name.includes("zprograma") ||
-          name.includes("pprog")
+          name.includes("pprog") ||
+          name.includes(".prog") ||
+          name.includes(" prog ") ||
+          name.includes("prog]") ||
+          name.includes("software") ||
+          name.includes("desarrollo")
         );
+        return isProgSource || hasProgToken;
       });
 
     case "zpagar":
@@ -126,8 +133,8 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
         return (
-          (src.includes("pagar") || src.includes("cobrar y pagar")) &&
-          (name.includes("pagar") || name.includes("zpagar"))
+          (src.includes("pagar") || src.includes("cobrar y pagar") || src.includes("revision")) &&
+          (name.includes("pagar") || name.includes("zpagar") || name.includes("pago"))
         );
       });
 
@@ -137,8 +144,8 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
         const name = (x.name || "").toLowerCase();
         return (
-          (src.includes("cobrar") || src.includes("cobrar y pagar")) &&
-          (name.includes("cobrar") || name.includes("zcobrar"))
+          (src.includes("cobrar") || src.includes("cobrar y pagar") || src.includes("revision")) &&
+          (name.includes("cobrar") || name.includes("zcobrar") || name.includes("cobro"))
         );
       });
 

@@ -574,7 +574,7 @@ export function ResultsVirtualTable({
             >
             {renderIcon(item)}
           </span>
-          <ContentClassificationBadge title={item.name}/>{parsed.area && (
+          <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
             <span
               style={{
                 fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
@@ -896,7 +896,7 @@ export function ResultsVirtualTable({
               )}
             </button>
             <span className="shrink-0">{renderIcon(item)}</span>
-            <ContentClassificationBadge title={item.name}/>{parsed.area && (
+            <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
               <span
                 style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"

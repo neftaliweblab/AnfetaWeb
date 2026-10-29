@@ -1,7 +1,8 @@
 const fs=require('fs'),path=require('path'),Module=require('module'),ts=require('typescript'),assert=require('assert/strict');const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;Module._resolveFilename=function(n,p,...r){if(n.startsWith('@/'))n=path.join(root,'src',n.slice(2));return resolve.call(this,n,p,...r)};for(const ext of ['.ts','.tsx'])require.extensions[ext]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,f);
-const {contentClassification,matchesContentClassification}=require('../src/lib/contentClassification.ts'),{calendarDomain}=require('../src/services/calendarPresentation.ts'),{noteTitle}=require('../src/lib/noteDraft.ts'),tags=require('../src/services/activityTags.ts'),{quickRevisionTitle}=require('../src/lib/quickRevisionTitle.ts'),{buildCalendarQuickTemplateFinalTitle}=require('../src/lib/templateCatalog.ts'),{fetchWithScheduleChoice}=require('../src/lib/scheduleChoice.ts');
+const {contentClassification,matchesContentClassification}=require('../src/lib/contentClassification.ts'),{calendarDomain}=require('../src/services/calendarPresentation.ts'),{noteTitle}=require('../src/lib/noteDraft.ts'),tags=require('../src/services/activityTags.ts'),{quickRevisionTitle}=require('../src/lib/quickRevisionTitle.ts'),{buildCalendarQuickTemplateFinalTitle}=require('../src/lib/templateCatalog.ts'),{fetchWithScheduleChoice}=require('../src/lib/scheduleChoice.ts'),{filterByNotionBase}=require('../src/lib/notionFilters.ts');
 (async()=>{
 assert.equal(contentClassification('prtuzR [d.anfeta.com.webs] n-ne11'),'documentation');assert.equal(contentClassification('prtuzR p.anfeta.com nne11'),'project');assert.equal(contentClassification('Descripción normal'),'');assert.equal(matchesContentClassification('prtuzR p.anfeta.com','documentation'),false);assert.equal(matchesContentClassification('Sin prefijo','unclassified'),true);assert.equal(calendarDomain('prtuzR d.ads.anfeta.com'),'anfeta.com');assert.equal(calendarDomain('prtuzR d.siat.sat.gob.mx.webs'),'siat.sat.gob.mx');assert.equal(calendarDomain('prtuzR d.anfeta.com.aplicacion.web'),'anfeta.com');
+assert.equal(contentClassification('D. 15.00 ADS'),'');assert.equal(contentClassification('d. 0.66 WEB'),'');assert.equal(contentClassification('prtuzR cliente.com webs 26-[10OCT] D. 15.00 ADS'),'');assert.equal(contentClassification('anfeta.com'),'');assert.equal(contentClassification('Tutorial Solicitud Cliente Acceso'),'');assert.equal(contentClassification('d.anfeta.com'),'documentation');assert.equal(contentClassification('p.anfeta.com'),'project');
 assert.equal(noteTitle({title:'Reunión',domain:'anfeta.com',kind:'d'}),'d.anfeta.com Reunión');assert.equal(noteTitle({title:'Reunión',domain:'',kind:'p'}),'p. Reunión');
 assert.equal(tags.parseActivityTag('n-ne11').person,'Neftali');assert.equal(tags.parseActivityTag('g-ge000').role,'review');assert.equal(tags.parseActivityTag('k-ne11'),undefined);assert.equal(tags.matchesActivityTagQuery('n-ne11','ne11'),true);assert.equal(tags.completedActivityTags('tuzR n-nne11 g-ge000','Genaro','Neftali'),'tuzR ne11');
 for(const person of Object.keys(tags.ACTIVITY_TAGS)){const title=quickRevisionTitle({type:'Nota',title:'Prueba',person,domain:'anfeta.com',month:'26-[10OCT]'});assert.match(title,/d\.anfeta\.com/);assert.ok(tags.scanActivityTags(title).some(t=>t.person===person&&t.role==='active'));}
@@ -13,6 +14,19 @@ responses([{code:'SCHEDULE_CONFLICT',error:'No hay espacio'},{success:true}]);aw
 responses([conflict]);await assert.rejects(()=>fetchWithScheduleChoice('/api/data',{body:JSON.stringify(original)},async()=>null),/cancelado/);assert.equal(sent.length,1);
 responses([new Error('Resultado incierto')]);await assert.rejects(()=>fetchWithScheduleChoice('/api/data',{body:JSON.stringify(original)},async()=> 'overlap'),/incierto/);assert.equal(sent.length,1);
 responses([{error:'Sin permiso'}]);let chosen=false;await fetchWithScheduleChoice('/api/data',{body:JSON.stringify(original)},async()=>{chosen=true;return 'overlap'});assert.equal(chosen,false);
+const mockItems=[
+  {id:'1',name:'prtuzR anfeta.com.prog 26-[10OCT] Desarrollo app',source:'notion',sourceName:'Revisiones'},
+  {id:'2',name:'prtuzR zPAGAR hosting 26-[10OCT]',source:'notion',sourceName:'Cobrar y pagar'},
+  {id:'3',name:'prtuzR zCOBRAR mensualidad 26-[10OCT]',source:'notion',sourceName:'Cobrar y pagar'},
+  {id:'4',name:'prtuzR cliente.com webs 26-[10OCT] Diseño',source:'notion',sourceName:'Revisiones'}
+];
+assert.equal(filterByNotionBase(mockItems,'software').length,1);
+assert.equal(filterByNotionBase(mockItems,'software')[0].id,'1');
+assert.equal(filterByNotionBase(mockItems,'zpagar').length,1);
+assert.equal(filterByNotionBase(mockItems,'zpagar')[0].id,'2');
+assert.equal(filterByNotionBase(mockItems,'zcobrar').length,1);
+assert.equal(filterByNotionBase(mockItems,'zcobrar')[0].id,'3');
+assert.equal(filterByNotionBase(mockItems,'revisiones').length,2);
 const React=require('react'),{renderToString}=require('react-dom/server'),{NotesPanel}=require('../src/components/ResultsViewHost/NotesPanel.tsx');const rendered=renderToString(React.createElement(NotesPanel,{currentUser:'Neftali'}));assert.match(rendered,/Abrir notas/);assert.ok(!rendered.includes('role="dialog"'));
 console.log('OK notes/classification/templates: original prefixes, real domain, new tag annotations, all owners, explicit overlap/nearest/cancel, payload retention and no ambiguous retries.');
 })().catch(e=>{console.error(e);process.exitCode=1});
