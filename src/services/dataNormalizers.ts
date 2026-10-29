@@ -1,4 +1,4 @@
-import {inferActivityPerson,ACTIVITY_TAGS} from './activityTags';
+import {inferActivityPerson,currentReviewTagPerson,ACTIVITY_TAGS} from './activityTags';
 import path from "path";
 import { calendarUrgent, mexicoDate } from "./calendarPresentation";
 import { normalizePerson } from "./identityNormalizer";
@@ -29,6 +29,7 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     : [];
 
   const assignedPerson =
+    (source==='Notion'&&!raw.isReviewMirror&&!raw.IsReviewMirror&&!raw.isHandoffMirror?currentReviewTagPerson(name,raw.ProjectUpdateStatus||raw.statusLabel||raw.status||''):'')||
     raw.AssignedPerson ||
     raw.assignedPerson ||
     resolveAssignedPerson(name, assignmentKeys);
@@ -81,7 +82,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     pageUrl: raw.PageUrl || raw.pageUrl || "",
     title,
     shortTitle: raw.ShortTitle || raw.shortTitle || title,
-    person: normalizePerson(raw.Person || raw.person),
+    person: raw.IsReviewMirror||raw.isReviewMirror||raw.isHandoffMirror?normalizePerson(raw.Person||raw.person):currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person),
     originalPerson: raw.OriginalPerson || raw.originalPerson || "—",
     project: raw.Project || raw.project || "",
     domain: raw.ParsedDomain || raw.domain || "general",

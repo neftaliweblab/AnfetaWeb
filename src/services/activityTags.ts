@@ -1,3 +1,4 @@
+import {workflowState} from './activityWorkflow';
 import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from './progressiveWorkflow';
 /** Title tokens only. Identity/login aliases remain a separate concern. */
 export const ACTIVITY_TAGS = {
@@ -84,12 +85,19 @@ export function setTaskUrgent(title:string,person:string,urgent:boolean){
   for(const tag of tags.reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);
   return result.replace(/\s+00$/,'').replace(/\s{2,}/g,' ').trim();
 }
+/** The canonical three-zero tag identifies the active reviewer, not a reference such as ge11. */
+export function currentReviewTagPerson(title:string,status=''){
+  if(workflowState(status,title)!=='review')return '';
+  return scanActivityTags(title).findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))?.person||'';
+}
 export function inferActivityPerson(title:string,status=''){
   const tags=scanActivityTags(title),review=(PROGRESSIVE_WORKFLOW_PRIMARY&&(progressiveStage(status)?.state==='review'||progressiveStage(title)?.state==='review'))||/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
-  const candidate=review?tags.findLast(tag=>tag.role==='review'):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy');
+  const candidate=review?(tags.findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))||tags.findLast(tag=>tag.role==='review')):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy');
   return candidate?.person||'';
 }
 export function resultAssignedPerson(item:any){
+  const review=currentReviewTagPerson(String(item?.name||item?.title||item?.Name||''),String(item?.updateStatus||item?.status||''));
+  if(review&&!item?.isReviewMirror&&!item?.IsReviewMirror&&!item?.isHandoffMirror)return review;
   for(const value of [item?.assignedPerson,item?.AssignedPerson,item?.person,...(item?.assignmentKeys||[])]){
     if(typeof value!=='string')continue;
     const identity=value.split('@')[0].trim();if(parseActivityTag(identity)?.role==='template')continue;

@@ -1,4 +1,4 @@
-import {inferActivityPerson} from './activityTags';
+import {inferActivityPerson,currentReviewTagPerson} from './activityTags';
 import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
 import { mexicoDate } from './calendarPresentation';
@@ -20,6 +20,10 @@ export function assignedField(page: any): [string, any] | undefined {
     .sort(([a], [b]) => Number(!/assignee|asignee|ejecutor/i.test(a)) - Number(!/assignee|asignee|ejecutor/i.test(b)))[0] as [string, any] | undefined;
 }
 export function assignedPerson(page: any, fallback = '') {
+  const pageTitle=Object.values(page.properties||{}).filter((p:any)=>p.type==='title').flatMap((p:any)=>p.title||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('');
+  const statusField=calendarStatusField(page)?.[1];
+  const review=currentReviewTagPerson(pageTitle,statusField?.[statusField.type]?.name||'');
+  if(review)return review;
   const prop = assignedField(page)?.[1];
   if (!prop) return normalizePerson(fallback);
   const value = prop.type === 'people' ? (prop.people || []).map((p: any) => p.person?.email || p.name || '').join(', ') : prop.type === 'select' ? prop.select?.name : (prop.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('');
