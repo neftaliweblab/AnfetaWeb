@@ -125,12 +125,13 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
   const handoff=updates.handoff===true;
+  const currentStatusName = calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name || '';
+  const currentWorkflowState = workflowState(currentStatusName, title);
+  const isRevState = currentWorkflowState === 'review' || /(?<![\p{L}\p{Nd}_])(?:rtuzREVISION|rtuzR)(?![\p{L}\p{Nd}_])/iu.test(title);
   let handoffId:string|undefined;
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
-    const state=workflowState(calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name||'',title);
-    const isRevState = state === 'review' || /(?<![\p{L}\p{Nd}_])rtuzREVISION(?![\p{L}\p{Nd}_])/iu.test(title);
-    if(!['pending','suspended'].includes(state) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
+    if(!['pending','suspended'].includes(currentWorkflowState) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
     if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
     const target=normalizePerson(updates.person);
     if(target===normalizePerson(activity.person))throw Error('Selecciona a otro compañero.');
@@ -145,9 +146,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(handoff||updates.reviewer||completed||returned||reassigned)clearReadBlocksCache(settings);
   const previousFlow = updates.reviewer || completed || returned || reassigned || handoff ? await readReviewFlow(settings, id) : undefined;
   if(completed&&!isReviewer(actor)&&!(previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee)&&PERSON_ALIASES[normalizePerson(actor)]))throw Error('Solo el revisor asignado puede terminar esta revisión.');
-  if(handoff&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
+  if(handoff&&isRevState&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
   if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
-  if(updates.reviewer&&previousFlow?.State==='pending'&&normalizePerson(previousFlow.ReviewAssignee)===normalizePerson(updates.reviewer))throw new Error('La actividad ya está en revisión con este compañero. Actualiza antes de reenviarla.');
+  if(updates.reviewer&&isRevState&&previousFlow?.State==='pending'&&normalizePerson(previousFlow.ReviewAssignee)===normalizePerson(updates.reviewer))throw new Error('La actividad ya está en revisión con este compañero. Actualiza antes de reenviarla.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
   if (returned && (!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
   if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
@@ -172,7 +173,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   // Reasignación o Envío a Revisión
   if (updates.person || updates.reviewer) {
     const target = updates.reviewer || updates.person;
-    const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'EN REVISIÓN';
+    const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'rtuzR' || updates.status === 'EN REVISIÓN' || (!!updates.status && workflowState(updates.status) === 'review');
     const restoringAssignedReview=(completed||returned)&&previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee);
     if (!handoff && !restoringAssignedReview && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
@@ -210,7 +211,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       nextTitle = isSendingToReview || completed || returned ? title : handoffTitle(title,activity.person,person);
       if (isSendingToReview) {
         // En ANFETA original: prefijo rtuzREVISION al enviar a revisión
-        nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)\s*/i, '');
+        nextTitle = nextTitle.replace(/^(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|saprtuzR|aprtuzR|prtuzR|rtuzR|tuzR|uzR|zR)\s*/i, '');
         nextTitle = `rtuzREVISION ${nextTitle.trim()}`;
       }
       properties[titleField[0]] = { title: [{ text: { content: nextTitle } }] };
@@ -267,7 +268,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       // Compose from the original title: generic reassignment must not remove author/suffix tags.
       let source=updates.title!==undefined?String(updates.title):title;
       if(updates.reviewer&&updates.isUrgent!==undefined)source=setTaskUrgent(source,previousFlow?.OriginalPerson||activity.person,updates.isUrgent);
-      properties[field[0]]={title:[{text:{content:reviewTitle(source,previousFlow?.OriginalPerson||activity.person,updates.reviewer||previousFlow.ReviewAssignee,returned?'returned':completed?'approved':'pending',previousFlow?.State==='pending'?previousFlow.ReviewAssignee:'')}}]};
+      const originalPerson = !isRevState ? normalizePerson(activity.person) : (previousFlow?.OriginalPerson || activity.person);
+      const previousReviewer = isRevState && previousFlow?.State === 'pending' ? previousFlow.ReviewAssignee : '';
+      properties[field[0]]={title:[{text:{content:reviewTitle(source,originalPerson,updates.reviewer||previousFlow.ReviewAssignee,returned?'returned':completed?'approved':'pending',previousReviewer)}}]};
     }
   }
   if (updates.isUrgent !== undefined && !updates.reviewer) {
@@ -289,7 +292,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (updates.reviewer || ((completed || returned || reassigned) && previousFlow)) {
     const field = assignedField(page);
     reviewFlow = { ...previousFlow,
-      OriginalPerson: reassigned ? normalizePerson(updates.person) : previousFlow?.OriginalPerson || activity.person,
+      OriginalPerson: reassigned ? normalizePerson(updates.person) : (!isRevState ? normalizePerson(activity.person) : (previousFlow?.OriginalPerson || activity.person)),
       ReviewAssignee: updates.reviewer ? normalizePerson(updates.reviewer) : previousFlow.ReviewAssignee,
       OriginalAssigneeUserId: reassigned && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.OriginalAssigneeUserId || (field?.[1].type === 'people' ? field[1].people?.[0]?.id : '') || '',
       ReviewAssigneeUserId: updates.reviewer && field ? properties[field[0]]?.people?.[0]?.id || '' : previousFlow?.ReviewAssigneeUserId || '',
