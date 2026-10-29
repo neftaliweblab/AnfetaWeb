@@ -13,7 +13,7 @@ import {CalendarDetailPanel} from '../CalendarHost/CalendarDetailPanel';
 import {AgendaActivityActions} from './AgendaActivityActions';
 import {saveAgendaActivity,type AgendaUpdate} from './saveAgendaActivity';
 import {personalAgendaActivities,agendaSelection,agendaAppearance} from '@/lib/personalAgenda';
-import {workflowPresentation} from '@/services/activityWorkflow';
+import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {isFtfReminder} from '@/services/progressKpis';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
@@ -369,7 +369,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span>
                     <span className={'text-[10px] font-semibold ' + appearance.text}>
-                      {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : workflowPresentation(a.status, a.title).label}
+                      {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : <WorkflowStageBadge status={a.status} title={a.title}/>}
                       {a.isReviewMirror ? ' · Copia de revisión' : a.isHandoffMirror ? ' · Copia histórica' : ''}
                     </span>
                   </div>

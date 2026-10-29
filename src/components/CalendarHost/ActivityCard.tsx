@@ -19,7 +19,7 @@ import {notionPageUrl} from '@/lib/notionPageUrl';
 import {ViewportMenu} from './ViewportMenu';
 import {QuickScheduleActions} from './QuickScheduleModal';
 import { ChecklistPopup } from "./ChecklistPopup";
-import { workflowState,workflowPresentation } from "@/services/activityWorkflow";
+import { workflowState } from "@/services/activityWorkflow";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
 import { SendToReviewModal } from "./SendToReviewModal";
@@ -304,10 +304,6 @@ function ActivityCardComponent({
   let cardBorder = "border-[#382818]";
   let cardBg = "bg-[#161516]";
 
-  let phaseLabel = "POR HACER";
-  let phaseColor = "#2E1909";
-  let phaseTextColor = "#FDBA74";
-
   if (isUrgent) {
     badgeLetter = "!";
     badgeBg = "#300D15";
@@ -315,9 +311,6 @@ function ActivityCardComponent({
     badgeText = "#FDA4AF";
     cardBorder = "border-[#9F1239]/70 shadow-[0_0_10px_rgba(225,29,72,0.18)]";
     cardBg = "bg-[#181114]";
-    phaseLabel = "00 URGENTE";
-    phaseColor = "#300D15";
-    phaseTextColor = "#FDA4AF";
   } else if (isCompleted) {
     badgeLetter = "T";
     badgeBg = "#062E22";
@@ -325,9 +318,6 @@ function ActivityCardComponent({
     badgeText = "#6EE7B7";
     cardBorder = "border-[#065F46]/70";
     cardBg = "bg-[#111815]";
-    phaseLabel = "TERMINADA";
-    phaseColor = "#062E22";
-    phaseTextColor = "#6EE7B7";
   } else if (isReview) {
     badgeLetter = "R";
     badgeBg = "#0C2E46";
@@ -335,9 +325,6 @@ function ActivityCardComponent({
     badgeText = "#7DD3FC";
     cardBorder = "border-[#075985]/70";
     cardBg = "bg-[#101720]";
-    phaseLabel = "EN REVISIÓN";
-    phaseColor = "#0C2E46";
-    phaseTextColor = "#7DD3FC";
   } else if (isSuspended) {
     badgeLetter = "S";
     badgeBg = "#240E3E";
@@ -345,9 +332,6 @@ function ActivityCardComponent({
     badgeText = "#D8B4FE";
     cardBorder = "border-[#6B21A8]/70";
     cardBg = "bg-[#15121E]";
-    phaseLabel = "SUSPENDIDA";
-    phaseColor = "#240E3E";
-    phaseTextColor = "#D8B4FE";
   } else {
     // Pendiente
     badgeLetter = "P";
@@ -356,13 +340,8 @@ function ActivityCardComponent({
     badgeText = "#FDE68A";
     cardBorder = "border-[#3D2614]/80";
     cardBg = "bg-[#171514]";
-    phaseLabel = "POR HACER";
-    phaseColor = "#261A10";
-    phaseTextColor = "#FDE68A";
   }
 
-  const phaseInfo=workflowPresentation(status,title);
-  if(phaseInfo.stage&&!phaseInfo.inconsistent&&!isUrgent)phaseLabel=phaseInfo.label.toUpperCase();
 
   // Desktop palette customization (ANFETA Desktop parity)
   let priorityBorderColor = "#64748B";
@@ -403,37 +382,22 @@ function ActivityCardComponent({
       badgeBg = "#4C1D24";
       badgeBorder = "#F87171";
       badgeText = "#FECDD3";
-      phaseLabel = "00 URGENTE";
-      phaseColor = "#4C1D24";
-      phaseTextColor = "#FECDD3";
     } else if (isCompleted) {
       badgeBg = "#14382A";
       badgeBorder = "#10B981";
       badgeText = "#A7F3D0";
-      phaseLabel = "TERMINADA";
-      phaseColor = "#14382A";
-      phaseTextColor = "#A7F3D0";
     } else if (isReview) {
       badgeBg = "#12304A";
       badgeBorder = "#38BDF8";
       badgeText = "#BAE6FD";
-      phaseLabel = "EN REVISIÓN";
-      phaseColor = "#12304A";
-      phaseTextColor = "#BAE6FD";
     } else if (isSuspended) {
       badgeBg = "#301B42";
       badgeBorder = "#C084FC";
       badgeText = "#E9D5FF";
-      phaseLabel = "SUSPENDIDA";
-      phaseColor = "#301B42";
-      phaseTextColor = "#E9D5FF";
     } else {
       badgeBg = "#382914";
       badgeBorder = "#F59E0B";
       badgeText = "#FDE68A";
-      phaseLabel = "POR HACER";
-      phaseColor = "#382914";
-      phaseTextColor = "#FDE68A";
     }
   }
 
@@ -691,17 +655,12 @@ function ActivityCardComponent({
               : "w-[440px] max-w-[94vw]"
           }`}
         >
-          <WorkflowStageBadge status={activity.status} title={activity.title}/>
           <ActivityContentPanel activity={activity} currentUser={currentUser} defaultOpen={false} onEditingChange={value=>{contentEditing.current=value;}}/>
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className="rounded px-2 py-0.5 text-[9.5px] font-bold uppercase truncate"
-                style={{ backgroundColor: phaseColor, color: phaseTextColor }}
-              >
-                {phaseLabel}
-              </span>
+              <WorkflowStageBadge status={activity.status} title={activity.title}/>
+              {isUrgent&&<span title="Prioridad 00 · Urgente" aria-label="Prioridad 00 · Urgente" className="rounded bg-rose-950 px-1.5 py-0.5 text-[9px] font-bold text-rose-200">URG</span>}
               <span className="font-mono font-bold text-[11px] text-[#38BDF8] truncate">
                 {domain}
               </span>

@@ -26,3 +26,7 @@ La lectura de página no implica que todos sus bloques sean accesibles. Se audit
 - Pasaron pruebas de los nueve usuarios, compatibilidad, ciclo de aprobación/devolución, búsquedas, agrupación booleana, recuperación de pestañas, catálogo rápido y streaming/rangos de Dropbox.
 - Compilación de producción y revisión TypeScript.
 - Falta validar con una cuenta real la reproducción de archivos privados de Dropbox y el flujo visual completo en producción. No se enviaron avisos al equipo ni se crearon revisiones reales durante las pruebas.
+
+## Estados compactos
+
+Los badges del buscador (lista y tarjetas), calendario individual, detalle fijo y hover del calendario usan PH (Por hacer), PA (Por asignar), REV (Revisión), TER (Terminada), APR (Terminada/aprobada), SUS (Suspendida), CP (Terminada, cobro/pago pendiente), FIN (Cerrada/cobrada/pagada), ST (Software terminado), CT (Cobro terminado), PT (Pago terminado) y SC (Sin clasificar). Nombre completo, código y estado original quedan en hover y etiqueta accesible. Las opciones para cambiar estado conservan sus nombres completos. La prioridad urgente se muestra aparte como URG y los conflictos conservan su advertencia. No se cambian estados ni títulos de Notion.

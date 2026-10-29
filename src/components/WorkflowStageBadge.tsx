@@ -1,4 +1,4 @@
-import {workflowPresentation} from '@/services/activityWorkflow';
+import {workflowBadgePresentation} from '@/services/activityWorkflow';
 
 const WORKFLOW_COLORS: Record<string, string> = {
   pending: '#FBBF24',
@@ -9,14 +9,14 @@ const WORKFLOW_COLORS: Record<string, string> = {
 };
 
 export function WorkflowStageBadge({status,title,scale=1}:{status:string;title:string;scale?:number}){
- const info=workflowPresentation(status,title);
- if(!info.stage)return null;
+ const info=workflowBadgePresentation(status,title);
  const color = info.inconsistent ? '#F59E0B' : (WORKFLOW_COLORS[info.state] || '#38BDF8');
- const label = info.inconsistent ? `⚠ ${info.stage.code} · revisar` : info.stage.code==='prtuzR'?'Por hacer':`${info.stage.code} · ${info.label}`;
+ const label = (info.inconsistent?'⚠ ':'')+info.shortLabel;
 
  return (
    <span
-     title={info.warning || `Etapa: ${info.stage.code} (${info.label})`}
+     title={info.description}
+     aria-label={info.description}
      style={{
        fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
        padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,

@@ -17,3 +17,13 @@ export function workflowPresentation(status:string,title=''){
  const basic={pending:'Por hacer',review:'En revisión',completed:'Terminada',suspended:'Suspendida',unknown:'Sin clasificar'};
  return {state,stage,inconsistent,label:stage&&!inconsistent?stage.label:basic[state],financial:stage&&!inconsistent?stage.financial:'unknown',warning:inconsistent?'El código '+stage!.code+' difiere del estado de Notion; se conserva el estado de la propiedad.':''};
 }
+
+/** Display only: never use these abbreviations as Notion properties or title tokens. */
+export function workflowBadgePresentation(status:string,title=''){
+ const info=workflowPresentation(status,title);
+ const basic={pending:'PH',review:'REV',completed:'TER',suspended:'SUS',unknown:'SC'};
+ const stages:Record<string,string>={aprtuzR:'PA',prtuzR:'PH',rtuzR:'REV',saprtuzR:'SUS',tuzR:'APR',uzR:'CP',zR:'FIN',ZS:'ST',ZC:'CT',ZP:'PT'};
+ const shortLabel=info.stage&&!info.inconsistent?(stages[info.stage.code]||basic[info.state]):basic[info.state];
+ const description=[info.label,info.stage?'Etapa: '+info.stage.code:'',status?'Estado en Notion: '+status:'',info.warning].filter(Boolean).join(' · ');
+ return {...info,shortLabel,description};
+}

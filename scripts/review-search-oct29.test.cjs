@@ -40,5 +40,5 @@ assert.equal(queryChips('gge11 AND "doble  espacio"')[0].without,'"doble  espaci
 const React=require('react'),{renderToStaticMarkup}=require('react-dom/server'),{WorkflowStageBadge}=require('../src/components/WorkflowStageBadge.tsx');
 const {parseVisualParts}=require('../src/lib/visualTitleParser.ts');
 assert.equal(parseVisualParts('Prueba','PRTUZ POR HACER').workflow,parseVisualParts('Prueba','POR HACER').workflow);
-const badge=renderToStaticMarkup(React.createElement(WorkflowStageBadge,{status:'PRTUZ POR HACER',title:'prtuzR Prueba'}));assert.match(badge,/>Por hacer</);assert.ok(!badge.includes('prtuzR · Por hacer'));
+const badge=renderToStaticMarkup(React.createElement(WorkflowStageBadge,{status:'PRTUZ POR HACER',title:'prtuzR Prueba'}));assert.match(badge,/>PH</);assert.match(badge,/title="Por hacer/);assert.ok(!badge.includes('prtuzR · Por hacer'));
 console.log('OK Oct29: nine users, planned vs actual review, template isolation, legacy reads, complete/return lifecycle, query reuse, reminder persistence, safe term removal and unified status.');

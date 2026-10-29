@@ -8,7 +8,6 @@ import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
-import {progressiveStage} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
 import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
@@ -636,34 +635,7 @@ export function ResultsVirtualTable({
             style={{ width: `${colWidths.status}px` }}
             className="shrink-0 px-1 flex items-center gap-1 overflow-hidden"
           >
-            {progressiveStage(item.name)||progressiveStage(item.updateStatus||'') ? (<WorkflowStageBadge status={item.updateStatus||''} title={item.name} scale={scale}/>) : parsed.workflow ? (
-              <span
-                style={{
-                  fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
-                  padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
-                }}
-                className="inline-flex items-center gap-1 rounded-full font-bold bg-[#1E293B] border border-current/20 truncate"
-              >
-                <span
-                  className="rounded-full shrink-0"
-                  style={{
-                    width: `${Math.max(4, Math.round(6 * scale))}px`,
-                    height: `${Math.max(4, Math.round(6 * scale))}px`,
-                    backgroundColor: parsed.workflowColor,
-                  }}
-                />
-                <span style={{ color: parsed.workflowColor }} className="truncate">
-                  {parsed.workflow}
-                </span>
-              </span>
-            ) : (
-              <span
-                style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
-                className="text-[#94A3B8] truncate"
-              >
-                {workflowState(item.updateStatus||"",item.name)==='pending'?'Por hacer':item.updateStatus || "—"}
-              </span>
-            )}
+            <WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>
           </div>
         )}
 
@@ -1076,15 +1048,7 @@ export function ResultsVirtualTable({
               {formatSmartDate(item.scheduledDate || item.serverModified)}
             </span>
           )}
-          {parsed.workflow && (
-            <span
-              style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full font-bold bg-[#1E293B] border border-current/20 shrink-0"
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: parsed.workflowColor }} />
-              <span style={{ color: parsed.workflowColor }}>{parsed.workflow}</span>
-            </span>
-          )}
+          {parsed.workflow && <WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>}
         </div>
 
         {isExpanded && (

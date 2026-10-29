@@ -96,28 +96,6 @@ export function CalendarDetailPanel({
   const timeLabel = startStr && endStr ? `${calendarTime(startStr)} – ${calendarTime(endStr)}` : startStr ? calendarTime(startStr) : "08:00";
 
   const wf = workflowState(status, title);
-  let phaseLabel = "POR HACER";
-  let phaseColor = "#3B2D6B";
-  let phaseTextColor = "#C4B5FD";
-
-  if (wf === "completed") {
-    phaseLabel = "TERMINADA";
-    phaseColor = "#104E3E";
-    phaseTextColor = "#5EEAD4";
-  } else if (wf === "review") {
-    phaseLabel = "EN REVISIÓN";
-    phaseColor = "#1B4764";
-    phaseTextColor = "#7DD3FC";
-  } else if (wf === "suspended") {
-    phaseLabel = "SUSPENDIDA";
-    phaseColor = "#4A3510";
-    phaseTextColor = "#FDE047";
-  } else if (wf === "pending") {
-    phaseLabel = "PENDIENTE";
-    phaseColor = "#451A03";
-    phaseTextColor = "#FDBA74";
-  }
-
   const daily=dailyChecklist(items,mexicoDate(activity.start));
   const [showHistory,setShowHistory]=useState(false);
   const checklistTotal = daily.total;
@@ -189,12 +167,7 @@ export function CalendarDetailPanel({
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b border-[#27272A] pb-3">
           <div className="flex items-center gap-2 min-w-0">
-            <span
-              style={{ backgroundColor: phaseColor, color: phaseTextColor }}
-              className="rounded px-2 py-0.5 text-[10px] font-bold uppercase truncate"
-            >
-              {phaseLabel}
-            </span>
+            <WorkflowStageBadge status={activity.status} title={activity.title}/>
             <span className="font-bold text-sm text-[#38BDF8] truncate font-mono">
               {domain}
             </span>
@@ -208,7 +181,6 @@ export function CalendarDetailPanel({
           </button>
         </div>
 
-        <WorkflowStageBadge status={activity.status} title={activity.title}/>
         {activity.financialFields?.length?<dl className="rounded border border-slate-700 p-2 text-xs">{activity.financialFields.map(field=><div key={field.name} className="flex justify-between gap-2"><dt>{field.name}</dt><dd className={field.value<0?'text-rose-300':'text-emerald-300'}>{field.value.toLocaleString('es-MX')}</dd></div>)}</dl>:null}
         <ActivityWhatsappGroups title={activity.title} currentUser={currentUser}/>
         {/* Descripción / Título Limpio */}
