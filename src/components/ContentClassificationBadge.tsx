@@ -5,15 +5,16 @@ export function ContentClassificationBadge({title, domain}:{title?:string; domai
   if (!kind) return null;
   return (
     <span
+      aria-label={kind==='project'?'Proyecto':'Documentación'}
       title={kind === 'project' ? 'Proyecto · trabajo en curso (p.)' : 'Documentación · referencia y aprendizaje (d.)'}
       className={
-        'shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold ' +
+        'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border text-[8px] leading-none ' +
         (kind === 'project'
-          ? 'border-cyan-700 bg-cyan-950/60 text-cyan-200'
-          : 'border-violet-700 bg-violet-950/60 text-violet-200')
+          ? 'border-cyan-900/60 text-cyan-400/80'
+          : 'border-violet-900/60 text-violet-400/80')
       }
     >
-      {kind === 'project' ? 'P · Proyecto' : 'D · Documentación'}
+      {kind === 'project' ? 'P' : 'D'}
     </span>
   );
 }

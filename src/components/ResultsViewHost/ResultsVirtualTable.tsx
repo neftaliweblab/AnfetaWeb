@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
-import {lastSearchTerm} from '@/lib/searchPresentation';
+import {lastSearchTerm,isFutureScheduled} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {progressiveStage} from '@/services/progressiveWorkflow';
@@ -459,6 +459,7 @@ export function ResultsVirtualTable({
     const isChecked = selectedIds.has(item.id);
     const isExpanded = expandedRowIds.has(item.id);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
     const activity = itemToActivity(item);
@@ -495,7 +496,7 @@ export function ResultsVirtualTable({
             paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
             paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
           }}
-          className={`flex items-center px-3 cursor-pointer transition-colors ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
+          className={`flex items-center px-3 cursor-pointer transition-colors ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
             isSelected
               ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
               : isChecked
@@ -673,7 +674,7 @@ export function ResultsVirtualTable({
               fontSize: `${(10 * scale).toFixed(1)}px`,
               width: `${colWidths.scheduledDate}px`,
             }}
-            className="shrink-0 px-1 text-[#CBD5E1] truncate font-mono whitespace-nowrap"
+            className={'shrink-0 px-1 truncate font-mono whitespace-nowrap '+(upcoming?'text-slate-500':'text-[#CBD5E1]')}
             title={item.scheduledDate ? formatSmartDate(item.scheduledDate) : undefined}
           >
             {formatSmartDate(item.scheduledDate)}
@@ -794,6 +795,7 @@ export function ResultsVirtualTable({
     const isExpanded = expandedRowIds.has(item.id);
     const activity = itemToActivity(item);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
     const isImg =
@@ -841,7 +843,7 @@ export function ResultsVirtualTable({
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });
         }}
-        className={`relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
+        className={`relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
           isSelected
             ? "bg-[#1E293B] border-[#38BDF8] shadow-lg shadow-[#38BDF8]/10"
             : isChecked

@@ -36,6 +36,12 @@ export function isDropboxItem(x: ResultItem): boolean {
   return s === "dropbox" || (x as any).source === 1 || src === "dropbox" || p.includes("dropbox");
 }
 
+function fromBase(item:ResultItem,source:RegExp,legacy:RegExp){
+ if(!isNotionItem(item))return false;
+ const indexed=String(item.sourceName||(item as any).externalSourceName||'').trim();
+ return indexed?source.test(indexed):legacy.test(String(item.name||''));
+}
+
 export function filterByNotionBase(items: ResultItem[], baseTag: string): ResultItem[] {
   if (!baseTag || baseTag === "all" || baseTag === "" || baseTag.toLowerCase() === "todo") {
     return items;
@@ -66,65 +72,25 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
       });
 
     case "revisiones":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        return src.includes("revision") || name.startsWith("[revisiones]") || name.includes("zrevision");
-      });
-
+      return items.filter(x=>fromBase(x,/revision/i,/^\[revisiones\]/i));
     case "zclientes":
     case "clientes":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        return src.includes("cliente") || name.startsWith("[clientes") || name.includes("zcliente");
-      });
-
+      return items.filter(x=>fromBase(x,/cliente/i,/^\[clientes|\bzclientes?\b/i));
     case "zdominios":
     case "dominios":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        return src.includes("dominio") || name.startsWith("[dominios") || name.includes("zdominio");
-      });
-
+      return items.filter(x=>fromBase(x,/dominio/i,/^\[dominios|\bzdominios?\b/i));
     case "zproyectos":
     case "proyectos":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        return (
-          src.includes("proyecto") ||
-          src.includes("programas y proyectos") ||
-          name.startsWith("[programas y proyectos]") ||
-          name.startsWith("[proyectos") ||
-          name.includes("zproyecto")
-        );
-      });
+      return items.filter(x=>fromBase(x,/programa|proyecto/i,/^\[(?:programas|proyectos)|\bzproyectos?\b/i));
 
     case "software":
     case "programas":
     case "zprogramas":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        const isProgSource = src.includes("programa");
-        const hasProgToken = (
-          name.startsWith("[programas") ||
-          name.includes("zprograma") ||
-          name.includes("pprog") ||
-          name.includes(".prog") ||
-          name.includes(" prog ") ||
-          name.includes("prog]") ||
-          name.includes("software") ||
-          name.includes("desarrollo")
-        );
-        return isProgSource || hasProgToken;
+      return items.filter(x=>{
+        if(!isNotionItem(x))return false;
+        const src=String(x.sourceName||(x as any).externalSourceName||'').toLowerCase(),name=String(x.name||'').toLowerCase();
+        const revisions=src?src.includes('revision'):/^\[revisiones\]/i.test(name);
+        return revisions&&/(?:\bpprog\b|\bsoftware\b|\bdesarrollo\b|\.prog\b|\bzs\b|\bprogramas?\b)/i.test(name);
       });
 
     case "zpagar":
@@ -151,17 +117,7 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
 
     case "zcorreos":
     case "correos":
-      return items.filter((x) => {
-        if (!isNotionItem(x)) return false;
-        const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
-        const name = (x.name || "").toLowerCase();
-        return (
-          src.includes("correo") ||
-          name.startsWith("[correos") ||
-          name.includes("zcorreo") ||
-          name.includes("ccorr")
-        );
-      });
+      return items.filter(x=>fromBase(x,/correo/i,/^\[correos|\bzcorreos?\b/i));
 
     default:
       return items.filter((x) => {

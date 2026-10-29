@@ -20,7 +20,7 @@ import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
-import {compareSearchRows,lastSearchTerm} from '@/lib/searchPresentation';
+import {sortSearchRows,lastSearchTerm,searchMexicoDay} from '@/lib/searchPresentation';
 import {activeResultsFirst, orderSearchResults} from '@/lib/activeResultsFirst';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -164,12 +164,13 @@ export function ResultsViewHost({
   const [groupBy, setGroupBy] = useState("none");
   const [monthSelection,setSelectedMonth]=useState('Actual');
   const [currentMonth,setCurrentMonth]=useState('');
-  useEffect(()=>{const refresh=()=>setCurrentMonth(currentSearchMonth());refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
+  const [currentSearchDay,setCurrentSearchDay]=useState('');
+  useEffect(()=>{const refresh=()=>{setCurrentMonth(currentSearchMonth());setCurrentSearchDay(searchMexicoDay(new Date()));};refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
   const selectedMonth=effectiveSearchMonth(monthSelection,currentMonth,deferredQuery);
   const [viewZoom,setViewZoom]=useState<"list"|"small"|"medium"|"large">('list');
   const handleChangeViewZoom=(zoom:"list"|"small"|"medium"|"large")=>setViewZoom(zoom);
 
-  const [resultSort,setResultSort]=useState("default");
+  const [resultSort,setResultSort]=useState("scheduled-today");
   const [searchOptions, setSearchOptions] = useState<{
     matchCase: boolean;
     matchWholeWord: boolean;
@@ -180,7 +181,7 @@ export function ResultsViewHost({
     matchRegex: false,
   });
 
-  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
+  useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({sortSchema:2,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
 
   const handleToggleSearchOption = (key: "matchCase" | "matchWholeWord" | "matchRegex") => {
     setSearchOptions((prev) => ({
@@ -1245,9 +1246,9 @@ export function ResultsViewHost({
     }
 
     res=res.filter(item=>matchesContentClassification(item.name,classification));
-    res = [...res].sort((a,b)=>compareSearchRows(a,b,resultSort));
+    res = sortSearchRows(res,resultSort);
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay]);
 
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);

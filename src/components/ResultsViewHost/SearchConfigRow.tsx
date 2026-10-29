@@ -1,6 +1,6 @@
 "use client";
 import {SearchChoice,type SearchChoiceOption} from './SearchChoice';
-import {SEARCH_SORTS} from "@/lib/searchPresentation";
+import {SEARCH_SORTS,SEARCH_SORT_DESCRIPTIONS} from "@/lib/searchPresentation";
 
 import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 import React, { useState, useRef, useEffect } from "react";
@@ -91,7 +91,7 @@ const VIEW_ZOOM_LABELS: Record<string, string> = {
 };
 
 export function SearchConfigRow({
-  resultSort="default",onChangeResultSort,
+  resultSort="scheduled-today",onChangeResultSort,
   currentUser,
   onChangeCurrentUser,
   onSyncNotion,
@@ -197,23 +197,8 @@ export function SearchConfigRow({
       >
         <div className="flex shrink-0 items-center gap-1.5 text-xs text-cyan-300">
           <span style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}>Ordenar:</span>
-          <select
-            aria-label="Ordenar resultados"
-            value={resultSort}
-            onChange={(e) => onChangeResultSort?.(e.target.value)}
-            style={{
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-              minHeight: `${Math.round(26 * scale)}px`,
-              padding: `${Math.round(2 * scale)}px ${Math.round(6 * scale)}px`,
-            }}
-            className="max-w-44 rounded border border-slate-700 bg-[#141B26] p-1 text-slate-200 focus:outline-none cursor-pointer"
-          >
-            {SEARCH_SORTS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <SearchChoice label="Orden de resultados" value={resultSort} onChange={value=>onChangeResultSort?.(value)} scale={scale} description="Fecha por hacer es el horario del calendario. Última modificación indica cuándo se editó la página. Las agrupaciones y las terminadas al final se conservan." options={SEARCH_SORTS.map(([value,label])=>({value,label,description:SEARCH_SORT_DESCRIPTIONS[value],group:value.startsWith('scheduled')?'Horario de trabajo':value.startsWith('modified')?'Edición de páginas':'Otros órdenes'}))}/>
+
           <button
             type="button"
             onClick={() => {
@@ -481,13 +466,13 @@ export function SearchConfigRow({
           <SearchChoice label="Agrupar resultados" value={groupBy} onChange={onChangeGroupBy} scale={scale} options={[
             {value:'none',label:'Ninguno',description:'Lista continua, con actividades activas primero.'},
             {value:'database',label:'Base de datos',description:'Separa Revisiones, Clientes, Dominios y las demás bases.'},
-            {value:'domain',label:'Proyecto / estado'},
-            {value:'domain_nobilling',label:'Proyecto / estado (sin cobrar/pagar)'},
+            {value:'domain',label:'Dominio y estado'},
+            {value:'domain_nobilling',label:'Dominio y estado · sin cobros/pagos'},
             {value:'project_suffix',label:'Proyecto / Sufijo (.webs, .ads...)'},
             {value:'month',label:'Mes',description:'Conserva todos los meses; el actual aparece primero.'},
-            {value:'name',label:'Nombre asignado'},
-            {value:'name_noterminated',label:'Nombre asignado (activas primero)'},
-            {value:'area',label:'Tipo / área'},
+            {value:'name',label:'Responsable'},
+            {value:'name_noterminated',label:'Responsable · activas primero'},
+            {value:'area',label:'Área de trabajo (WEB, ADS, SEO…)'},
             {value:'area_nobilling',label:'Tipo / área (sin cobrar/pagar)'}
           ]}/>
 

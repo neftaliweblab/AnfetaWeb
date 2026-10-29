@@ -33,15 +33,15 @@ const GENERAL_SCOPES: ScopeItem[] = [
 ];
 
 const DATABASE_SCOPES: ScopeItem[] = [
-  { id: "Revisiones", label: "Revisiones", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Muestra todos los registros de la base Revisiones" },
-  { id: "zClientes", label: "zClientes", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo completo de Clientes" },
-  { id: "zDominios", label: "zDominios", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo completo de Dominios" },
+  { id: "Revisiones", label: "Revisiones", category: "database", icon: Database, badge: "BD", tooltip: "Base Revisiones en ANFETA · conserva la búsqueda y los filtros activos" },
+  { id: "zClientes", label: "zClientes", category: "database", icon: Database, badge: "BD", tooltip: "Base Clientes en ANFETA · conserva la búsqueda y los filtros activos" },
+  { id: "zDominios", label: "zDominios", category: "database", icon: Database, badge: "BD", tooltip: "Base Dominios en ANFETA · conserva la búsqueda y los filtros activos" },
   { id: "zProyectos", label: "zProyectos", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo de Programas y Proyectos" },
   { id: "zCorreos", label: "zCorreos", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo de Correos y Contraseñas" },
 ];
 
 const FILTER_SCOPES: ScopeItem[] = [
-  { id: "Programas", label: "Software", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de Software / Desarrollo (PROG)" },
+  { id: "Programas", label: "Software · Revisiones", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Software / Desarrollo dentro de Revisiones; conserva la búsqueda y los demás filtros" },
   { id: "zPAGAR", label: "zPAGAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de pagos pendientes" },
   { id: "zCOBRAR", label: "zCOBRAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de cobros pendientes" },
 ];

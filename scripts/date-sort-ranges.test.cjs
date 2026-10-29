@@ -20,7 +20,7 @@ const { compareSearchRows, parseSearchDate, searchRowDate } = require('../src/li
 assert.equal(parseSearchDate('2026-11-08T09:00:00-06:00'), Date.parse('2026-11-08T09:00:00-06:00'));
 assert.equal(parseSearchDate('2026-10-29T11:00:00-06:00 - 2026-10-29T12:00:00-06:00'), Date.parse('2026-10-29T11:00:00-06:00'));
 assert.equal(parseSearchDate('2026-11-02T19:30:00-06:00 - 2026-11-02T20:30:00-06:00'), Date.parse('2026-11-02T19:30:00-06:00'));
-assert.equal(parseSearchDate('2026-10-28'), Date.parse('2026-10-28'));
+assert.equal(parseSearchDate('2026-10-28'), Date.parse('2026-10-28T00:00:00-06:00'));
 assert.equal(parseSearchDate('—'), null);
 assert.equal(parseSearchDate('-'), null);
 assert.equal(parseSearchDate(''), null);
@@ -44,11 +44,11 @@ const descOrder = [...testRows].sort((a, b) => compareSearchRows(a, b, 'schedule
 assert.deepEqual(descOrder, [
   'nov08',
   'nov02_intervalo',
-  'manana_1230',
-  'manana_intervalo',
   'manana_0930',
-  'hoy_1830',
+  'manana_intervalo',
+  'manana_1230',
   'hoy_1730',
+  'hoy_1830',
   'ayer_0900',
   'sin_fecha'
 ]);
