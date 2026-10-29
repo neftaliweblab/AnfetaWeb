@@ -2,6 +2,7 @@
 import { calendarTime } from "@/services/calendarPresentation";
 
 
+import {checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
 import React from "react";
 import { CheckSquare, MessageSquare, Clock } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -16,8 +17,9 @@ interface ChecklistPopupProps {
 
 export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,message='' }: ChecklistPopupProps) {
   const [size, setSize] = React.useState<"small" | "medium" | "large">("medium");
-  const total = activity?.checklistTotal ?? 0;
-  const completed = activity?.checklistCompleted ?? 0;
+  const totals=checklistTotals(activity||{}),daily=dailyActivityChecks(activity||{});
+  const total = totals.total;
+  const completed = totals.done;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const title = activity?.shortTitle || activity?.title || (activity as any)?.Title || "Actividad";
   const domain = activity?.domain || (activity as any)?.ParsedDomain || "Actividad";
@@ -71,7 +73,7 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-[#94A3B8] flex items-center gap-1">
             <CheckSquare className="w-3.5 h-3.5 text-[#4ADE80]" />
-            Pasos del día:
+            Marcados en Notion:
           </span>
           <span className="font-mono text-[#4ADE80]">
             {total > 0 ? `${completed} / ${total} (${pct}%)` : "Sin tareas"}
@@ -87,6 +89,7 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
         )}
       </div>
 
+      <p className="text-[10px] text-slate-400">Confirmados para este día: {daily.done} de {daily.total}. El total de Notion incluye los checks sin fecha de marcado.</p>
       {/* Checklist Items list if available */}
       {activity.checklistItems && activity.checklistItems.length > 0 && (
         <div className="max-h-48 overflow-y-auto space-y-1 pt-1.5 border-t border-[#253549]/60 scrollbar-thin">

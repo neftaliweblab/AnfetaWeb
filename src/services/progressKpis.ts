@@ -1,4 +1,4 @@
-import {dailyChecklist,dailyActivityChecks} from '../lib/dailyChecklist';
+import {dailyActivityChecks} from '../lib/dailyChecklist';
 import {mexicoDate} from './calendarPresentation';
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
 import { workflowState } from './activityWorkflow';
@@ -12,7 +12,7 @@ export function executiveActivities(activities: NotionCalendarActivity[], day: s
   return countedCalendarActivities(activities).filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
 }
 export function currentActivityRatio(a: NotionCalendarActivity,day=mexicoDate(a.start)) {
-  if(a.checklistScanned&&a.checklistTotal>0){if(a.checklistItems){const daily=dailyChecklist(a.checklistItems,day);return daily.total?daily.done/daily.total:0;}return a.dailyChecklistTotal?Math.max(0,Math.min(1,(a.dailyChecklistCompleted||0)/a.dailyChecklistTotal)):0;}
+  if(a.checklistScanned&&a.checklistTotal>0){const daily=dailyActivityChecks(a,day);return daily.total?Math.max(0,Math.min(1,daily.done/daily.total)):0;}
   if(a.estimatedWorkMinutes>0)return Math.max(0,Math.min(1,(a.workedMinutes||0)/a.estimatedWorkMinutes));
   return ['review','completed'].includes(workflowState(a.status,a.title))?1:0;
 }
@@ -43,7 +43,7 @@ export function evaluateLagStatus(
     };
   }
 
-  const dailyTotal = activity.checklistItems ? dailyChecklist(activity.checklistItems, mexicoDate(activity.start)).total : (activity.dailyChecklistTotal ?? 0);
+  const dailyTotal = dailyActivityChecks(activity,mexicoDate(activity.start)).total;
   if (dailyTotal === 0) return { isLagging: false, isMissingChecklist: false };
   const progressTodayPct = currentActivityRatio(activity) * 100;
 

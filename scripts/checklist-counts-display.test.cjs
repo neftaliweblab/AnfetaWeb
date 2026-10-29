@@ -1,0 +1,14 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
+for(const ext of ['.ts','.tsx'])Module._extensions[ext]=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,p);
+
+const {dailyChecklist,dailyActivityChecks,checklistTotals}=require('../src/lib/dailyChecklist.ts');
+const day='2026-10-29';const items=[{id:'unknown',isChecked:true,markingSource:'unknown',editedAt:day+'T18:00:00Z'},{id:'previous',isChecked:true,markingSource:'verified',markedAt:'2026-10-28T18:00:00Z'},{id:'today',isChecked:true,markingSource:'verified',markedAt:day+'T18:00:00Z'},{id:'pending',isChecked:false}];
+const before=JSON.stringify(items);assert.deepEqual(checklistTotals({checklistItems:items}),{total:4,done:3,percent:75});const daily=dailyChecklist(items,day);assert.equal(daily.done,1);assert.equal(daily.total,2);assert.equal(daily.unknown,1);assert.equal(JSON.stringify(items),before);
+assert.deepEqual(checklistTotals({checklistItems:[],checklistTotal:21,checklistCompleted:7}),{total:21,done:7,percent:33});assert.equal(dailyActivityChecks({checklistItems:[],checklistTotal:21,dailyChecklistTotal:10,dailyChecklistCompleted:3},day).done,3,'Empty normalized array must not erase known aggregate day counts');
+const {currentActivityRatio}=require('../src/services/progressKpis.ts');assert.equal(currentActivityRatio({start:day+'T10:00:00-06:00',checklistScanned:true,checklistItems:[],checklistTotal:21,dailyChecklistTotal:10,dailyChecklistCompleted:3}),0.3);
+const allUnknown=items.filter(i=>i.id==='unknown'||i.id==='pending');assert.equal(checklistTotals({checklistItems:allUnknown}).done,1);assert.equal(dailyChecklist(allUnknown,day).done,0,'Never invent that an old or unknown mark happened today');
+const React=require('react'),{renderToStaticMarkup}=require('react-dom/server'),{ChecklistPopup}=require('../src/components/CalendarHost/ChecklistPopup.tsx');
+const html=renderToStaticMarkup(React.createElement(ChecklistPopup,{activity:{title:'Prueba',start:day+'T10:00:00-06:00',end:day+'T11:00:00-06:00',checklistItems:items,checklistTotal:4,checklistCompleted:0},onClose:()=>{}}));assert.match(html,/3 \/ 4 \(75%\)/);assert.match(html,/Marcados en Notion/);assert.match(html,/Confirmados para este día/);
+console.log('OK checklist display: unknown/old marks counted in total, verified daily counts separate, aggregate-only snapshots preserved and popup reflects actual checked states without modifying items.');

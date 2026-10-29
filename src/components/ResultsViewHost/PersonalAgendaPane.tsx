@@ -1,7 +1,7 @@
 "use client";
 import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {rememberReviewFailure} from '@/lib/reviewOutcome';
-import {dailyChecklist} from '@/lib/dailyChecklist';
+import {dailyChecklist,checklistTotals} from '@/lib/dailyChecklist';
 import {workflowState} from '@/services/activityWorkflow';
 import {pageIdentity} from '@/lib/deletedPages';
 import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
@@ -385,7 +385,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                   </span>
                   {a.checklistScanned && (
                     <span className="mt-1 block text-[10px] text-slate-400">
-                      {dailyChecklist(a.checklistItems || [], day).done} / {dailyChecklist(a.checklistItems || [], day).total} pasos del día
+                      {checklistTotals(a).done} / {checklistTotals(a).total} marcados · {dailyChecklist(a.checklistItems || [], day).done} confirmados para este día
                     </span>
                   )}
                 </button>

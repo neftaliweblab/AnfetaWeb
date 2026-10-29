@@ -1,6 +1,6 @@
 "use client";
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
-import {dailyChecklist} from '@/lib/dailyChecklist';
+import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
 import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
@@ -145,7 +145,7 @@ function ActivityCardComponent({
         total: activity.checklistTotal ?? 0,
         completed: activity.checklistCompleted ?? 0,
         today: activity.todayChecklistCompleted ?? 0,
-        items: activity.checklistItems || activity.completedChecks || [],
+        items: activity.checklistItems || [],
         completedChecks: activity.completedChecks || [],
       };
       setChecklistCache(key, entry);
@@ -170,7 +170,7 @@ function ActivityCardComponent({
         total: activity.checklistTotal ?? 0,
         completed: activity.checklistCompleted ?? 0,
         today: activity.todayChecklistCompleted ?? 0,
-        items: activity.checklistItems || activity.completedChecks || [],
+        items: activity.checklistItems || [],
         completedChecks: activity.completedChecks || [],
       };
       setChecklistCache(key, entry);
@@ -194,7 +194,7 @@ function ActivityCardComponent({
         total: activity.checklistTotal ?? 0,
         completed: activity.checklistCompleted ?? 0,
         today: activity.todayChecklistCompleted ?? 0,
-        items: activity.checklistItems || activity.completedChecks || [],
+        items: activity.checklistItems || [],
         completedChecks: activity.completedChecks || [],
       };
       setChecklistCache(key, entry);
@@ -409,7 +409,7 @@ function ActivityCardComponent({
   const effectiveTotal = checklistData ? checklistData.total : (activity.checklistTotal ?? 0);
   const effectiveCompleted = checklistData ? checklistData.completed : (activity.checklistCompleted ?? 0);
   const effectiveToday = checklistData ? checklistData.today : (activity.todayChecklistCompleted ?? 0);
-  const effectiveItems = checklistData ? checklistData.items : (activity.checklistItems || activity.completedChecks || []);
+  const effectiveItems = checklistData ? checklistData.items : (activity.checklistItems || []);
   async function toggleCardCheck(chk:any){
     if(!editable||isSaving||checkBusy.current||!(chk.blockId||chk.id))return;
     checkBusy.current=true;setCheckSaving(true);setCheckMessage('');
@@ -425,9 +425,11 @@ function ActivityCardComponent({
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
   const isScanned = !!(activity.checklistScanned || checklistData);
-  const daily=dailyChecklist(effectiveItems,displayDate||mexicoDate(activity.start));
-  const totalChecklist = daily.total;
-  const completedChecklist = daily.done;
+  const checklistDay=displayDate||mexicoDate(activity.start);
+  const daily={...dailyChecklist(effectiveItems,checklistDay),...(!effectiveItems.length?dailyActivityChecks({...activity,checklistItems:effectiveItems,checklistTotal:effectiveTotal,todayChecklistCompleted:effectiveToday},checklistDay):{})};
+  const cumulative=checklistTotals({checklistItems:effectiveItems,checklistTotal:effectiveTotal,checklistCompleted:effectiveCompleted});
+  const totalChecklist = cumulative.total;
+  const completedChecklist = cumulative.done;
   const pct = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
 
   // Hover handlers con protección mejorada de zoom y colisiones en pantalla
@@ -594,7 +596,7 @@ function ActivityCardComponent({
                 setShowPopup(!showPopup);
               }}
               className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#16291F] border border-[#42654E] text-[#A0BEAA] hover:bg-[#20362A] transition-colors cursor-pointer"
-              title={`Checklist: ${completedChecklist} de ${totalChecklist} completadas`}
+              title={`Marcados en Notion: ${completedChecklist} de ${totalChecklist}. Confirmados para este día: ${daily.done}.${daily.unknown?` ${daily.unknown} marcados sin fecha verificable.`:''}`}
             >
               {completedChecklist}/{totalChecklist}
             </span>
@@ -797,7 +799,7 @@ function ActivityCardComponent({
                 <div className="flex items-center justify-between text-[10.5px]">
                   <span className="text-slate-300 flex items-center gap-1 font-semibold">
                     <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-                    Checks del día:
+                    Marcados en Notion:
                   </span>
                   <div className="flex items-center gap-1.5 font-mono">
                     <span className="text-emerald-400 font-bold">
@@ -818,16 +820,17 @@ function ActivityCardComponent({
                   />
                 </div>
 
+                <p className="text-[10px] text-slate-400">Confirmados para este día: {daily.done} de {daily.total}.{daily.unknown>0&&<span className="text-amber-300"> {daily.unknown} marcados sin fecha verificable; no se atribuyen a hoy.</span>}</p>
                 {/* Desglose rápido de Checks con fecha de agregado y completado */}
                 {checkMessage&&<p role="status" className="text-xs text-amber-200">{checkMessage}</p>}
                 {effectiveItems.length > 0 && (
                   <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
                     showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
                   }`}>
-                    {daily.items.slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
+                    {(showAllChecks||popoverSize==="xl"?effectiveItems:daily.items).slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
                       const isDone = Boolean(chk.isChecked);
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
-                      const doneDate = chk.markedAt || chk.editedAt ? formatSmartDate(chk.markedAt || chk.editedAt) : null;
+                      const doneDate = chk.markingSource==='verified'&&chk.markedAt ? formatSmartDate(chk.markedAt) : null;
 
                       return (
                         <div
@@ -878,7 +881,7 @@ function ActivityCardComponent({
                           ) : (
                             <>
                               <ChevronDown className="w-3 h-3" />
-                              <span>Ver las {totalChecklist - 6} tareas restantes (desglosar todas)</span>
+                              <span>Ver todos los checks ({totalChecklist})</span>
                             </>
                           )}
                         </button>
@@ -928,7 +931,7 @@ function ActivityCardComponent({
               checklistTotal: totalChecklist,
               checklistCompleted: completedChecklist,
               todayChecklistCompleted: effectiveToday,
-              checklistItems: daily.items,
+              checklistItems: effectiveItems,
               completedChecks: checklistData?.completedChecks || activity.completedChecks || [],
             }}
             onClose={() => setShowPopup(false)}

@@ -1,6 +1,6 @@
 "use client";
 import {runActivityDetailRequest} from '@/lib/activityDetailQueue';
-import {dailyChecklist} from '@/lib/dailyChecklist';
+import {dailyChecklist,checklistTotals} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {ActivityWhatsappGroups} from '../ActivityWhatsappGroups';
@@ -97,6 +97,7 @@ export function CalendarDetailPanel({
   const timeLabel = startStr && endStr ? `${calendarTime(startStr)} – ${calendarTime(endStr)}` : startStr ? calendarTime(startStr) : "08:00";
 
   const wf = workflowState(status, title);
+  const cumulative=checklistTotals({checklistItems:items});
   const daily=dailyChecklist(items,mexicoDate(activity.start));
   const [showHistory,setShowHistory]=useState(false);
   const checklistTotal = daily.total;
@@ -335,6 +336,7 @@ export function CalendarDetailPanel({
         {/* Tab 1: Vista unificada de Contenido y Pasos de Notion */}
         {activeTab === "checklist" && (
           <div className="space-y-2.5">
+            <p className="text-xs text-emerald-300">Marcados en Notion: {loading?'Cargando…':`${cumulative.done} / ${cumulative.total}`}</p>
             <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-[#151c27] px-3 py-2 text-xs">
               <span className="text-slate-300 font-medium">Pasos verificados de hoy:</span>
               <span className="font-mono font-bold text-emerald-400">
@@ -375,7 +377,7 @@ export function CalendarDetailPanel({
             )}
             {!!daily.history.length && (
               <p className="text-xs text-slate-400">
-                Historial: {daily.history.length} checks completados en días anteriores (no cuentan hoy).
+                Fuera del avance confirmado de hoy: {daily.history.length} checks ya marcados, de días anteriores o sin fecha verificable.
               </p>
             )}
 
