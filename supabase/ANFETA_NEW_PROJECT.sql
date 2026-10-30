@@ -9,7 +9,7 @@
 begin;
 create table public.profiles (
  id uuid primary key references auth.users(id) on delete cascade,
- person_tag text not null unique check (person_tag in ('jjohn','nneft','kkarl','iisai','ssote','aacal','aandr','bbria','ggena','eemma')),
+ person_tag text not null unique check (person_tag in ('jjohn','nneft','kkarl','iisai','ssote','aacal','aandr','bbria','ggena','eemma','eedwin')),
  login_email text not null unique check (position('@' in login_email)>1),
  active boolean not null default true,
  created_at timestamptz not null default now()

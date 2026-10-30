@@ -1,4 +1,6 @@
 "use client";
+import {ReturnedObservations} from './ReturnedObservations';
+import {ReturnToOwnerModal} from './ReturnToOwnerModal';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
@@ -113,6 +115,7 @@ function ActivityCardComponent({
   const [ftfSaving, setFtfSaving] = useState(false);
   const [ftfMessage, setFtfMessage] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showReturn,setShowReturn]=useState(false);
   const [showHandoff,setShowHandoff]=useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -531,7 +534,7 @@ function ActivityCardComponent({
           left: `calc(${leftPct}% + 2px)`,
           ...(palette === "desktop" ? { borderLeftWidth: "4px", borderLeftColor: priorityBorderColor } : {}),
         }}
-        className={`absolute rounded-md border p-2 flex flex-col justify-between ${
+        className={`${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
         } transition-all select-none overflow-hidden ${
           palette === "desktop" ? `${desktopCardBg} ${desktopCardBorder}` : `${cardBg} ${cardBorder}`
@@ -628,6 +631,7 @@ function ActivityCardComponent({
           </h5>
         </div>
 
+        {['returned','handoff'].includes(activity.reviewFlow?.State||'')&&!!activity.reviewFlow?.Note&&<span title={String(activity.reviewFlow.Note)} className="mb-1 truncate rounded border border-amber-500/60 px-1 text-[9px] font-bold text-amber-200">↩ Con observaciones</span>}
         {/* Fila Inferior: Horario + Duración (ej: 09:00 - 10:00 · 1H) */}
         <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400 pt-0.5 border-t border-[#26262B]/50">
           <span className="truncate">
@@ -704,6 +708,7 @@ function ActivityCardComponent({
             </div>
           </div>
 
+          <ReturnedObservations activity={activity}/>
           {/* Full Title */}
           <h4 className="font-semibold text-slate-100 text-xs leading-snug break-words">
             {title}
@@ -778,6 +783,7 @@ function ActivityCardComponent({
               </span>
             </label>
             {ftfMessage && <p role="status" className="text-[11px] text-cyan-200">{ftfMessage}</p>}
+
 
             {/* Resumen de Checks e Historial Hoy (Anfeta Original Parity) */}
             {loadingChecklist && (
@@ -893,6 +899,7 @@ function ActivityCardComponent({
             )}
           </div>
 
+          {workflowState(activity.status,activity.title)==='review'&&!activity.isReviewMirror&&<div className="grid grid-cols-2 gap-2"><button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)} onClick={()=>setShowReturn(true)} className="rounded border border-amber-500 bg-amber-950/50 p-2 text-xs text-amber-200 disabled:opacity-40">↩ Regresar a responsable</button><button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)} onClick={()=>void onUpdateActivity?.(activity.pageId,{status:'zREVISION'})} className="rounded border border-emerald-700 bg-emerald-950/50 p-2 text-xs text-emerald-200 disabled:opacity-40">Terminar revisión</button></div>}
           {/* Footer Tips */}
           <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-0.5">
             <button
@@ -1006,6 +1013,7 @@ function ActivityCardComponent({
       )}
 
       {/* Modal de selección de integrante para revisión */}
+      {showReturn&&<ReturnToOwnerModal activity={activity} onClose={()=>setShowReturn(false)} onConfirm={async updates=>await onUpdateActivity?.(activity.pageId,updates)}/>}
       {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onUpdateActivity?.(activity.pageId,updates)}/>}
       {showReviewModal && (
         <SendToReviewModal

@@ -1,3 +1,4 @@
+import {notionStatusValue} from './notionStatusValue';
 import {inferActivityPerson,currentReviewTagPerson} from './activityTags';
 import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
@@ -12,7 +13,7 @@ export const ASSIGNEE = /assignee|asignee|ejecutor|equipo weblab|persona|respons
 export function calendarStatusField(page: any): [string, any] | undefined {
   const names = ['bien estado opcion multiple revisiones','estado opcion multiple revisiones','estado de trabajo','seguimiento estado proyecto','estado','status'];
   const canonical = (name: string) => name.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
-  return Object.entries(page.properties || {}).filter(([name,p]: any) => ['status','select'].includes(p.type) && names.includes(canonical(name)))
+  return Object.entries(page.properties || {}).filter(([name,p]: any) => ['status','select','multi_select'].includes(p.type) && names.includes(canonical(name)))
     .sort(([a],[b]) => names.indexOf(canonical(a)) - names.indexOf(canonical(b)))[0] as [string,any] | undefined;
 }
 export function assignedField(page: any): [string, any] | undefined {
@@ -22,7 +23,7 @@ export function assignedField(page: any): [string, any] | undefined {
 export function assignedPerson(page: any, fallback = '') {
   const pageTitle=Object.values(page.properties||{}).filter((p:any)=>p.type==='title').flatMap((p:any)=>p.title||[]).map((t:any)=>t.plain_text||t.text?.content||'').join('');
   const statusField=calendarStatusField(page)?.[1];
-  const review=currentReviewTagPerson(pageTitle,statusField?.[statusField.type]?.name||'');
+  const review=currentReviewTagPerson(pageTitle,notionStatusValue(statusField));
   if(review)return review;
   const prop = assignedField(page)?.[1];
   if (!prop) return normalizePerson(fallback);

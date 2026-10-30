@@ -1,3 +1,4 @@
+import {notionStatusValue} from '@/services/notionStatusValue';
 import {notionBaseLinks} from '@/services/notionBaseLinks';
 import {activityFinancialFields} from '@/services/activityFinancialFields';
 import {ftfJobHealth} from '@/services/ftfJobHealth';
@@ -172,6 +173,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
         title = propVal.title.map((t: any) => t?.plain_text || t?.text?.content || "").join("").trim();
       }
 
+      if(type==='multi_select'&&(lowerName.includes('estado')||lowerName.includes('status')))status=notionStatusValue(propVal);
       // Status
       if ((type === "status" || type === "select") && propVal[type]?.name) {
         if (lowerName.includes("estado") || lowerName.includes("status")) {
@@ -211,7 +213,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
 
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
-  status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):statusProp?.[statusProp.type]?.name || '';
+  status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):notionStatusValue(statusProp);
   return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, ...ftfState(page), isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
@@ -446,6 +448,15 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
   try {
     const actor=verifiedActor||await requireActor(req);
+    if(type==='activity-status-options'){
+      const pageId=searchParams.get('pageId')||'';const settings={...getSettings(),notionToken:resolveNotionToken(req)};
+      const page=await assertChecklistAccess(settings,actor,pageId);const field=calendarStatusField(page);
+      if(!field)throw Error('La página no tiene una propiedad de estado editable.');
+      const parent=page.parent?.data_source_id?'data_sources/'+page.parent.data_source_id:page.parent?.database_id?'databases/'+page.parent.database_id:'';
+      if(!parent)throw Error('No se encontró la base del estado.');
+      const schema=await notionRequest(settings,parent);const prop=schema.properties?.[field[0]];
+      return NextResponse.json({property:field[0],type:field[1].type,options:(prop?.[field[1].type]?.options||[]).map((item:any)=>({name:item.name})),current:notionStatusValue(field[1])},{headers:{'Cache-Control':'no-store'}});
+    }
     if (type === 'calendar-finance') {
       const day=searchParams.get('date') || mexicoDate();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return NextResponse.json({error:'Fecha inválida.'},{status:400});

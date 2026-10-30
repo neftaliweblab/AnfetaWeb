@@ -6,6 +6,7 @@ import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 
 interface PendientesColumnProps {
+  onClose?:()=>void;
   pendingTasks: PendingTaskItem[];
   onToggleTask: (id: string) => void;
   onOpenNewTaskModal: () => void;
@@ -16,6 +17,7 @@ interface PendientesColumnProps {
 }
 
 export function PendientesColumn({
+  onClose,
   pendingTasks,
   onToggleTask,
   onOpenNewTaskModal,
@@ -54,18 +56,13 @@ export function PendientesColumn({
     };
   }, []);
 
-  if(collapsed)return <div className="w-10 shrink-0 rounded border border-slate-700 flex flex-col items-center gap-3 py-3"><button type="button" onClick={togglePanel} aria-label="Expandir pendientes">›</button><span>📋</span><span className="rounded-full bg-amber-950 px-2 text-amber-300">{pendingCount}</span></div>;
+  if(collapsed)return <div className="w-10 shrink-0 rounded border border-slate-700 flex flex-col items-center gap-3 py-3"><button type="button" onClick={togglePanel} aria-label="Expandir pendientes">›</button><button type="button" aria-label="Nuevo pendiente" onClick={onOpenNewTaskModal}>+</button>{onClose&&<button type="button" aria-label="Cerrar pendientes" onClick={onClose}>✕</button>}<span>📋</span><span className="rounded-full bg-amber-950 px-2 text-amber-300">{pendingCount}</span></div>;
   return (
     <div className="w-[260px] shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs">
       {/* Header Pendientes con contador y botón '+' */}
       <div className="flex items-center justify-between pb-2 border-b border-[#1E2836] mb-2 shrink-0">
+        <div className="flex items-center gap-1">
         <button type="button" onClick={togglePanel} aria-label="Colapsar pendientes" className="text-cyan-300">‹</button>
-        <div className="flex items-center gap-1.5">
-          <span className="font-bold text-[10.5px] text-[#F59E0B]">📋 PENDIENTES</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#78350F] text-[#FDE68A] border border-[#F59E0B]/50">
-            {pendingCount}
-          </span>
-        </div>
         <button
           type="button"
           onClick={onOpenNewTaskModal}
@@ -74,6 +71,14 @@ export function PendientesColumn({
         >
           <Plus className="w-3 h-3" />
         </button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-bold text-[10.5px] text-[#F59E0B]">📋 PENDIENTES</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#78350F] text-[#FDE68A] border border-[#F59E0B]/50">
+            {pendingCount}
+          </span>
+        </div>
+        {onClose&&<button type="button" aria-label="Cerrar columna de pendientes" title="Cerrar pendientes" onClick={onClose} className="rounded px-1 text-slate-400 hover:text-white">✕</button>}
       </div>
 
       {/* Lista de Tareas Manuales o Mensaje Vacío */}

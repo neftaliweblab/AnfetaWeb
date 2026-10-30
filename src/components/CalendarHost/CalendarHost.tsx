@@ -71,6 +71,7 @@ interface CalendarHostProps {
 }
 
 const DEFAULT_COLLABORATORS = [
+  "Edwin",
   "John",
   "Karla",
   "Isaias",

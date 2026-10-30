@@ -2,6 +2,9 @@
 import {runActivityDetailRequest} from '@/lib/activityDetailQueue';
 import {dailyChecklist,checklistTotals} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
+import {ActivityStatusSelect} from './ActivityStatusSelect';
+import {ReturnedObservations} from './ReturnedObservations';
+import {ReturnToOwnerModal} from './ReturnToOwnerModal';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {ActivityWhatsappGroups} from '../ActivityWhatsappGroups';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
@@ -64,6 +67,7 @@ export function CalendarDetailPanel({
   const [projectLoading,setProjectLoading]=useState(false);
   const [activeTab, setActiveTab] = useState<"checklist" | "project">("checklist");
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showReturn,setShowReturn]=useState(false);
   const [showHandoff,setShowHandoff]=useState(false);
 
   const title = activity.title || (activity as any)?.Title || "Sin título";
@@ -74,7 +78,7 @@ export function CalendarDetailPanel({
   // Limpiar título de prefijos y tecnicismos repetitivos
   const cleanTitle = calendarDisplayTitle(title, domain);
   const editable = canEditActivity(currentUser, activity) && !activity.isHandoffMirror && !isSaving;
-  const userCanReview = editable && (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser));
+  const userCanReview = editable && (activity.reviewFlow?.State==='pending'?normalizePerson(currentUser)===normalizePerson(activity.reviewFlow.ReviewAssignee):isReviewer(currentUser)||workflowState(activity.status,activity.title)==='review'&&normalizePerson(currentUser)===normalizePerson(activity.person));
   const [ftfBusy,setFtfBusy]=useState(false);
   const ftfSaving=React.useRef(false);
 
@@ -188,6 +192,7 @@ export function CalendarDetailPanel({
 
         {activity.financialFields?.length?<dl className="rounded border border-slate-700 p-2 text-xs">{activity.financialFields.map(field=><div key={field.name} className="flex justify-between gap-2"><dt>{field.name}</dt><dd className={field.value<0?'text-rose-300':'text-emerald-300'}>{field.value.toLocaleString('es-MX')}</dd></div>)}</dl>:null}
         <ActivityWhatsappGroups title={activity.title} currentUser={currentUser}/>
+        <ReturnedObservations activity={activity}/>
         {/* Descripción / Título Limpio */}
         <div>
           <h3 className="text-xs font-semibold text-slate-100 leading-snug break-words">
@@ -230,24 +235,7 @@ export function CalendarDetailPanel({
           {/* Estado de Notion interactivo */}
           <div className="flex items-center justify-between pt-1 border-t border-[#2D2D33]">
             <span className="text-slate-400">Estado Notion:</span>
-            <select
-              disabled={!editable}
-              value={status}
-              onChange={async (e) => {
-                const nextStatus = e.target.value;
-                if (workflowState(nextStatus) === "review") { setShowReviewModal(true); return; }
-                if (await onActivityUpdated?.({status:nextStatus}) !== false) setStatusMessage(`Estado guardado: ${nextStatus}`);
-              }}
-              className="bg-[#121215] border border-[#3A3A44] text-[#E2E8F0] text-[11px] rounded px-2 py-0.5 focus:outline-none focus:border-cyan-400"
-            >
-              {!["POR HACER","EN REVISIÓN","rtuzREVISION","zREVISION","TERMINADA","SUSPENDIDA"].includes(status) && <option value={status}>{status}</option>}
-              <option value="POR HACER">POR HACER</option>
-              <option value="EN REVISIÓN">EN REVISIÓN</option>
-              <option value="rtuzREVISION">rtuzREVISION</option>
-              <option value="zREVISION">zREVISION</option>
-              <option value="TERMINADA">TERMINADA</option>
-              <option value="SUSPENDIDA">SUSPENDIDA</option>
-            </select>
+            <ActivityStatusSelect pageId={activity.pageId} status={status} disabled={!editable} onReview={()=>setShowReviewModal(true)} onSave={async next=>{if(!onActivityUpdated)throw Error('No se puede guardar desde esta vista.');return await onActivityUpdated({status:next});}}/>
           </div>
 
           <div className="pt-1 border-t border-[#2D2D33] space-y-1.5">
@@ -269,16 +257,17 @@ export function CalendarDetailPanel({
           </div>
         </div>
 
+
         {/* Botones de Acción de Flujo ANFETA (1:1 WPF) */}
         <div className="grid grid-cols-2 gap-2 pt-1">
-          <button
+          {workflowState(activity.status,activity.title)==='review'?<button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)||!!activity.isReviewMirror} onClick={()=>setShowReturn(true)} className="rounded-lg border border-amber-500/60 bg-amber-950/50 px-3 py-2 text-xs font-semibold text-amber-200">↩ Regresar a responsable</button>:(<button
             disabled={!editable}
             onClick={() => setShowReviewModal(true)}
             className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Enviar a revisión final…</span>
-          </button>
+          </button>)}
 
           <button
             disabled={!userCanReview}
@@ -453,6 +442,7 @@ export function CalendarDetailPanel({
       </div>
 
       {/* Modal de selección de integrante para revisión */}
+      {showReturn&&<ReturnToOwnerModal activity={activity} onClose={()=>setShowReturn(false)} onConfirm={async updates=>await onActivityUpdated?.(updates)}/>}
       {showHandoff&&<ReassignActivityModal activity={activity} onClose={()=>setShowHandoff(false)} onConfirm={async updates=>await onActivityUpdated?.(updates)}/>}
       {showReviewModal && (
         <SendToReviewModal

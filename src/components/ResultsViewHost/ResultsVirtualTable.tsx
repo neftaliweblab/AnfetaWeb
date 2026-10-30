@@ -1,4 +1,6 @@
 "use client";
+import {RESULT_STATUS_FILTERS,resultDuration} from '@/lib/resultIndicators';
+import {ResultUnderstanding} from './ResultUnderstanding';
 import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {ContentClassificationBadge} from '../ContentClassificationBadge';
 
@@ -133,6 +135,9 @@ interface ResultsTableProps {
   onOpenUploadDropbox?: (targetDir?: string) => void;
   onDropFiles?: (files: File[]) => void;
   showPath?: boolean;
+  statusFilter?:string;
+  onStatusFilterChange?:(value:string)=>void;
+  onUnderstood?:(id:string,checked:boolean)=>void;
   showStatus?: boolean;
   showScheduledDate?: boolean;
   showModifiedDate?: boolean;
@@ -173,6 +178,7 @@ export function ResultsVirtualTable({
   onOpenUploadDropbox,
   onDropFiles,
   showPath = true,
+  statusFilter='all',onStatusFilterChange,onUnderstood,
   showStatus = true,
   showScheduledDate = true,
   showModifiedDate = true,
@@ -265,7 +271,7 @@ export function ResultsVirtualTable({
   type ColumnKey = "path" | "status" | "scheduledDate" | "modifiedDate";
   const defaultColWidths: Record<ColumnKey, number> = {
     path: 130,
-    status: 160,
+    status: 120,
     scheduledDate: 185, // Suficiente espacio para mostrar fechas completas con hora sin recortar
     modifiedDate: 140,
   };
@@ -275,7 +281,7 @@ export function ResultsVirtualTable({
       try {
         const saved = localStorage.getItem("anfeta_col_widths");
         if (saved) {
-          return { ...defaultColWidths, ...JSON.parse(saved) };
+          const widths=JSON.parse(saved);return { ...defaultColWidths, ...widths,status:widths.status===160?120:widths.status||120 };
         }
       } catch {}
     }
@@ -481,7 +487,7 @@ export function ResultsVirtualTable({
     }
 
     return (
-      <div key={item.id} className="flex flex-col border-b border-[#17212F]/70">
+      <div key={item.id} className={"flex flex-col border-b border-[#17212F]/70 "+(item.ftfVerified?"rounded border border-emerald-400 shadow-[inset_0_0_8px_#34d39955]":"")}>
         <div
           data-search-result={item.id}
           data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
@@ -636,9 +642,9 @@ export function ResultsVirtualTable({
         {showStatus && (
           <div
             style={{ width: `${colWidths.status}px` }}
-            className="shrink-0 px-1 flex items-center gap-1 overflow-hidden"
+            className="shrink-0 px-1 flex items-center justify-center gap-1 overflow-hidden"
           >
-            <WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>
+            <ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>
           </div>
         )}
 
@@ -652,7 +658,7 @@ export function ResultsVirtualTable({
             className={'shrink-0 px-1 truncate font-mono whitespace-nowrap '+(upcoming?'text-slate-500':'text-[#CBD5E1]')}
             title={item.scheduledDate ? formatSmartDate(item.scheduledDate) : undefined}
           >
-            {formatSmartDate(item.scheduledDate)}
+            {formatSmartDate(item.scheduledDate)}{resultDuration(item)&&<span className="ml-1 text-[9px] text-cyan-400" title="Duración estimada/programada; no cambia el orden">· {resultDuration(item)}</span>}
           </div>
         )}
 
@@ -818,7 +824,7 @@ export function ResultsVirtualTable({
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });
         }}
-        className={`relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
+        className={`${item.ftfVerified?"ring-1 ring-emerald-400 shadow-[0_0_10px_#34d39955]":""} relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
           isSelected
             ? "bg-[#1E293B] border-[#38BDF8] shadow-lg shadow-[#38BDF8]/10"
             : isChecked
@@ -1051,7 +1057,7 @@ export function ResultsVirtualTable({
               {formatSmartDate(item.scheduledDate || item.serverModified)}
             </span>
           )}
-          {parsed.workflow && <WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>}
+          {parsed.workflow && <><ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/></>}
         </div>
 
         {isExpanded && (
@@ -1207,7 +1213,7 @@ export function ResultsVirtualTable({
               style={{ width: `${colWidths.status}px` }}
               className="shrink-0 px-1 relative flex items-center justify-between group/col"
             >
-              <span className="truncate">Estado actualiz...</span>
+              <select aria-label="Filtrar por estado de actualización" title="Filtrar todos los resultados por estado" value={statusFilter} onChange={e=>onStatusFilterChange?.(e.target.value)} className="min-w-0 w-full cursor-pointer rounded border border-slate-700 bg-[#101720] px-1 py-0.5 text-center text-[10px] text-cyan-200">{RESULT_STATUS_FILTERS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
               <div
                 onMouseDown={(e) => handleStartColResize("status", e)}
                 className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"

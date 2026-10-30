@@ -1,4 +1,5 @@
 "use client";
+import {matchesResultStatus} from '@/lib/resultIndicators';
 import {findSearchTab} from '@/lib/searchTabsStorage';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
@@ -138,6 +139,7 @@ export function ResultsViewHost({
   useEffect(()=>{
     const owner=normalizePerson(currentUser||'');
     let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
+    setStatusFilter('all');
     setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
     let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setClassification(view.classification);setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);setGroupBy(view.groupBy);setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
     let saved=null;try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+owner));setHasLegacyTabs(!!legacy);saved=parseSearchTabs(localStorage.getItem(tabsKey))||legacy;}catch{setHasLegacyTabs(false);}
@@ -171,6 +173,7 @@ export function ResultsViewHost({
   const [viewZoom,setViewZoom]=useState<"list"|"small"|"medium"|"large">('list');
   const handleChangeViewZoom=(zoom:"list"|"small"|"medium"|"large")=>setViewZoom(zoom);
 
+  const [statusFilter,setStatusFilter]=useState('all');
   const [resultSort,setResultSort]=useState("scheduled-today");
   const [searchOptions, setSearchOptions] = useState<{
     matchCase: boolean;
@@ -1029,8 +1032,8 @@ export function ResultsViewHost({
     if(message.type==='ACTIVITY_CREATED'&&message.activity){setItems(previous=>applyNotionStates(previous,[{id:message.activity.pageId,calendarActivity:message.activity}]));return;}
     if(message.type!=='ACTIVITY_UPDATED'||!message.pageId||!message.updates)return;
     const a=message.updates;
-    if(a.title===undefined&&a.person===undefined&&a.status===undefined&&a.start===undefined)return;
-    const states=[{id:message.pageId,name:a.title,assignedPerson:a.person,updateStatus:a.status,scheduledDate:a.start,serverModified:a.serverModified||new Date().toISOString()}];
+    if(a.title===undefined&&a.person===undefined&&a.status===undefined&&a.start===undefined&&a.end===undefined&&a.ftfVerified===undefined&&a.ftfAvailable===undefined)return;
+    const states=[{id:message.pageId,name:a.title,assignedPerson:a.person,updateStatus:a.status,scheduledDate:a.start,scheduledEnd:a.end,ftfVerified:a.ftfVerified,ftfAvailable:a.ftfAvailable,serverModified:a.serverModified||new Date().toISOString()}];
     setItems(previous=>applyNotionStates(previous,states));
     setSelectedItem((previous:any)=>previous?applyNotionStates([previous],states)[0]:previous);
   }),[currentUser]);
@@ -1249,12 +1252,13 @@ export function ResultsViewHost({
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
 
+    res=res.filter(item=>matchesResultStatus(item,statusFilter));
     res=res.filter(item=>matchesContentClassification(item.name,classification));
     res = sortSearchRows(res,resultSort);
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
@@ -1444,6 +1448,7 @@ export function ResultsViewHost({
         {/* Col 0: PENDIENTES (260px) */}
         {isPendientesOpen && (
           <PendientesColumn
+            onClose={()=>setIsPendientesOpen(false)}
             pendingTasks={pendingTasks}
             onToggleTask={onTogglePendingTask}
             onOpenNewTaskModal={() => {
@@ -1579,6 +1584,8 @@ export function ResultsViewHost({
           onOpenUploadDropbox={handleOpenDropboxUpload}
           onDropFiles={handleDropFiles}
           showPath={visibleCols.path}
+          statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
+          onUnderstood={(id,checked)=>setItems(previous=>previous.map(row=>row.id===id?{...row,ftfVerified:checked,ftfAvailable:true}:row))}
           showStatus={visibleCols.status}
           showScheduledDate={visibleCols.scheduledDate}
           showModifiedDate={visibleCols.modifiedDate}

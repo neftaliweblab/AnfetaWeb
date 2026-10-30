@@ -9,11 +9,12 @@ import {calendarTime,mexicoDate} from '@/services/calendarPresentation';
 import {ViewportMenu} from '../CalendarHost/ViewportMenu';
 import {QuickScheduleActions} from '../CalendarHost/QuickScheduleModal';
 import {ReassignActivityModal} from '../CalendarHost/ReassignActivityModal';
+import {ReturnToOwnerModal} from '../CalendarHost/ReturnToOwnerModal';
 import {SendToReviewModal} from '../CalendarHost/SendToReviewModal';
 import type {AgendaUpdate} from './saveAgendaActivity';
 
 export function AgendaActivityActions({activity,currentUser,position,busy,onClose,onSave,initialAction=null}:{activity:NotionCalendarActivity;currentUser:string;position:{x:number;y:number};busy:boolean;initialAction?:'review'|'handoff'|'schedule'|'quick'|null;onClose:()=>void;onSave:(updates:AgendaUpdate)=>Promise<boolean>}){
-  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|'quick'|null>(initialAction);
+  const [modal,setModal]=useState<'review'|'handoff'|'schedule'|'quick'|'return'|null>(initialAction);
   const [error,setError]=useState('');
   const editable=canEditActivity(currentUser,activity)&&!activity.isHandoffMirror;
   const completed=workflowState(activity.status,activity.title)==='completed';
@@ -26,12 +27,14 @@ export function AgendaActivityActions({activity,currentUser,position,busy,onClos
     return()=>{window.removeEventListener('click',click);window.removeEventListener('keydown',escape);};
   },[modal,busy,onClose]);
   const button='w-full px-3 py-2 text-left hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed';
+  if(modal==='return')return <ReturnToOwnerModal activity={activity} onClose={onClose} onConfirm={onSave}/>;
   if(modal==='handoff')return <ReassignActivityModal activity={activity} onClose={onClose} onConfirm={onSave}/>;
   if(modal==='review')return <SendToReviewModal activity={activity} currentUser={currentUser} onClose={onClose} onConfirm={(reviewer,leaveVisualCopy)=>onSave({status:'rtuzREVISION',reviewer,leaveVisualCopy})}/>;
   if(modal==='schedule')return <AgendaScheduleDialog activity={activity} busy={busy} onClose={onClose} onSave={onSave}/>;
   if(modal==='quick')return <ViewportMenu position={position}><div className="flex justify-between px-3 py-2">Fecha y duración<button aria-label="Cerrar acciones" disabled={busy} onClick={onClose}>✕</button></div>{editable&&!completed?<QuickScheduleActions activity={activity} currentUser={currentUser} disabled={busy} onClose={onClose} onSave={onSave}/>:<p className="p-3">Esta actividad no permite mover el horario.</p>}</ViewportMenu>;
   return <ViewportMenu position={position}>
     <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2 text-[10px] text-slate-400">ACCIONES DE ACTIVIDAD<button aria-label="Cerrar acciones" disabled={busy} onClick={onClose}>✕</button></div>
+    {workflowState(activity.status,activity.title)==='review'&&editable&&normalizePerson(currentUser)===normalizePerson(activity.person)&&<button role="menuitem" disabled={busy} className={button+' text-amber-200'} onClick={()=>setModal('return')}>↩ Regresar a responsable…</button>}
     <button role="menuitem" disabled={!handoff||busy} className={button+' text-cyan-200'} onClick={()=>setModal('handoff')}>◇ Reasignar actividad…</button>
     <button role="menuitem" disabled={!editable||completed||busy} className={button+' text-sky-300'} onClick={()=>setModal('review')}>◇ Enviar a revisión final…</button>
     <button role="menuitem" disabled={!finish||busy} className={button+' text-emerald-300'} onClick={async()=>{setError('');if(await onSave({status:'zREVISION',isFinalized:true}))onClose();else setError('No se confirmó el cambio. Revisa el aviso del calendario.');}}>✓ Finalizar actividad (zREVISION)</button>

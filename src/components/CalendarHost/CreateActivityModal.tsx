@@ -25,7 +25,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 
-const people = ['John', 'Neftali', 'Karla', 'Brian', 'Isaias', 'Andrade', 'Genaro', 'Sotelo', 'Acalli'];
+const people = ['John', 'Neftali', 'Karla', 'Brian', 'Isaias', 'Andrade', 'Genaro', 'Sotelo', 'Acalli', 'Edwin'];
 
 interface CreateActivityModalProps {
   currentUser: string;

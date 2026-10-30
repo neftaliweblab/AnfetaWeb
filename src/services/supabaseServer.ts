@@ -131,7 +131,7 @@ export async function getOrEnsureProfile(admin:any,tag:string){
  if(created.error||!created.data?.user)throw serviceError(created.error,'crear la cuenta interna seleccionada');
  const row={id:created.data.user.id,person_tag:tag,login_email:email,active:true};
  const inserted=await admin.from('profiles').insert(row);
- if(inserted.error)throw serviceError(inserted.error,'guardar el perfil de la persona');
+ if(inserted.error){if(typeof admin.auth.admin.deleteUser==='function')await admin.auth.admin.deleteUser(created.data.user.id).catch(()=>{});if(person==='Edwin'&&inserted.error.code==='23514')throw Error('Edwin todavía no está habilitado. Pide a Neftali que termine su activación.');throw serviceError(inserted.error,'guardar el perfil de la persona');}
  return row;
 }
 

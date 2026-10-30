@@ -11,6 +11,7 @@ export const ACTIVITY_TAGS = {
   Andrade:{active:'aan',reference:'an',review:'aandr',aliases:['aandr','andr','andrade'],passive:'andr'},
   Brian:{active:'bbr',reference:'br',review:'bbria',aliases:['bbria','bria','brian'],passive:'bria'},
   Sotelo:{active:'sso',reference:'so',review:'ssote',aliases:['ssote','sote','eedua','edua','sotelo'],passive:'sote'},
+  Edwin:{active:'eed',reference:'ed',review:'eedwin',aliases:['eedwin','edwin'],passive:'edwin'},
 } as const;
 export type ActivityPerson=keyof typeof ACTIVITY_TAGS;
 export type ActivityPriority='00'|'11'|'22'|'33';

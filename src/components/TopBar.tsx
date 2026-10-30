@@ -188,67 +188,67 @@ export function TopBar({
         <nav className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => onSelectView("results")}
-            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "results"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Buscador"
+            title="Buscador" aria-label="Buscador"
           >
-            <Search className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">Buscador</span>
+            <Search className="w-5 h-5 shrink-0" />
+
           </button>
 
           <button
             onClick={() => onSelectView("calendar")}
-            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "calendar"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Calendario"
+            title="Calendario" aria-label="Calendario"
           >
-            <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">Calendario</span>
+            <Calendar className="w-5 h-5 shrink-0" />
+
           </button>
 
           <button
             onClick={() => onSelectView("dailyProgress")}
-            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "dailyProgress"
                 ? "bg-[#18212B] text-[#4ADE80] border border-[#4ADE80]/40 shadow-[0_0_8px_rgba(74,222,128,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Avance Diario"
+            title="Avance Diario" aria-label="Avance Diario"
           >
-            <TrendingUp className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">Avance Diario</span>
+            <TrendingUp className="w-5 h-5 shrink-0" />
+
           </button>
 
           <button
             onClick={() => onSelectView("messages")}
-            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "messages"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Mensajes"
+            title="Mensajes" aria-label="Mensajes"
           >
-            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">Mensajes</span>
+            <MessageSquare className="w-5 h-5 shrink-0" />
+
           </button>
 
           <button
             onClick={() => onSelectView("reminders")}
-            className={`relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+            className={`relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "reminders"
                 ? "bg-[#18212B] text-[#A855F7] border border-[#A855F7]/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Recordatorios"
+            title="Recordatorios" aria-label="Recordatorios"
           >
-            <Bell className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden xl:inline">Recordatorios</span>
+            <Bell className="w-5 h-5 shrink-0" />
+
             {unreadCount > 0 && (
               <span className="w-2 h-2 rounded-full bg-[#FB7185] animate-pulse" />
             )}

@@ -1,0 +1,2 @@
+export function notionStatusValue(property:any):string{if(!property)return '';return property.type==='multi_select'?(property.multi_select||[]).map((item:any)=>item.name).find(Boolean)||'':property[property.type]?.name||'';}
+export function writableStatusValue(type:string,name:string){if(!['status','select','multi_select'].includes(type))throw Error('La propiedad de estado no es editable.');return {[type]:type==='multi_select'?[{name}]:{name}};}

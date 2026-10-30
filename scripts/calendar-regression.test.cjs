@@ -48,6 +48,7 @@ global.fetch=async(url,options={})=>{
   if(target.startsWith('blocks/'+other+'/children') && method==='GET')return response({results:[],has_more:false});
   if((target==='blocks/'+other+'/children'||target.startsWith('blocks/copied-')) && method==='PATCH')return response({results:body.children.map((b,i)=>({...b,id:'copied-'+i}))});
   if(target==='pages/'+pid && method==='GET')return state.pageMissing?response({message:'Could not find page'},404):response(state.page);
+  if(target.startsWith('data_sources/') && method==='GET' && state.multiStatus)return response({properties:{Estado:{type:'multi_select',multi_select:{options:[{name:'Por hacer'},{name:'SUSPENDIDA'},{name:'En revisión'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'Due Fecha Recordatorio':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
   if(target.endsWith('/query') && state.guestReviewer) return response({results:[{...fixture(),properties:{...fixture().properties,'Assignee/Ejecutor Principal':{type:'people',people:[{id:'guest-isaias',name:'iisai@pprin.com'}]}}}],has_more:false});
@@ -65,9 +66,9 @@ global.fetch=async(url,options={})=>{
   }
   if(target==='blocks/'+pid+'/children' && method==='PATCH'){
     if(state.failMetadata)return response({message:'Metadata rejected'},403);
-    const text=body.children[0].toggle.children[0].paragraph.rich_text[0].text.content;
+    const text=body.children[0]?.toggle?.children?.[0]?.paragraph?.rich_text?.[0]?.text?.content||'';
     if(text.startsWith(calendar.REVIEW_PREFIX))state.flow=JSON.parse(Buffer.from(text.slice(calendar.REVIEW_PREFIX.length),'base64').toString());
-    return response({results:body.children});
+    return response({results:body.children.map((block,i)=>({...block,id:block.id||'observation-'+i}))});
   }
   if(target.startsWith('blocks/'+pid+'/children')){
     if(state.blockFailure)return response({message:'Cannot read blocks'},403);
@@ -136,6 +137,11 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.ok(state.calls.every(c=>c.method==='GET'),'Audit must not create, append, upload or change Notion data');
   });
   await test('Envío a revisión no confunde espacios de borde con un cambio de nombre',async()=>{const field=state.page.properties.Name.title[0].text;field.content='  '+field.content+'\n';const expected=field.content.trim();await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',expectedTitle:expected});assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'john-id');});
+  await test('Estado real de selección múltiple se consulta y guarda como arreglo de Notion',async()=>{
+    state.multiStatus=true;state.page.properties.Estado={type:'multi_select',multi_select:[{name:'Por hacer'}]};
+    const options=await route.GET(new Request('http://localhost/api/data?type=activity-status-options&pageId='+pid));const available=await options.json();assert.equal(options.status,200);assert.ok(available.options.some(option=>option.name==='SUSPENDIDA'));
+    const response=await route.POST(request('update-activity-details',{id:pid,status:'SUSPENDIDA'}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.activity.status,'SUSPENDIDA');assert.deepEqual(state.page.properties.Estado.multi_select,[{name:'SUSPENDIDA'}]);
+  });
   await test('Editor calendario conserva nomenclatura al renombrar sin mover horario',async()=>{const expected=state.page.properties.Name.title[0].text.content;const page=await mutations.mutateActivity(settings,'nneft',pid,{titleDescription:'Nueva descripción manual',expectedTitle:expected});assert.equal(page.properties.Name.title[0].text.content,'prtuzREVISION sseo 26-[10OCT] anfeta.com Nueva descripción manual nneft');assert.equal(state.calls.some(c=>c.method==='PATCH'&&c.body.properties?.['Fecha POR Hacer']),false);});
   await test('Editor calendario rechaza nombre y fin editados por otra sesión',async()=>{await assert.rejects(()=>mutations.mutateActivity(settings,'nneft',pid,{titleDescription:'Nuevo',expectedTitle:'Viejo'}),/nombre cambió/);assert.equal(state.calls.some(c=>c.method==='PATCH'),false);await assert.rejects(()=>mutations.mutateActivity(settings,'nneft',pid,{start:'2026-10-07T10:00:00-06:00',end:'2026-10-07T11:00:00-06:00',expectedStart:state.page.properties['Fecha POR Hacer'].date.start,expectedEnd:'2026-10-05T16:00:00Z'}),/horario cambió/);assert.equal(state.calls.some(c=>c.method==='PATCH'),false);});
   await test('Editor calendario guarda nombre fecha y horario en una sola actualización',async()=>{const oldTitle=state.page.properties.Name.title[0].text.content,oldDate=state.page.properties['Fecha POR Hacer'].date;const response=await route.POST(request('update-activity-details',{id:pid,currentUser:'nneft',titleDescription:'Trabajo reprogramado',expectedTitle:oldTitle,expectedStart:oldDate.start,expectedEnd:oldDate.end,start:'2026-10-07T10:00:00-06:00',end:'2026-10-07T11:00:00-06:00'}));assert.equal(response.status,200);const data=await response.json();assert.equal(data.success,true);assert.match(data.activity.title,/Trabajo reprogramado/);assert.equal(data.activity.start,'2026-10-07T10:00:00-06:00');const patch=state.calls.find(c=>c.target==='pages/'+pid&&c.method==='PATCH');assert.ok(patch.body.properties.Name);assert.equal(patch.body.properties['Fecha POR Hacer'].date.end,'2026-10-07T11:00:00-06:00');});
@@ -262,6 +268,14 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.equal(page.__reviewFlow.State,'returned');assert.equal(page.__reviewFlow.Note,'Corregir encabezado');
     assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^(?:prtuzREVISION|prtuzR)/);
     assert.match(state.calls.filter(c=>c.target==='pages/'+other&&c.method==='PATCH').at(-1).body.properties.Name.title[0].text.content,/nneft de:john.*Correcciones solicitadas/);
+  });
+  await test('Devolver con imagen conserva responsable, reactiva y permite reenviar y aprobar',async()=>{
+    await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John',status:'rtuzREVISION'});
+    const returned=await mutations.mutateActivity(settings,'John',pid,{reviewAction:'return',note:'Corregir el encabezado según captura',files:[{filename:'captura.png',contentType:'image/png',base64:'iVBORw0KGgo='}]});
+    assert.equal(returned.__reviewFlow.State,'returned');assert.equal(returned.__reviewFlow.LeaveVisualCopy,false);assert.equal(returned.__reviewFlow.Attachments.length,1);assert.equal(returned.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
+    assert.ok(state.calls.some(call=>call.target==='blocks/'+pid+'/children'&&call.body?.children?.some(block=>block.type==='image')));
+    await mutations.mutateActivity(settings,'Neftali',pid,{reviewer:'John',status:'rtuzREVISION'});
+    const approved=await mutations.mutateActivity(settings,'John',pid,{status:'Terminada'});assert.equal(approved.__reviewFlow.State,'approved');assert.equal(approved.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
   });
   await test('Devolver sin comentarios no modifica Notion',async()=>{
     await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});

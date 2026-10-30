@@ -4,7 +4,7 @@ import {ACTIVITY_TAGS} from '@/services/activityTags';
 import {SearchChoice} from './SearchChoice';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {readApiJson} from '@/lib/readApiJson';
-export function personWorkQuery(person:string,priorities=['00','11','22','33'],includeReview=true){const entry=ACTIVITY_TAGS[person as keyof typeof ACTIVITY_TAGS];return entry?[...priorities.filter(p=>['00','11','22','33'].includes(p)).map(p=>entry.active+p),...(includeReview?[entry.active+'000',entry.review]:[])].join(' OR '):'';}
+export function personWorkQuery(person:string,priorities=['00','11','22','33'],includeReview=true){const entry=ACTIVITY_TAGS[person as keyof typeof ACTIVITY_TAGS];return entry?[...priorities.filter(p=>['00','11','22','33'].includes(p)).map(p=>entry.active+p),...(includeReview?[entry.active+'000']:[])].join(' OR '):'';}
 export function PersistentSearchAccess({onSearch,currentUser=''}:{onSearch:(query:string)=>void;currentUser?:string}){
  const defaults={priorities:['00','11','22','33'],includeReview:true};
  const [selection,setSelection]=useState(defaults);

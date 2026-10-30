@@ -9,12 +9,14 @@ export const PERSON_ALIASES: Record<string, string[]> = {
   John: ["jjohn", "john"],
   Sotelo: ["ssote", "sote", "eedua", "edua", "sotelo"],
   Acalli: ["aacal", "acal", "acalli", "acali"],
+  Edwin:["eedwin","edwin"],
 };
 
 export const PERSON_METADATA: Record<
   string,
   { color: string; avatar: string; role?: string; notionUrl?: string }
 > = {
+  Edwin:{color:"#22D3EE",avatar:"ED",role:"Integrante del equipo"},
   John: { color: "#38BDF8", avatar: "JO", role: "Supervisor / Dirección", notionUrl: "https://app.notion.com/p/36eabd7d91b780f2841bcd50f8a2b4ac?source=copy_link" },
   Karla: { color: "#F472B6", avatar: "KA", role: "Diseño & Web", notionUrl: "https://app.notion.com/p/36eabd7d91b7800facbcd6cf9514277c?source=copy_link" },
   Isaias: { color: "#4ADE80", avatar: "IS", role: "SEO & Contenido", notionUrl: "https://app.notion.com/p/384abd7d91b7801499bdff6ed5a4a2fc?source=copy_link" },

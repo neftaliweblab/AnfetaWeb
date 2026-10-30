@@ -13,6 +13,10 @@ export interface SearchResultRow {
   externalId?: string;
   externalUrl?: string;
   scheduledDate?: string;
+  scheduledEnd?:string;
+  estimatedWorkMinutes?:number;
+  ftfVerified?:boolean;
+  ftfAvailable?:boolean;
   assignmentKeys?: string[];
   notionEditedUtc?: string;
   pageContent?: string;

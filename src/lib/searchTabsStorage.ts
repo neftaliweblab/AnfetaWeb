@@ -16,7 +16,7 @@ export function personalFirstSearch(saved:NonNullable<ReturnType<typeof parseSea
  const person=normalizePerson(owner),entry=ACTIVITY_TAGS[person as ActivityPerson];
  if(!entry)return saved;
  const id='personal:'+person;
- const query=[...['00','11','22','33'].map(p=>entry.active+p),entry.active+'000',entry.review].join(' OR ');
+ const query=[...['00','11','22','33'].map(p=>entry.active+p),entry.active+'000'].join(' OR ');
  const existing=saved.tabs.find(t=>t.id===id);
  const others=saved.tabs.filter(t=>t.id!==id).map(t=>({...t,canClose:true}));
  if(existing?.query.trim()&&existing.query!==query&&!others.some(t=>t.query===existing.query)){

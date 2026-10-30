@@ -29,11 +29,11 @@ export async function sendReviewNotification(settings: CalendarSettings, page: a
       ]
     }
   };
-  const message = (flow.State === 'returned' ? 'Correcciones solicitadas: ' + flow.Note : approved ? 'Revisión aprobada' : 'Actividad lista para revisión') + ' · ' + title;
+  const message = (flow.State === 'returned' ? 'Correcciones solicitadas: ' + flow.Note : flow.State==='handoff'?'Actividad reasignada: '+flow.Note:approved ? 'Revisión aprobada' : 'Actividad lista para revisión') + ' · ' + title;
   const stamp = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());
   const senderTitle = author.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
   const alertTitle = stamp + ' ' + tag + ' de:' + senderTitle + ' [RESPUESTA] ' + completedActivityTags(message);
-  const entry = {Kind:'System',AuthorTag:authorTag,AuthorName:author,RecipientTag:tag,RecipientName:recipient,CreatedAt:new Date().toISOString(),ReferenceEntryId:'',Text:message,Attachments:[]};
+  const entry = {Kind:'System',AuthorTag:authorTag,AuthorName:author,RecipientTag:tag,RecipientName:recipient,CreatedAt:new Date().toISOString(),ReferenceEntryId:'',Text:message,Attachments:flow.Attachments||[]};
   const children = [originalLinkBlock, paragraph(message), hidden('[ANFETA_THREAD_V1]', entry)];
   if (flow.AlertPageId) {
     const existing = await notionRequest(settings,'pages/' + flow.AlertPageId);
@@ -81,7 +81,7 @@ export async function listReviewNotifications(settings: CalendarSettings, person
     const batch = await notionRequest(settings,'data_sources/' + source + '/query','POST',{page_size:100,...(cursor ? {start_cursor:cursor}:{}),filter:{and:[{property:name,title:{contains:'[RESPUESTA]'}},{or:[{property:name,title:{contains:tag + ' de:'}},{property:name,title:{contains:'de:' + sender + ' '}}]}]},sorts:[{timestamp:'last_edited_time',direction:'descending'}]});
     for (const p of batch.results || []) {
       const title = (p.properties?.[name]?.title || []).map((t:any) => t.plain_text || t.text?.content || '').join('');
-      if (!p.archived && !p.in_trash && (title.includes(tag + ' de:') || title.includes('de:' + sender + ' ')) && /Actividad lista para revisión|Revisión aprobada|Correcciones solicitadas/i.test(title)) {
+      if (!p.archived && !p.in_trash && (title.includes(tag + ' de:') || title.includes('de:' + sender + ' ')) && /Actividad lista para revisión|Revisión aprobada|Correcciones solicitadas|Actividad reasignada/i.test(title)) {
         const fullMessage = title.split('[RESPUESTA]')[1]?.trim() || title;
         const parts = fullMessage.split(' · ');
         const activityTitle = parts.length > 1 ? parts.slice(1).join(' · ').trim() : fullMessage;

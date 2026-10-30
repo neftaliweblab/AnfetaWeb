@@ -1,6 +1,7 @@
 "use client";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import {PwaNotifications} from './PwaNotifications';
+import {createPortal} from 'react-dom';
 import React, {useEffect,useState,useRef} from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 
@@ -15,10 +16,14 @@ export function CalendarReviewNotifications({
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
   onSelectDate?: (date: string) => void;
 }) {
+  const [itemsOwner,setItemsOwner]=useState(currentUser);
   const [items,setItems] = useState<any[]>([]), [open,setOpen] = useState(false), [error,setError] = useState('');
   const [seen,setSeen] = useState<Record<string,string>>({});
   const [dismissed,setDismissed] = useState<Record<string,string>>({});
   const [busy,setBusy] = useState(false);
+  const [automatic,setAutomatic]=useState<any>(null),[observationImages,setObservationImages]=useState<any[]>([]);
+  const shown=useRef(new Set<string>());
+  useEffect(()=>{shown.current.clear();setAutomatic(null);setObservationImages([]);},[currentUser]);
   const owner=useRef(currentUser);owner.current=currentUser;
   const key = 'anfeta-review-notifications-seen:' + currentUser;
   useEffect(() => {
@@ -31,7 +36,7 @@ export function CalendarReviewNotifications({
       try {
         const res=await fetch('/api/data?type=review-notifications&person=' + encodeURIComponent(currentUser),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])});
         const data=await res.json(); if (!res.ok || data.error) throw new Error(data.error || 'No se pudieron cargar los avisos.');
-        const state=await loadAccountPreferences();if(stopped)return;const receipts=state.values?.receipts?.reviewNotifications;setSeen(receipts&&typeof receipts==='object'&&!Array.isArray(receipts)?receipts:{});setDismissed(state.values?.receipts?.dismissedReviewNotifications||{});setItems(data.items || []);setError(data.warning||'');
+        const state=await loadAccountPreferences();if(stopped)return;const receipts=state.values?.receipts?.reviewNotifications;setSeen(receipts&&typeof receipts==='object'&&!Array.isArray(receipts)?receipts:{});setDismissed(state.values?.receipts?.dismissedReviewNotifications||{});setItemsOwner(currentUser);setItems(data.items || []);setError(data.warning||'');
       } catch(e) {if (!stopped) setError(e instanceof Error ? e.message : 'No se pudieron cargar los avisos.');}
       finally {busy=false;}
     };
@@ -39,7 +44,17 @@ export function CalendarReviewNotifications({
     window.addEventListener('focus',refresh); window.addEventListener('online',refresh); document.addEventListener('visibilitychange',refresh); window.addEventListener('anfeta_review_saved',refresh);
     return () => {stopped=true;controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('anfeta_review_saved',refresh);};
   },[currentUser,key]);
-  const visibleItems=items.filter(item=>dismissed[item.id]!==item.updated);
+  const visibleItems=(itemsOwner===currentUser?items:[]).filter(item=>dismissed[item.id]!==item.updated);
+  useEffect(()=>{
+    if(automatic)return;
+    const next=visibleItems.find(item=>/^(?:Correcciones solicitadas|Actividad reasignada)/i.test(item.actionLabel||item.title||'')&&seen[item.id]!==item.updated&&!shown.current.has(item.id+':'+item.updated));
+    if(next){shown.current.add(next.id+':'+next.updated);setAutomatic(next);}
+  },[items,itemsOwner,currentUser,seen,dismissed,automatic]);
+  useEffect(()=>{
+    setObservationImages([]);if(!automatic)return;const abort=new AbortController();
+    fetch('/api/data',{method:'POST',signal:abort.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get-review-thread',payload:{pageId:automatic.id,currentUser}})}).then(async response=>{const data=await response.json();if(!response.ok)throw Error(data.error||'No se pudieron leer las observaciones.');const images=(data.entries||[]).filter((entry:any)=>entry.Kind==='System'&&/^(?:Correcciones solicitadas|Actividad reasignada)/i.test(entry.Text||'')).slice(-1).flatMap((entry:any)=>entry.Attachments||[]).filter((image:any)=>image.BlockId||/^https?:/.test(image.Url||''));if(!abort.signal.aborted)setObservationImages(images);}).catch(()=>{});return()=>abort.abort();
+  },[automatic,currentUser]);
+  async function acknowledgeAutomatic(){if(!automatic||busy)return;setBusy(true);try{const state=await loadAccountPreferences();if(owner.current!==currentUser)return;const next={...(state.values?.receipts?.reviewNotifications||{}),[automatic.id]:automatic.updated};await saveAccountPreferences({receipts:{...(state.values?.receipts||{}),reviewNotifications:next}},state.revision);if(owner.current!==currentUser)return;setSeen(next);setAutomatic(null);}catch(e){setError(e instanceof Error?e.message:'No se pudo confirmar la lectura.');}finally{setBusy(false);}}
   const unread=visibleItems.filter(item => seen[item.id] !== item.updated).length;
   const dismiss=async(item:any)=>{
     if(busy)return;
@@ -62,7 +77,7 @@ export function CalendarReviewNotifications({
       const res=await fetch('/api/data?type=review-activity&id='+encodeURIComponent(item.id),{cache:'no-store',signal:AbortSignal.timeout(45000)});
       const data=await res.json();
       if(!res.ok||!data.activity)throw Error(data.error||'No se pudo abrir la actividad.');
-      onSelectActivity?.(data.activity);setOpen(false);setError('');
+      window.dispatchEvent(new Event('anfeta_open_calendar_from_notice'));onSelectActivity?.(data.activity);setOpen(false);setError('');
     }catch(e){setError(e instanceof Error?e.message:'No se pudo abrir la actividad.');}
     finally{setBusy(false);}
   };
@@ -106,6 +121,7 @@ export function CalendarReviewNotifications({
   };
 
   return <div className="relative shrink-0">
+    {automatic&&typeof document!=='undefined'&&createPortal(<div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-label="Actividad recibida con observaciones" className="max-h-[92dvh] w-full max-w-4xl overflow-auto rounded-2xl border-2 border-amber-400 bg-[#0d1926] p-5 text-slate-100 shadow-[0_0_40px_#fbbf2433]"><header className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-amber-300">↩ Actividad recibida con observaciones</h2><button type="button" aria-label="Cerrar observaciones" onClick={()=>setAutomatic(null)} className="rounded p-2">✕</button></header><h3 className="my-4 text-lg font-semibold">{automatic.activityTitle}</h3><p className="whitespace-pre-wrap rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm leading-relaxed">{automatic.actionLabel||automatic.title}</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{observationImages.map((image,index)=><a key={image.BlockId||index} href={image.BlockId?'/api/data?type=image-proxy&blockId='+encodeURIComponent(image.BlockId):image.Url} target="_blank" rel="noreferrer"><img loading="lazy" src={image.BlockId?'/api/data?type=image-proxy&blockId='+encodeURIComponent(image.BlockId):image.Url} alt={image.Name||'Observación explicativa'} className="max-h-80 w-full rounded-lg border border-slate-700 bg-slate-950 object-contain"/></a>)}</div>{error&&<p role="alert" className="mt-3 text-rose-300">{error}</p>}<footer className="mt-5 flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} onClick={()=>{const item=automatic;setAutomatic(null);void handleOpenDirect(item);}} className="rounded-lg border border-cyan-700 px-4 py-2 text-cyan-200">Abrir actividad</button><button type="button" autoFocus disabled={busy} onClick={()=>void acknowledgeAutomatic()} className="rounded-lg bg-amber-400 px-5 py-2 font-semibold text-slate-950">{busy?'Guardando lectura…':'Entendido'}</button></footer></section></div>,document.body)}
     <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} title="Avisos de revisión" aria-label={'Avisos de revisión: '+unread+' sin leer'} className="rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-200">🔔 <span className="hidden xl:inline">Revisiones</span> {unread > 0 && <strong className="ml-1 text-amber-300">{unread}</strong>}{error && <span className="ml-1 text-rose-300">!</span>}</button>
     {open && <div role="region" aria-label="Notificaciones de revisión" className="fixed right-3 top-28 z-[280] w-[380px] max-w-[calc(100vw-24px)] max-h-[70dvh] overflow-auto rounded-xl border border-cyan-900 bg-[#0F172A] p-3 shadow-xl">
       <div className="flex justify-between text-xs text-slate-200 mb-3"><strong>Avisos de revisión y FTF</strong><button onClick={() => setOpen(false)} aria-label="Cerrar avisos">✕</button></div>

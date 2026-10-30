@@ -24,6 +24,7 @@ import {calendarDisplayTitle,calendarTime,mexicoDate} from '@/services/calendarP
 import type {NotionCalendarActivity} from '@/types/anfeta';
 
 const SHORT_COLLABORATORS = [
+ {short:'ED',name:'Edwin'},
   { short: 'J', name: 'John' },
   { short: 'K', name: 'Karla' },
   { short: 'A', name: 'Andrade' },

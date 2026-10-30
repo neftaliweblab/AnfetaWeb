@@ -143,7 +143,7 @@ export function SearchSidebar({
             </button>
             {openMenu === "personas" && (
               <div className="absolute right-0 top-8 z-30 w-36 bg-[#16202C] border border-[#2A3E54] rounded shadow-xl py-1 text-[11px] max-h-48 overflow-y-auto">
-                {["John", "Karla", "Isaias", "Sotelo", "Acalli", "Andrade", "Brian", "Genaro", "Neftali"].map((p) => (
+                {["John", "Karla", "Isaias", "Sotelo", "Acalli", "Andrade", "Brian", "Genaro", "Neftali", "Edwin"].map((p) => (
                   <button
                     key={p}
                     onClick={() => {

@@ -4,6 +4,7 @@ import {reviewPreflight} from '@/lib/reviewPreflight';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 
 export type AgendaUpdate=Partial<NotionCalendarActivity>&{
+  files?:{filename:string;contentType:string;base64:string}[];
   handoff?:boolean;reviewer?:string;reviewAction?:'return'|'reassign';note?:string;
   leaveVisualCopy?:boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string;allowOverlap?:boolean;
 };
