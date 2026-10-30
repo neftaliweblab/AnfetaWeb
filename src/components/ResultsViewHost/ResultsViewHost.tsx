@@ -1255,6 +1255,20 @@ export function ResultsViewHost({
 
     res=res.filter(item=>matchesResultStatus(item,statusFilter));
     res=res.filter(item=>matchesContentClassification(item.name,classification));
+
+    // Deduplicar filas por identidad canónica y excluir copias de revisión
+    const seenRowKeys = new Set<string>();
+    res = res.filter((item) => {
+      if (item.isReviewMirror || (item as any).IsReviewMirror) return false;
+      const pid = pageIdentity(item);
+      const k = pid && (item.source === 'Notion' || /^[a-f0-9]{32}$/.test(pid))
+        ? 'notion:' + pid
+        : String(item.source || '') + ':' + String(item.path || item.externalId || item.id);
+      if (seenRowKeys.has(k)) return false;
+      seenRowKeys.add(k);
+      return true;
+    });
+
     res = sortSearchRows(res,resultSort);
     return orderSearchResults(res, groupBy);
   }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter]);
@@ -1587,7 +1601,7 @@ export function ResultsViewHost({
           onDropFiles={handleDropFiles}
           showPath={visibleCols.path}
           statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
-          onUnderstood={(id,checked)=>setItems(previous=>previous.map(row=>row.id===id?{...row,ftfVerified:checked,ftfAvailable:true}:row))}
+          onUnderstood={(id,checked)=>setItems(previous=>previous.map(row=>pageIdentity(row)===pageIdentity(id)?{...row,ftfVerified:checked,ftfAvailable:true}:row))}
           showStatus={visibleCols.status}
           showScheduledDate={visibleCols.scheduledDate}
           showModifiedDate={visibleCols.modifiedDate}

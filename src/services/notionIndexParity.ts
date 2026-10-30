@@ -4,7 +4,16 @@ import { isExpiredResponsePage } from '@/lib/responsePageRules';
 import {ANFETA_BASES} from '../lib/notionBaseCatalog';
 export {ANFETA_BASES} from '../lib/notionBaseCatalog';
 export function completedReminder(row:any){return row.sourceName==='Revisiones'&&/^\s*(?:\[Revisiones\]\s*)?\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)\b[\s\S]*(?:^|\s)\[TERMINADO\](?:\s|$)/i.test(row.name||'');}
-export function uniqueIndex(rows:any[]){const out=new Map<string,any>();for(const row of rows){if(completedReminder(row)||isExpiredResponsePage(row))continue;const id=String(row.externalId||row.id).replace(/-/g,'').toLowerCase();out.set(row.source+':'+id,row);}return [...out.values()];}
+export function uniqueIndex(rows:any[]){
+  const out=new Map<string,any>();
+  for(const row of rows){
+    if(completedReminder(row)||isExpiredResponsePage(row)||row.isReviewMirror||row.IsReviewMirror)continue;
+    const rawId=String(row.externalId||row.originalPageId||row.pageId||row.id||'').replace(/^review-mirror-/,'').replace(/-/g,'').toLowerCase();
+    const key=rawId&&(row.source==='Notion'||/^[a-f0-9]{32}$/.test(rawId))?'notion:'+rawId:String(row.source||'')+':'+String(row.path||row.externalId||row.id);
+    out.set(key,row);
+  }
+  return [...out.values()];
+}
 export async function queryAnfetaIndex(settings:CalendarSettings,since?:string){
  const controller=new AbortController(),deadline=AbortSignal.timeout(90000),signal=AbortSignal.any([controller.signal,deadline,...(settings.notionSignal?[settings.notionSignal]:[])]);
  const pages=new Map<string,any>();

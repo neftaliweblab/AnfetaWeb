@@ -779,8 +779,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const acts = calData[d];
         if (!Array.isArray(acts)) continue;
         for (const a of acts) {
-          if (a?.IsReviewMirror) continue;
-          const pid = String(a?.PageId || "").replace(/-/g, "").toLowerCase();
+          if (a?.IsReviewMirror || a?.isReviewMirror) continue;
+          const rawId = String(a?.PageId || a?.pageId || "").replace(/^review-mirror-/, "");
+          const pid = cleanPageId(rawId);
           if (!pid) continue;
           latestByPage.set(pid, { raw: a, date: d });
         }
@@ -877,28 +878,31 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         if (seen.has(pid)) continue;
         seen.add(pid);
         const a = cal.raw;
-        const title = a.Title || "";
+        if (a?.IsReviewMirror || a?.isReviewMirror) continue;
+        const title = a.Title || a.title || "";
         if (!title) continue;
+        const pageId = String(a.PageId || a.pageId || "").replace(/^review-mirror-/, "");
+        if (!pageId) continue;
         items.unshift({
-          id: a.PageId,
+          id: pageId,
           name: `[Revisiones] ${title}`,
           path: "",
           folder: "",
           extension: "",
           sizeBytes: 0,
           modifiedLocalDate: cal.date,
-          serverModified: a.Start || "",
+          serverModified: a.Start || a.start || "",
           source: "Notion",
           sourceName: "Revisiones",
           externalSourceName: "Revisiones",
-          externalId: a.PageId,
-          externalUrl: a.PageUrl || "",
-          scheduledDate: a.Start || "",
-          updateStatus: a.Status || "",
-          projectUpdateStatus: a.Status || "",
+          externalId: pageId,
+          externalUrl: a.PageUrl || a.pageUrl || "",
+          scheduledDate: a.Start || a.start || "",
+          updateStatus: a.Status || a.status || "",
+          projectUpdateStatus: a.Status || a.status || "",
           searchText: title,
           type: "PAGE",
-          target: a.PageUrl || "",
+          target: a.PageUrl || a.pageUrl || "",
         } as any);
         injected++;
       }

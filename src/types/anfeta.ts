@@ -51,6 +51,8 @@ export interface SearchResultRow {
   status?: string;
   coverUrl?: string;
   thumbnailUrl?: string;
+  isReviewMirror?: boolean;
+  isHandoffMirror?: boolean;
 }
 
 export interface NotionCalendarActivity {

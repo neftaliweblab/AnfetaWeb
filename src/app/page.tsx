@@ -358,7 +358,7 @@ export default function AnfetaApp() {
     const unsubscribe = anfetaSync.subscribe((msg: AnfetaSyncMessage) => {
       if (msg.type === "CALENDAR_REFRESHED" && msg.date === currentDate && msg.activities) {
         setCalendarActivities(prev=>mergeCalendarSnapshot(prev,msg.activities!,currentDate,msg.readStartedAt));
-        setSearchIndex(prev=>applyNotionStates(prev,msg.activities!.filter(a=>!a.isReviewMirror).map(a=>({id:a.pageId,name:a.title,assignedPerson:a.person,scheduledDate:a.start,updateStatus:a.status,serverModified:a.serverModified}))));
+        setSearchIndex(prev=>applyNotionStates(prev,msg.activities!.filter(a=>!a.isReviewMirror&&!a.IsReviewMirror).map(a=>({id:a.pageId,name:a.title,assignedPerson:a.person,scheduledDate:a.start,updateStatus:a.status,serverModified:a.serverModified}))));
       } else if (msg.type === "ACTIVITY_UPDATED" && msg.pageId && msg.updates) {
         if(msg.updates.title!==undefined||msg.updates.person!==undefined||msg.updates.status!==undefined||msg.updates.start!==undefined){
         indexMutationRevision.current++;
