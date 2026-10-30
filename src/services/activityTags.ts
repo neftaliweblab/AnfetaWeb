@@ -120,8 +120,12 @@ export function stripActivityTags(title:string){
   let result=title;for(const tag of scanActivityTags(title).reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);return result;
 }
 /** Structured tag queries never fall back to substring/identity aliases. */
-export function matchesActivityTagQuery(title:string,query:string,matchCase=false):boolean|undefined{
+export function matchesActivityTagQuery(title:string,query:string,matchCase=false,status=''):boolean|undefined{
   const wanted=parseActivityTag(query);if(!wanted||wanted.role==='legacy')return undefined;
+  if(wanted.role==='review'){
+    const isCompleted=workflowState(status,title)==='completed'||/^(?:z|terminad)/i.test(status)||/(?<![a-z])z(?:revision|[scp]r?)\b/i.test(title);
+    if(isCompleted)return false;
+  }
   return scanActivityTags(title).some(tag=>{
     if(matchCase&&tag.token!==query)return false;
     if(tag.person!==wanted.person||tag.role!==wanted.role)return false;

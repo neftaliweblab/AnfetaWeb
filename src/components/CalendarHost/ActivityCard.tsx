@@ -22,6 +22,7 @@ import {ViewportMenu} from './ViewportMenu';
 import {QuickScheduleActions} from './QuickScheduleModal';
 import { ChecklistPopup } from "./ChecklistPopup";
 import { workflowState } from "@/services/activityWorkflow";
+import { detectActivityConflict } from "@/services/activityConflict";
 import { canEditActivity, isActivityLocked, isDirection, isReviewer } from "@/services/activityPermissions";
 import { PERSON_ALIASES, normalizePerson } from "@/services/identityNormalizer";
 import { SendToReviewModal } from "./SendToReviewModal";
@@ -427,6 +428,14 @@ function ActivityCardComponent({
       const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
+    const conflict = detectActivityConflict({
+    name: activity.title,
+    title: activity.title,
+    updateStatus: activity.status,
+    status: activity.status,
+    assignedPerson: activity.person,
+    person: activity.person,
+  });
   const isScanned = !!(activity.checklistScanned || checklistData);
   const checklistDay=displayDate||mexicoDate(activity.start);
   const daily={...dailyChecklist(effectiveItems,checklistDay),...(!effectiveItems.length?dailyActivityChecks({...activity,checklistItems:effectiveItems,checklistTotal:effectiveTotal,todayChecklistCompleted:effectiveToday},checklistDay):{})};
@@ -557,6 +566,15 @@ function ActivityCardComponent({
             >
               {badgeLetter}
             </span>
+            {conflict && (
+              <span
+                title={conflict.description}
+                className="shrink-0 text-amber-400 text-xs inline-flex items-center cursor-help animate-pulse"
+                aria-label="Conflicto detectado"
+              >
+                ⚠️
+              </span>
+            )}
 
             {/* Badge de tipo de actividad (ADS, WEBS, SEO, MAPS, etc.) */}
             {typeLabel && (
@@ -631,6 +649,14 @@ function ActivityCardComponent({
           </h5>
         </div>
 
+        {conflict && (
+          <span
+            title={conflict.description}
+            className="mb-1 truncate rounded border border-amber-500/70 bg-amber-950/40 px-1 text-[9px] font-bold text-amber-300"
+          >
+            ⚠️ {conflict.label}
+          </span>
+        )}
         {['returned','handoff'].includes(activity.reviewFlow?.State||'')&&!!activity.reviewFlow?.Note&&<span title={String(activity.reviewFlow.Note)} className="mb-1 truncate rounded border border-amber-500/60 px-1 text-[9px] font-bold text-amber-200">↩ Con observaciones</span>}
         {/* Fila Inferior: Horario + Duración (ej: 09:00 - 10:00 · 1H) */}
         <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400 pt-0.5 border-t border-[#26262B]/50">
@@ -666,6 +692,14 @@ function ActivityCardComponent({
           <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
             <div className="flex items-center gap-1.5 min-w-0">
               <WorkflowStageBadge status={activity.status} title={activity.title}/>
+              {conflict && (
+                <span
+                  title={conflict.description}
+                  className="rounded bg-amber-950/80 border border-amber-500/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-200"
+                >
+                  ⚠️ {conflict.label}
+                </span>
+              )}
               {isUrgent&&<span title="Prioridad 00 · Urgente" aria-label="Prioridad 00 · Urgente" className="rounded bg-rose-950 px-1.5 py-0.5 text-[9px] font-bold text-rose-200">URG</span>}
               <span className="font-mono font-bold text-[11px] text-[#38BDF8] truncate">
                 {domain}

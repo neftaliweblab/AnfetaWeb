@@ -12,6 +12,7 @@ import {lastSearchTerm,isFutureScheduled} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {workflowState} from '@/services/activityWorkflow';
+import {detectActivityConflict} from '@/services/activityConflict';
 import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
 import {
   Globe,
@@ -467,6 +468,7 @@ export function ResultsVirtualTable({
     const isChecked = selectedIds.has(item.id);
     const isExpanded = expandedRowIds.has(item.id);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const conflict = detectActivityConflict(item);
     const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = item.target || item.path || "";
@@ -616,6 +618,18 @@ export function ResultsVirtualTable({
               {parsed.monthCode}
             </span>
           )}
+          {conflict && (
+            <span
+              title={conflict.description}
+              style={{
+                fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
+                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
+              }}
+              className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.2 bg-amber-500/20 border border-amber-400/60 text-amber-300 font-bold cursor-help"
+            >
+              ⚠️ <span className="hidden sm:inline">{conflict.label}</span>
+            </span>
+          )}
           <span
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
             className={'block truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0]')}
@@ -644,7 +658,7 @@ export function ResultsVirtualTable({
             style={{ width: `${colWidths.status}px` }}
             className="shrink-0 px-1 flex items-center justify-center gap-1 overflow-hidden"
           >
-            <ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>
+            <ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>{conflict && <span title={conflict.description} className="shrink-0 cursor-help text-amber-400 text-xs inline-flex items-center">⚠️</span>}
           </div>
         )}
 
@@ -776,6 +790,7 @@ export function ResultsVirtualTable({
     const isExpanded = expandedRowIds.has(item.id);
     const activity = itemToActivity(item);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const conflict = detectActivityConflict(item);
     const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
     const targetPath = (item.target || item.path || "").trim();
@@ -1032,6 +1047,15 @@ export function ResultsVirtualTable({
           </div>
         ) : null}
 
+        {conflict && (
+          <div
+            title={conflict.description}
+            className="mb-1.5 flex items-center gap-1 rounded border border-amber-500/60 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
+          >
+            <span>⚠️</span>
+            <span className="truncate">{conflict.label}</span>
+          </div>
+        )}
         <ResultIdentityBadges item={item} query={searchQuery}/>
         <div
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
@@ -1057,7 +1081,7 @@ export function ResultsVirtualTable({
               {formatSmartDate(item.scheduledDate || item.serverModified)}
             </span>
           )}
-          {parsed.workflow && <><ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/></>}
+          {parsed.workflow && <><ResultUnderstanding item={item} onSaved={onUnderstood}/><WorkflowStageBadge status={item.updateStatus||item.statusLabel||item.status||''} title={item.name} scale={scale}/>{conflict && <span title={conflict.description} className="text-amber-400 text-xs cursor-help">⚠️</span>}</>}
         </div>
 
         {isExpanded && (

@@ -558,7 +558,8 @@ function checkSingleToken(
   const matchWholeWord = !!options?.matchWholeWord;
   const tokenVal = matchCase ? token.value : token.value.toLowerCase();
   const valLow = token.value.toLowerCase();
-  const tagMatch=matchesActivityTagQuery(item.name||'',token.value,matchCase);
+  const itemStatus = String(item.updateStatus || item.statusLabel || item.status || '');
+  const tagMatch = matchesActivityTagQuery(item.name || '', token.value, matchCase, itemStatus);
   if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
 
   // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)

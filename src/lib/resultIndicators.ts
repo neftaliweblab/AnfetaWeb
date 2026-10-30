@@ -1,6 +1,11 @@
 import {workflowState} from '../services/activityWorkflow';
-export const RESULT_STATUS_FILTERS=[['all','Todos los estados'],['pending','PH · Por hacer'],['review','REV · En revisión'],['completed','TER · Terminadas'],['suspended','SUS · Suspendidas'],['unknown','Sin clasificar']] as const;
-export function matchesResultStatus(row:any,filter:string){return filter==='all'||workflowState(row.updateStatus||row.statusLabel||row.status||'',row.name||'')===filter;}
+import {hasActivityConflict} from '../services/activityConflict';
+export const RESULT_STATUS_FILTERS=[['all','Todos los estados'],['pending','PH · Por hacer'],['review','REV · En revisión'],['completed','TER · Terminadas'],['suspended','SUS · Suspendidas'],['conflict','⚠️ En conflicto'],['unknown','Sin clasificar']] as const;
+export function matchesResultStatus(row:any,filter:string){
+ if(filter==='all')return true;
+ if(filter==='conflict')return hasActivityConflict(row);
+ return workflowState(row.updateStatus||row.statusLabel||row.status||'',row.name||'')===filter;
+}
 /** Visual only: never change scheduledDate or the sort key. */
 export function resultDuration(row:any){
  let minutes=Number(row.estimatedWorkMinutes||row.estimatedMinutes||0);
