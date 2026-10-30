@@ -11,9 +11,9 @@ La credencial consultada pertenece a Asistente Anfeta Buscador. Con ella se prob
 ## Política común de tipos
 
 - Copia nativa: párrafos, encabezados 1–3, listas, checks, toggles, citas, callouts, código, divisores, ecuaciones, marcadores, embeds, tablas/filas, índice, breadcrumb, imágenes, video, audio, PDF, archivos, columnas.
-- Conversión independiente: sincronizados accesibles; encabezado 4 a 3 sin perder el desplegable; template antiguo a toggle; link_preview a bookmark; link_to_page a bookmark; child_page a toggle con contenido; tab a contenedor desplegable con sus secciones. Los iconos de las etiquetas de pestañas se conservan mediante callouts.
+- Conversión independiente: sincronizados accesibles; encabezado 4 a 3 sin perder el desplegable; template antiguo a toggle; link_preview a bookmark; link_to_page a bookmark; child_page a toggle con contenido; tab a contenedor desplegable con sus secciones; child_database a bloque destacado callout (📊) con enlace directo a la base de datos de origen en Notion. Los iconos de las etiquetas de pestañas se conservan mediante callouts.
 - HTML: embed.file_upload se conserva; archivos HTML internos se transfieren como archivos HTML. La prueba de lectura informa transferencias pendientes sin ejecutarlas.
-- Restricciones explícitas: child_database requiere esquema/registros/relaciones y endpoints específicos. meeting_notes/transcription no se crean con el endpoint general de bloques. unsupported y tipos futuros no se descartan ni se envían como cuerpos inválidos.
+- Restricciones explícitas: meeting_notes/transcription no se crean con el endpoint general de bloques. unsupported y tipos futuros no se descartan ni se envían como cuerpos inválidos.
 
 No se promete copia universal de tipos que Notion no expone o no permite crear por este mecanismo. Un botón, formulario o base de datos no se reemplaza silenciosamente por contenido vacío.
 

@@ -273,6 +273,26 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
       if(insideTab&&type==='paragraph'&&content.icon)type='callout';
       if(type==='link_to_page'){const target=content[content.type];if(!['page_id','database_id','data_source_id'].includes(content.type)||typeof target!=='string'||!/^[a-f0-9-]{32,36}$/i.test(target))throw Error('Enlace de Notion sin destino válido.');type='bookmark';content={url:'https://www.notion.so/'+target.replace(/-/g,'')};}
       if(type==='link_preview'){type='bookmark';content={url:source.link_preview?.url};}
+      if(type==='child_database'){
+        let titleStr = '';
+        if (typeof content.title === 'string') {
+          titleStr = content.title;
+        } else if (Array.isArray(content.title)) {
+          titleStr = content.title.map((x: any) => x.plain_text || x.text?.content || '').join('');
+        }
+        const dbTitle = titleStr.trim() || 'Base de datos';
+        const cleanId = String(source.id || '').replace(/-/g, '');
+        const url = cleanId ? 'https://www.notion.so/' + cleanId : 'https://www.notion.so';
+        type = 'callout';
+        content = {
+          icon: { type: 'emoji', emoji: '📊' },
+          color: 'gray_background',
+          rich_text: [
+            { type: 'text', text: { content: dbTitle + ': ', link: null }, annotations: { bold: true } },
+            { type: 'text', text: { content: 'Abrir base de datos original en Notion ↗', link: { url } }, annotations: { underline: true } }
+          ]
+        };
+      }
       if(type==='synced_block'){
         if(!source.synced_block)throw Error('El synced_block no devolvió su contenido; revisa los permisos de lectura.');
         const original=content.synced_from?.block_id||source.id;
@@ -322,7 +342,7 @@ async function planTemplateBody(settings: CalendarSettings, pageId: string) {
         }
       }
 
-      const children = source.has_children||source.type==='child_page'||source.type==='tab' ? await read(source.id, depth + 1,undefined,source.type==='tab') : [];
+      const children = (source.type !== 'child_database' && (source.has_children||source.type==='child_page'||source.type==='tab')) ? await read(source.id, depth + 1,undefined,source.type==='tab') : [];
 
       if(/^heading_[1-3]$/.test(type)&&children.length)body.is_toggleable=true;
 

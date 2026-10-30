@@ -30,8 +30,14 @@ const sync=(id,original)=>({id,type:'synced_block',has_children:true,synced_bloc
  await assert.rejects(()=>prepareTemplateBody({},'page'),error=>/5000/.test(error.message)&&!/acceso|compartida/.test(error.message));assert.equal(reads.includes('local'),false);
  tree={page:[sync('local','origin')],origin:[sync('again','origin')]};
  await assert.rejects(()=>prepareTemplateBody({},'page'),/circular/);
- tree={page:[sync('local','origin')],origin:[{id:'unsupported',type:'child_database'}],local:[paragraph('wrong')]};
- await assert.rejects(()=>prepareTemplateBody({},'page'),/child_database/);
+ tree={page:[sync('local','origin')],origin:[{id:'unsupported',type:'meeting_notes'}],local:[paragraph('wrong')]};
+ await assert.rejects(()=>prepareTemplateBody({},'page'),/meeting_notes/);
+ tree={page:[sync('local','origin')],origin:[{id:'cdb-sync',type:'child_database',child_database:{title:'BD Sincronizada'}}],local:[paragraph('wrong')]};
+ nodes=await prepareTemplateBody({},'page');
+ assert.equal(nodes[0].block.type,'callout');
+ assert.equal(nodes[0].block.callout.icon.emoji,'📊');
+ assert.match(nodes[0].block.callout.rich_text[0].text.content,/BD Sincronizada/);
+ assert.match(nodes[0].block.callout.rich_text[1].text.link.url,/notion\.so\/cdbsync/);
  // Payloads are split by bytes too, even when there are fewer than 100 blocks.
  tree={page:Array.from({length:90},(_,i)=>({id:'big'+i,type:'paragraph',paragraph:{rich_text:Array.from({length:10},()=>({type:'text',text:{content:'x'.repeat(1000)}}))}}))};
  nodes=await prepareTemplateBody({},'page');writes=[];await appendTemplateBody({},'destination',nodes);

@@ -33,7 +33,7 @@ export async function auditTemplateAccess(settings:CalendarSettings,pageId:strin
     if(block.type==='to_do')stats.checklists++;
     if(block.type==='column')stats.columns++;
     if(block.type==='synced_block'){stats.synced++;await walk(block.synced_block?.synced_from?.block_id||block.id,depth+1,block.id);}
-    else if(block.has_children||block.type==='child_page'||block.type==='tab')await walk(block.id,depth+1);
+    else if(block.type!=='child_database'&&(block.has_children||block.type==='child_page'||block.type==='tab'))await walk(block.id,depth+1);
    }
   }finally{path.delete(clean);}
  };
