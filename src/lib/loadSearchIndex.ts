@@ -8,7 +8,7 @@ export async function loadSearchIndex(options:{signal?:AbortSignal;fresh?:boolea
   if(version)params.set('indexVersion',version);if(offset>0&&first?.cacheMeta?.source!=='supabase')params.set('indexOrigin','local');
   if(offset===0&&options.fresh&&attempt===0)params.set('fresh','1');if(offset===0&&options.knownVersion&&!options.fresh)params.set('ifVersion',options.knownVersion);
   const timeout=AbortSignal.timeout(Math.min(60000,remaining)),signal=options.signal?AbortSignal.any([options.signal,timeout]):timeout;
-  let response:Response;try{response=await fetch('/api/data?'+params,{signal,headers:token?{'x-notion-token':token}:{},cache:'no-store'});}catch(error){if(options.signal?.aborted)throw error;if(timeout.aborted)throw new Error('El servidor tardó demasiado en entregar una página del catálogo. Los resultados recibidos se conservan.');throw error;}
+  let response:Response;try{response=await fetch('/api/data?'+params,{signal,headers:token?{'x-notion-token':token}:{},cache:'no-store'});}catch(error){if(options.signal?.aborted)throw error;if(timeout.aborted){if(attempt<2){await new Promise(r=>setTimeout(r,1000*(attempt+1)));return fetchPage(offset,version,attempt+1,first);}throw new Error('El servidor tardó demasiado en entregar una página del catálogo. Los resultados recibidos se conservan.');}throw error;}if((response.status===504||response.status===502)&&attempt<2){await new Promise(r=>setTimeout(r,1000*(attempt+1)));return fetchPage(offset,version,attempt+1,first);}
   if(response.status===409)return {code:'index_version_changed'};return readApiJson(response);
  };
  for(let attempt=0;attempt<3;attempt++){

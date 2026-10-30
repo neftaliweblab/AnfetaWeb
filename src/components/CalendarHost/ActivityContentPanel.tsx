@@ -8,6 +8,7 @@ import {NotionNewBlock} from '../ResultsViewHost/NotionNewBlock';
 import {EDITABLE_NOTION_TEXT_TYPES} from '@/lib/notionBlockText';
 import {readApiJson} from '@/lib/readApiJson';
 import {activityContentTree,type ActivityContentNode} from '@/lib/activityContentTree';
+import {ChildDatabasePreview} from './ChildDatabasePreview';
 import {mediaUrl} from '@/lib/mediaUrl';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {MediaViewerModal, detectMediaKind, type MediaKind} from '../MediaViewerModal';
@@ -91,6 +92,24 @@ export function ActivityContentPanel({activity,currentUser,onEditingChange,defau
          <a href={url} target="_blank" rel="noreferrer" className="text-slate-400 underline">Abrir ↗</a>
        </div>
      </div>
+   ):kind==='child_database'?(
+     <ChildDatabasePreview block={block} />
+   ):kind==='callout'?(
+     <div className="flex items-start gap-2.5 rounded-lg border border-slate-700/80 bg-slate-900/60 p-2.5 my-1.5 text-xs">
+       <span className="text-base shrink-0 select-none">{block.icon || '📌'}</span>
+       <div className="flex-1 min-w-0 text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-medium">
+         {block.text}
+       </div>
+       {editable&&!block.readOnly&&/^[a-f0-9-]{32,36}$/i.test(block.id)&&(
+         <button type="button" onClick={()=>edit(block.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-cyan-300 hover:underline shrink-0 cursor-pointer">
+           Editar
+         </button>
+       )}
+     </div>
+   ):kind==='quote'?(
+     <blockquote className="border-l-3 border-cyan-500/80 pl-3 py-1 my-1 italic text-slate-300 text-xs">
+       {block.text}
+     </blockquote>
    ):kind==='to_do'?(
       <div className="group/todo flex items-start justify-between gap-2.5 py-1 px-2 rounded-md hover:bg-slate-800/40 transition-colors">
         <label className="flex items-start gap-2.5 flex-1 min-w-0 cursor-pointer select-none">

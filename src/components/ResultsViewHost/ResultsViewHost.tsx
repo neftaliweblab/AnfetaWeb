@@ -903,6 +903,7 @@ export function ResultsViewHost({
   };
 
   const handleRefreshIndex = async () => {
+    if (isSyncingNotion) return;
     setIsSyncingNotion(true);
     let token = "";
     try {
@@ -1361,6 +1362,7 @@ export function ResultsViewHost({
         searchIndex={items}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
+        isSyncingNotion={isSyncingNotion}
         onOpenHelp={() => setIsHelpOpen(true)}
         onSelectThemeBg={handleSelectThemeBg}
         onSelectSavedView={(v) => setSelectedScope(v)}

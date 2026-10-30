@@ -34,6 +34,7 @@ interface SearchInputBarProps {
   onSaveSearch?: () => void;
   onOpenTemplates?: () => void;
   onRefreshIndex?: () => void;
+  isSyncingNotion?: boolean;
   onSelectSavedView?: (view: string) => void;
   onOpenHelp?: () => void;
   onSelectThemeBg?: (theme: string) => void;
@@ -62,6 +63,7 @@ export function SearchInputBar({
   onSaveSearch,
   onOpenTemplates,
   onRefreshIndex,
+  isSyncingNotion = false,
   onSelectSavedView,
   onOpenHelp,
   onSelectThemeBg,
@@ -483,13 +485,18 @@ export function SearchInputBar({
                 )}
                 <button
                   type="button"
+                  disabled={isSyncingNotion}
                   onClick={() => {
                     setShowMoreMenu(false);
                     onRefreshIndex?.();
                   }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#38BDF8] text-[11px] font-semibold cursor-pointer"
+                  className={`w-full text-left px-2.5 py-1.5 rounded text-[11px] font-semibold transition ${
+                    isSyncingNotion
+                      ? "text-slate-500 cursor-not-allowed"
+                      : "hover:bg-[#1E2836] text-[#38BDF8] cursor-pointer"
+                  }`}
                 >
-                  Resync completo Notion
+                  {isSyncingNotion ? "Cargando catálogo..." : "Sincronizar índice Notion"}
                 </button>
 
                 <div className="h-px bg-[#26354A] my-1" />
