@@ -132,7 +132,6 @@ export default function AnfetaApp() {
 
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
-  useEffect(()=>{const open=()=>setActiveView('calendar');window.addEventListener('anfeta_open_calendar_from_notice',open);return()=>window.removeEventListener('anfeta_open_calendar_from_notice',open);},[]);
     try {
       if(new URLSearchParams(window.location.search).get('view')==='messages')return 'messages';
       const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
@@ -142,6 +141,12 @@ export default function AnfetaApp() {
     } catch {}
     return "results";
   });
+
+  useEffect(() => {
+    const open = () => setActiveView('calendar');
+    window.addEventListener('anfeta_open_calendar_from_notice', open);
+    return () => window.removeEventListener('anfeta_open_calendar_from_notice', open);
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [calendarPopupBlocked,setCalendarPopupBlocked]=useState(false);
