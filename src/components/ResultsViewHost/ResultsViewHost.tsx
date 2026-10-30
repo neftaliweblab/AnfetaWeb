@@ -1,4 +1,6 @@
 "use client";
+import {focusSearchField,closeSearchTab} from "@/lib/searchTabNavigation";
+import {useSearchTabShortcuts} from "./useSearchTabShortcuts";
 import {matchesResultStatus} from '@/lib/resultIndicators';
 import {findSearchTab} from '@/lib/searchTabsStorage';
 import {applyNotionStates} from '@/lib/applyNotionStates';
@@ -468,7 +470,12 @@ export function ResultsViewHost({
     );
   };
 
+  const [searchFocusRequest,requestSearchFocus]=useState(0);
+  const focusSearch=()=>requestSearchFocus(value=>value+1);
+  useEffect(()=>{if(!isActive)return;const frame=requestAnimationFrame(()=>focusSearchField(resultsRoot.current));return()=>cancelAnimationFrame(frame);},[searchFocusRequest,isActive,currentUser]);
+
   const handleSelectTab = (tabId: string) => {
+    focusSearch();
     setActiveTabId(tabId);
     setTabs(previous=>previous.map(tab=>tab.id===tabId?{...tab,unseen:false,pending:false,remindAt:undefined}:tab));
     const target = tabs.find((t) => t.id === tabId);
@@ -479,17 +486,14 @@ export function ResultsViewHost({
   };
 
   const handleCloseTab = (tabId: string) => {
-    if (tabs.length <= 1) return;
-    const nextTabs = tabs.filter((t) => t.id !== tabId);
-    setTabs(nextTabs);
-    if (activeTabId === tabId) {
-      setActiveTabId(nextTabs[0].id);
-      setQuery(nextTabs[0].query);
-      onSearchChange?.(nextTabs[0].query);
-    }
+    focusSearch();
+    const next=closeSearchTab(tabs,activeTabId,tabId);if(next.tabs===tabs)return;
+    setTabs(next.tabs);
+    if(next.activeId!==activeTabId){const adjacent=next.tabs.find(tab=>tab.id===next.activeId)!;setActiveTabId(adjacent.id);setQuery(adjacent.query);onSearchChange?.(adjacent.query);}
   };
 
   const handleNewTab = () => {
+    focusSearch();
     if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas guardadas.');return;}
     const newId = `tab_${crypto.randomUUID()}`;
     const initialQuery=newSearchQuery(selectedTag,customTag);
@@ -500,13 +504,16 @@ export function ResultsViewHost({
     onSearchChange?.(initialQuery);
   };
 
+  const shortcuts=useSearchTabShortcuts({root:resultsRoot,active:isActive,owner:normalizePerson(currentUser),onNew:handleNewTab,onClose:()=>handleCloseTab(activeTabId)});
   const openPersonSearch=(query:string)=>{
+    focusSearch();
     const existing=findSearchTab(tabs,query);
     if(existing){handleSelectTab(existing.id);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');return;}
     if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
     const id='tab_'+crypto.randomUUID();setTabs(previous=>[...previous,{id,query,canClose:true}]);setActiveTabId(id);setQuery(query);onSearchChange?.(query);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');
   };
   const handleTagChange = (newTag: string) => {
+    focusSearch();
     const next={selectedTag:newTag,customTag};
     setSelectedTag(newTag);
     handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
@@ -519,7 +526,7 @@ export function ResultsViewHost({
     handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
   };
 
-  const handleGroupByChange=(group:string)=>setGroupBy(group);
+  const handleGroupByChange=(group:string)=>{setGroupBy(group);focusSearch();};
 
   const handleTextScaleChange=(scale:string)=>setTextScale(scale);
 
@@ -1366,7 +1373,7 @@ export function ResultsViewHost({
   const renderQuickFilters=(onSelected?:()=>void)=>(
           <QuickFiltersColumn
             onClose={()=>setIsFiltersOpen(false)}
-            onQuickSearch={(term) => {handleQueryChange(term);onSelected?.();}}
+            onQuickSearch={(term) => {handleQueryChange(term);focusSearch();onSelected?.();}}
             activeTodayProjects={activeProjects}
             onFilterByProject={(domain) => {
               handleQueryChange(domain);
@@ -1408,6 +1415,7 @@ export function ResultsViewHost({
         onMarkPending={(id,pending,minutes)=>setTabs(previous=>previous.map(tab=>tab.id===id?{...tab,pending,unseen:pending&&tab.id!==activeTabId,remindAt:pending&&minutes?Date.now()+minutes*60000:undefined}:tab))}
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
+        shortcutMode={shortcuts.mode} onShortcutModeChange={shortcuts.setMode}
         onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
         textScale={textScale}
         currentUser={currentUser}
@@ -1429,7 +1437,7 @@ export function ResultsViewHost({
         isSyncingNotion={isSyncingNotion}
         onOpenHelp={() => setIsHelpOpen(true)}
         onSelectThemeBg={handleSelectThemeBg}
-        onSelectSavedView={(v) => setSelectedScope(v)}
+        onSelectSavedView={(v) => {setSelectedScope(v);focusSearch();}}
         textScale={textScale}
         onToggleCalendarView={onToggleCalendarView}
         isCalendarActive={isCalendarActive}
@@ -1448,7 +1456,7 @@ export function ResultsViewHost({
       <ScopePillsRow
         selectedScope={selectedScope}
         onSelectScope={(scope) => {
-          setSelectedScope(scope);
+          setSelectedScope(scope);focusSearch();
           // Si el usuario tenía su tag personal y selecciona una base global, limpiar el tag para ver todos los registros
           const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
           if (userTags.includes(query.trim().toLowerCase())) {
@@ -1464,13 +1472,13 @@ export function ResultsViewHost({
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
         classification={classification}
-        onChangeClassification={setClassification}
+        onChangeClassification={value=>{setClassification(value);focusSearch();}}
         databaseScope={selectedScope}
         databaseOptions={databaseOptions}
-        onChangeDatabaseScope={setSelectedScope}
-        resultSort={resultSort} onChangeResultSort={setResultSort}
+        onChangeDatabaseScope={value=>{setSelectedScope(value);focusSearch();}}
+        resultSort={resultSort} onChangeResultSort={value=>{setResultSort(value);focusSearch();}}
         currentUser={resultPerson}
-        onChangeCurrentUser={setResultPerson}
+        onChangeCurrentUser={person=>{setResultPerson(person);focusSearch();}}
         onSyncNotion={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
         onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
@@ -1486,7 +1494,7 @@ export function ResultsViewHost({
         onChangeGroupBy={handleGroupByChange}
         selectedMonth={monthSelection}
         currentMonth={currentMonth}
-        onChangeMonth={setSelectedMonth}
+        onChangeMonth={value=>{setSelectedMonth(value);focusSearch();}}
         viewZoom={viewZoom}
         onChangeViewZoom={handleChangeViewZoom}
         isPendientesOpen={isPendientesOpen}
@@ -1622,7 +1630,7 @@ export function ResultsViewHost({
           onOpenUploadDropbox={handleOpenDropboxUpload}
           onDropFiles={handleDropFiles}
           showPath={visibleCols.path}
-          statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
+          statusFilter={statusFilter} onStatusFilterChange={value=>{setStatusFilter(value);focusSearch();}}
           onUnderstood={handleUnderstoodRow}
           showStatus={visibleCols.status}
           showScheduledDate={visibleCols.scheduledDate}

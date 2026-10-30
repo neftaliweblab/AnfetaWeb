@@ -1,5 +1,6 @@
 "use client";
 
+import type {SearchShortcutMode} from "@/lib/searchTabNavigation";
 import React, {useEffect,useState} from "react";
 import { Search, Plus, X, Star, Timer } from "lucide-react";
 import { TopBarUtilities } from "../TopBarUtilities";
@@ -19,6 +20,8 @@ interface SearchTabsRowProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
+  shortcutMode?:SearchShortcutMode;
+  onShortcutModeChange?:(mode:SearchShortcutMode)=>void;
   onMarkPending?: (id:string,pending:boolean,minutes?:number)=>void;
   onRestorePrevious?: () => void;
   textScale?: string;
@@ -33,6 +36,7 @@ function SearchTabsRowComponent({
   onSelectTab,
   onCloseTab,
   onNewTab,
+  shortcutMode="compatible",onShortcutModeChange,
   onMarkPending,
   onRestorePrevious,
   textScale = "100%",
@@ -122,10 +126,12 @@ function SearchTabsRowComponent({
           type="button"
           onClick={onNewTab}
           className="w-6 h-6 flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#38BDF8] hover:bg-[#1E293B] hover:border-[#38BDF8] text-xs font-bold transition-colors ml-1 shrink-0"
-          title="Abrir nueva pestaña de búsqueda (Ctrl+T)"
+          aria-label="Nueva pestaña de búsqueda"
+          title={"Nueva búsqueda"+(shortcutMode==='off'?'':shortcutMode==='browser'?' · Ctrl+T / Ctrl+Alt+T':' · Ctrl+Alt+T')}
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
+        {onShortcutModeChange&&<label className="ml-1 shrink-0 text-[10px] text-slate-400" title="Ctrl+T/W puede reservarlos el navegador. Ctrl+Alt+T/W es la alternativa. La búsqueda personal y la última pestaña se conservan.">Atajos <select aria-label="Atajos de pestañas de búsqueda" value={shortcutMode} onChange={e=>onShortcutModeChange(e.target.value as SearchShortcutMode)} className="rounded border border-slate-700 bg-slate-900 px-1 py-1 text-slate-200"><option value="compatible">Ctrl+Alt+T / W</option><option value="browser">Ctrl+T / W · Chrome</option><option value="off">Desactivados</option></select></label>}
         {onRestorePrevious && (
           <button
             type="button"
