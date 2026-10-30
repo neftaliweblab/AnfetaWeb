@@ -56,11 +56,16 @@ export function parseActivityTag(token:string):Omit<ActivityTag,'index'>|undefin
  }
  const tag=tagParseCache.get(key);return tag?{...tag,token}:undefined;
 }
+const scanTagCache = new Map<string, ActivityTag[]>();
 export function scanActivityTags(text:string):ActivityTag[]{
+  if(!text)return [];
+  const cached=scanTagCache.get(text);if(cached)return cached;
   const found:ActivityTag[]=[];
   for(const match of text.matchAll(/(?<![\p{L}\p{N}_@./-])[a-z]+(?:-[a-z]+)?\d*(?![\p{L}\p{N}_@./-])/giu)){
     const tag=parseActivityTag(match[0]);if(tag)found.push({...tag,index:match.index!});
   }
+  if(scanTagCache.size>10000)scanTagCache.delete(scanTagCache.keys().next().value!);
+  scanTagCache.set(text,found);
   return found;
 }
 export function activityPerson(input:string):ActivityPerson|undefined{

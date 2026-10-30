@@ -29,7 +29,7 @@ import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {normalizePerson} from '@/services/identityNormalizer';
 
 
-import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
 import { FolderOpen, ChevronRight, ArrowUpLeft, X } from "lucide-react";
@@ -217,8 +217,58 @@ export function ResultsViewHost({
   useEffect(() => {
     if (!statusError) return;
     const timer = setTimeout(() => setStatusError(''), 5000);
-    return () => clearTimeout(timer);
+
+  return () => clearTimeout(timer);
   }, [statusError]);
+
+  
+            const handleCopyName = useCallback((it: any) => {
+    navigator.clipboard.writeText(it.name);
+    playCopyChime();
+  }, []);
+  const handleCopyPath = useCallback((it: any) => {
+    navigator.clipboard.writeText(it.target || it.path || it.name);
+    playCopyChime();
+  }, []);
+  const handleCopyLink = useCallback((it: any) => {
+    const url = it.externalUrl || it.url || (it.id ? `https://notion.so/${it.id.replace(/-/g, "")}` : "");
+    if (url) navigator.clipboard.writeText(url);
+    playCopyChime();
+  }, []);
+  const handleCopyDomain = useCallback((dom: string) => {
+    navigator.clipboard.writeText(dom);
+    playCopyChime();
+  }, []);
+  const handleCopyDomainType = useCallback((chatCode: string) => {
+    navigator.clipboard.writeText(chatCode);
+    playCopyChime();
+  }, []);
+  const handleCopyContent = useCallback((it: any) => {
+    navigator.clipboard.writeText(it.contentSnippet || it.name);
+    playCopyChime();
+  }, []);
+  const handleOpenDomain = useCallback((dom: string) => {
+    if (dom) window.open(`https://${dom}`, "_blank");
+  }, []);
+  const handleRenamePrompt = useCallback((it: any) => {
+    setRenameTargetItem(it);
+    setIsRenameOpen(true);
+  }, []);
+  const handleDuplicatePrompt = useCallback((it: any) => {
+    setDuplicateTargetItem(it);
+    setIsDuplicateOpen(true);
+  }, []);
+  const handleCreateFolderPrompt = useCallback((targetDir?: string) => {
+    setCreateFolderTargetDir(targetDir || "C:\\Users\\nanoc\\Dropbox\\DRX");
+    setIsCreateFolderOpen(true);
+  }, []);
+  const handleActivityActionSelect = useCallback((item: any, mode: any, position: any) => {
+    setActivityAction({ item, mode, position });
+  }, []);
+  const handleUnderstoodRow = useCallback((id: any, checked: boolean) => {
+    setItems((previous) => previous.map((row) => (pageIdentity(row) === pageIdentity(id) ? { ...row, ftfVerified: checked, ftfAvailable: true } : row)));
+  }, []);
+
 
   const [appNotification, setAppNotification] = useState<{
     type: 'info' | 'success' | 'warning' | 'error';
@@ -1537,13 +1587,13 @@ export function ResultsViewHost({
               <ExportResults rows={filteredItems}/>
             </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setClassification("all");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
           </div>
-          <ResultsVirtualTable
+<ResultsVirtualTable
           headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}
           currentUser={currentUser}
           items={pagedItems}
           selectedId={selectedItem?.id || null}
           selectedIds={selectedIds}
-          searchQuery={query}
+          searchQuery={deferredQuery}
           favorites={favorites}
           selectedScope={selectedScope}
           onSelect={handleSelectRow}
@@ -1552,48 +1602,20 @@ export function ResultsViewHost({
           onDelete={handleDeleteItem}
           onDoubleClick={handleOpenItem}
           onOpenLocation={handleOpenLocation}
-          onCopyName={(it) => {
-            navigator.clipboard.writeText(it.name);
-            playCopyChime();
-          }}
-          onCopyPath={(it) => {
-            navigator.clipboard.writeText(it.target || it.path || it.name);
-            playCopyChime();
-          }}
-          onCopyLink={(it) => {
-            const url = it.externalUrl || it.url || (it.id ? `https://notion.so/${it.id.replace(/-/g, "")}` : "");
-            if (url) navigator.clipboard.writeText(url);
-            playCopyChime();
-          }}
-          onCopyDomain={(dom) => {
-            navigator.clipboard.writeText(dom);
-            playCopyChime();
-          }}
-          onCopyDomainType={(chatCode) => {
-            navigator.clipboard.writeText(chatCode);
-            playCopyChime();
-          }}
-          onCopyContent={(it) => {
-            navigator.clipboard.writeText(it.contentSnippet || it.name);
-            playCopyChime();
-          }}
+          onCopyName={handleCopyName}
+          onCopyPath={handleCopyPath}
+          onCopyLink={handleCopyLink}
+          onCopyDomain={handleCopyDomain}
+          onCopyDomainType={handleCopyDomainType}
+          onCopyContent={handleCopyContent}
           onOpenDomain={(dom) => {
             if (dom) window.open(`https://${dom}`, "_blank");
           }}
-          onRename={(it) => {
-            setRenameTargetItem(it);
-            setIsRenameOpen(true);
-          }}
-          onDuplicate={(it) => {
-            setDuplicateTargetItem(it);
-            setIsDuplicateOpen(true);
-          }}
-          onCreateFolder={(targetDir) => {
-            setCreateFolderTargetDir(targetDir || "C:\\Users\\nanoc\\Dropbox\\DRX");
-            setIsCreateFolderOpen(true);
-          }}
+          onRename={handleRenamePrompt}
+          onDuplicate={handleDuplicatePrompt}
+          onCreateFolder={handleCreateFolderPrompt}
           onUpdateStatus={handleUpdateStatus}
-          onActivityAction={(item,mode,position)=>setActivityAction({item,mode,position})}
+          onActivityAction={handleActivityActionSelect}
           onToggleSelectAll={handleToggleSelectAll}
           onClearSelection={handleClearSelection}
           onDeleteSelected={handleDeleteSelected}
@@ -1601,7 +1623,7 @@ export function ResultsViewHost({
           onDropFiles={handleDropFiles}
           showPath={visibleCols.path}
           statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
-          onUnderstood={(id,checked)=>setItems(previous=>previous.map(row=>pageIdentity(row)===pageIdentity(id)?{...row,ftfVerified:checked,ftfAvailable:true}:row))}
+          onUnderstood={handleUnderstoodRow}
           showStatus={visibleCols.status}
           showScheduledDate={visibleCols.scheduledDate}
           showModifiedDate={visibleCols.modifiedDate}

@@ -172,7 +172,7 @@ function NotionImageBlock({
   );
 }
 
-export function DetailsPane({
+function DetailsPaneComponent({
   emptyContent,
   onSelectFirst,
   item,
@@ -1271,3 +1271,4 @@ export function DetailsPane({
     </div>
   );
 }
+export const DetailsPane = React.memo(DetailsPaneComponent);

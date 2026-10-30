@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Search,
+  X,
   Save,
   Zap,
   RotateCw,
@@ -173,6 +174,17 @@ export function SearchInputBar({
           style={{ fontSize: `${(12.5 * scale).toFixed(1)}px` }}
           className="flex-1 bg-transparent text-[#F8FAFC] placeholder-[#64748B] focus:outline-none"
         />
+        {query && (
+          <button
+            type="button"
+            onClick={() => onChangeQuery("")}
+            className="p-1 text-slate-400 hover:text-cyan-300 rounded-md transition-colors shrink-0"
+            title="Limpiar búsqueda (Esc)"
+            aria-label="Limpiar búsqueda"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Opciones avanzadas de coincidencia (Mayúsculas, Palabra completa, Regex) */}
         {onToggleSearchOption && (

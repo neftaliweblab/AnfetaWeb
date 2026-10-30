@@ -627,9 +627,9 @@ export default function AnfetaApp() {
       <main className="flex-1 relative overflow-hidden">
         {/* Layer 1: ResultsViewHost (Search & Files) */}
         <div
-          className={`absolute inset-0 z-10 transition-opacity ${
-            activeView === "results" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute inset-0 z-10 ${
+            activeView === "results" ? "block pointer-events-auto" : "hidden pointer-events-none"
+          }`} aria-hidden={activeView !== "results"}
         >
           <ResultsViewHost
             onShowResults={()=>setActiveView('results')}
@@ -665,9 +665,9 @@ export default function AnfetaApp() {
 
         {/* Layer 2: CalendarHost (Timeline Canvas) */}
         <div
-          className={`absolute inset-0 z-20 transition-opacity ${
-            activeView === "calendar" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute inset-0 z-20 ${
+            activeView === "calendar" ? "block pointer-events-auto" : "hidden pointer-events-none"
+          }`} aria-hidden={activeView !== "calendar"}
         >
           {showAutomation && <CalendarAutomationModal currentUser={currentUser} date={currentDate} onClose={()=>setShowAutomation(false)} onComplete={report=>{setAutomationReport(report);try{localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}window.dispatchEvent(new Event('anfeta_data_refreshed'));}} />}
           <CalendarHost active={activeView === "calendar"}
@@ -712,9 +712,9 @@ export default function AnfetaApp() {
 
         {/* Layer 3: DailyProgressPanel (KPIs & Lagging) */}
         <div
-          className={`absolute inset-0 z-30 transition-opacity ${
-            activeView === "dailyProgress" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute inset-0 z-30 ${
+            activeView === "dailyProgress" ? "block pointer-events-auto" : "hidden pointer-events-none"
+          }`} aria-hidden={activeView !== "dailyProgress"}
         >
           <DailyProgressPanel
             currentUser={currentUser}
@@ -727,18 +727,18 @@ export default function AnfetaApp() {
 
         {/* Layer 4: MessagesHost (Notes & Chat) */}
         <div
-          className={`absolute inset-0 z-40 transition-opacity ${
-            activeView === "messages" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute inset-0 z-40 ${
+            activeView === "messages" ? "block pointer-events-auto" : "hidden pointer-events-none"
+          }`} aria-hidden={activeView !== "messages"}
         >
           <MessagesHost />
         </div>
 
         {/* Layer 5: RemindersCalendarHost (24h Canvas) */}
         <div
-          className={`absolute inset-0 z-45 transition-opacity ${
-            activeView === "reminders" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute inset-0 z-45 ${
+            activeView === "reminders" ? "block pointer-events-auto" : "hidden pointer-events-none"
+          }`} aria-hidden={activeView !== "reminders"}
         >
           <RemindersCalendarHost />
         </div>

@@ -96,7 +96,7 @@ function getAreaChipStyle(type?: string) {
   return { bg: "rgba(71, 85, 105, 0.2)", border: "rgba(148, 163, 184, 0.5)", text: "#E2E8F0" };
 }
 
-export function QuickFiltersColumn({
+function QuickFiltersColumnComponent({
   onClose,
   onQuickSearch,
   activeTodayProjects,
@@ -484,3 +484,4 @@ export function QuickFiltersColumn({
     </div>
   );
 }
+export const QuickFiltersColumn = React.memo(QuickFiltersColumnComponent);

@@ -27,7 +27,7 @@ interface SearchTabsRowProps {
   onOpenAnnouncements?: () => void;
 }
 
-export function SearchTabsRow({
+function SearchTabsRowComponent({
   tabs,
   activeTabId,
   onSelectTab,
@@ -148,3 +148,4 @@ export function SearchTabsRow({
     </div>
   );
 }
+export const SearchTabsRow = React.memo(SearchTabsRowComponent);

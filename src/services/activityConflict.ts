@@ -9,7 +9,13 @@ export interface ActivityConflict {
   description: string;
 }
 
-export function detectActivityConflict(item: {
+const conflictCache = new Map<string, ActivityConflict | null>();
+
+export function clearConflictCache() {
+  conflictCache.clear();
+}
+
+function computeActivityConflict(item: {
   name?: string;
   title?: string;
   updateStatus?: string;
@@ -100,6 +106,26 @@ export function detectActivityConflict(item: {
   }
 
   return null;
+}
+
+export function detectActivityConflict(item: {
+  name?: string;
+  title?: string;
+  updateStatus?: string;
+  statusLabel?: string;
+  status?: string;
+  assignedPerson?: string;
+  person?: string;
+}): ActivityConflict | null {
+  const title = String(item.name || item.title || '').trim();
+  const status = String(item.updateStatus || item.statusLabel || item.status || '').trim();
+  if (!title) return null;
+  const key = title + '\0' + status;
+  if (conflictCache.has(key)) return conflictCache.get(key)!;
+  const res = computeActivityConflict(item);
+  if (conflictCache.size > 10000) conflictCache.delete(conflictCache.keys().next().value!);
+  conflictCache.set(key, res);
+  return res;
 }
 
 export function hasActivityConflict(item: any): boolean {

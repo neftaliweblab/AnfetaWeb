@@ -90,7 +90,7 @@ const VIEW_ZOOM_LABELS: Record<string, string> = {
   large: "Grande",
 };
 
-export function SearchConfigRow({
+function SearchConfigRowComponent({
   resultSort="scheduled-today",onChangeResultSort,
   currentUser,
   onChangeCurrentUser,
@@ -738,3 +738,4 @@ export function SearchConfigRow({
     </div>
   );
 }
+export const SearchConfigRow = React.memo(SearchConfigRowComponent);

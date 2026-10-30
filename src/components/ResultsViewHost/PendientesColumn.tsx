@@ -16,7 +16,7 @@ interface PendientesColumnProps {
   onSelectTaskQuery?: (query: string) => void;
 }
 
-export function PendientesColumn({
+function PendientesColumnComponent({
   onClose,
   pendingTasks,
   onToggleTask,
@@ -225,3 +225,4 @@ export function PendientesColumn({
     </div>
   );
 }
+export const PendientesColumn = React.memo(PendientesColumnComponent);

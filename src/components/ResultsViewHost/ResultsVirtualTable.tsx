@@ -1,5 +1,5 @@
 "use client";
-import {RESULT_STATUS_FILTERS,resultDuration} from '@/lib/resultIndicators';
+import {RESULT_STATUS_FILTERS,resultDuration,matchesResultStatus} from '@/lib/resultIndicators';
 import {ResultUnderstanding} from './ResultUnderstanding';
 import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {ContentClassificationBadge} from '../ContentClassificationBadge';
@@ -149,7 +149,7 @@ interface ResultsTableProps {
   headerActions?: React.ReactNode;
 }
 
-export function ResultsVirtualTable({
+function ResultsVirtualTableComponent({
   items,
   selectedId,
   selectedIds,
@@ -407,6 +407,16 @@ export function ResultsVirtualTable({
     return items;
   }, [items, groupBy]);
 
+  const statusCounts = React.useMemo(() => {
+    const counts: Record<string, number> = { all: items.length };
+    for (const [val] of RESULT_STATUS_FILTERS) {
+      if (val !== 'all') {
+        counts[val] = items.filter(it => matchesResultStatus(it, val)).length;
+      }
+    }
+    return counts;
+  }, [items]);
+
   const groupedItems = React.useMemo(() => {
     if (!groupBy || groupBy === "none") return null;
 
@@ -489,7 +499,7 @@ export function ResultsVirtualTable({
     }
 
     return (
-      <div key={item.id} className={"flex flex-col border-b border-[#17212F]/70 "+(item.ftfVerified?"rounded border border-emerald-400 shadow-[inset_0_0_8px_#34d39955]":"")}>
+      <div key={item.id} style={{ contentVisibility: isExpanded ? 'visible' : 'auto', containIntrinsicSize: '0 34px' }} className={"flex flex-col border-b border-[#17212F]/70 "+(item.ftfVerified?"rounded border border-emerald-400 shadow-[inset_0_0_8px_#34d39955]":"")}>
         <div
           data-search-result={item.id}
           data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
@@ -1237,7 +1247,7 @@ export function ResultsVirtualTable({
               style={{ width: `${colWidths.status}px` }}
               className="shrink-0 px-1 relative flex items-center justify-between group/col"
             >
-              <select aria-label="Filtrar por estado de actualización" title="Filtrar todos los resultados por estado" value={statusFilter} onChange={e=>onStatusFilterChange?.(e.target.value)} className="min-w-0 w-full cursor-pointer rounded border border-slate-700 bg-[#101720] px-1 py-0.5 text-center text-[10px] text-cyan-200">{RESULT_STATUS_FILTERS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
+              <select aria-label="Filtrar por estado de actualización" title="Filtrar todos los resultados por estado" value={statusFilter} onChange={e=>onStatusFilterChange?.(e.target.value)} className="min-w-0 w-full cursor-pointer rounded border border-slate-700 bg-[#101720] px-1 py-0.5 text-center text-[10px] text-cyan-200">{RESULT_STATUS_FILTERS.map(([value,label])=><option key={value} value={value}>{label}{statusCounts[value]!==undefined?` (${statusCounts[value]})`:''}</option>)}</select>
               <div
                 onMouseDown={(e) => handleStartColResize("status", e)}
                 className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
@@ -1849,3 +1859,4 @@ export function ResultsVirtualTable({
     </div>
   );
 }
+export const ResultsVirtualTable = React.memo(ResultsVirtualTableComponent);
