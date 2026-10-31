@@ -1,36 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-
-const rootDir = path.join(__dirname, '..');
-const extDir = path.join(rootDir, 'browser-extension', 'anfeta-hotkey');
-const outDir = path.join(rootDir, 'public', 'downloads');
-const zipFile = path.join(outDir, 'anfeta-hotkey.zip');
-
-if (!fs.existsSync(outDir)) {
-  fs.mkdirSync(outDir, { recursive: true });
+const fs=require('fs'),path=require('path'),zlib=require('zlib');
+// Standard ZIP, independent of platform tar variants; no ./ or root entries.
+const root=path.resolve(__dirname,'..'),source=path.join(root,'browser-extension','anfeta-hotkey'),output=path.join(root,'public','downloads','anfeta-hotkey.zip');
+function crc32(bytes){let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
+function files(folder,prefix=''){return fs.readdirSync(folder,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).flatMap(entry=>{if(entry.isSymbolicLink())throw Error('No se admiten enlaces en el paquete.');const name=prefix+entry.name;if(entry.isDirectory())return files(path.join(folder,entry.name),name+'/');return entry.isFile()?[name]:[];});}
+function pack(){const local=[],central=[];let offset=0;const names=files(source);if(!names.includes('manifest.json'))throw Error('Falta manifest.json');
+ for(const name of names){if(name.startsWith('/')||name.includes('..')||name.includes('\\'))throw Error('Ruta de archivo inválida.');const filename=Buffer.from(name,'utf8'),data=fs.readFileSync(path.join(source,name)),compressed=zlib.deflateRawSync(data),crc=crc32(data);
+ const header=Buffer.alloc(30);header.writeUInt32LE(0x04034b50);header.writeUInt16LE(20,4);header.writeUInt16LE(0x800,6);header.writeUInt16LE(8,8);header.writeUInt16LE(33,12);header.writeUInt32LE(crc,14);header.writeUInt32LE(compressed.length,18);header.writeUInt32LE(data.length,22);header.writeUInt16LE(filename.length,26);local.push(header,filename,compressed);
+ const record=Buffer.alloc(46);record.writeUInt32LE(0x02014b50);record.writeUInt16LE(20,4);record.writeUInt16LE(20,6);record.writeUInt16LE(0x800,8);record.writeUInt16LE(8,10);record.writeUInt16LE(33,14);record.writeUInt32LE(crc,16);record.writeUInt32LE(compressed.length,20);record.writeUInt32LE(data.length,24);record.writeUInt16LE(filename.length,28);record.writeUInt32LE(offset,42);central.push(record,filename);offset+=header.length+filename.length+compressed.length;
+ }
+ const directory=Buffer.concat(central),end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(names.length,8);end.writeUInt16LE(names.length,10);end.writeUInt32LE(directory.length,12);end.writeUInt32LE(offset,16);const archive=Buffer.concat([...local,directory,end]);fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,archive);console.log(`OK ZIP estándar: ${names.length} archivos, ${archive.length} bytes.`);return {output,names};
 }
-
-if (fs.existsSync(zipFile)) {
-  fs.unlinkSync(zipFile);
-}
-
-try {
-  // Use tar which is available natively on modern Windows, Linux and macOS
-  execSync(`tar -a -c -f "${zipFile}" -C "${extDir}" .`, { stdio: 'inherit' });
-} catch (e) {
-  // Fallback to PowerShell Compress-Archive on Windows if tar fails
-  if (process.platform === 'win32') {
-    execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${extDir}\\*' -DestinationPath '${zipFile}' -Force"`, { stdio: 'inherit' });
-  } else {
-    throw e;
-  }
-}
-
-if (!fs.existsSync(zipFile)) {
-  console.error('Error: No se pudo generar anfeta-hotkey.zip');
-  process.exit(1);
-}
-
-const stats = fs.statSync(zipFile);
-console.log(`OK: anfeta-hotkey.zip generado correctamente (${stats.size} bytes).`);
+if(require.main===module)pack();module.exports={pack,crc32};

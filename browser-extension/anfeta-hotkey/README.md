@@ -25,3 +25,9 @@ Permisos: almacenamiento local del identificador de ventana y último error, y a
 - Probar en Chrome, Edge y Brave. Las pruebas automatizadas usan APIs simuladas; no confirman el registro real de Windows.
 
 Referencia: [Commands API y alcance global](https://developer.chrome.com/docs/extensions/reference/api/commands).
+
+## ZIP v1.1.1 y alcance del comando
+
+Descarga de nuevo la versión 1.1.1 y extrae su contenido en una carpeta permanente. El paquete usa ZIP estándar, sin una entrada raíz ./ ni herramientas tar del sistema. Selecciona la carpeta extraída que contiene manifest.json. Si ya está instalada, reemplaza los archivos en su carpeta y pulsa Recargar en Extensiones.
+
+Chrome informa la combinación registrada, pero no devuelve el alcance Global en commands.getAll(). Compruébalo en Atajos de extensiones. Ctrl+Shift+8 funciona desde otras aplicaciones solo con alcance Global y navegador ejecutándose; los atajos de búsquedas internas no reemplazan este comando.

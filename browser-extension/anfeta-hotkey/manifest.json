@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ANFETA Web — Atajo global & WhatsApp Companion",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Abre, enfoca o minimiza ANFETA Web y permite sincronizar grupos de proyectos desde WhatsApp Web.",
   "minimum_chrome_version": "110",
   "permissions": ["storage"],

@@ -6,7 +6,8 @@ async function load() {
     const command = commands.find(c => c.name === 'toggle-anfeta');
     const shortcutEl = document.getElementById('shortcut');
     if (command && command.shortcut) {
-      shortcutEl.textContent = 'Atajo asignado: ' + command.shortcut + (command.global ? ' (Global)' : ' (Solo en navegador)');
+      shortcutEl.textContent = 'Atajo asignado: ' + command.shortcut;
+      document.getElementById('scopeHint').textContent = 'Comprueba que el alcance diga Global en la configuración del navegador. La extensión puede consultar la combinación, pero Chrome no informa su alcance.';
     } else {
       shortcutEl.textContent = 'No asignado — Pulsa el botón abajo para configurarlo.';
     }
