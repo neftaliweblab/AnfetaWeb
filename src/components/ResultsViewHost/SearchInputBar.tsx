@@ -26,6 +26,7 @@ import { SearchMatchOptions } from "@/services/advancedQuery";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 
 interface SearchInputBarProps {
+  shortcutControl?:React.ReactNode;
   currentUser?:string;
   onSubmitSearch?:()=>void;
   query: string;
@@ -55,6 +56,7 @@ interface SearchInputBarProps {
 }
 
 export function SearchInputBar({
+  shortcutControl,
   currentUser='',
   onSubmitSearch,
   query,
@@ -147,6 +149,7 @@ export function SearchInputBar({
         }}
         className="flex items-center bg-[#11161D] border border-[#1E2836] rounded-lg focus-within:border-[#38BDF8] shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-all"
       >
+        {shortcutControl}
         <button type="button" onClick={onSubmitSearch} aria-label="Buscar"><Search
           style={{ width: `${Math.round(15 * scale)}px`, height: `${Math.round(15 * scale)}px` }}
           className="text-[#64748B] shrink-0"

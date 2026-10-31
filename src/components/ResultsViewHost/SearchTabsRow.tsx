@@ -21,7 +21,6 @@ interface SearchTabsRowProps {
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
   shortcutMode?:SearchShortcutMode;
-  onShortcutModeChange?:(mode:SearchShortcutMode)=>void;
   onMarkPending?: (id:string,pending:boolean,minutes?:number)=>void;
   onRestorePrevious?: () => void;
   textScale?: string;
@@ -36,7 +35,7 @@ function SearchTabsRowComponent({
   onSelectTab,
   onCloseTab,
   onNewTab,
-  shortcutMode="compatible",onShortcutModeChange,
+  shortcutMode="compatible",
   onMarkPending,
   onRestorePrevious,
   textScale = "100%",
@@ -44,6 +43,8 @@ function SearchTabsRowComponent({
   onTriggerAutomation,
   onOpenAnnouncements,
 }: SearchTabsRowProps) {
+  const tabList=React.useRef<HTMLDivElement>(null);
+  useEffect(()=>{const list=tabList.current,active=list?.querySelector<HTMLElement>('[aria-selected="true"]');if(!list||!active)return;const outer=list.getBoundingClientRect(),inner=active.getBoundingClientRect();if(inner.right>outer.right)list.scrollLeft+=inner.right-outer.right;else if(inner.left<outer.left)list.scrollLeft-=outer.left-inner.left;},[activeTabId,tabs.length]);
   const [now,setNow]=useState(()=>Date.now());
   const hasTimers=tabs.some(tab=>!!tab.remindAt);
   useEffect(()=>{if(!hasTimers)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return ()=>clearInterval(timer);},[hasTimers]);
@@ -65,7 +66,7 @@ function SearchTabsRowComponent({
     >
       <div
         style={{ gap: `${Math.round(4 * scale)}px` }}
-        role="tablist" aria-label="Búsquedas abiertas" className="flex items-center overflow-x-auto scrollbar-none flex-1 min-w-0"
+        ref={tabList} role="tablist" aria-label="Búsquedas abiertas" className="flex items-center overflow-x-auto scrollbar-none flex-1 min-w-0"
       >
         <span className="shrink-0 text-[10px] text-slate-400" title="Búsquedas abiertas y pendientes">{tabs.length} abiertas{pendingCount?` · ${pendingCount} pendientes`:""}</span>
         {tabs.map((tab) => {
@@ -113,7 +114,8 @@ function SearchTabsRowComponent({
                     onCloseTab(tab.id);
                   }}
                   className="ml-1 p-0.5 rounded hover:bg-[#EF4444]/20 hover:text-[#F87171] text-[#64748B] transition-colors cursor-pointer"
-                  title="Cerrar pestaña"
+                  aria-label="Cerrar búsqueda"
+                  title={"Cerrar búsqueda interna"+(shortcutMode==='off'?'':' · Ctrl+Alt+W')}
                 >
                   <X style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }} />
                 </button>
@@ -127,11 +129,10 @@ function SearchTabsRowComponent({
           onClick={onNewTab}
           className="w-6 h-6 flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#38BDF8] hover:bg-[#1E293B] hover:border-[#38BDF8] text-xs font-bold transition-colors ml-1 shrink-0"
           aria-label="Nueva pestaña de búsqueda"
-          title={"Nueva búsqueda"+(shortcutMode==='off'?'':shortcutMode==='browser'?' · Ctrl+T / Ctrl+Alt+T':' · Ctrl+Alt+T')}
+          title={"Nueva búsqueda"+(shortcutMode==='off'?'':' · Ctrl+Alt+T')}
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
-        {onShortcutModeChange&&<label className="ml-1 shrink-0 text-[10px] text-slate-400" title="Ctrl+T/W puede reservarlos el navegador. Ctrl+Alt+T/W es la alternativa. La búsqueda personal y la última pestaña se conservan.">Atajos <select aria-label="Atajos de pestañas de búsqueda" value={shortcutMode} onChange={e=>onShortcutModeChange(e.target.value as SearchShortcutMode)} className="rounded border border-slate-700 bg-slate-900 px-1 py-1 text-slate-200"><option value="compatible">Ctrl+Alt+T / W</option><option value="browser">Ctrl+T / W · Chrome</option><option value="off">Desactivados</option></select></label>}
         {onRestorePrevious && (
           <button
             type="button"

@@ -1,9 +1,9 @@
-export type SearchShortcutMode='compatible'|'browser'|'off';
-export function searchShortcutMode(value:unknown):SearchShortcutMode{return value==='browser'||value==='off'?value:'compatible';}
+export type SearchShortcutMode='compatible'|'off';
+export function searchShortcutMode(value:unknown):SearchShortcutMode{return value==='off'?'off':'compatible';}
 export function searchTabCommand(event:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'metaKey'|'shiftKey'|'repeat'|'isComposing'|'defaultPrevented'>,mode:SearchShortcutMode){
  if(mode==='off'||event.defaultPrevented||event.repeat||event.isComposing||!event.ctrlKey||event.metaKey||event.shiftKey)return null;
  const key=event.key.toLowerCase();if(key!=='t'&&key!=='w')return null;
- if(!event.altKey&&mode!=='browser')return null;
+ if(!event.altKey)return null;
  return key==='t'?'new':'close';
 }
 /** One scheduled focus per explicit navigation; no polling or query changes. */

@@ -1,5 +1,6 @@
 "use client";
 import {focusSearchField,closeSearchTab} from "@/lib/searchTabNavigation";
+import {SearchShortcutSettings} from "./SearchShortcutSettings";
 import {useSearchTabShortcuts} from "./useSearchTabShortcuts";
 import {matchesResultStatus} from '@/lib/resultIndicators';
 import {findSearchTab} from '@/lib/searchTabsStorage';
@@ -1415,7 +1416,7 @@ export function ResultsViewHost({
         onMarkPending={(id,pending,minutes)=>setTabs(previous=>previous.map(tab=>tab.id===id?{...tab,pending,unseen:pending&&tab.id!==activeTabId,remindAt:pending&&minutes?Date.now()+minutes*60000:undefined}:tab))}
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
-        shortcutMode={shortcuts.mode} onShortcutModeChange={shortcuts.setMode}
+        shortcutMode={shortcuts.mode}
         onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
         textScale={textScale}
         currentUser={currentUser}
@@ -1425,6 +1426,7 @@ export function ResultsViewHost({
 
       {/* 1. Barra de Búsqueda Principal + Acciones */}
       <SearchInputBar
+        shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode}/>}
         currentUser={currentUser}
         onSubmitSearch={()=>setSettledQuery(query)}
         query={query}
