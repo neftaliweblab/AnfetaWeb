@@ -43,10 +43,10 @@ assert.equal(pending, 'rtuzR cliente.com webs 26-[10OCT] Diseño ne11 gge000');
 
 const approved = proposedReviewTitle(pending, 'Neftali', 'Genaro', 'approved');
 console.log('3. Terminada:  ', approved);
-assert.equal(approved, 'tuzR cliente.com webs 26-[10OCT] Diseño ne11');
+assert.equal(approved, 'tuzR cliente.com webs 26-[10OCT] Diseño nne11');
 assert.ok(!approved.includes('ge000'));
 assert.ok(!approved.includes('gena'));
-assert.ok(!approved.includes('ge'));
+assert.ok(!/\bge11\b/.test(approved));
 
 const returned = proposedReviewTitle(pending, 'Neftali', 'Genaro', 'returned');
 console.log('4. Devuelta:   ', returned);
@@ -73,14 +73,14 @@ for(const [person,entry] of Object.entries(ACTIVITY_TAGS)){
  for(const priority of ['00','11','22','33']){
   const raw=`tuzR cliente.com ${entry.active}${priority}`;
   const done=completedActivityTags(raw);
-  assert.equal(done,`tuzR cliente.com ${entry.reference}${priority}`);
+  assert.equal(done,raw);
   assert.equal(completedActivityTags(done),done);
-  assert.ok(!scanActivityTags(done).some(t=>t.role==='active'||t.role==='review'));
+  assert.ok(scanActivityTags(done).some(t=>t.role==='active'));
  }
 }
-assert.equal(completedActivityTags('tuzR Texto nne11 gge22 gge000','Genaro','Neftali'),'tuzR Texto ne11');
-assert.equal(completedActivityTags('tuzR Texto nneft11 ggena','Genaro','Neftali'),'tuzR Texto neft11');
-assert.equal(completedActivityTags('tuzR cliente-nne11.com correo@nne11.com nne11'),'tuzR cliente-nne11.com correo@nne11.com ne11');
+assert.equal(completedActivityTags('tuzR Texto nne11 gge22 gge000','Genaro','Neftali'),'tuzR Texto nne11');
+assert.equal(completedActivityTags('tuzR Texto nneft11 ggena','Genaro','Neftali'),'tuzR Texto nneft11');
+assert.equal(completedActivityTags('tuzR cliente-nne11.com correo@nne11.com nne11'),'tuzR cliente-nne11.com correo@nne11.com nne11');
 console.log('OK production helpers: all users/priorities, legacy, idempotence, reviewer removal and token boundaries.');
 
 assert.equal(completedActivityTags('zREVISION Texto nneft ggena','Genaro','Neftali'),'zREVISION Texto neft');

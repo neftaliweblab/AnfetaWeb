@@ -155,7 +155,19 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(returned&&(typeof updates.note!=='string'||updates.note.length>1200))throw Error('Las observaciones admiten hasta 1200 caracteres.');
   if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
   if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
-  if ((completed || returned) && previousFlow?.OriginalPerson) updates = { ...updates, person: previousFlow.OriginalPerson };
+  if (completed) {
+    const orig = previousFlow?.OriginalPerson && normalizePerson(previousFlow.OriginalPerson) !== 'Sin asignar' ? normalizePerson(previousFlow.OriginalPerson) : '';
+    const actPerson = activity.person && normalizePerson(activity.person) !== 'Sin asignar' ? normalizePerson(activity.person) : '';
+    const inferred = inferActivityPerson(title, updates.status || currentStatusName);
+    const resolvedOwner = orig || (previousFlow?.OriginalPerson === 'Sin asignar' ? '' : (actPerson || inferred));
+    if (resolvedOwner && normalizePerson(resolvedOwner) !== 'Sin asignar') {
+      updates = { ...updates, person: resolvedOwner };
+    } else if (previousFlow?.OriginalPerson) {
+      updates = { ...updates, person: previousFlow.OriginalPerson };
+    }
+  } else if (returned && previousFlow?.OriginalPerson) {
+    updates = { ...updates, person: previousFlow.OriginalPerson };
+  }
   let reviewFlow: any;
   // La lectura del calendario recorta los bordes del título; comparar con la misma regla.
   if(updates.expectedTitle!==undefined&&String(updates.expectedTitle).trim()!==title.trim())throw new Error('El nombre cambió desde que abriste el editor. Actualiza la actividad antes de guardar.');
@@ -182,7 +194,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     }
     const person = normalizePerson(target);
     if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===person))throw Error('Selecciona un integrante activo del equipo como revisor.');
-    const clearing = (completed || returned) && person === 'Sin asignar';
+    const clearing = (returned && person === 'Sin asignar') || (completed && previousFlow?.OriginalPerson === 'Sin asignar' && !previousFlow?.OriginalAssigneeUserId);
     const restoring = (completed || returned) && previousFlow?.OriginalAssigneeUserId;
     if (!PERSON_ALIASES[person] && !clearing && !restoring) throw new Error('Selecciona un responsable válido del equipo.');
     const personField = assignedField(page);

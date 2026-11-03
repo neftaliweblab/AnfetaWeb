@@ -98,7 +98,7 @@ export function currentReviewTagPerson(title:string,status=''){
 }
 export function inferActivityPerson(title:string,status=''){
   const tags=scanActivityTags(title),review=(PROGRESSIVE_WORKFLOW_PRIMARY&&(progressiveStage(status)?.state==='review'||progressiveStage(title)?.state==='review'))||/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
-  const candidate=review?(tags.findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))||tags.findLast(tag=>tag.role==='review')):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy');
+  const candidate=review?(tags.findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))||tags.findLast(tag=>tag.role==='review')):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy')||tags.find(tag=>tag.role==='reference');
   return candidate?.person||'';
 }
 export function resultAssignedPerson(item:any){
@@ -140,14 +140,24 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
   });
 }
 
-/** Completed titles are references only, regardless of whether review metadata exists. */
+/** Completed titles preserve the last active tag of the person who executed the activity. */
 export function completedActivityTags(title:string,reviewer='',original=''){
   const reviewKey=activityPerson(reviewer),ownerKey=activityPerson(original);
   let result=title;
   for(const tag of scanActivityTags(title).reverse()){
     const legacyOwner=tag.legacy&&tag.person===ownerKey&&tag.token.toLowerCase()===ACTIVITY_TAGS[tag.person].review;
+    const isOwner = ownerKey ? tag.person === ownerKey : (tag.role === 'active' || tag.role === 'reference');
     const remove=(tag.role==='review'&&!legacyOwner)||(reviewKey&&reviewKey!==ownerKey&&tag.person===reviewKey);
-    const replacement=legacyOwner?ACTIVITY_TAGS[tag.person].passive:remove?' ':tag.role==='active'?(tag.legacy?ACTIVITY_TAGS[tag.person].passive:ACTIVITY_TAGS[tag.person].reference)+tag.suffix:tag.token;
+    let replacement = tag.token;
+    if (remove) {
+      replacement = ' ';
+    } else if (legacyOwner) {
+      replacement = ACTIVITY_TAGS[tag.person].passive + tag.suffix;
+    } else if (tag.role === 'active') {
+      replacement = tag.token;
+    } else if (tag.role === 'reference' && isOwner) {
+      replacement = ACTIVITY_TAGS[tag.person].active + (tag.suffix || '11');
+    }
     result=result.slice(0,tag.index)+replacement+result.slice(tag.index+tag.token.length);
   }
   return result.replace(/\s{2,}/g,' ').trim();

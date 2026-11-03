@@ -84,7 +84,14 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     pageUrl: raw.PageUrl || raw.pageUrl || "",
     title,
     shortTitle: raw.ShortTitle || raw.shortTitle || title,
-    person: raw.IsReviewMirror||raw.isReviewMirror||raw.isHandoffMirror?normalizePerson(raw.Person||raw.person):currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person),
+    person: (() => {
+      let val = raw.IsReviewMirror||raw.isReviewMirror||raw.isHandoffMirror?normalizePerson(raw.Person||raw.person):currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person);
+      if (val === 'Sin asignar' && (workflow === 'completed' || /(?<![\p{L}\p{Nd}_])(?:tuzR|uzR|zR|zREVISION)(?![\p{L}\p{Nd}_])/iu.test(title))) {
+        const inf = inferActivityPerson(title, raw.Status || raw.status || '');
+        if (inf && normalizePerson(inf) !== 'Sin asignar') val = normalizePerson(inf);
+      }
+      return val;
+    })(),
     originalPerson: raw.OriginalPerson || raw.originalPerson || "—",
     project: raw.Project || raw.project || "",
     domain: raw.ParsedDomain || raw.domain || "general",

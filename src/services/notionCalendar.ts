@@ -1,5 +1,6 @@
 import {notionStatusValue} from './notionStatusValue';
 import {inferActivityPerson,currentReviewTagPerson} from './activityTags';
+import {workflowState} from './activityWorkflow';
 import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
 import { mexicoDate } from './calendarPresentation';
@@ -28,7 +29,16 @@ export function assignedPerson(page: any, fallback = '') {
   const prop = assignedField(page)?.[1];
   if (!prop) return normalizePerson(fallback);
   const value = prop.type === 'people' ? (prop.people || []).map((p: any) => p.person?.email || p.name || '').join(', ') : prop.type === 'select' ? prop.select?.name : (prop.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('');
-  return normalizePerson(value);
+  const normalized = normalizePerson(value);
+  if (normalized !== 'Sin asignar') return normalized;
+  const statusName = notionStatusValue(statusField);
+  const isCompleted = workflowState(statusName, pageTitle) === 'completed' || /(?<![\p{L}\p{Nd}_])(?:tuzR|uzR|zR|zREVISION)(?![\p{L}\p{Nd}_])/iu.test(pageTitle);
+  if (isCompleted) {
+    const inferred = inferActivityPerson(pageTitle, statusName);
+    if (inferred && normalizePerson(inferred) !== 'Sin asignar') return normalizePerson(inferred);
+    if (fallback && normalizePerson(fallback) !== 'Sin asignar') return normalizePerson(fallback);
+  }
+  return 'Sin asignar';
 }
 const flowCache = new Map<string, { edited: string; expires: number; flow: any }>();
 export function cacheReviewFlowMemory(settings: CalendarSettings, pageId: string, flow: any, edited?: string) {

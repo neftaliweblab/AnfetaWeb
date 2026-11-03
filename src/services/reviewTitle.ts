@@ -17,8 +17,13 @@ export function reviewTitle(title:string,original:string,reviewer:string,state:'
   }
   const tags=scanActivityTags(title);
   const ownerTags=tags.filter(tag=>tag.person===ownerKey&&(tag.role==='active'||tag.role==='reference'));
-  const ownerTokens=[...new Set(ownerTags.map(tag=>tag.legacy?(state==='returned'?ACTIVITY_TAGS[ownerKey].review:ACTIVITY_TAGS[ownerKey].passive)+tag.suffix:(state==='returned'?ACTIVITY_TAGS[ownerKey].active:ACTIVITY_TAGS[ownerKey].reference)+tag.suffix))];
-  if(owner&&!ownerTokens.length)ownerTokens.push(state==='returned'?owner.review:owner.passive);
+  const ownerTokens=[...new Set(ownerTags.map(tag=>{
+    if (tag.legacy) {
+      return (state==='returned'?ACTIVITY_TAGS[ownerKey].review:ACTIVITY_TAGS[ownerKey].passive)+tag.suffix;
+    }
+    return (state==='returned'||state==='approved'?ACTIVITY_TAGS[ownerKey].active:ACTIVITY_TAGS[ownerKey].reference)+tag.suffix;
+  }))];
+  if(owner&&!ownerTokens.length)ownerTokens.push(state==='returned'?owner.review:state==='approved'?(owner.active+'11'):owner.passive);
   const legacyReviewSuffix=tags.find(tag=>tag.person===reviewKey&&tag.legacy&&tag.suffix)?.suffix||'';
   const reviewerReferences=(state==='pending'&&useNew&&reviewKey!==ownerKey)?tags.filter(tag=>tag.person===reviewKey&&(tag.role==='active'||tag.role==='reference')&&!tag.legacy).map(tag=>review.reference+tag.suffix):[];
   const remove=tags.filter(tag=>{
