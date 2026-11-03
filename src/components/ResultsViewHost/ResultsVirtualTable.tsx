@@ -813,7 +813,8 @@ function ResultsVirtualTableComponent({
     const isDoc = /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?)$/i.test(item.name || targetPath);
     const isCode = /\.(js|jsx|ts|tsx|py|html|css|php|sql|cs|java|c|cpp|sh|bat|ps1)$/i.test(item.name || targetPath);
     const ext = (item.extension || (item.name || "").split(".").pop() || "").toUpperCase();
-    const textSnippet = (item.contentSnippet || item.description || "").trim();
+    const rawSnippet = (item.contentSnippet || (item as any).pageContent || item.description || "").trim();
+    const textSnippet = rawSnippet !== (item.name || "").trim() && rawSnippet !== String((item as any).searchText || "").trim() ? rawSnippet : "";
     const imgHeightClass =
       viewZoom === "large" ? "h-48" : viewZoom === "medium" ? "h-36" : "h-24";
     const docHeightClass =

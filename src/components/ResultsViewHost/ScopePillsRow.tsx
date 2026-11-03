@@ -28,7 +28,7 @@ const GENERAL_SCOPES: ScopeItem[] = [
   { id: "Notion", label: "Notion", category: "general", icon: Globe, tooltip: "Todas las actividades y páginas de Notion" },
   { id: "Dropbox", label: "Dropbox", category: "general", icon: Folder, tooltip: "Archivos sincronizados en Dropbox" },
   { id: "Carpetas", label: "Carpetas", category: "general", icon: Folder, tooltip: "Carpetas y directorios locales/Dropbox" },
-  { id: "Contenido", label: "Contenido", category: "general", icon: FileText, tooltip: "Búsqueda en texto y contenido interno" },
+  { id: "Contenido", label: "Contenido", category: "general", icon: FileText, tooltip: "Búsqueda en texto y contenido interno · notas, descripciones y documentos" },
   { id: "Todas bases", label: "Todas bases", category: "general", icon: Layers, tooltip: "Consolida todas las bases de datos de Notion" },
 ];
 

@@ -360,10 +360,17 @@ function DetailsPaneComponent({
           setPreviewBlocks(validBlocks);
           setPreviewContent(data.content || "");
           setPreviewStatus(`${validBlocks.length} bloque(s) cargados · desplázate para ver el contenido.`);
+          const loadedText = (data.content || validBlocks.map((b: any) => b.text).filter(Boolean).join("\n")).trim();
+          if (loadedText && typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('anfeta_page_content_loaded', { detail: { pageId: currentKey, content: loadedText, blocks: validBlocks } }));
+          }
         } else if (data.content && data.content.trim()) {
           setPreviewBlocks([]);
           setPreviewContent(data.content);
           setPreviewStatus("Contenido cargado.");
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('anfeta_page_content_loaded', { detail: { pageId: currentKey, content: data.content.trim(), blocks: [] } }));
+          }
         } else if (item.contentSnippet || item.description) {
           setPreviewBlocks([]);
           setPreviewContent(item.contentSnippet || item.description);

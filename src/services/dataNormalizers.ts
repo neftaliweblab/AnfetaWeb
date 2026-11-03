@@ -58,7 +58,7 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     ftfVerified:raw.ftfVerified,ftfAvailable:raw.ftfAvailable,
     updateStatus: raw.ProjectUpdateStatus || raw.statusLabel || "",
     description: raw.Description || raw.description || "",
-    contentSnippet: raw.Description || rawSearchText || "",
+    contentSnippet: (raw.ContentSnippet || raw.contentSnippet || raw.Description || raw.description || raw.pageContent || raw.PageContent || "").trim(),
     searchText: combinedSearchText,
     assignmentKeys,
     isFolder,

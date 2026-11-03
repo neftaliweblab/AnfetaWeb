@@ -305,6 +305,7 @@ export interface SearchMatchOptions {
   matchCase?: boolean;
   matchWholeWord?: boolean;
   matchRegex?: boolean;
+  contentOnly?: boolean;
 }
 
 /**
@@ -439,14 +440,42 @@ const itemSearchableCache = new WeakMap<SearchResultRow, {
   searchable: string;
   searchableWithSpaces: string;
   searchableCompact: string;
+  searchableFolded: string;
   rawId: string;
   rawExtId: string;
 }>();
 
-function getItemSearchable(item: SearchResultRow, matchCase: boolean) {
-  if (!matchCase) {
+function getItemSearchable(item: SearchResultRow, matchCase: boolean, contentOnly = false) {
+  if (!matchCase && !contentOnly) {
     const cached = itemSearchableCache.get(item);
     if (cached) return cached;
+  }
+
+  if (contentOnly) {
+    const isDoc = !item.isFolder && item.type !== "FOLDER" && /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?|html|xml|js|ts|jsx|tsx|py|sql|sh|bat|ps1)$/i.test(item.name || item.path || "");
+    const rawSearchable = [
+      item.description,
+      (item as any).contentSnippet,
+      (item as any).pageContent,
+      item.checklistProgressText,
+      isDoc ? item.name : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const searchable = matchCase ? rawSearchable : rawSearchable.toLowerCase();
+    const searchableWithSpaces = searchable.replace(/[.\-_/]/g, " ");
+    const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
+    const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    return {
+      searchable,
+      searchableWithSpaces,
+      searchableCompact,
+      searchableFolded,
+      rawId: "",
+      rawExtId: "",
+    };
   }
 
   const cleanTarget = (item.target || "")
@@ -486,6 +515,7 @@ function getItemSearchable(item: SearchResultRow, matchCase: boolean) {
   const searchable = matchCase ? rawSearchable : rawSearchable.toLowerCase();
   const searchableWithSpaces = searchable.replace(/[.\-_/]/g, " ");
   const searchableCompact = searchable.replace(/[\s.\-_/()[\]]+/g, "");
+  const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   const rawId = (item.id || "").replace(/-/g, "").toLowerCase();
   const rawExtId = ((item as any).externalId || "").replace(/-/g, "").toLowerCase();
@@ -494,6 +524,7 @@ function getItemSearchable(item: SearchResultRow, matchCase: boolean) {
     searchable,
     searchableWithSpaces,
     searchableCompact,
+    searchableFolded,
     rawId,
     rawExtId,
   };
@@ -530,9 +561,14 @@ export function matchesFlexibleOrQuotedQuery(
     return plan.rx.test(target);
   }
 
-  const { searchable, searchableWithSpaces, searchableCompact, rawId, rawExtId } = getItemSearchable(item, !!options?.matchCase);
+  const contentOnly = !!options?.contentOnly;
+  const { searchable, searchableWithSpaces, searchableCompact, rawId, rawExtId } = getItemSearchable(item, !!options?.matchCase, contentOnly);
 
-  if (plan.cleanQ.length >= 8 && (rawId === plan.cleanQ || rawExtId === plan.cleanQ)) {
+  if (contentOnly && !searchable.trim()) {
+    return false;
+  }
+
+  if (!contentOnly && plan.cleanQ.length >= 8 && (rawId === plan.cleanQ || rawExtId === plan.cleanQ)) {
     return true;
   }
 
@@ -556,11 +592,14 @@ function checkSingleToken(
 ): boolean {
   const matchCase = !!options?.matchCase;
   const matchWholeWord = !!options?.matchWholeWord;
+  const contentOnly = !!options?.contentOnly;
   const tokenVal = matchCase ? token.value : token.value.toLowerCase();
   const valLow = token.value.toLowerCase();
   const itemStatus = String(item.updateStatus || item.statusLabel || item.status || '');
-  const tagMatch = matchesActivityTagQuery(item.name || '', token.value, matchCase, itemStatus);
-  if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
+  if (!contentOnly) {
+    const tagMatch = matchesActivityTagQuery(item.name || '', token.value, matchCase, itemStatus);
+    if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
+  }
 
   // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
   if (valLow.startsWith("source:") && !token.isExact) {
@@ -630,12 +669,17 @@ function checkSingleToken(
       (item.source || "")
     ).toLowerCase();
 
+    const cleanSpFolded = cleanSp.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     let has = matchWholeWord
-      ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
+      ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable) ||
+        new RegExp(`\\b${cleanSpFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchableFolded)
       : (searchable.includes(cleanSp) ||
          searchableWithSpaces.includes(cleanSp) ||
+         searchableFolded.includes(cleanSpFolded) ||
          (cleanSp.length >= 4 &&
-           searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, ""))));
+           (searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, "")) ||
+            searchableCompact.normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(cleanSpFolded.replace(/[\s.\-_/()[\]]+/g, "")))));
 
     if (!has) {
       // Alias y equivalencias automáticas de ANFETA

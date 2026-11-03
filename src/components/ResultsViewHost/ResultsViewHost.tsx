@@ -35,7 +35,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -56,7 +56,7 @@ import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus
 import {matchesContentClassification} from '@/lib/contentClassification';
 import {searchDatabaseOptions} from '@/lib/searchDatabase';
 import { filterByNotionBase,isNotionItem } from "@/lib/notionFilters";
-import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
+import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
@@ -178,11 +178,7 @@ export function ResultsViewHost({
 
   const [statusFilter,setStatusFilter]=useState('all');
   const [resultSort,setResultSort]=useState("scheduled-today");
-  const [searchOptions, setSearchOptions] = useState<{
-    matchCase: boolean;
-    matchWholeWord: boolean;
-    matchRegex: boolean;
-  }>({
+  const [searchOptions, setSearchOptions] = useState<SearchMatchOptions>({
     matchCase: false,
     matchWholeWord: false,
     matchRegex: false,
@@ -190,7 +186,7 @@ export function ResultsViewHost({
 
   useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchViewKey(currentUser),JSON.stringify({sortSchema:2,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions}));}catch{}},[tabsOwner,tabsKey,currentUser,classification,resultPerson,selectedScope,filterFavorites,groupBy,monthSelection,viewZoom,textScale,resultSort,searchOptions]);
 
-  const handleToggleSearchOption = (key: "matchCase" | "matchWholeWord" | "matchRegex") => {
+  const handleToggleSearchOption = (key: keyof SearchMatchOptions) => {
     setSearchOptions((prev) => ({
       ...prev,
       [key]: !prev[key],
@@ -436,6 +432,29 @@ export function ResultsViewHost({
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
   useEffect(()=>{const receive=(event:Event)=>{const detail=(event as CustomEvent).detail;if(detail?.owner!==currentUser||!detail.row?.id)return;setItems(previous=>[detail.row,...previous.filter(row=>row.id!==detail.row.id)]);};window.addEventListener('anfeta_note_created',receive);return()=>window.removeEventListener('anfeta_note_created',receive);},[currentUser]);
+  useEffect(() => {
+    const onContentLoaded = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const pid = String(detail?.pageId || "").replace(/-/g, "").toLowerCase();
+      const content = String(detail?.content || "").trim();
+      if (!pid || !content) return;
+      setItems((prev) =>
+        prev.map((it) => {
+          const itId = String(it.externalId || it.id || "").replace(/-/g, "").toLowerCase();
+          if (itId === pid) {
+            return {
+              ...it,
+              pageContent: content,
+              contentSnippet: content.slice(0, 300),
+            };
+          }
+          return it;
+        })
+      );
+    };
+    window.addEventListener("anfeta_page_content_loaded", onContentLoaded);
+    return () => window.removeEventListener("anfeta_page_content_loaded", onContentLoaded);
+  }, []);
   const databaseOptions=useMemo(()=>searchDatabaseOptions(items.filter(isNotionItem)),[items]);
   React.useEffect(() => {
     setItems(previous=>retainSearchResults(previous,{items:filterDeletedPages(initialItems,currentUser).filter(it=>!isExpiredResponsePage(it)),loadingIndex:true}));
@@ -1288,19 +1307,23 @@ export function ResultsViewHost({
 
   // Filter & scope processing
   const filteredItems = useMemo(() => {
-    let res = filterDeletedPages(items,currentUser).filter((item) => {
+    const isContentScope = selectedScope === "Contenido";
+    let baseList = filterDeletedPages(items, currentUser);
+
+    if (selectedScope && selectedScope !== "Todo") {
+      baseList = filterByNotionBase(baseList as any, selectedScope) as any;
+    }
+
+    let res = baseList.filter((item) => {
       if (deferredQuery.trim()) {
-        if (!matchesFlexibleOrQuotedQuery(item, deferredQuery, searchOptions)) {
+        const queryOptions = isContentScope ? { ...searchOptions, contentOnly: true } : searchOptions;
+        if (!matchesFlexibleOrQuotedQuery(item, deferredQuery, queryOptions)) {
           return false;
         }
       }
       if (filterFavorites && !favorites.has(favoriteKey(item))) return false;
       return true;
     });
-
-    if (selectedScope && selectedScope !== "Todo") {
-      res = filterByNotionBase(res as any, selectedScope) as any;
-    }
 
     // Filtrado estricto por usuario activo si no es "__all__" y no está en Scope de carpetas/dropbox
     if (resultPerson && resultPerson !== "__all__" && selectedScope !== "Dropbox" && selectedScope !== "Carpetas") {
@@ -1595,7 +1618,84 @@ export function ResultsViewHost({
               </button>
               <NotionConnectionCheck/>
               <ExportResults rows={filteredItems}/>
-            </div>{items.length>0&&filteredItems.length===0&&<p role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200">Hay {items.length} registros cargados, pero ninguno coincide con la persona {resultPerson==="__all__"?"Todas las personas":normalizePerson(resultPerson)} y los filtros actuales. <button type="button" className="ml-2 underline" onClick={()=>{handleQueryChange("");setSelectedScope("Todo");setClassification("all");setFilterFavorites(false);setSelectedMonth("Todos");setSelectedTag("Ninguno");setResultPerson("__all__");}}>Limpiar filtros</button></p>}
+            </div>
+            {selectedScope === "Contenido" && (
+              <div className="mx-2 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-800/60 bg-[#0B1E33]/70 px-3 py-2 text-xs text-cyan-200">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-cyan-400 shrink-0" />
+                  <span>
+                    {deferredQuery.trim()
+                      ? `Búsqueda en cuerpo interno: buscando "${deferredQuery}" dentro de notas, descripciones y contenido indexado.`
+                      : "Mostrando actividades y archivos con contenido, notas, checklists o documentos de texto indexados."}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {deferredQuery.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedScope("Notion");
+                        focusSearch();
+                      }}
+                      className="rounded border border-cyan-600 bg-cyan-900/60 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-cyan-800 transition cursor-pointer"
+                      title="Buscar este término en todo el catálogo de Notion por título, dominio y tags"
+                    >
+                      Buscar &quot;{deferredQuery}&quot; por título en Notion →
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedScope("Todo");
+                      focusSearch();
+                    }}
+                    className="text-[11px] text-cyan-300 underline hover:text-cyan-100 cursor-pointer"
+                  >
+                    Ver Todo
+                  </button>
+                </div>
+              </div>
+            )}
+            {items.length > 0 && filteredItems.length === 0 && (
+              <div role="status" className="m-2 rounded border border-amber-900 bg-amber-950/30 p-3 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {selectedScope === "Contenido"
+                    ? deferredQuery.trim()
+                      ? `No se encontraron resultados con "${deferredQuery}" dentro del contenido interno o notas indexadas. Si la actividad aún no descarga sus bloques de Notion, búscala por título:`
+                      : "No hay actividades con contenido interno indexado que coincidan con la persona y los filtros actuales."
+                    : `Hay ${items.length} registros cargados, pero ninguno coincide con la persona ${resultPerson === "__all__" ? "Todas las personas" : normalizePerson(resultPerson)} y los filtros actuales.`}
+                </span>
+                <div className="flex items-center gap-2">
+                  {selectedScope === "Contenido" && deferredQuery.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedScope("Notion");
+                        focusSearch();
+                      }}
+                      className="rounded border border-amber-700 bg-amber-900/60 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-800 transition cursor-pointer"
+                    >
+                      Buscar &quot;{deferredQuery}&quot; por título en Notion →
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="underline cursor-pointer"
+                    onClick={() => {
+                      handleQueryChange("");
+                      setSelectedScope("Todo");
+                      setClassification("all");
+                      setFilterFavorites(false);
+                      setSelectedMonth("Todos");
+                      setSelectedTag("Ninguno");
+                      setResultPerson("__all__");
+                    }}
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 <ResultsVirtualTable
           headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}
