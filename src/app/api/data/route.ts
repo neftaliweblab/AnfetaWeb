@@ -1,3 +1,11 @@
+import {
+  canonicalActivityUrl,
+  evaluateActivityLink,
+  findActivityLinkProperty,
+  saveActivityLinkToNotion,
+  verifyEnabledBasesLinkProperty,
+  backfillActivityLinks
+} from "@/services/activityLinkService";
 import {notionStatusValue} from '@/services/notionStatusValue';
 import {notionBaseLinks} from '@/services/notionBaseLinks';
 import {activityFinancialFields} from '@/services/activityFinancialFields';
@@ -351,6 +359,11 @@ async function duplicateNotionPageWithoutBody({
       }
     }
 
+    const isAnfetaLinkProp = propVal?.type === 'url' && /abrir en anfeta|anfeta/i.test(propName);
+    if (isAnfetaLinkProp) {
+      // Duplicates must not inherit the original page link
+      continue;
+    }
     const writable = buildWritablePropertyValue(propVal);
     if (writable) {
       duplicateProperties[propName] = writable;
@@ -413,6 +426,11 @@ async function duplicateNotionPageWithoutBody({
 
   const createdPage = await createRes.json();
   if(copyBody){try{await appendTemplateBody(bodySettings,createdPage.id,preparedBody);}catch(error){try{await notionRequest({...bodySettings,notionSignal:AbortSignal.timeout(20000)},'pages/'+createdPage.id,'PATCH',{archived:true});}catch{throw new Error('La copia del cuerpo falló y no se pudo retirar la página incompleta: '+createdPage.url);}throw new Error('No se pudo copiar el cuerpo; se retiró la página incompleta. '+(error instanceof Error?error.message:''));}}
+  try {
+    await saveActivityLinkToNotion(bodySettings, createdPage.id);
+  } catch (linkErr) {
+    console.warn('[DUPLICATE] Advertencia al asignar enlace en copia:', linkErr);
+  }
   const newId = createdPage.id;
   const newUrl = createdPage.url || `https://notion.so/${newId.replace(/-/g, "")}`;
 
@@ -547,8 +565,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           ...ftfState(page),
           isLocked: live.isLocked,
         }, 0);
-        const date = live.dateStart ? mexicoDate(live.dateStart) : mexicoDate();
-        return NextResponse.json({ success: true, activity, date }, { headers: { 'Cache-Control': 'no-store' } });
+        const hasDate = Boolean(live.dateStart);
+        const date = hasDate ? mexicoDate(live.dateStart) : null;
+        return NextResponse.json({ success: true, activity, date, hasDate }, { headers: { 'Cache-Control': 'no-store' } });
       } catch (error) {
         return NextResponse.json({ error: error instanceof Error ? error.message : 'Error al cargar la actividad.' }, { status: 500 });
       }
@@ -1754,7 +1773,14 @@ async function POSTLive(req: NextRequest) {
       if (result.activity.start) persistCalendarActivity(result.activity);
       const live = extractNotionPageData(result.page); liveNotionOverrides.set(live.id, live); previewMemoryCache.clear();
       await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:result.page.id,state:'active',eventType:'page.created',serverModified:result.page.last_edited_time,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,calendarActivity:result.activity}});
-      return NextResponse.json({ success: true, pageId: result.page.id, pageUrl: result.page.url, activity: result.activity });
+      let linkSaved = false;
+      try {
+        const linkRes = await saveActivityLinkToNotion(settings, result.page.id);
+        linkSaved = linkRes?.success === true;
+      } catch (linkErr) {
+        console.warn('[CREATE_ACTIVITY] No se pudo guardar enlace en Notion:', linkErr);
+      }
+      return NextResponse.json({ success: true, pageId: result.page.id, pageUrl: result.page.url, activity: result.activity, linkSaved });
     }
 
     if (action === 'attach-to-notion-page') {
@@ -2464,45 +2490,65 @@ async function POSTLive(req: NextRequest) {
         const input = payload || body;
         const cleanId = String(input?.pageId || '').replace(/-/g, '').toLowerCase();
         if (!/^[a-f0-9]{32}$/.test(cleanId)) return NextResponse.json({ success: false, error: 'ID de página no válido.' }, { status: 400 });
-        const linkUrl = String(input?.linkUrl || input?.url || '').trim();
-        if (!linkUrl) return NextResponse.json({ success: false, error: 'URL requerida.' }, { status: 400 });
 
         const settings = getSettings();
         const token = resolveNotionToken(req) || settings.notionToken;
         if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
 
-        const pageRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
-          headers: { Authorization: 'Bearer ' + token.trim(), 'Notion-Version': '2022-06-28' },
-          signal: AbortSignal.timeout(12000),
+        const result = await saveActivityLinkToNotion(
+          { ...settings, notionToken: token },
+          cleanId,
+          { force: Boolean(input?.force) }
+        );
+
+        if (!result.success) {
+          return NextResponse.json({
+            success: false,
+            reason: result.status,
+            error: result.error,
+            property: result.property,
+          }, { status: result.status === 'missing_property' || result.status === 'type_mismatch' ? 422 : 400 });
+        }
+
+        return NextResponse.json({
+          success: true,
+          status: result.status,
+          property: result.property,
+          url: result.url,
+          message: result.status === 'already_up_to_date'
+            ? `El enlace en "${result.property}" ya estaba actualizado.`
+            : `Enlace guardado en Notion en la propiedad "${result.property}".`,
         });
-        if (!pageRes.ok) return NextResponse.json({ success: false, error: 'No se pudo leer la página en Notion.' }, { status: 502 });
-        const pageData = await pageRes.json();
-        const props = pageData.properties || {};
-        let targetProp = null;
-        for (const [name, p] of Object.entries(props)) {
-          if ((p as any)?.type === 'url' && /anfeta|enlace|link/i.test(name)) { targetProp = name; break; }
-        }
-        if (!targetProp) {
-          for (const [name, p] of Object.entries(props)) {
-            if ((p as any)?.type === 'url') { targetProp = name; break; }
-          }
-        }
-        if (!targetProp) {
-          return NextResponse.json({ success: false, reason: 'schema_missing', message: 'La fuente de Notion no tiene una propiedad URL para Enlace ANFETA.' });
-        }
-        const patchRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
-          method: 'PATCH',
-          headers: { Authorization: 'Bearer ' + token.trim(), 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ properties: { [targetProp]: { url: linkUrl } } }),
-          signal: AbortSignal.timeout(12000),
-        });
-        if (!patchRes.ok) {
-          const errText = await patchRes.text();
-          return NextResponse.json({ success: false, error: 'Notion no pudo actualizar la propiedad: ' + errText }, { status: 502 });
-        }
-        return NextResponse.json({ success: true, property: targetProp, message: 'Enlace guardado en Notion en la propiedad "' + targetProp + '".' });
       } catch (error) {
         return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudo guardar el enlace.' }, { status: 500 });
+      }
+    }
+
+    if (action === 'verify-bases-activity-link') {
+      try {
+        const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
+        if (!settings.notionToken) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const bases = await verifyEnabledBasesLinkProperty(settings);
+        return NextResponse.json({ success: true, bases });
+      } catch (error) {
+        return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Error al verificar las bases.' }, { status: 500 });
+      }
+    }
+
+    if (action === 'preview-backfill-activity-links' || action === 'run-backfill-activity-links') {
+      try {
+        const input = payload || body;
+        const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
+        if (!settings.notionToken) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const report = await backfillActivityLinks(settings, {
+          cursor: input?.cursor,
+          limit: input?.limit,
+          dryRun: action === 'preview-backfill-activity-links' || input?.dryRun === true,
+          filterDatabaseId: input?.databaseId,
+        });
+        return NextResponse.json({ success: true, report });
+      } catch (error) {
+        return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Error en el proceso de enlaces.' }, { status: 500 });
       }
     }
     if (action === 'get-review-thread' || action === 'reply-review-thread') {
@@ -2824,7 +2870,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 
 async function POSTWithInvalidation(req:NextRequest){
  const body=await req.clone().json().catch(()=>null),response=await POSTLive(req);
- const changes=['create-note','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','save-activity-link','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
+ const changes=['create-note','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','save-activity-link','run-backfill-activity-links','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
  if(!supabaseConfigured()||!response.ok||!changes.includes(body?.action))return response;
  if(body.action==='update-activity-status'&&typeof body.payload?.ftfVerified==='boolean'&&!body.payload.status)return response;
  if(body.action==='calendar-automation-run'){const result=await response.clone().json();if(!result.report?.moved&&!result.report?.ftf?.reset)return response;}

@@ -36,6 +36,7 @@ import { QuickAssigneeSelect } from "./QuickAssigneeSelect";
 import { ActivityQuickEntry } from "./ActivityQuickEntry";
 import { ActivityWhatsappGroups } from "../ActivityWhatsappGroups";
 import { requestActivityRecording, recordingTarget } from "@/lib/activityRecording";
+import { canonicalActivityUrl } from "@/lib/activityCanonicalLink";
 import { offlineAwareFetch } from "@/services/offlineQueue";
 import {
   calendarDisplayTitle,
@@ -247,9 +248,7 @@ export function UnifiedActivityModal({
   const [linkSaveMessage, setLinkSaveMessage] = useState("");
 
   const directAnfetaLink = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const cleanId = String(activity.pageId || "").replace(/-/g, "");
-    return `${window.location.origin}/calendar?activity=${encodeURIComponent(cleanId)}`;
+    return canonicalActivityUrl(activity.pageId);
   }, [activity.pageId]);
 
   const handleCopyDirectLink = async () => {
@@ -304,7 +303,7 @@ export function UnifiedActivityModal({
   const effectiveToday = activity.todayChecklistCompleted ?? 0;
   const effectiveItems = activity.checklistItems || [];
 
-  const checklistDay = displayDate || mexicoDate(activity.start);
+  const checklistDay = displayDate || (activity.start ? mexicoDate(activity.start) : mexicoDate());
   const daily = dailyChecklist(effectiveItems, checklistDay);
   const cumulative = checklistTotals({
     checklistItems: effectiveItems,
@@ -412,14 +411,14 @@ export function UnifiedActivityModal({
   });
 
   const durationMinutes = useMemo(() => {
-    if (!activity.start || !activity.end) return 60;
+    if (!activity.start || !activity.end) return null;
     const s = Date.parse(activity.start);
     const e = Date.parse(activity.end);
-    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return 60;
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null;
     return Math.round((e - s) / 60000);
   }, [activity.start, activity.end]);
 
-  const durationFormatted = `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60 ? `${durationMinutes % 60}m` : ""}`.trim();
+  const durationFormatted = durationMinutes !== null ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60 ? `${durationMinutes % 60}m` : ""}`.trim() : "";
 
   // Width classes according to S / M / L / XL
   const widthClass =
@@ -669,8 +668,15 @@ export function UnifiedActivityModal({
                 <span className="text-slate-400 text-[10.5px]">Horario:</span>
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono text-cyan-300 font-semibold text-[11px]">
-                    {calendarTime(activity.start || "")}
-                    {activity.end ? ` – ${calendarTime(activity.end)}` : ""} ({durationFormatted})
+                    {activity.start ? (
+                      <>
+                        {calendarTime(activity.start)}
+                        {activity.end ? ` – ${calendarTime(activity.end)}` : ""}
+                        {durationFormatted ? ` (${durationFormatted})` : ""}
+                      </>
+                    ) : (
+                      <span className="text-slate-400 font-sans italic text-[10.5px]">Sin fecha programada</span>
+                    )}
                   </span>
                 </div>
               </div>
