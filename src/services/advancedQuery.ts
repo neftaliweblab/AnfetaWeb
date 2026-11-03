@@ -717,6 +717,8 @@ function checkSingleToken(
         has = searchable.includes("acalli") || searchable.includes("aacal");
       } else if (cleanSp === "aandr" || cleanSp === "andrade") {
         has = searchable.includes("andrade") || searchable.includes("aandr");
+      } else if (cleanSp === "edwin" || cleanSp === "eedwin" || cleanSp === "eedwi" || cleanSp === "edwi" || cleanSp === "eed" || cleanSp === "ed") {
+        has = searchable.includes("edwin") || searchable.includes("eedwin") || searchable.includes("eedwi") || searchable.includes("edwi") || searchable.includes("eed11") || searchable.includes("eed00") || searchable.includes("eed22") || searchable.includes("eed33") || searchable.includes("eed000");
       } else if (cleanSp === "eemma" || cleanSp === "eedua" || cleanSp === "emmanuel" || cleanSp === "eduardo") {
         has = searchable.includes("emmanuel") || searchable.includes("eduardo") || searchable.includes("eemma") || searchable.includes("eedua");
       }

@@ -1,7 +1,8 @@
 "use client";
 import {UPLOAD_ACTIVITY_TYPES,documentationKind,catalogDomains,suggestDomains,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {loadCachedIndex} from '@/lib/clientIndexCache';
-import {ACTIVITY_TAGS} from '@/services/activityTags';
+import {ACTIVITY_TAGS, activityPerson} from '@/services/activityTags';
+import {normalizePerson} from '@/services/identityNormalizer';
 import {activityAttachmentPlan} from '@/lib/activityAttachmentPlan';
 import {RecordingTranscription} from './RecordingTranscription';
 import {uploadBrowserFiles,uploadMetadata} from '@/lib/browserDropboxUpload';
@@ -43,7 +44,7 @@ const EMPTY: GlobalPasteImagePayload[] = [];
 const reviewers = [
  {name:'(Sin asignar)',tag:'',person:''},
  {name:'🚨 John urgente',tag:'john0000',person:'John'},
- ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name,tag:value.review,person:name}))
+ ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name,tag:name==='Edwin'?'eed11':value.review,person:name}))
 ];
 
 export function GlobalPasteModal({
@@ -426,7 +427,7 @@ export function GlobalPasteModal({
             month: undefined,
             personTag: undefined,
             uploadId: recovery.current.id,
-            person: frozen.assignedPerson||reviewers.find(p => p.tag === frozen.personTag)?.person || (frozen.quickRevision?currentUser:''),
+            person: frozen.assignedPerson||reviewers.find(p => p.tag === frozen.personTag)?.person || activityPerson(frozen.personTag||'') || normalizePerson(frozen.personTag||'') || (frozen.quickRevision?currentUser:''),
             targetPageId: frozen.targetPageId||(actionType === 'attach' && selectedCard ? selectedCard.id : undefined),
             currentUser
           }

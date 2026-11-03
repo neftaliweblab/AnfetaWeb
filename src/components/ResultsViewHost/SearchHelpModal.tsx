@@ -14,6 +14,47 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
   if (!isOpen) return null;
 
   const sections = [
+    {
+      title: "🔍 Búsqueda por Título vs Contenido",
+      icon: Search,
+      highlight: true,
+      commands: [
+        {
+          cmd: "reporte gge11",
+          desc: "Búsqueda por título (por defecto): muy rápida en los 6,800+ registros del catálogo. Cubre nombre, dominio, tags, responsable y estado.",
+        },
+        {
+          cmd: "Scope: Contenido",
+          desc: "Búsqueda en cuerpo interno: busca dentro de fragmentos y notas de páginas previamente cargadas o indexadas. Si los bloques de una página aún no se descargan, búscala por título.",
+        },
+        {
+          cmd: 'indu',
+          desc: "Materiales de inducción y capacitación: atajo directo para encontrar guías y procedimientos del equipo.",
+        },
+      ],
+    },
+    {
+      title: "📌 Modal Flotante Unificado del Calendario",
+      icon: Sparkles,
+      commands: [
+        {
+          cmd: "Hover",
+          desc: "Pasa el mouse sobre cualquier actividad para ver su resumen inmediato sin perder de vista el calendario.",
+        },
+        {
+          cmd: "Clic o 'Fijar'",
+          desc: "Ancla la ventana flotante en pantalla. No se cierra al mover el puntero.",
+        },
+        {
+          cmd: "Arrastrar y Redimensionar",
+          desc: "Arrastra desde la barra superior sin afectar inputs. Cambia tamaño entre S (Compacto), M (Normal), L (Grande) y XL.",
+        },
+        {
+          cmd: "/calendar?activity=<id>",
+          desc: "Enlace único y directo: abre la actividad en el modal flotante y sitúa automáticamente la fecha en el calendario.",
+        },
+      ],
+    },
     {title:'🏷 Tags de trabajo y revisión',icon:Tag,commands:[
       {cmd:'iis11',desc:'Trabajo primario de Isaías. Prioridades: 00 urgente, 11 primaria, 22 secundaria, 33 usar / practicar.'},
       {cmd:'is11',desc:'Referencia de Isaías: conserva la prioridad cuando pasa a revisión; no indica el responsable actual.'},

@@ -136,7 +136,7 @@ function SearchConfigRowComponent({
   const colsRef = useRef<HTMLDivElement>(null);
 
   const TEAM_USERS = [
- {code:"eedwin",name:"Edwin"},
+ {code:"eed11",name:"Edwin"},
     { code: "nneft", name: "Neftali" },
     { code: "jjohn", name: "John" },
     { code: "kkarl", name: "Karla" },

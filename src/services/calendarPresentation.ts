@@ -32,7 +32,7 @@ export function calendarUrgent(title: string) {
 export function calendarDisplayTitle(title: string, domain = '') {
   let text = stripActivityTags(PROGRESSIVE_WORKFLOW_PRIMARY?stripProgressiveStage(title):title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
-    .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma)(?:0{2,4}|00[1-3])?\b/gi, '')
+    .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma|eedwin|eedwi|eed|edwin|ed)(?:0{2,4}|00[1-3])?\b/gi, '')
     .replace(/\b(?:aads|sseo|wwebs|mmaps|ddise|aapli|pprog|rrede|cchat|rrapi|mmapi|bblib|ccoti|coti)\b/gi, '')
     .replace(/(?:\b\d{2}-)?\[\d{2,4}[A-ZÁÉÍÓÚ]+\]/gi, '')
     .replace(/\(?\b\d{2,4}(?:-)?(?:0[1-9]|1[0-2])?(?:ENER|FEBR|MARZ|ABRI|MAYO|JUNI|JULI|AGOS|SEPT|OCTU|NOVI|DICI|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\b\)?/gi, '')

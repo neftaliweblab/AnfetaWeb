@@ -60,12 +60,14 @@ const COLLABORATORS = [
   "Brian",
   "Pedro",
   "Neft",
+  "Edwin",
 ];
 
 const REVIEWERS = [
   { name: "John", tag: "john" },
   { name: "Karla", tag: "k-karl" },
   { name: "Neft", tag: "n-neft" },
+  { name: "Edwin", tag: "edwi" },
 ];
 
 export function NotionTemplatesModal({

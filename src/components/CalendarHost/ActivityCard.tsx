@@ -1,4 +1,5 @@
 "use client";
+import { UnifiedActivityModal } from './UnifiedActivityModal';
 import {ReturnedObservations} from './ReturnedObservations';
 import {ReturnToOwnerModal} from './ReturnToOwnerModal';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
@@ -669,296 +670,26 @@ function ActivityCardComponent({
         </div>
       </div>
 
-      {/* Hover Preview Popover */}
+      {/* Unified Hover Preview Popover */}
       {showHover && hoverPos && !isSelected && (
-        <div
+        <UnifiedActivityModal
+          activity={activity}
+          currentUser={currentUser}
+          mode="hover"
+          hoverPos={hoverPos}
           onMouseEnter={handlePopoverMouseEnter}
           onMouseLeave={handlePopoverMouseLeave}
-          onClick={(event) => event.stopPropagation()}
-          data-activity-card="true"
-          style={{ top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }}
-          className={`fixed z-[100] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md p-4 shadow-2xl text-xs text-[#E2E8F0] space-y-2.5 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[88vh] overflow-y-auto scrollbar-thin ${
-            popoverSize === "small"
-              ? "w-80 max-w-[92vw]"
-              : popoverSize === "large"
-              ? "w-[560px] max-w-[95vw]"
-              : popoverSize === "xl"
-              ? "w-[760px] max-w-[96vw]"
-              : "w-[440px] max-w-[94vw]"
-          }`}
-        >
-          <ActivityContentPanel activity={activity} currentUser={currentUser} defaultOpen={false} onEditingChange={value=>{contentEditing.current=value;}}/>
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 border-b border-[#223246] pb-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <WorkflowStageBadge status={activity.status} title={activity.title}/>
-              {conflict && (
-                <span
-                  title={conflict.description}
-                  className="rounded bg-amber-950/80 border border-amber-500/60 px-1.5 py-0.5 text-[9px] font-bold text-amber-200"
-                >
-                  ⚠️ {conflict.label}
-                </span>
-              )}
-              {isUrgent&&<span title="Prioridad 00 · Urgente" aria-label="Prioridad 00 · Urgente" className="rounded bg-rose-950 px-1.5 py-0.5 text-[9px] font-bold text-rose-200">URG</span>}
-              <span className="font-mono font-bold text-[11px] text-[#38BDF8] truncate">
-                {domain}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {/* Selector de tamaño S/M/L/XL */}
-              <div className="flex items-center rounded border border-[#253549] bg-[#111822] p-0.5 text-[9.5px] font-mono">
-                {(["small", "medium", "large", "xl"] as const).map((sz) => (
-                  <button
-                    key={sz}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPopoverSize(sz);
-                      try { localStorage.setItem("anfeta_preview_size", sz); } catch {}
-                    }}
-                    title={`Tamaño ${sz === "small" ? "Compacto" : sz === "large" ? "Amplio" : sz === "xl" ? "Extra Grande" : "Normal"}`}
-                    className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                      popoverSize === sz
-                        ? "bg-[#0C4A6E] text-[#38BDF8] font-bold"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {sz === "small" ? "S" : sz === "large" ? "L" : sz === "xl" ? "XL" : "M"}
-                  </button>
-                ))}
-              </div>
-
-              {!editable && (
-                <span title="Actividad bloqueada" className="text-amber-400 text-xs">
-                  🔒
-                </span>
-              )}
-              {overlapTotal > 1 && (
-                <span className="rounded px-1.5 py-0.2 text-[8.5px] font-bold bg-[#3B0764] border border-[#C084FC] text-[#E9D5FF]">
-                  Empalme {overlapIndex + 1}/{overlapTotal}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <ReturnedObservations activity={activity}/>
-          {/* Full Title */}
-          <h4 className="font-semibold text-slate-100 text-xs leading-snug break-words">
-            {title}
-          </h4>
-
-          {/* Metadata Base */}
-          <div className="rounded-lg bg-[#141E2B] p-2.5 space-y-1.5 text-[11px] border border-[#1E2E40]">
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="text-slate-400">Responsable:</span>
-              <QuickAssigneeSelect activity={activity} currentUser={currentUser} onConfirm={updates=>onUpdateActivity?.(activity.pageId,updates)}/>
-            </div>
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="text-slate-400">Horario programado:</span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-cyan-300 font-semibold">
-                  {calendarTime(startStr)}
-                  {endStr ? ` – ${calendarTime(endStr)}` : ""} ({durationFormatted})
-                </span>
-                {editable && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowHover(false);
-                      setShowEditDateModal(true);
-                    }}
-                    className="p-1 rounded hover:bg-[#1E2E42] text-cyan-400 hover:text-cyan-200 transition-colors cursor-pointer"
-                    title="Editar fecha y hora"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <label className={`flex items-start gap-2 rounded-lg border p-2.5 ${activity.ftfVerified ? 'border-emerald-500/70 bg-emerald-950/40' : 'border-slate-700 bg-slate-900/40'}`}>
-              <input
-                type="checkbox"
-                aria-label="Pasos FTF verificados para hoy"
-                checked={!!activity.ftfVerified}
-                disabled={!editable || !activity.ftfAvailable || isSaving || ftfSaving || !onUpdateActivity}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-400"
-                onChange={async event => {
-                  if (ftfBusy.current || !onUpdateActivity) return;
-                  const checked = event.target.checked;
-                  ftfBusy.current = true;
-                  setFtfSaving(true);
-                  setFtfMessage('');
-                  try {
-                    const saved = await onUpdateActivity(activity.pageId, {
-                      ftfVerified: checked,
-                      expectedFtfVerified: !!activity.ftfVerified,
-                    });
-                    setFtfMessage(saved === false
-                      ? 'No se confirmó la verificación FTF. Revisa el aviso del calendario.'
-                      : checked ? 'Pasos verificados: la actividad ya está entendida.' : 'Se retiró la verificación FTF.');
-                  } catch (error) {
-                    setFtfMessage(error instanceof Error ? error.message : 'No se pudo guardar la verificación FTF.');
-                  } finally {
-                    ftfBusy.current = false;
-                    setFtfSaving(false);
-                  }
-                }}
-              />
-              <span>
-                <span className={`block font-semibold ${activity.ftfVerified ? 'text-emerald-300' : 'text-slate-200'}`}>
-                  {ftfSaving ? 'Guardando…' : 'Pasos revisados y actividad entendida'}
-                </span>
-                <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">
-                  {activity.ftfAvailable ? 'Activa la franja verde de verificación FTF.' : 'No se encontró la casilla “Check FTF Pasos Verificados Hoy” en esta página.'}
-                </span>
-              </span>
-            </label>
-            {ftfMessage && <p role="status" className="text-[11px] text-cyan-200">{ftfMessage}</p>}
-
-
-            {/* Resumen de Checks e Historial Hoy (Anfeta Original Parity) */}
-            {loadingChecklist && (
-              <div className="pt-2 border-t border-[#1E2E40] py-2 flex items-center gap-2 text-[10.5px] text-cyan-300 font-mono animate-pulse">
-                <Clock className="w-3.5 h-3.5 text-cyan-400 animate-spin shrink-0" />
-                <span>Cargando checks de la actividad...</span>
-              </div>
-            )}
-
-            {!loadingChecklist && isScanned && totalChecklist === 0 && (
-              <div className="pt-2 border-t border-[#1E2E40] py-1.5 flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
-                <CheckSquare className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>Sin checks pendientes para esta fecha</span>
-              </div>
-            )}
-
-            {totalChecklist > 0 && (
-              <div className="pt-2 border-t border-[#1E2E40] space-y-1.5">
-                <div className="flex items-center justify-between text-[10.5px]">
-                  <span className="text-slate-300 flex items-center gap-1 font-semibold">
-                    <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-                    Marcados en Notion:
-                  </span>
-                  <div className="flex items-center gap-1.5 font-mono">
-                    <span className="text-emerald-400 font-bold">
-                      {completedChecklist} / {totalChecklist} ({pct}%)
-                    </span>
-                    {effectiveToday > 0 && (
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
-                        +{effectiveToday} hoy
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0D1520]">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-
-                <p className="text-[10px] text-slate-400">Confirmados para este día: {daily.done} de {daily.total}.{daily.unknown>0&&<span className="text-amber-300"> {daily.unknown} marcados sin fecha verificable; no se atribuyen a hoy.</span>}</p>
-                {/* Desglose rápido de Checks con fecha de agregado y completado */}
-                {checkMessage&&<p role="status" className="text-xs text-amber-200">{checkMessage}</p>}
-                {effectiveItems.length > 0 && (
-                  <div className={`mt-2 pt-1.5 border-t border-[#1E2E40]/60 space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
-                    showAllChecks || popoverSize === "xl" ? "max-h-72" : "max-h-40"
-                  }`}>
-                    {(showAllChecks||popoverSize==="xl"?effectiveItems:daily.items).slice(0, showAllChecks || popoverSize === "xl" ? undefined : 6).map((chk: any, idx: number) => {
-                      const isDone = Boolean(chk.isChecked);
-                      const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
-                      const doneDate = chk.markingSource==='verified'&&chk.markedAt ? formatSmartDate(chk.markedAt) : null;
-
-                      return (
-                        <div
-                          key={chk.id || chk.blockId || idx}
-                          className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#0D1520]/70 border border-[#1E2A38]/60 text-[10.5px]"
-                        >
-                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                            <input type="checkbox" aria-label={'Completar '+(chk.text||'tarea')} checked={isDone} disabled={!editable||isSaving||checkSaving} onChange={()=>void toggleCardCheck(chk)} className="mt-0.5 shrink-0 accent-emerald-400"/>
-                            <span className={`leading-tight ${isDone ? "text-slate-300 line-through opacity-80" : "text-slate-100"}`}>
-                              {chk.text || "Tarea sin título"}
-                            </span>
-                          </div>
-
-                          <div className="shrink-0 text-right font-mono text-[9px] pl-2">
-                            {isDone && doneDate ? (
-                              <span className="text-emerald-400 block font-medium" title={`Completado: ${doneDate}`}>
-                                ✓ {doneDate}
-                              </span>
-                            ) : addedDate ? (
-                              <span className="text-slate-400 block" title={`Agregado: ${addedDate}`}>
-                                + {addedDate}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 block">
-                                {isDone ? "Completado" : "Pendiente"}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {totalChecklist > 6 && (
-                      <div className="pt-1.5 flex items-center justify-center">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowAllChecks(prev => !prev);
-                          }}
-                          className="w-full py-1 px-2 text-[10px] text-cyan-300 hover:text-cyan-100 bg-[#122132]/80 hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
-                        >
-                          {showAllChecks ? (
-                            <>
-                              <ChevronUp className="w-3 h-3" />
-                              <span>Mostrar menos</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-3 h-3" />
-                              <span>Ver todos los checks ({totalChecklist})</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {workflowState(activity.status,activity.title)==='review'&&!activity.isReviewMirror&&<div className="grid grid-cols-2 gap-2"><button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)} onClick={()=>setShowReturn(true)} className="rounded border border-amber-500 bg-amber-950/50 p-2 text-xs text-amber-200 disabled:opacity-40">↩ Regresar a responsable</button><button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)} onClick={()=>void onUpdateActivity?.(activity.pageId,{status:'zREVISION'})} className="rounded border border-emerald-700 bg-emerald-950/50 p-2 text-xs text-emerald-200 disabled:opacity-40">Terminar revisión</button></div>}
-          {/* Footer Tips */}
-          <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-0.5">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowHover(false);
-                setShowPopup(true);
-              }}
-              className="text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <span>💡 Clic para abrir ventana modal fija</span>
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                openNotionPage(notionPageUrl(activity));
-              }}
-              className="text-sky-400 hover:underline font-medium cursor-pointer"
-            >
-              ↗ Abrir en Notion
-            </button>
-          </div>
-        </div>
+          onPin={() => {
+            setShowHover(false);
+            onSelectActivity?.(activity);
+          }}
+          onClose={() => setShowHover(false)}
+          onUpdateActivity={onUpdateActivity}
+          onChecklistUpdated={onChecklistUpdated}
+          displayDate={displayDate}
+          overlapIndex={overlapIndex}
+          overlapTotal={overlapTotal}
+        />
       )}
 
       {showPopup && createPortal(

@@ -49,6 +49,7 @@ import { computeActivityOverlaps } from "@/utils/calendarLayout";
 import { canEditActivity, scheduleAtDrop, isDirection, isReviewer } from '@/services/activityPermissions';
 import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
+import { UnifiedActivityModal } from './UnifiedActivityModal';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
 interface CalendarHostProps {
   active?: boolean;
@@ -68,6 +69,8 @@ interface CalendarHostProps {
   loadError?: string;
   initialCacheMeta?:any;
   onOpenAnnouncements?: () => void;
+  initialSelectedActivityId?: string;
+  initialSelectedActivity?: NotionCalendarActivity | null;
 }
 
 const DEFAULT_COLLABORATORS = [
@@ -98,6 +101,8 @@ export function CalendarHost({
   onOpenDailyProgress,
   onRefresh,
   loadError,initialCacheMeta,onOpenAnnouncements,
+  initialSelectedActivityId,
+  initialSelectedActivity,
 }: CalendarHostProps) {
   const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
   const activitiesListRef = React.useRef(activitiesList); activitiesListRef.current = activitiesList;
@@ -263,7 +268,7 @@ export function CalendarHost({
     const next = [...prev]; [next[index], next[target]] = [next[target], next[index]]; return next;
   });
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
-  const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(() => initialSelectedActivity || null);
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const watchCalendarRows = useMemo(() => {
     const list = selectedActivity ? [selectedActivity] : [];
@@ -289,7 +294,7 @@ export function CalendarHost({
     });
     return ready.map(state=>pageIdentity(state.id));
   },true);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(() => Boolean(initialSelectedActivity || initialSelectedActivityId));
   const [notificationTarget,setNotificationTarget]=useState<NotionCalendarActivity|null>(null);
   const openNotificationActivity=(activity:NotionCalendarActivity)=>{
     const day=mexicoDate(activity.start);
@@ -881,19 +886,20 @@ export function CalendarHost({
 
         {/* Panel Lateral de Detalle y Checklist (WPF Parity) */}
         {selectedActivity && isDetailOpen && (
-          <CalendarDetailPanel
+          <UnifiedActivityModal
             activity={selectedActivity}
             currentUser={currentUser}
-            allActivities={activitiesList}
-            onSelectActivity={(act) => setSelectedActivity(act)}
-            onClose={() => setIsDetailOpen(false)}
-            onActivityUpdated={(updates) => handleUpdateActivity(selectedActivity.pageId, updates)}
-            onChecklistUpdated={(updates) => {
-              const pageId = selectedActivity.pageId;
-              setActivitiesList(prev => prev.map(a => a.pageId === pageId ? {...a,...updates} : a));
-              setSelectedActivity(prev => prev ? {...prev,...updates} : prev);
-
+            mode="pinned"
+            onClose={() => {
+              setSelectedActivity(null);
+              setIsDetailOpen(false);
             }}
+            onUpdateActivity={handleUpdateActivity}
+            onChecklistUpdated={(pageId, updates) => {
+              setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
+              setSelectedActivity(prev => prev ? { ...prev, ...updates } : prev);
+            }}
+            displayDate={currentDate}
           />
         )}
       </div>

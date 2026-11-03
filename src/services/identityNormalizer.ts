@@ -9,7 +9,7 @@ export const PERSON_ALIASES: Record<string, string[]> = {
   John: ["jjohn", "john"],
   Sotelo: ["ssote", "sote", "eedua", "edua", "sotelo"],
   Acalli: ["aacal", "acal", "acalli", "acali"],
-  Edwin:["eedwin","edwin"],
+  Edwin: ["eedwin", "edwin", "eedwi", "edwi", "eed", "ed"],
 };
 
 export const PERSON_METADATA: Record<
@@ -36,7 +36,7 @@ export function normalizePerson(input: string | null | undefined): string {
     return "Sin asignar";
   }
 
-  // Si viene como correo ej: nnetf@practicante.com o nneft@anfeta.com
+  // Si viene como correo ej: nnetf@practicante.com o nneft@anfeta.com o eedwi@practicante.com
   if (clean.includes("@")) {
     clean = clean.split("@")[0].trim();
   }
@@ -49,6 +49,8 @@ export function normalizePerson(input: string | null | undefined): string {
       return canonical;
     }
   }
+
+  if (/^(?:eedwi|edwin)/.test(clean)) return "Edwin";
 
   return input.trim();
 }

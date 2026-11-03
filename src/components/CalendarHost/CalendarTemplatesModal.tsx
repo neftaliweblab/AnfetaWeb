@@ -58,6 +58,7 @@ const COLLABORATORS = [
   "Brian",
   "Genaro",
   "Neftali",
+  "Edwin",
 ];
 
 const REVIEWERS = [
@@ -70,6 +71,7 @@ const REVIEWERS = [
   { name: "Brian", tag: "bria" },
   { name: "Genaro", tag: "gena" },
   { name: "Neftali", tag: "neft" },
+  { name: "Edwin", tag: "edwi" },
 ];
 
 export function CalendarTemplatesModal({

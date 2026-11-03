@@ -502,6 +502,57 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       }
       catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.'},{status:502}); }
     }
+    if (type === 'calendar-activity') {
+      try {
+        const rawId = searchParams.get('pageId') || searchParams.get('activity') || searchParams.get('id') || '';
+        const cleanId = rawId.replace(/-/g, '').toLowerCase();
+        if (!/^[a-f0-9]{32}$/.test(cleanId)) {
+          return NextResponse.json({ error: 'ID de página no válido.', invalidId: true }, { status: 400 });
+        }
+        const settings = getSettings();
+        const token = resolveNotionToken(req, searchParams) || settings.notionToken;
+        if (!token) {
+          return NextResponse.json({ error: 'Inicia sesión en ANFETA para abrir la actividad.', unauthorized: true }, { status: 401 });
+        }
+        const pageRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
+          headers: {
+            Authorization: 'Bearer ' + token.trim(),
+            'Notion-Version': '2022-06-28',
+          },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (pageRes.status === 404) {
+          return NextResponse.json({ error: 'La actividad no existe o fue eliminada en Notion.', notFound: true }, { status: 404 });
+        }
+        if (pageRes.status === 401 || pageRes.status === 403) {
+          return NextResponse.json({ error: 'No tienes permisos de acceso para ver esta actividad en Notion.', forbidden: true }, { status: 403 });
+        }
+        if (!pageRes.ok) {
+          return NextResponse.json({ error: 'Error al consultar Notion (HTTP ' + pageRes.status + ').' }, { status: 502 });
+        }
+        const page = await pageRes.json();
+        if (page.archived || page.in_trash) {
+          return NextResponse.json({ error: 'Esta actividad fue archivada o eliminada en Notion.', archived: true }, { status: 404 });
+        }
+        const live = extractNotionPageData(page);
+        const activity = normalizeActivity({
+          pageId: page.id,
+          pageUrl: live.url,
+          title: live.title,
+          person: live.person,
+          status: live.status,
+          start: live.dateStart || '',
+          end: live.dateEnd || '',
+          domain: live.domain,
+          ...ftfState(page),
+          isLocked: live.isLocked,
+        }, 0);
+        const date = live.dateStart ? mexicoDate(live.dateStart) : mexicoDate();
+        return NextResponse.json({ success: true, activity, date }, { headers: { 'Cache-Control': 'no-store' } });
+      } catch (error) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Error al cargar la actividad.' }, { status: 500 });
+      }
+    }
     if(type==='review-activity'){
       try {
         const settings=getSettings();
@@ -2408,6 +2459,52 @@ async function POSTLive(req: NextRequest) {
       } catch (error: any) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.', code: error?.code, conflictTitle: error?.conflict?.title, suggestedSlot: error?.suggestedSlot }, { status: 400 }); }
     }
 
+    if (action === 'save-activity-link') {
+      try {
+        const input = payload || body;
+        const cleanId = String(input?.pageId || '').replace(/-/g, '').toLowerCase();
+        if (!/^[a-f0-9]{32}$/.test(cleanId)) return NextResponse.json({ success: false, error: 'ID de página no válido.' }, { status: 400 });
+        const linkUrl = String(input?.linkUrl || input?.url || '').trim();
+        if (!linkUrl) return NextResponse.json({ success: false, error: 'URL requerida.' }, { status: 400 });
+
+        const settings = getSettings();
+        const token = resolveNotionToken(req) || settings.notionToken;
+        if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+
+        const pageRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
+          headers: { Authorization: 'Bearer ' + token.trim(), 'Notion-Version': '2022-06-28' },
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!pageRes.ok) return NextResponse.json({ success: false, error: 'No se pudo leer la página en Notion.' }, { status: 502 });
+        const pageData = await pageRes.json();
+        const props = pageData.properties || {};
+        let targetProp = null;
+        for (const [name, p] of Object.entries(props)) {
+          if ((p as any)?.type === 'url' && /anfeta|enlace|link/i.test(name)) { targetProp = name; break; }
+        }
+        if (!targetProp) {
+          for (const [name, p] of Object.entries(props)) {
+            if ((p as any)?.type === 'url') { targetProp = name; break; }
+          }
+        }
+        if (!targetProp) {
+          return NextResponse.json({ success: false, reason: 'schema_missing', message: 'La fuente de Notion no tiene una propiedad URL para Enlace ANFETA.' });
+        }
+        const patchRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer ' + token.trim(), 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ properties: { [targetProp]: { url: linkUrl } } }),
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!patchRes.ok) {
+          const errText = await patchRes.text();
+          return NextResponse.json({ success: false, error: 'Notion no pudo actualizar la propiedad: ' + errText }, { status: 502 });
+        }
+        return NextResponse.json({ success: true, property: targetProp, message: 'Enlace guardado en Notion en la propiedad "' + targetProp + '".' });
+      } catch (error) {
+        return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'No se pudo guardar el enlace.' }, { status: 500 });
+      }
+    }
     if (action === 'get-review-thread' || action === 'reply-review-thread') {
       try {
         const settings=getSettings(),input=payload || body, actor=input.currentUser || settings.currentUser;
@@ -2727,7 +2824,7 @@ async function GETSnapshot(req:NextRequest,verifiedActor?:string,providedContext
 
 async function POSTWithInvalidation(req:NextRequest){
  const body=await req.clone().json().catch(()=>null),response=await POSTLive(req);
- const changes=['create-note','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
+ const changes=['create-note','unified-upload','attach-to-notion-page','create-activity','create-notion-page','sync-notion','update-activity-status','update-activity-schedule','update-activity-assignee','update-activity-details','save-activity-link','calendar-batch-schedule','rename-item','duplicate-item','delete-item','delete-items','create-from-template','calendar-automation-run'];
  if(!supabaseConfigured()||!response.ok||!changes.includes(body?.action))return response;
  if(body.action==='update-activity-status'&&typeof body.payload?.ftfVerified==='boolean'&&!body.payload.status)return response;
  if(body.action==='calendar-automation-run'){const result=await response.clone().json();if(!result.report?.moved&&!result.report?.ftf?.reset)return response;}

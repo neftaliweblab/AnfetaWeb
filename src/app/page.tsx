@@ -133,7 +133,9 @@ export default function AnfetaApp() {
   const [activeView, setActiveView] = useState<ActiveHostView>(() => {
     if (typeof window === "undefined") return "results";
     try {
-      if(new URLSearchParams(window.location.search).get('view')==='messages')return 'messages';
+      const urlP = new URLSearchParams(window.location.search);
+      if(urlP.get('activity') || urlP.get('pageId')) return 'calendar';
+      if(urlP.get('view')==='messages')return 'messages';
       const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
       if (savedView && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(savedView)) {
         return savedView;
@@ -150,6 +152,32 @@ export default function AnfetaApp() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [calendarPopupBlocked,setCalendarPopupBlocked]=useState(false);
+  const [directSelectedActivity, setDirectSelectedActivity] = useState<NotionCalendarActivity | null>(null);
+  const [directActivityError, setDirectActivityError] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    const targetId = p.get("activity") || p.get("pageId");
+    if (!targetId) return;
+
+    fetch("/api/data?type=calendar-activity&pageId=" + encodeURIComponent(targetId))
+      .then(async (r) => {
+        const data = await r.json();
+        if (data.success && data.activity) {
+          if (data.date) setCurrentDate(data.date);
+          setActiveView("calendar");
+          setCalendarActivities((prev) => {
+            if (prev.some((a) => a.pageId === data.activity.pageId)) return prev;
+            return [data.activity, ...prev];
+          });
+          setDirectSelectedActivity(data.activity);
+        } else if (data.error) {
+          setDirectActivityError(data.error);
+        }
+      })
+      .catch((e) => setDirectActivityError(e instanceof Error ? e.message : "Error al abrir la actividad."));
+  }, []);
   const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
   useEffect(()=>{
     const update=(event:Event)=>{
