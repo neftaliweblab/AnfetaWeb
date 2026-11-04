@@ -1,3 +1,4 @@
+import { indexedContentText } from '../services/advancedQuery';
 import {matchesSearchDatabase} from './searchDatabase';
 import { ResultItem } from "@/components/ResultsViewHost/ResultsVirtualTable";
 
@@ -36,31 +37,15 @@ export function isDropboxItem(x: ResultItem): boolean {
   return s === "dropbox" || (x as any).source === 1 || src === "dropbox" || p.includes("dropbox");
 }
 
-export function isContentItem(x: ResultItem): boolean {
-  // 1. Text snippet, description, or pageContent (distinct from title and raw search tokens)
-  const snippet = String(x.contentSnippet || (x as any).pageContent || x.description || "").trim();
-  const name = String(x.name || "").trim();
-  const searchText = String((x as any).searchText || "").trim();
-  if (snippet && snippet !== name && snippet !== searchText) {
-    return true;
-  }
+export function isLegacyDropboxDiskItem(item: ResultItem): boolean {
+  const location = String(item.path || item.target || "").trim();
+  const absoluteDiskPath = /^[a-z]:[\\/]|^\\\\|^file:\/\//i.test(location);
+  return absoluteDiskPath && isDropboxItem(item);
+}
 
-  // 2. Documents & readable text/code files (Dropbox or local files with text content)
-  if (!x.isFolder && x.type !== "FOLDER" && (x as any).type !== "folder") {
-    const ext = String(x.extension || "").toLowerCase().replace(/^\./, "");
-    const pathOrName = String(x.path || x.target || x.name || "").toLowerCase();
-    if (/^(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?|html|xml|js|ts|jsx|tsx|py|sql|sh|bat|ps1)$/.test(ext) ||
-        /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?|html|xml|js|ts|jsx|tsx|py|sql|sh|bat|ps1)($|\s)/i.test(pathOrName)) {
-      return true;
-    }
-  }
-
-  // 3. User checklist progress or note drafts
-  if ((x as any).hasChecklistProgress || ((x as any).checklistProgressText && (x as any).checklistProgressText.trim())) {
-    return true;
-  }
-
-  return false;
+export function isContentItem(item: ResultItem): boolean {
+  return !item.isFolder && item.type?.toUpperCase() !== "FOLDER" &&
+    !isLegacyDropboxDiskItem(item) && !!indexedContentText(item);
 }
 
 function fromBase(item:ResultItem,source:RegExp,legacy:RegExp){

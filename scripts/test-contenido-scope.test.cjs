@@ -77,7 +77,7 @@ const fileFolder = {
 
 assert.equal(isContentItem(norm1), false, 'Página sin contenido no debe ser ContentItem');
 assert.equal(isContentItem(norm2), true, 'Página con Description debe ser ContentItem');
-assert.equal(isContentItem(fileDoc), true, 'Archivo de texto/documento debe ser ContentItem');
+assert.equal(isContentItem(fileDoc), false, 'La extensión no demuestra que el texto esté indexado');
 assert.equal(isContentItem(fileFolder), false, 'Carpeta no debe ser ContentItem');
 console.log('OK: isContentItem correctly separates items with body content/docs from title-only pages.');
 
@@ -85,8 +85,8 @@ console.log('OK: isContentItem correctly separates items with body content/docs 
 console.log('\n--- TEST 3: filterByNotionBase with Contenido scope ---');
 const items = [norm1, norm2, fileDoc, fileFolder];
 const contenidoResults = filterByNotionBase(items, 'Contenido');
-assert.equal(contenidoResults.length, 2, 'Solo deben coincidir norm2 (con description) y fileDoc (documento)');
-assert.deepEqual(contenidoResults.map(x => x.id), [norm2.id, fileDoc.id]);
+assert.equal(contenidoResults.length, 1, 'Solo debe aparecer la página con texto indexado');
+assert.deepEqual(contenidoResults.map(x => x.id), [norm2.id]);
 console.log('OK: filterByNotionBase("Contenido") excludes title-only Notion pages.');
 
 // 4. Verificación de búsqueda contentOnly vs normal
@@ -132,3 +132,18 @@ console.log('OK: Dynamically loaded page content is immediately searchable in Co
 console.log('\n=============================================');
 console.log('ALL CONTENIDO SCOPE TESTS PASSED!');
 console.log('=============================================');
+
+const {hasIndexedContentMatch}=require('../src/services/advancedQuery.ts');
+const {isLegacyDropboxDiskItem}=require('../src/lib/notionFilters.ts');
+const cloud={...fileDoc,name:'acceso.txt',path:'/Proyectos/acceso.txt'};
+const disk={...cloud,path:'C:/Users/nanoc/Dropbox/Proyectos/acceso.txt',contentSnippet:'acceso confirmado'};
+assert.equal(matchesFlexibleOrQuotedQuery(cloud,'acceso',{contentOnly:true}),false);
+assert.equal(matchesFlexibleOrQuotedQuery(cloud,'acceso',{contentOnly:true,matchRegex:true}),false);
+assert.equal(isLegacyDropboxDiskItem(disk),true);
+assert.equal(isContentItem(disk),false);
+assert.equal(isLegacyDropboxDiskItem(cloud),false);
+assert.equal(isContentItem({...cloud,contentSnippet:'acceso confirmado'}),true);
+assert.equal(hasIndexedContentMatch(enrichedPage,'anticipo'),true);
+assert.equal(hasIndexedContentMatch(cloud,'acceso'),false);
+assert.equal(hasIndexedContentMatch(enrichedPage,'source:notion'),false);
+console.log('OK rutas de Dropbox, consultas regex y evidencia del badge.');

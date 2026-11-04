@@ -9,7 +9,7 @@ import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled} from '@/lib/searchPresentation';
-import {matchesFlexibleOrQuotedQuery} from '@/services/advancedQuery';
+import {matchesFlexibleOrQuotedQuery, type SearchMatchOptions} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {workflowState} from '@/services/activityWorkflow';
 import {detectActivityConflict} from '@/services/activityConflict';
@@ -110,6 +110,7 @@ interface ResultsTableProps {
   selectedId: string | null;
   selectedIds: Set<string>;
   searchQuery?: string;
+  searchOptions?: SearchMatchOptions;
   favorites?: Set<string>;
   selectedScope?: string;
   onSelect: (item: any) => void;
@@ -154,6 +155,7 @@ function ResultsVirtualTableComponent({
   selectedId,
   selectedIds,
   searchQuery = "",
+  searchOptions,
   favorites = new Set(),
   selectedScope = "Todo",
   onSelect,
@@ -658,7 +660,7 @@ function ResultsVirtualTableComponent({
                 {highlightMatch(parsed.domain || item.domainChip || item.domain)}
               </span>
             )}
-            <ResultIdentityBadges item={item} query={searchQuery}/>
+            <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions}/>
           </div>
         </div>
 
@@ -1067,7 +1069,7 @@ function ResultsVirtualTableComponent({
             <span className="truncate">{conflict.label}</span>
           </div>
         )}
-        <ResultIdentityBadges item={item} query={searchQuery}/>
+        <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions}/>
         <div
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
           className={'font-semibold line-clamp-2 mb-2 '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}

@@ -445,6 +445,27 @@ const itemSearchableCache = new WeakMap<SearchResultRow, {
   rawExtId: string;
 }>();
 
+export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'description' | 'contentSnippet' | 'pageContent' | 'checklistProgressText'>): string {
+  const title = (item.name || "").trim();
+  const segments = [item.description, item.contentSnippet, item.pageContent, item.checklistProgressText]
+    .map(value => value?.trim())
+    .filter(value => value && value !== title);
+  return [...new Set(segments)].join(" ");
+}
+
+export function hasIndexedContentMatch(item: SearchResultRow, query: string, options?: SearchMatchOptions): boolean {
+  if (!query.trim()) return false;
+  const plan = getParsedQueryPlan(query.trim(), options);
+  const { searchable, searchableWithSpaces, searchableCompact } = getItemSearchable(item, !!options?.matchCase, true);
+  if (!searchable) return false;
+  if (plan.matchRegex) return plan.rx?.test(searchable) ?? false;
+  const bodyOptions = { ...options, contentOnly: true };
+  return plan.activeClauses.some(clause => clause.some(token =>
+    !token.isNegated && (token.isExact || !/^(?:source|ext|folder|type):/i.test(token.value)) &&
+    checkSingleToken(token, item, bodyOptions, searchable, searchableWithSpaces, searchableCompact),
+  ));
+}
+
 function getItemSearchable(item: SearchResultRow, matchCase: boolean, contentOnly = false) {
   if (!matchCase && !contentOnly) {
     const cached = itemSearchableCache.get(item);
@@ -452,16 +473,7 @@ function getItemSearchable(item: SearchResultRow, matchCase: boolean, contentOnl
   }
 
   if (contentOnly) {
-    const isDoc = !item.isFolder && item.type !== "FOLDER" && /\.(txt|md|log|json|csv|pdf|docx?|xlsx?|pptx?|html|xml|js|ts|jsx|tsx|py|sql|sh|bat|ps1)$/i.test(item.name || item.path || "");
-    const rawSearchable = [
-      item.description,
-      (item as any).contentSnippet,
-      (item as any).pageContent,
-      item.checklistProgressText,
-      isDoc ? item.name : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const rawSearchable = indexedContentText(item);
 
     const searchable = matchCase ? rawSearchable : rawSearchable.toLowerCase();
     const searchableWithSpaces = searchable.replace(/[.\-_/]/g, " ");
@@ -548,7 +560,7 @@ export function matchesFlexibleOrQuotedQuery(
 
   if (plan.matchRegex) {
     if (!plan.rx) return false;
-    const target = [
+    const target = options?.contentOnly ? indexedContentText(item) : [
       item.name,
       item.displayName,
       item.path,
@@ -558,7 +570,7 @@ export function matchesFlexibleOrQuotedQuery(
     ]
       .filter(Boolean)
       .join(" ");
-    return plan.rx.test(target);
+    return !!target && plan.rx.test(target);
   }
 
   const contentOnly = !!options?.contentOnly;
@@ -681,7 +693,7 @@ function checkSingleToken(
            (searchableCompact.includes(cleanSp.replace(/[\s.\-_/()[\]]+/g, "")) ||
             searchableCompact.normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(cleanSpFolded.replace(/[\s.\-_/()[\]]+/g, "")))));
 
-    if (!has) {
+    if (!has && !contentOnly) {
       // Alias y equivalencias automáticas de ANFETA
       if (cleanSp === "zproyectos" || cleanSp === "zproyecto" || cleanSp === "proyectos" || cleanSp === "proyecto") {
         has =

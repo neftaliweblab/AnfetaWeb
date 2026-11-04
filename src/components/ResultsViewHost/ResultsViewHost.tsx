@@ -55,7 +55,7 @@ import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus';
 import {matchesContentClassification} from '@/lib/contentClassification';
 import {searchDatabaseOptions} from '@/lib/searchDatabase';
-import { filterByNotionBase,isNotionItem } from "@/lib/notionFilters";
+import { filterByNotionBase, isNotionItem, isLegacyDropboxDiskItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
@@ -1308,7 +1308,7 @@ export function ResultsViewHost({
   // Filter & scope processing
   const filteredItems = useMemo(() => {
     const isContentScope = selectedScope === "Contenido";
-    let baseList = filterDeletedPages(items, currentUser);
+    let baseList = filterDeletedPages(items, currentUser).filter(item => !isLegacyDropboxDiskItem(item));
 
     if (selectedScope && selectedScope !== "Todo") {
       baseList = filterByNotionBase(baseList as any, selectedScope) as any;
@@ -1625,8 +1625,8 @@ export function ResultsViewHost({
                   <FileText className="h-4 w-4 text-cyan-400 shrink-0" />
                   <span>
                     {deferredQuery.trim()
-                      ? `Búsqueda en cuerpo interno: buscando "${deferredQuery}" dentro de notas, descripciones y contenido indexado.`
-                      : "Mostrando actividades y archivos con contenido, notas, checklists o documentos de texto indexados."}
+                      ? `Búsqueda en cuerpo interno: buscando "${deferredQuery}" en notas, descripciones y texto indexado.`
+                      : "Mostrando páginas y archivos que tienen texto indexado."}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1704,6 +1704,7 @@ export function ResultsViewHost({
           selectedId={selectedItem?.id || null}
           selectedIds={selectedIds}
           searchQuery={deferredQuery}
+          searchOptions={searchOptions}
           favorites={favorites}
           selectedScope={selectedScope}
           onSelect={handleSelectRow}
