@@ -1,5 +1,5 @@
 "use client";
-import { calendarTime } from "@/services/calendarPresentation";
+import { calendarDomain,calendarDisplayTitle,calendarTime } from "@/services/calendarPresentation";
 
 
 import {checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
@@ -21,8 +21,9 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
   const total = totals.total;
   const completed = totals.done;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const title = activity?.shortTitle || activity?.title || (activity as any)?.Title || "Actividad";
-  const domain = activity?.domain || (activity as any)?.ParsedDomain || "Actividad";
+  const rawTitle = activity?.title || activity?.shortTitle || (activity as any)?.Title || "Actividad";
+  const domain = calendarDomain(rawTitle,activity?.domain || (activity as any)?.ParsedDomain || "");
+  const title = calendarDisplayTitle(rawTitle,domain);
 
   return (
     <div

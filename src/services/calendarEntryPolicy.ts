@@ -1,3 +1,8 @@
+/** Response pages remain searchable but are not calendar work entries. */
+export function isTemporaryCalendarResponse(entry:string|{title?:string;shortTitle?:string}) {
+  const title=typeof entry==='string'?entry:[entry.title,entry.shortTitle].filter(Boolean).join(' ');
+  return /\[\s*RESPUESTA\s*\]/iu.test(title||'');
+}
 /** Temporary replies and recording references may share a time slot with actual work. */
 export function calendarEntryAllowsOverlap(title:string=''){
  return /\[RESPUESTA\]|\[GRABACI[OÓ]N\]/iu.test(title)||/(?<![\p{L}\p{N}_])grabaci[oó]n\s+\d{4}-\d{2}-\d{2}\b/iu.test(title);

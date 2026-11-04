@@ -1,4 +1,5 @@
 "use client";
+import {calendarDisplayTitle} from '@/services/calendarPresentation';
 import {runActivityDetailRequest} from '@/lib/activityDetailQueue';
 import {useEffect,useRef,useState,useMemo} from 'react';
 import type {NotionCalendarActivity} from '@/types/anfeta';
@@ -13,7 +14,7 @@ import {mediaUrl} from '@/lib/mediaUrl';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {MediaViewerModal, detectMediaKind, type MediaKind} from '../MediaViewerModal';
 const cache=new Map<string,any>();
-export function ActivityContentPanel({activity,currentUser,onEditingChange,defaultOpen=true,onChecklistUpdated,embedded=false,maxHeight="max-h-[350px]"}:{activity:NotionCalendarActivity;currentUser:string;onEditingChange?:(open:boolean)=>void;defaultOpen?:boolean;onChecklistUpdated?:(updates:Partial<NotionCalendarActivity>)=>void;embedded?:boolean;maxHeight?:string}){
+export function ActivityContentPanel({activity,currentUser,onEditingChange,defaultOpen=true,onChecklistUpdated,embedded=false,cleanActivityTitle=false,maxHeight="max-h-[350px]"}:{activity:NotionCalendarActivity;currentUser:string;onEditingChange?:(open:boolean)=>void;defaultOpen?:boolean;onChecklistUpdated?:(updates:Partial<NotionCalendarActivity>)=>void;embedded?:boolean;cleanActivityTitle?:boolean;maxHeight?:string}){
  const pageId=(activity.originalPageId||activity.pageId).replace(/^review-mirror-/,'');
  const [freeHeight,setFreeHeight]=useState(false);
  const [full,setFull]=useState(false),[visible,setVisible]=useState(100),[open,setOpen]=useState(defaultOpen),[blocks,setBlocks]=useState<any[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[editor,setEditor]=useState<string|null>(null),[adding,setAdding]=useState(false),[revision,setRevision]=useState(0),[organizing,setOrganizing]=useState(false);
@@ -154,7 +155,7 @@ export function ActivityContentPanel({activity,currentUser,onEditingChange,defau
     <div className="flex flex-wrap items-center justify-between border-b border-slate-800/80 pb-2 mb-2 gap-2 text-xs">
       <div className="flex items-center gap-2 min-w-0">
         <span className="flex items-center justify-center w-5 h-5 rounded bg-cyan-950/90 border border-cyan-500/40 text-cyan-400 text-[11px] font-bold shrink-0">📋</span>
-        <span className="font-semibold text-slate-100 truncate max-w-sm sm:max-w-md">{activity.title||'Contenido de la actividad'}</span>
+        <span className="font-semibold text-slate-100 truncate max-w-sm sm:max-w-md">{cleanActivityTitle?calendarDisplayTitle(activity.title,activity.domain):activity.title||'Contenido de la actividad'}</span>
         {checklistBlocks.length>0&&<span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-950/70 border border-emerald-500/40 text-emerald-300">✓ {completedChecks} / {checklistBlocks.length} completados</span>}
       </div>
       <div className="flex items-center gap-2 shrink-0">

@@ -1,4 +1,5 @@
 "use client";
+import {isTemporaryCalendarResponse} from '@/services/calendarEntryPolicy';
 import {DailyWorkspace} from '../DailyWorkspace';
 import {rememberReviewFailure} from '@/lib/reviewOutcome';
 import {dailyChecklist} from '@/lib/dailyChecklist';
@@ -513,6 +514,7 @@ export function CalendarHost({
 
   const filteredActivities = useMemo(() => {
     return filterDeletedPages(activitiesList,currentUser).filter((act) => {
+      if(isTemporaryCalendarResponse(act))return false;
       if(!act.start||mexicoDate(act.start)!==currentDate)return false;
       if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();

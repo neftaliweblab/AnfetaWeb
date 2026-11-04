@@ -1,7 +1,7 @@
 "use client";
 import {dailyActivityChecks} from '@/lib/dailyChecklist';
 
-import {calendarTime, calendarDisplayTitle} from '@/services/calendarPresentation';
+import {calendarDomain,calendarTime, calendarDisplayTitle} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
 import React, { useState, useMemo } from "react";
 import { X, CheckCircle2, AlertTriangle, Calendar, CheckSquare, Clock, ExternalLink } from "lucide-react";
@@ -234,10 +234,10 @@ export function CalendarPersonPreviewPanel({
             >
               <div className="min-w-0 flex-1">
                 <span className="text-[10px] font-mono uppercase text-[#38BDF8]">
-                  {act.domain}
+                  {calendarDomain(act.title,act.domain)}
                 </span>
                 <h4 className="text-xs font-semibold text-[#F1F5F9] truncate">
-                  {act.shortTitle || act.title}
+                  {calendarDisplayTitle(act.title||act.shortTitle,act.domain)}
                 </h4>
                 <span className="text-[10px] font-mono text-[#64748B]">
                   {calendarTime(act.start)} – {calendarTime(act.end)} · Estado: {act.status}

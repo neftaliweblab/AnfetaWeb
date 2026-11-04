@@ -1,3 +1,4 @@
+import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
 import {dailyActivityChecks} from '../lib/dailyChecklist';
 import {mexicoDate} from './calendarPresentation';
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
@@ -7,7 +8,7 @@ import { normalizePerson } from "./identityNormalizer";
 export function isFtfActivity(title: string) { return /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ccale)(?![\p{L}\p{Nd}_])/iu.test(title || ''); }
 export function isFtfReminder(activity:Pick<NotionCalendarActivity,'title'|'shortTitle'>){return isFtfActivity(activity.title)||isFtfActivity(activity.shortTitle);}
 /** Reminders stay visible; this helper is only for workload and progress. */
-export function countedCalendarActivities(activities:NotionCalendarActivity[]){return activities.filter(a=>!a.isReviewMirror&&!a.isHandoffMirror&&!isFtfReminder(a));}
+export function countedCalendarActivities(activities:NotionCalendarActivity[]){return activities.filter(a=>!isTemporaryCalendarResponse(a)&&!a.isReviewMirror&&!a.isHandoffMirror&&!isFtfReminder(a));}
 export function executiveActivities(activities: NotionCalendarActivity[], day: string) {
   return countedCalendarActivities(activities).filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
 }

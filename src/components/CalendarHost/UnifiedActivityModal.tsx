@@ -625,7 +625,7 @@ export function UnifiedActivityModal({
                   className="font-semibold text-slate-100 text-sm leading-snug break-words"
                   title="Doble clic para editar la descripción"
                 >
-                  {currentDescription || rawTitle}
+                  {calendarDisplayTitle(rawTitle,domain)}
                 </div>
               ) : (
                 <div className="space-y-2 pt-1 animate-in fade-in duration-150">
@@ -975,6 +975,7 @@ export function UnifiedActivityModal({
           {activeTab === "content" && (
             <div className="space-y-3">
               <ActivityContentPanel
+                cleanActivityTitle
                 activity={activity}
                 currentUser={currentUser}
                 defaultOpen={true}

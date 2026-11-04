@@ -198,11 +198,7 @@ export function CalendarDetailPanel({
           <h3 className="text-xs font-semibold text-slate-100 leading-snug break-words">
             {cleanTitle}
           </h3>
-          {cleanTitle !== title && (
-            <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1 truncate font-mono">
-              {title}
-            </p>
-          )}
+
         </div>
 
         {!embedded && <>
@@ -376,6 +372,7 @@ export function CalendarDetailPanel({
 
             {/* Vista unificada e interactiva: contenido enriquecido, multimedia y checks de Notion */}
             <ActivityContentPanel
+              cleanActivityTitle
               activity={activity}
               currentUser={currentUser}
               defaultOpen={true}
@@ -417,7 +414,7 @@ export function CalendarDetailPanel({
                         <span>{actStart ? `${actStart} - ${actEnd}` : ""}</span>
                       </div>
                       <p className="text-[11px] font-medium line-clamp-2 leading-tight">
-                        {act.title}
+                        {calendarDisplayTitle(act.title,act.domain)}
                       </p>
                     </li>
                   );

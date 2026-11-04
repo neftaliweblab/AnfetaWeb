@@ -1,10 +1,11 @@
+import {isTemporaryCalendarResponse} from '../services/calendarEntryPolicy';
 import type {NotionCalendarActivity} from '../types/anfeta';
 import {workflowState} from '../services/activityWorkflow';
 import {normalizePerson} from '../services/identityNormalizer';
 import {calendarUrgent} from '../services/calendarPresentation';
 
 export function personalAgendaActivities(items:NotionCalendarActivity[], person:string) {
-  return items.filter(a=>normalizePerson(a.person)===normalizePerson(person))
+  return items.filter(a=>!isTemporaryCalendarResponse(a)&&normalizePerson(a.person)===normalizePerson(person))
     .sort((a,b)=>Date.parse(a.start)-Date.parse(b.start)||a.pageId.localeCompare(b.pageId));
 }
 
