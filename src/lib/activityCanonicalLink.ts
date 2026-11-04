@@ -32,8 +32,8 @@ export function getPublicBaseUrl(customBaseUrl?: string): string {
     return cleanBaseUrl(vercelProd.startsWith('http') ? vercelProd : `https://${vercelProd}`);
   }
 
-  // Official production domain default
-  return 'https://anfeta.com';
+  // Official production deployment domain
+  return 'https://anfeta-web.vercel.app';
 }
 
 function cleanBaseUrl(url: string): string {

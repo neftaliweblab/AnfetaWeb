@@ -63,10 +63,14 @@ const { getPublicBaseUrl } = require(root + '/src/lib/activityCanonicalLink.ts')
 async function main() {
   const args = process.argv.slice(2);
   const isFill = args.includes('--fill') || args.includes('--execute');
+  const cleanFirst = args.includes('--clean') || args.includes('--clean-first');
+  const paginateAll = args.includes('--all');
   const baseArg = args.find((a) => a.startsWith('--base='));
   const targetBase = baseArg ? baseArg.split('=')[1] : null;
   const limitArg = args.find((a) => a.startsWith('--limit='));
-  const limit = limitArg ? parseInt(limitArg.split('=')[1], 10) : 25;
+  const limit = limitArg ? parseInt(limitArg.split('=')[1], 10) : (paginateAll ? 1000 : 25);
+  const delayArg = args.find((a) => a.startsWith('--delay='));
+  const delayMs = delayArg ? parseInt(delayArg.split('=')[1], 10) : 150;
 
   const settings = getSettings();
   const token = (process.env.NOTION_TOKEN || settings.notionToken || '').trim().replace(/^[:'"]+|[:'"]+$/g, '');
@@ -82,8 +86,9 @@ async function main() {
   console.log(`  OPERACIÓN: ${isFill ? 'LLENADO REAL DE ENLACES' : 'AUDITORÍA / VISTA PREVIA'} "Abrir en ANFETA"`);
   console.log('  Token: Cargado desde .env.local (activo, protegido)');
   console.log(`  Dominio canónico público: ${publicUrl}`);
-  console.log(`  Límite de páginas por base: ${limit}`);
-  console.log(`  Base objetivo: ${targetBase || 'Todas las habilitadas (Revisiones primero)'}`);
+  console.log(`  Modo: ${paginateAll ? 'TODAS LAS PÁGINAS (Paginación completa Notion)' : `Límite por base: ${limit}`}`);
+  console.log(`  Delay entre escrituras: ${delayMs}ms (para proteger rate-limit de Notion)`);
+  console.log(`  Base objetivo: ${targetBase || 'Todas las 6 bases habilitadas'}`);
   console.log('=================================================================\n');
 
   // Si es solo auditoría o vista previa:
@@ -93,11 +98,15 @@ async function main() {
       { ...settings, notionToken: token },
       {
         maxPagesPerBase: limit,
+        maxTotalPages: limit,
+        paginateAll,
         baseNames: targetBase ? [targetBase] : undefined,
         baseUrl: publicUrl,
         timeoutMs: 8000,
         onProgress: (p) => {
-          console.log(`  [Progreso] Base ${p.baseName}: ${p.stage} (${p.current}/${p.total})`);
+          if (p.current % 10 === 0 || p.current === p.total) {
+            console.log(`  [Progreso] Base ${p.baseName}: ${p.stage} (${p.current}/${p.total}) - ${p.action || ''}`);
+          }
         },
       }
     );
@@ -146,11 +155,16 @@ async function main() {
     {
       dryRun: false,
       limitPerBase: limit,
+      maxTotalPages: limit,
+      paginateAll,
+      cleanFirst,
+      delayMs,
       baseNames: targetBase ? [targetBase] : undefined,
       baseUrl: publicUrl,
       timeoutMs: 8000,
       onProgress: (p) => {
-        console.log(`  [Progreso] Base ${p.baseName}: ${p.stage} (${p.current}/${p.total})`);
+        const titleSnippet = (p.pageTitle || '').slice(0, 30);
+        console.log(`  [Progreso] Base ${p.baseName} (${p.current}/${p.total}): [${p.action}] ${titleSnippet}`);
       },
     }
   );

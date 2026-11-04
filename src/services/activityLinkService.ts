@@ -332,6 +332,71 @@ export async function saveActivityLinkToNotion(
 }
 
 /**
+ * Clears (empties to null) exclusively the "Abrir en ANFETA" property in Notion.
+ * Preserves foreign non-ANFETA URLs unless explicitly overridden.
+ */
+export async function clearActivityLinkFromNotion(
+  settings: CalendarSettings,
+  pageId: string,
+  options?: {
+    targetPropName?: string;
+    existingProperties?: Record<string, any>;
+    force?: boolean;
+  }
+): Promise<{ success: boolean; cleared: boolean; previousUrl?: string; error?: string }> {
+  const cleanId = String(pageId || '').replace(/-/g, '').toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(cleanId)) {
+    return { success: false, cleared: false, error: 'ID de página no válido.' };
+  }
+
+  try {
+    let props = options?.existingProperties;
+    if (!props) {
+      const page = await notionRequest(settings, `pages/${cleanId}`);
+      if (page.archived || page.in_trash) {
+        return { success: false, cleared: false, error: 'Página archivada o en papelera.' };
+      }
+      props = page.properties || {};
+    }
+    const targetProps: Record<string, any> = props || {};
+
+    const propMatch = options?.targetPropName
+      ? { name: options.targetPropName, type: 'url', isValid: true }
+      : findActivityLinkProperty(targetProps);
+
+    if (!propMatch || !propMatch.isValid) {
+      return { success: false, cleared: false, error: 'Propiedad no encontrada o no es URL.' };
+    }
+
+    const currentUrl = targetProps[propMatch.name]?.url;
+    if (!currentUrl) {
+      return { success: true, cleared: false };
+    }
+
+    if (!options?.force) {
+      const evaluation = evaluateActivityLink(cleanId, currentUrl);
+      if (evaluation.status === 'foreign') {
+        return { success: true, cleared: false, previousUrl: currentUrl };
+      }
+    }
+
+    await notionRequest(settings, `pages/${cleanId}`, 'PATCH', {
+      properties: {
+        [propMatch.name]: { url: null },
+      },
+    });
+
+    if (props && props[propMatch.name]) {
+      props[propMatch.name].url = null;
+    }
+
+    return { success: true, cleared: true, previousUrl: currentUrl };
+  } catch (err: any) {
+    return { success: false, cleared: false, error: err?.message || 'Error al limpiar enlace.' };
+  }
+}
+
+/**
  * Paged, bounded, and resumable batch processor for backfilling activity links in Notion.
  */
 export async function backfillActivityLinks(
@@ -484,16 +549,33 @@ export async function auditBasesActivityLinks(
   settings: CalendarSettings,
   options: {
     maxPagesPerBase?: number;
+    maxTotalPages?: number;
+    paginateAll?: boolean;
     baseUrl?: string;
     timeoutMs?: number;
     baseNames?: string[];
+    onProgress?: (progress: {
+      baseName: string;
+      stage: string;
+      current: number;
+      total: number;
+      action?: string;
+      pageTitle?: string;
+    }) => void;
   } = {}
 ): Promise<BasesAuditReport> {
-  const maxPages = Math.min(100, Math.max(1, options.maxPagesPerBase || 50));
+  const targetBases = options.baseNames && options.baseNames.length
+    ? ANFETA_BASES.filter(([n]) => options.baseNames!.includes(n))
+    : ANFETA_BASES;
+
+  const totalLimitForBase = options.paginateAll
+    ? (options.maxTotalPages || 1000)
+    : Math.min(100, Math.max(1, options.maxPagesPerBase || 50));
+
   const report: BasesAuditReport = {
     bases: [],
     totals: {
-      basesChecked: ANFETA_BASES.length,
+      basesChecked: targetBases.length,
       basesReady: 0,
       basesPending: 0,
       pagesReviewed: 0,
@@ -509,7 +591,7 @@ export async function auditBasesActivityLinks(
     executedAt: new Date().toISOString(),
   };
 
-  for (const [name, sourceId] of ANFETA_BASES) {
+  for (const [name, sourceId] of targetBases) {
     const databaseId = NOTION_BASE_DATABASE_IDS[sourceId] || sourceId;
     const baseSummary: BaseAuditSummary = {
       baseName: name,
@@ -575,78 +657,102 @@ export async function auditBasesActivityLinks(
       baseSummary.statusMessage = `Propiedad "${match.name}" verificada (tipo URL).`;
       report.totals.basesReady++;
 
-      // Query pages in this database
+      // Query pages in this database with pagination support
       try {
-        const queryRes = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', {
-          page_size: maxPages,
-        });
+        let hasMore = true;
+        let nextCursor: string | undefined = undefined;
+        let pagesProcessedInBase = 0;
 
-        const pages = queryRes.results || [];
-        for (const page of pages) {
-          if (page.archived || page.in_trash) {
-            baseSummary.omittedCount++;
-            report.totals.omittedCount++;
-            continue;
+        while (hasMore && pagesProcessedInBase < totalLimitForBase) {
+          const currentBatchSize = Math.min(100, totalLimitForBase - pagesProcessedInBase);
+          const queryBody: Record<string, any> = { page_size: currentBatchSize };
+          if (nextCursor) {
+            queryBody.start_cursor = nextCursor;
           }
 
-          baseSummary.pagesReviewed++;
-          report.totals.pagesReviewed++;
+          const queryRes = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', queryBody);
+          const pages = queryRes.results || [];
+          hasMore = Boolean(queryRes.has_more && queryRes.next_cursor);
+          nextCursor = queryRes.next_cursor || undefined;
 
-          const cleanId = String(page.id).replace(/-/g, '').toLowerCase();
-          const props = page.properties || {};
+          if (pages.length === 0) break;
 
-          let pageTitle = 'Sin título';
-          const titleEntry = Object.values(props).find((p: any) => p?.type === 'title') as any;
-          if (titleEntry?.title && Array.isArray(titleEntry.title) && titleEntry.title.length) {
-            pageTitle = titleEntry.title.map((t: any) => t.plain_text || t.text?.content || '').join('').trim() || 'Sin título';
-          }
+          for (const page of pages) {
+            pagesProcessedInBase++;
+            if (page.archived || page.in_trash) {
+              baseSummary.omittedCount++;
+              report.totals.omittedCount++;
+              continue;
+            }
 
-          const curUrl = props[match.name]?.url;
-          const evaluation = evaluateActivityLink(cleanId, curUrl, { baseUrl: options.baseUrl });
+            baseSummary.pagesReviewed++;
+            report.totals.pagesReviewed++;
 
-          if (evaluation.status === 'empty') {
-            baseSummary.emptyCount++;
-            baseSummary.pendingCount++;
-            report.totals.emptyCount++;
-            report.totals.pendingCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'empty',
-              url: evaluation.canonicalUrl,
-              reason: 'Propiedad vacía; lista para autocompletar.',
-            });
-          } else if (evaluation.status === 'exact') {
-            baseSummary.correctCount++;
-            report.totals.correctCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'exact',
-              url: curUrl,
-              reason: 'Enlace canónico ya actualizado.',
-            });
-          } else if (evaluation.status === 'needs_repair') {
-            baseSummary.repairedCount++;
-            baseSummary.pendingCount++;
-            report.totals.repairedCount++;
-            report.totals.pendingCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'needs_repair',
-              url: evaluation.canonicalUrl,
-              reason: evaluation.reason || 'Enlace requiere reparación.',
-            });
-          } else if (evaluation.status === 'foreign') {
-            baseSummary.foreignCount++;
-            report.totals.foreignCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'foreign',
-              url: curUrl,
-              reason: 'URL ajena externa; se conserva intacta.',
+            const cleanId = String(page.id).replace(/-/g, '').toLowerCase();
+            const props = page.properties || {};
+
+            let pageTitle = 'Sin título';
+            const titleEntry = Object.values(props).find((p: any) => p?.type === 'title') as any;
+            if (titleEntry?.title && Array.isArray(titleEntry.title) && titleEntry.title.length) {
+              pageTitle = titleEntry.title.map((t: any) => t.plain_text || t.text?.content || '').join('').trim() || 'Sin título';
+            }
+
+            const curUrl = props[match.name]?.url;
+            const evaluation = evaluateActivityLink(cleanId, curUrl, { baseUrl: options.baseUrl });
+
+            if (evaluation.status === 'empty') {
+              baseSummary.emptyCount++;
+              baseSummary.pendingCount++;
+              report.totals.emptyCount++;
+              report.totals.pendingCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'empty',
+                url: evaluation.canonicalUrl,
+                reason: 'Propiedad vacía; lista para autocompletar.',
+              });
+            } else if (evaluation.status === 'exact') {
+              baseSummary.correctCount++;
+              report.totals.correctCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'exact',
+                url: curUrl,
+                reason: 'Enlace canónico ya actualizado.',
+              });
+            } else if (evaluation.status === 'needs_repair') {
+              baseSummary.repairedCount++;
+              baseSummary.pendingCount++;
+              report.totals.repairedCount++;
+              report.totals.pendingCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'needs_repair',
+                url: evaluation.canonicalUrl,
+                reason: evaluation.reason || 'Enlace requiere reparación.',
+              });
+            } else if (evaluation.status === 'foreign') {
+              baseSummary.foreignCount++;
+              report.totals.foreignCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'foreign',
+                url: curUrl,
+                reason: 'URL ajena externa; se conserva intacta.',
+              });
+            }
+
+            options.onProgress?.({
+              baseName: name,
+              stage: 'Auditoría',
+              current: pagesProcessedInBase,
+              total: totalLimitForBase,
+              pageTitle,
+              action: evaluation.status,
             });
           }
         }
@@ -685,9 +791,21 @@ export async function executeBasesBackfill(
   options: {
     baseNames?: string[];
     limitPerBase?: number;
+    maxTotalPages?: number;
+    paginateAll?: boolean;
+    delayMs?: number;
     dryRun?: boolean;
+    cleanFirst?: boolean;
     baseUrl?: string;
     timeoutMs?: number;
+    onProgress?: (progress: {
+      baseName: string;
+      stage: string;
+      current: number;
+      total: number;
+      action?: string;
+      pageTitle?: string;
+    }) => void;
   } = {}
 ): Promise<BasesAuditReport> {
   if (isBackfillJobRunning) {
@@ -697,7 +815,11 @@ export async function executeBasesBackfill(
   isBackfillJobRunning = true;
   try {
     const dryRun = options.dryRun !== false;
-    const maxPages = Math.min(100, Math.max(1, options.limitPerBase || 50));
+    const totalLimitForBase = options.paginateAll
+      ? (options.maxTotalPages || 1000)
+      : Math.min(100, Math.max(1, options.limitPerBase || 50));
+    const delayMs = typeof options.delayMs === 'number' ? options.delayMs : 150;
+
     const report: BasesAuditReport = {
       bases: [],
       totals: {
@@ -773,118 +895,169 @@ export async function executeBasesBackfill(
         baseSummary.statusMessage = `Propiedad "${match.name}" verificada.`;
         report.totals.basesReady++;
 
-        // Query pages in this database
-        const queryRes = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', {
-          page_size: maxPages,
-        });
+        // Query pages in this database with pagination support
+        let hasMore = true;
+        let nextCursor: string | undefined = undefined;
+        let pagesProcessedInBase = 0;
 
-        const pages = queryRes.results || [];
-        for (const page of pages) {
-          if (page.archived || page.in_trash) {
-            baseSummary.omittedCount++;
-            report.totals.omittedCount++;
-            continue;
+        while (hasMore && pagesProcessedInBase < totalLimitForBase) {
+          const currentBatchSize = Math.min(100, totalLimitForBase - pagesProcessedInBase);
+          const queryBody: Record<string, any> = { page_size: currentBatchSize };
+          if (nextCursor) {
+            queryBody.start_cursor = nextCursor;
           }
 
-          baseSummary.pagesReviewed++;
-          report.totals.pagesReviewed++;
+          const queryRes = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', queryBody);
+          const pages = queryRes.results || [];
+          hasMore = Boolean(queryRes.has_more && queryRes.next_cursor);
+          nextCursor = queryRes.next_cursor || undefined;
 
-          const cleanId = String(page.id).replace(/-/g, '').toLowerCase();
-          const props = page.properties || {};
+          if (pages.length === 0) break;
 
-          let pageTitle = 'Sin título';
-          const titleEntry = Object.values(props).find((p: any) => p?.type === 'title') as any;
-          if (titleEntry?.title && Array.isArray(titleEntry.title) && titleEntry.title.length) {
-            pageTitle = titleEntry.title.map((t: any) => t.plain_text || t.text?.content || '').join('').trim() || 'Sin título';
-          }
-
-          const curUrl = props[match.name]?.url;
-          const evaluation = evaluateActivityLink(cleanId, curUrl, { baseUrl: options.baseUrl });
-
-          if (evaluation.status === 'exact') {
-            baseSummary.correctCount++;
-            report.totals.correctCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'exact',
-              url: curUrl,
-            });
-            continue;
-          }
-
-          if (evaluation.status === 'foreign') {
-            baseSummary.foreignCount++;
-            report.totals.foreignCount++;
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: 'foreign',
-              url: curUrl,
-              reason: 'URL ajena conservada.',
-            });
-            continue;
-          }
-
-          const action = evaluation.status === 'empty' ? 'filled' : 'repaired';
-
-          if (dryRun) {
-            if (action === 'filled') {
-              baseSummary.emptyCount++;
-              report.totals.emptyCount++;
-            } else {
-              baseSummary.repairedCount++;
-              report.totals.repairedCount++;
+          for (const page of pages) {
+            pagesProcessedInBase++;
+            if (page.archived || page.in_trash) {
+              baseSummary.omittedCount++;
+              report.totals.omittedCount++;
+              continue;
             }
-            baseSummary.pages.push({
-              pageId: cleanId,
-              title: pageTitle,
-              status: evaluation.status,
-              url: evaluation.canonicalUrl,
-              reason: action === 'filled' ? 'Por completar' : 'Por reparar',
-            });
-          } else {
-            // Write to Notion
-            try {
-              const writeRes = await saveActivityLinkToNotion(settings, cleanId, {
-                targetPropName: match.name,
-                baseUrl: options.baseUrl,
-                existingProperties: props,
-              });
 
-              if (writeRes.success) {
-                if (action === 'filled') {
-                  baseSummary.emptyCount++;
-                  report.totals.emptyCount++;
-                } else {
-                  baseSummary.repairedCount++;
-                  report.totals.repairedCount++;
-                }
-                baseSummary.pages.push({
-                  pageId: cleanId,
-                  title: pageTitle,
-                  status: evaluation.status,
-                  url: evaluation.canonicalUrl,
-                  reason: action === 'filled' ? 'Completado' : 'Reparado',
-                });
+            baseSummary.pagesReviewed++;
+            report.totals.pagesReviewed++;
+
+            const cleanId = String(page.id).replace(/-/g, '').toLowerCase();
+            const props = page.properties || {};
+
+            let pageTitle = 'Sin título';
+            const titleEntry = Object.values(props).find((p: any) => p?.type === 'title') as any;
+            if (titleEntry?.title && Array.isArray(titleEntry.title) && titleEntry.title.length) {
+              pageTitle = titleEntry.title.map((t: any) => t.plain_text || t.text?.content || '').join('').trim() || 'Sin título';
+            }
+
+            const curUrl = props[match.name]?.url;
+            const evaluation = evaluateActivityLink(cleanId, curUrl, { baseUrl: options.baseUrl });
+
+            if (evaluation.status === 'exact') {
+              baseSummary.correctCount++;
+              report.totals.correctCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'exact',
+                url: curUrl,
+              });
+              options.onProgress?.({
+                baseName: name,
+                stage: 'Llenado',
+                current: pagesProcessedInBase,
+                total: totalLimitForBase,
+                pageTitle,
+                action: 'exact',
+              });
+              continue;
+            }
+
+            if (evaluation.status === 'foreign') {
+              baseSummary.foreignCount++;
+              report.totals.foreignCount++;
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: 'foreign',
+                url: curUrl,
+                reason: 'URL ajena conservada.',
+              });
+              options.onProgress?.({
+                baseName: name,
+                stage: 'Llenado',
+                current: pagesProcessedInBase,
+                total: totalLimitForBase,
+                pageTitle,
+                action: 'foreign',
+              });
+              continue;
+            }
+
+            const action = evaluation.status === 'empty' ? 'filled' : 'repaired';
+
+            if (dryRun) {
+              if (action === 'filled') {
+                baseSummary.emptyCount++;
+                report.totals.emptyCount++;
               } else {
+                baseSummary.repairedCount++;
+                report.totals.repairedCount++;
+              }
+              baseSummary.pages.push({
+                pageId: cleanId,
+                title: pageTitle,
+                status: evaluation.status,
+                url: evaluation.canonicalUrl,
+                reason: action === 'filled' ? 'Por completar' : 'Por reparar',
+              });
+            } else {
+              // Write to Notion
+              try {
+                if (options.cleanFirst && curUrl) {
+                  await clearActivityLinkFromNotion(settings, cleanId, {
+                    targetPropName: match.name,
+                    existingProperties: props,
+                  });
+                }
+
+                if (delayMs > 0) {
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
+
+                const writeRes = await saveActivityLinkToNotion(settings, cleanId, {
+                  targetPropName: match.name,
+                  baseUrl: options.baseUrl,
+                  existingProperties: props,
+                });
+
+                if (writeRes.success) {
+                  if (action === 'filled') {
+                    baseSummary.emptyCount++;
+                    report.totals.emptyCount++;
+                  } else {
+                    baseSummary.repairedCount++;
+                    report.totals.repairedCount++;
+                  }
+                  baseSummary.pages.push({
+                    pageId: cleanId,
+                    title: pageTitle,
+                    status: evaluation.status,
+                    url: evaluation.canonicalUrl,
+                    reason: action === 'filled' ? 'Completado' : 'Reparado',
+                  });
+                } else {
+                  baseSummary.failedCount++;
+                  report.totals.failedCount++;
+                  baseSummary.errors.push({
+                    pageId: cleanId,
+                    reason: writeRes.error || 'Error al guardar enlace.',
+                    type: 'temporary_error',
+                  });
+                }
+              } catch (err: any) {
                 baseSummary.failedCount++;
                 report.totals.failedCount++;
                 baseSummary.errors.push({
                   pageId: cleanId,
-                  reason: writeRes.error || 'Error al guardar enlace.',
+                  reason: err?.message || 'Error de red al actualizar página.',
                   type: 'temporary_error',
                 });
               }
-            } catch (err: any) {
-              baseSummary.failedCount++;
-              report.totals.failedCount++;
-              baseSummary.errors.push({
-                pageId: cleanId,
-                reason: err?.message || 'Error de red al actualizar página.',
-                type: 'temporary_error',
-              });
             }
+
+            options.onProgress?.({
+              baseName: name,
+              stage: 'Llenado',
+              current: pagesProcessedInBase,
+              total: totalLimitForBase,
+              pageTitle,
+              action,
+            });
           }
         }
       } catch (err: any) {
