@@ -14,7 +14,7 @@ import {ActivityQuickEntry} from './ActivityQuickEntry';
 import {requestActivityRecording} from '@/lib/activityRecording';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 
-import { calendarDisplayTitle, calendarTime, mexicoDate } from "@/services/calendarPresentation";
+import { calendarDomain, calendarDisplayTitle, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import React, { useState, useEffect } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { workflowState } from "@/services/activityWorkflow";
@@ -71,7 +71,7 @@ export function CalendarDetailPanel({
   const [showHandoff,setShowHandoff]=useState(false);
 
   const title = activity.title || (activity as any)?.Title || "Sin título";
-  const domain = activity.domain || (activity as any)?.ParsedDomain || "DOMINIO";
+  const domain = calendarDomain(title, activity.domain || (activity as any)?.ParsedDomain || "");
   const status = activity.status || (activity as any)?.Status || "Pendiente";
   const person = activity.person || (activity as any)?.Person || "Sin asignar";
 

@@ -9,7 +9,7 @@ import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
 import {titlePriority} from '@/services/activityTags';
 
-import { calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
+import { calendarDomain, calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import {isFtfReminder} from '@/services/progressKpis';
 import React, { useState, useRef, useMemo } from "react";
 import {createPortal} from 'react-dom';
@@ -273,7 +273,7 @@ function ActivityCardComponent({
   const title = activity?.title || (activity as any)?.Title || "";
   const shortTitle = activity?.shortTitle || (activity as any)?.ShortTitle || title;
   const status = activity?.status || (activity as any)?.Status || "";
-  const domain = activity?.domain || (activity as any)?.ParsedDomain || "DOMINIO";
+  const domain = calendarDomain(title, activity?.domain || (activity as any)?.ParsedDomain || "");
 
   // Limpiar título de tecnicismos redundantes como prtuzREVISION, nneft, jjohn, fechas [10OCT], etc.
   const cleanTitle = calendarDisplayTitle(title, domain);

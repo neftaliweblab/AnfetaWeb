@@ -15,10 +15,32 @@ const TYPES: [RegExp, string][] = [
   [/\b(?:cobranza|cobros?|pagos?|factura)\b/i, 'COBRO'],
   [/\b(?:soporte|ticket|mantenimiento)\b/i, 'SOPORTE'],
 ];
+const DOMAIN_TLDS='com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site';
+const DOMAIN_CHANNELS='webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|instalador|tutoriales|weblab|cliente|correos';
+const domainEnding=new RegExp('\\.(?:'+DOMAIN_TLDS+')$','i');
+const channelEnding=new RegExp('(?:\\.(?:'+DOMAIN_CHANNELS+'))+$','i');
+function displayDomainTokens(value:string){
+  const pattern=new RegExp('(?<![\\p{L}\\p{N}_@./-])(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)+(?:'+DOMAIN_TLDS+')(?:\\.[a-z0-9-]+)*(?=[\\s/|#\\](),:;!?]|$)','giu');
+  return [...String(value||'').matchAll(pattern)].flatMap(match=>{
+    let host=match[0].replace(/^https?:\/\//i,'').toLowerCase();
+    const withoutChannel=host.replace(channelEnding,'');
+    if(domainEnding.test(withoutChannel))host=withoutChannel;
+    // A technical suffix may follow the public domain in the new title format.
+    while(host.includes('.')&&!domainEnding.test(host))host=host.slice(0,host.lastIndexOf('.'));
+    host=classifiedDomain(host).replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'');
+    host=classifiedDomain(host);
+    if(!domainEnding.test(host)||/^(?:dominio|midominio|ejemplo|example)\./i.test(host))return [];
+    return [{text:match[0],index:match.index!,domain:host}];
+  });
+}
+/** Read-only presentation: a real #p./#d. domain is data, not an empty template slot. */
 export function calendarDomain(title: string, project = '') {
-  const match = stripTitlePlaceholders(project + ' ' + title).match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*(?=[\s/\](),:;]|$)/i);
-  if (!match) return 'general';
-  return classifiedDomain(match[0].replace(/^https?:\/\//i,'').replace(/(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))+$/i,'')).replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'').toLowerCase();
+  const domainField=String(title||'').split('|').find(field=>field.includes('🌐'))||'';
+  for(const value of [domainField,project,title]){
+    const found=displayDomainTokens(value)[0];
+    if(found)return found.domain;
+  }
+  return 'general';
 }
 export function calendarType(title: string, project = '') {
   title = stripTitlePlaceholders(title);
@@ -33,7 +55,12 @@ export function calendarUrgent(title: string) {
   return scanActivityTags(stripTitlePlaceholders(title)).some(tag=>tag.role==='active'&&tag.priority==='00');
 }
 export function calendarDisplayTitle(title: string, domain = '') {
-  title = stripTitlePlaceholders(title);
+  const visualDomain=calendarDomain(title,domain);
+  let visibleTitle=title;
+  for(const token of displayDomainTokens(title).reverse()){
+    if(token.domain===visualDomain)visibleTitle=visibleTitle.slice(0,token.index)+' '+visibleTitle.slice(token.index+token.text.length);
+  }
+  title = stripTitlePlaceholders(visibleTitle);
   let text = stripActivityTags(PROGRESSIVE_WORKFLOW_PRIMARY?stripProgressiveStage(title):title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
     .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma|eedwin|eedwi|eed|edwin|ed)(?:0{2,4}|00[1-3])?\b/gi, '')
@@ -45,6 +72,12 @@ export function calendarDisplayTitle(title: string, domain = '') {
     const escaped = domain.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp('(?<![a-z0-9.-])(?:\\b(?:www|webs|web|seo|ads|maps|cotizacion|biblioteca|proyecto)\\.)*' + escaped + '(?![a-z0-9.-])', 'gi'), ' ');
   }
+  text = text.replace(/\b\d{1,2}\.(?:[a-z]|\[tipo\])\.\d{2}\.\d{2}\b/gi,' ')
+    .replace(/\b(?:ssoft|ccobr|ppaga)\b/gi,' ')
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu,' ')
+    .replace(/\|/g,' ')
+    .replace(/(?:^|\s)#(?=\s|$)/g,' ')
+    .replace(/\[\s*\]|\(\s*\)/g,' ');
   text = text.replace(/\s+\b(?:en|de|del|la|el|los|las|por|para|con)\s*$/i, '').replace(/^\s*\d+(?:\.\d+)?(?:\s*[-–]\s*|\s+)/, '').replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g,'').trim();
   return text || 'Actividad';
 }
