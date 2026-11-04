@@ -109,6 +109,7 @@ const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
 const calendarMemoryUpdates = new BoundedCache<any>(2000,8*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
 const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
+const syncedActivityLinkCache = new Map<string, number>();
 const confirmedDeletedPages=new BoundedCache<boolean>(5000,1024*1024,24*60*60*1000,()=>1);
 function recordDeletedPage(token:string,id:string){const key=token+':'+cleanPageId(id),known=confirmedDeletedPages.get(key);confirmedDeletedPages.set(key,true);liveNotionOverrides.delete(cleanPageId(id));calendarMemoryUpdates.delete(cleanPageId(id));if(!known)previewMemoryCache.clear();}
 function calendarSnapshot() {
@@ -823,6 +824,41 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           observedEdited=pages.map(page=>page.last_edited_time).filter((value:any)=>Number.isFinite(Date.parse(value))).sort().at(-1);
           if(supabaseConfigured()&&fullSync&&(pages as any).isComplete!==false)fullIds=new Set(pages.map(page=>cleanPageId(page.id)));
           for(const item of pages){const pageData=extractNotionPageData(item);if(pageData.id){liveNotionOverrides.set(pageData.id,pageData);calendarMemoryUpdates.delete(pageData.id);}}
+          // Reconciliar en segundo plano enlaces vacíos de "Abrir en ANFETA"
+          const indexPagesToReconcile: { id: string; targetPropName: string; props: any }[] = [];
+          for (const item of pages) {
+            if (!item.id || item.archived || item.in_trash) continue;
+            const cid = cleanPageId(item.id);
+            const lastCheck = syncedActivityLinkCache.get(cid);
+            if (lastCheck && Date.now() - lastCheck < 30 * 60 * 1000) continue;
+            const match = findActivityLinkProperty(item.properties);
+            if (match && match.isValid) {
+              const curUrl = item.properties[match.name]?.url;
+              const evaluation = evaluateActivityLink(item.id, curUrl);
+              if (evaluation.status === 'empty' || evaluation.status === 'needs_repair') {
+                syncedActivityLinkCache.set(cid, Date.now());
+                indexPagesToReconcile.push({ id: item.id, targetPropName: match.name, props: item.properties });
+              } else if (evaluation.status === 'exact') {
+                syncedActivityLinkCache.set(cid, Date.now());
+              }
+            }
+          }
+          if (indexPagesToReconcile.length > 0) {
+            const indexSettings = { ...getSettings(), notionToken: token };
+            after(async () => {
+              for (let i = 0; i < indexPagesToReconcile.length; i += 4) {
+                const chunk = indexPagesToReconcile.slice(i, i + 4);
+                await Promise.allSettled(
+                  chunk.map(p =>
+                    saveActivityLinkToNotion(indexSettings, p.id, {
+                      targetPropName: p.targetPropName,
+                      existingProperties: p.props,
+                    })
+                  )
+                );
+              }
+            });
+          }
         } catch (err) {
           syncFailed=true;syncWarning='No se pudo actualizar el índice desde Notion. '+(err instanceof Error?err.message:'Intenta de nuevo.');
         }
@@ -1083,6 +1119,43 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           const liveSettings = {...settings,notionToken:token};
           const pages = type === 'calendar-project' ? await queryProjectPages({...settings,notionToken:token},searchParams.get('domain') || '') : await queryCalendarPages({...settings, notionToken:token}, first, shift(first, days.length));
           if(enrichOffset!==undefined)nextEnrichOffset=enrichOffset+6<pages.length?enrichOffset+6:0;
+
+          // Reconciliar en segundo plano enlaces "Abrir en ANFETA" para páginas del calendario que estén vacías
+          if (pages.length > 0) {
+            const calendarPagesToReconcile: { id: string; targetPropName: string; props: any }[] = [];
+            for (const p of pages) {
+              if (!p?.id || p.archived || p.in_trash) continue;
+              const cid = cleanPageId(p.id);
+              const lastCheck = syncedActivityLinkCache.get(cid);
+              if (lastCheck && Date.now() - lastCheck < 30 * 60 * 1000) continue;
+              const match = findActivityLinkProperty(p.properties);
+              if (match && match.isValid) {
+                const curUrl = p.properties[match.name]?.url;
+                const evaluation = evaluateActivityLink(p.id, curUrl);
+                if (evaluation.status === 'empty' || evaluation.status === 'needs_repair') {
+                  syncedActivityLinkCache.set(cid, Date.now());
+                  calendarPagesToReconcile.push({ id: p.id, targetPropName: match.name, props: p.properties });
+                } else if (evaluation.status === 'exact') {
+                  syncedActivityLinkCache.set(cid, Date.now());
+                }
+              }
+            }
+            if (calendarPagesToReconcile.length > 0) {
+              after(async () => {
+                for (let i = 0; i < calendarPagesToReconcile.length; i += 4) {
+                  const chunk = calendarPagesToReconcile.slice(i, i + 4);
+                  await Promise.allSettled(
+                    chunk.map(item =>
+                      saveActivityLinkToNotion(liveSettings, item.id, {
+                        targetPropName: item.targetPropName,
+                        existingProperties: item.props,
+                      })
+                    )
+                  );
+                }
+              });
+            }
+          }
           const byId = new Map<string,any>(cached.map(a => [cleanPageId(a.pageId), a]));
           activities = [];
           // Bound parallel metadata requests to avoid flooding Notion.
@@ -2149,6 +2222,11 @@ async function POSTLive(req: NextRequest) {
           timeoutPromise
         ]);
         let updatedCount = 0;
+        let linksFilled = 0;
+        let linksAlreadyCorrect = 0;
+        let linksChecked = 0;
+        const liveSettings = { ...getSettings(), notionToken: token };
+        const pagesToUpdateLinks: { id: string; targetPropName: string; props: any }[] = [];
 
         for (const item of results) {
           if (item.object === "page") {
@@ -2158,14 +2236,80 @@ async function POSTLive(req: NextRequest) {
               calendarMemoryUpdates.delete(pageData.id);
               updatedCount++;
             }
+
+            const props = item.properties || {};
+            const linkMatch = findActivityLinkProperty(props);
+            if (linkMatch && linkMatch.isValid && item.id) {
+              linksChecked++;
+              const currentUrl = props[linkMatch.name]?.url;
+              const evaluation = evaluateActivityLink(item.id, currentUrl);
+              if (evaluation.status === 'empty' || evaluation.status === 'needs_repair') {
+                pagesToUpdateLinks.push({ id: item.id, targetPropName: linkMatch.name, props });
+              } else if (evaluation.status === 'exact') {
+                linksAlreadyCorrect++;
+                syncedActivityLinkCache.set(cleanPageId(item.id), Date.now());
+              }
+            }
           }
         }
+
+        // Auto-reconciliar en Notion la propiedad "Abrir en ANFETA" (lotes acotados)
+        const syncBatch = pagesToUpdateLinks.slice(0, 20);
+        const remainingBatch = pagesToUpdateLinks.slice(20);
+
+        for (let i = 0; i < syncBatch.length; i += 4) {
+          const chunk = syncBatch.slice(i, i + 4);
+          const outcomes = await Promise.allSettled(
+            chunk.map(p =>
+              saveActivityLinkToNotion(liveSettings, p.id, {
+                targetPropName: p.targetPropName,
+                existingProperties: p.props,
+              })
+            )
+          );
+          for (const res of outcomes) {
+            if (res.status === 'fulfilled' && res.value?.success) {
+              if (res.value.status === 'updated') {
+                linksFilled++;
+              }
+            }
+          }
+        }
+
+        for (const p of syncBatch) {
+          syncedActivityLinkCache.set(cleanPageId(p.id), Date.now());
+        }
+
+        if (remainingBatch.length > 0) {
+          after(async () => {
+            for (let i = 0; i < remainingBatch.length; i += 4) {
+              const chunk = remainingBatch.slice(i, i + 4);
+              await Promise.allSettled(
+                chunk.map(p =>
+                  saveActivityLinkToNotion(liveSettings, p.id, {
+                    targetPropName: p.targetPropName,
+                    existingProperties: p.props,
+                  })
+                )
+              );
+            }
+          });
+        }
+
+        const linkSummary = linksFilled > 0
+          ? ` (${linksFilled} enlace${linksFilled > 1 ? 's' : ''} "Abrir en ANFETA" completado${linksFilled > 1 ? 's' : ''})`
+          : linksAlreadyCorrect > 0
+          ? ` (${linksAlreadyCorrect} enlaces "Abrir en ANFETA" ya al día)`
+          : '';
 
         return NextResponse.json({
           success: true,
           count: updatedCount,
           totalFetched: results.length,
-          message: `Sincronizadas ${updatedCount} páginas recientes desde Notion API`,
+          linksUpdated: linksFilled,
+          linksAlreadyCorrect,
+          linksChecked,
+          message: `Sincronizadas ${updatedCount} páginas con Notion${linkSummary}`,
         });
       } catch (err: any) {
         return NextResponse.json({ success: false, error: err.message }, { status: 200 });
@@ -2480,6 +2624,19 @@ async function POSTLive(req: NextRequest) {
             await recordFtfCompletions(settings,rows.filter(row=>normalizePerson(row.person)===normalizePerson(activity.person)),new Date(page.last_edited_time||Date.now()),isFtfReminder(activity)?'observed':'confirmed');
           }catch(error){ftfWarning='La casilla se guardó; el aviso FTF queda pendiente de comprobar al actualizar los avisos.';}
         }
+        const linkMatch = findActivityLinkProperty(page.properties);
+        if (linkMatch && linkMatch.isValid && !page.properties[linkMatch.name]?.url) {
+          const cid = cleanPageId(page.id);
+          syncedActivityLinkCache.set(cid, Date.now());
+          after(async () => {
+            try {
+              await saveActivityLinkToNotion(settings, page.id, {
+                targetPropName: linkMatch.name,
+                existingProperties: page.properties,
+              });
+            } catch {}
+          });
+        }
         return NextResponse.json({ success:true, activity, handoffCopies:input.handoff?await handoffMirrors(settings,mexicoDate(activity.start),new Date(Date.parse(mexicoDate(activity.start)+'T12:00:00Z')+86400000).toISOString().slice(0,10)).catch(()=>[]):undefined, warning:[page.__notificationWarning,page.__historyWarning,ftfWarning].filter(Boolean).join(' · ') || undefined });
       } catch (error: any) { return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la actividad.', code: error?.code, conflictTitle: error?.conflict?.title, suggestedSlot: error?.suggestedSlot }, { status: 400 }); }
     }
@@ -2491,7 +2648,7 @@ async function POSTLive(req: NextRequest) {
         if (!/^[a-f0-9]{32}$/.test(cleanId)) return NextResponse.json({ success: false, error: 'ID de página no válido.' }, { status: 400 });
 
         const settings = getSettings();
-        const token = resolveNotionToken(req) || settings.notionToken;
+        const token = (input?.token || resolveNotionToken(req) || settings.notionToken || '').trim();
         if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
 
         const result = await saveActivityLinkToNotion(
@@ -2525,9 +2682,11 @@ async function POSTLive(req: NextRequest) {
 
     if (action === 'verify-bases-activity-link') {
       try {
-        const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
-        if (!settings.notionToken) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
-        const bases = await verifyEnabledBasesLinkProperty(settings);
+        const input = payload || body;
+        const settings = getSettings();
+        const token = (input?.token || resolveNotionToken(req) || settings.notionToken || '').trim();
+        if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const bases = await verifyEnabledBasesLinkProperty({ ...settings, notionToken: token });
         return NextResponse.json({ success: true, bases });
       } catch (error) {
         return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Error al verificar las bases.' }, { status: 500 });
@@ -2537,9 +2696,10 @@ async function POSTLive(req: NextRequest) {
     if (action === 'preview-backfill-activity-links' || action === 'run-backfill-activity-links') {
       try {
         const input = payload || body;
-        const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
-        if (!settings.notionToken) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
-        const report = await backfillActivityLinks(settings, {
+        const settings = getSettings();
+        const token = (input?.token || resolveNotionToken(req) || settings.notionToken || '').trim();
+        if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const report = await backfillActivityLinks({ ...settings, notionToken: token }, {
           cursor: input?.cursor,
           limit: input?.limit,
           dryRun: action === 'preview-backfill-activity-links' || input?.dryRun === true,

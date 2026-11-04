@@ -15,6 +15,8 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertCircle,
+  Link2,
+  RefreshCw,
 } from "lucide-react";
 import {
   getWindowsAudioDevices,
@@ -268,6 +270,49 @@ export function SettingsModal({
     }
   };
 
+  const [isBackfillingLinks, setIsBackfillingLinks] = useState(false);
+  const [linkBackfillReport, setLinkBackfillReport] = useState<any>(null);
+
+  const handleBackfillLinks = async () => {
+    if (!notionToken.trim()) {
+      alert("Por favor ingresa primero el Token de Notion.");
+      return;
+    }
+    setIsBackfillingLinks(true);
+    setLinkBackfillReport(null);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "run-backfill-activity-links",
+          payload: { token: notionToken.trim(), limit: 50, dryRun: false },
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `Respuesta del servidor no válida (HTTP ${res.status})`,
+      }));
+      if (data.success && data.report) {
+        setLinkBackfillReport(data.report);
+        const report = data.report;
+        const msg = `Sincronización de enlaces completada:\n• ${report.filled} enlace(s) completado(s)\n• ${report.repaired} enlace(s) reparado(s)\n• ${report.alreadyCorrect} enlace(s) ya al día` +
+          (report.foreignCount > 0 ? `\n• ${report.foreignCount} enlace(s) externos conservados` : "");
+        alert(msg);
+      } else {
+        alert(`Error al sincronizar enlaces: ${data.error || "Error desconocido"}`);
+      }
+    } catch (e: any) {
+      const msg = e.name === "TimeoutError" || e.name === "AbortError"
+        ? "Tiempo de espera agotado al sincronizar enlaces de Notion."
+        : (e.message || "Error de red");
+      alert(`Error de red: ${msg}`);
+    } finally {
+      setIsBackfillingLinks(false);
+    }
+  };
+
   const handleSave = async () => {
     if(saving)return;setSaving(true);setSaveError('');
     try{if(normalizePerson(userTag)!==normalizePerson(currentUser))await onSaveCurrentUser(userTag);}catch(e){setSaveError(e instanceof Error?e.message:'No se pudo cambiar la persona.');setSaving(false);return;}
@@ -448,6 +493,44 @@ export function SettingsModal({
                   className="w-full h-8 px-3 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Requerido para crear páginas sin horario o subir lotes a Notion. También se puede configurar como NOTION_DATABASE_ID en el servidor.</p>
+              </div>
+
+              {/* Sincronización de Enlaces "Abrir en ANFETA" */}
+              <div className="pt-2 border-t border-[#1C2735] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-[#F1F5F9] flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    Propiedad Notion: "Abrir en ANFETA"
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleBackfillLinks}
+                    disabled={isBackfillingLinks}
+                    className="px-2.5 py-1 bg-[#0369A1] hover:bg-[#0284C7] disabled:opacity-50 text-white text-[10.5px] font-medium rounded flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Verificar y completar automáticamente la propiedad Abrir en ANFETA en páginas de Notion"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isBackfillingLinks ? "animate-spin" : ""}`} />
+                    <span>{isBackfillingLinks ? "Sincronizando enlaces..." : "Sincronizar enlaces en Notion"}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Rellena y sincroniza automáticamente el enlace canónico directo (?activity=id) en la propiedad de tipo URL de Notion sin alterar títulos, fechas ni responsables.
+                </p>
+                {linkBackfillReport && (
+                  <div className="p-2 rounded bg-[#0D1929] border border-[#1E3A5F] text-[10.5px] text-slate-200 space-y-1">
+                    <div className="flex items-center gap-2 font-medium text-[#38BDF8]">
+                      <span>✓ Sincronización completada:</span>
+                      <span className="text-emerald-400 font-semibold">{linkBackfillReport.filled} completado{linkBackfillReport.filled === 1 ? '' : 's'}</span>
+                      {linkBackfillReport.repaired > 0 && <span className="text-amber-400 font-semibold">{linkBackfillReport.repaired} reparado{linkBackfillReport.repaired === 1 ? '' : 's'}</span>}
+                      <span className="text-slate-400">{linkBackfillReport.alreadyCorrect} ya al día</span>
+                    </div>
+                    {linkBackfillReport.errors?.length > 0 && (
+                      <p className="text-rose-400 text-[10px]">
+                        {linkBackfillReport.errors.length} error(es): {linkBackfillReport.errors[0]?.error}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

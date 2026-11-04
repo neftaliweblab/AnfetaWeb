@@ -40,6 +40,22 @@ function cleanBaseUrl(url: string): string {
   return url.replace(/\/+$/, '').trim();
 }
 
+/**
+ * Resolves public base URL from incoming NextRequest headers if it's a valid public domain.
+ */
+export function resolvePublicBaseUrlFromRequest(req?: any): string | undefined {
+  if (!req || !req.headers) return undefined;
+  try {
+    const host = (req.headers.get?.('x-forwarded-host') || req.headers.get?.('host') || '').trim();
+    if (!host) return undefined;
+    const proto = (req.headers.get?.('x-forwarded-proto') || 'https').split(',')[0].trim();
+    const candidate = `${proto}://${host}`;
+    return isValidPublicUrl(candidate) ? cleanBaseUrl(candidate) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isValidPublicUrl(url: string): boolean {
   try {
     const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);

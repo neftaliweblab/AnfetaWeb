@@ -6,6 +6,7 @@ import {
   canonicalActivityUrl,
   findActivityLinkProperty,
   evaluateActivityLink,
+  resolvePublicBaseUrlFromRequest,
   type ActivityLinkEvaluation,
 } from '@/lib/activityCanonicalLink';
 
@@ -14,6 +15,7 @@ export {
   canonicalActivityUrl,
   findActivityLinkProperty,
   evaluateActivityLink,
+  resolvePublicBaseUrlFromRequest,
   type ActivityLinkEvaluation,
 };
 
@@ -224,6 +226,10 @@ export async function saveActivityLinkToNotion(
       }
     );
 
+    if (targetProps && targetProps[propMatch.name]) {
+      targetProps[propMatch.name].url = canonical;
+    }
+
     return {
       success: true,
       status: 'updated',
@@ -270,14 +276,22 @@ export async function backfillActivityLinks(
   };
 
   // Search Notion pages with sorting by last_edited_time
-  const searchPayload: any = {
-    page_size: limit,
-    filter: { property: 'object', value: 'page' },
-    sort: { direction: 'descending', timestamp: 'last_edited_time' },
-    ...(options.cursor ? { start_cursor: options.cursor } : {}),
-  };
-
-  const response = await notionRequest(settings, 'search', 'POST', searchPayload);
+  let response: any;
+  if (options.filterDatabaseId) {
+    const dbId = options.filterDatabaseId.replace(/-/g, '');
+    response = await notionRequest(settings, `databases/${dbId}/query`, 'POST', {
+      page_size: limit,
+      ...(options.cursor ? { start_cursor: options.cursor } : {}),
+    });
+  } else {
+    const searchPayload: any = {
+      page_size: limit,
+      filter: { property: 'object', value: 'page' },
+      sort: { direction: 'descending', timestamp: 'last_edited_time' },
+      ...(options.cursor ? { start_cursor: options.cursor } : {}),
+    };
+    response = await notionRequest(settings, 'search', 'POST', searchPayload);
+  }
   const pages: any[] = (response.results || []).filter(
     (p: any) => !p.archived && !p.in_trash
   );
