@@ -1,4 +1,5 @@
 "use client";
+import {reviewNoticePresentation} from '@/lib/reviewNoticePresentation';
 import {calendarDisplayTitle} from '@/services/calendarPresentation';
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import {PwaNotifications} from './PwaNotifications';
@@ -128,7 +129,9 @@ export function CalendarReviewNotifications({
       <div className="flex justify-between text-xs text-slate-200 mb-3"><strong>Avisos de revisión y FTF</strong><button onClick={() => setOpen(false)} aria-label="Cerrar avisos">✕</button></div>
       {error && <p role="alert" className="text-xs text-rose-300 mb-2">{error}</p>}
       {!visibleItems.length && !error && <p className="text-xs text-slate-400">No hay avisos pendientes.</p>}
-      {visibleItems.map(item => (
+      {visibleItems.map(item => {
+        const notice=reviewNoticePresentation(item);
+        return (
         <div key={item.id} className="block rounded-lg border border-slate-700 bg-slate-900/90 p-2.5 mb-2.5 text-xs text-slate-200 shadow-sm transition-all hover:border-cyan-700/60">
           <div className="flex items-start justify-between gap-1.5 mb-1.5">
             <div className="flex items-center gap-1 font-semibold text-cyan-300">
@@ -138,13 +141,15 @@ export function CalendarReviewNotifications({
               </span>
             </div>
             <span className="text-[10px] text-slate-400">
-              {item.updated ? new Date(item.updated).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : ''}
+              {notice.timestamp ? new Date(notice.timestamp).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
           </div>
 
+          {notice.people && <p className="mb-1 text-xs font-semibold text-cyan-200">{notice.people}</p>}
           <p className="text-[11px] text-slate-200 font-medium line-clamp-2 mb-2 leading-relaxed">
-            {calendarDisplayTitle(item.activityTitle || item.title)}
+            {notice.title}
           </p>
+          {notice.detail && <p className="mb-2 text-[10px] leading-relaxed text-slate-400">{notice.detail}</p>}
 
           <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-800">
             <button
@@ -178,7 +183,7 @@ export function CalendarReviewNotifications({
             <button type="button" disabled={busy} onClick={()=>void dismiss(item)} className="text-[11px] text-rose-300 hover:text-rose-200 disabled:opacity-40 px-2 py-1" title="Eliminar este aviso de tu cuenta; conserva la actividad">Eliminar aviso</button>
           </div>
         </div>
-      ))}
+      );})}
       <PwaNotifications />
       {visibleItems.length > 0 && <button disabled={busy} onClick={markRead} className="text-xs text-slate-300 underline mt-2 block">Marcar como leídos</button>}
     </div>}

@@ -86,6 +86,8 @@ export async function listReviewNotifications(settings: CalendarSettings, person
         const parts = fullMessage.split(' · ');
         const activityTitle = parts.length > 1 ? parts.slice(1).join(' · ').trim() : fullMessage;
         const actionLabel = parts.length > 1 ? parts[0].trim() : '';
+        const authorToken=title.match(/\bde:([^\s]+)\s+\[RESPUESTA\]/i)?.[1];
+        const recipientToken=title.match(/(?:^|\s)([a-z][a-z0-9-]*)\s+de:/i)?.[1];
         const urlProp = (Object.values(p.properties || {}).find((prop: any) => prop?.type === 'url' && prop?.url) as any)?.url;
         items.push({
           id: p.id,
@@ -94,6 +96,8 @@ export async function listReviewNotifications(settings: CalendarSettings, person
           actionLabel,
           activityTitle,
           activityUrl: urlProp || '',
+          authorName: authorToken ? normalizePerson(authorToken) : '',
+          recipientName: recipientToken ? normalizePerson(recipientToken) : '',
           updated: p.last_edited_time
         });
       }
