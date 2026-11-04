@@ -33,6 +33,7 @@ yarn-error.log*
 
 # Variables reales y copias: nunca versionar.
 .env*
+.env.local*
 
 # Local application data & credentials
 settings.json
