@@ -543,6 +543,29 @@ export function UnifiedActivityModal({
             </div>
           )}
 
+                    {activity.isReviewMirror && (
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/70 text-cyan-200 text-xs shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-bold px-1.5 py-0.5 rounded bg-cyan-900 border border-cyan-500 text-[10px] uppercase">
+                  {activity.isHandoffMirror ? 'Transferida' : 'Copia Revisión'}
+                </span>
+                <span>Copia visual de seguimiento. La actividad original está con su revisor.</span>
+              </div>
+              {activity.pageUrl && (
+                <a
+                  href={activity.pageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 flex items-center gap-1 font-semibold text-cyan-300 hover:text-white underline text-[11px]"
+                  title="Abrir la actividad original en Notion"
+                >
+                  <span>Ver original</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          )}
+
           {/* ================= 4-LINE STRUCTURED PRESENTATION & EDITING ================= */}
           <div className="rounded-xl bg-[#131D2A] border border-[#213244] p-3 space-y-2 text-xs">
             {/* Line 1: State & Priority & Type */}
@@ -552,7 +575,7 @@ export function UnifiedActivityModal({
                 <ActivityStatusSelect
                   pageId={activity.pageId}
                   status={activity.status}
-                  disabled={!editable}
+                  disabled={!editable || !!activity.isReviewMirror}
                   onReview={() => setShowReviewModal(true)}
                   onSave={async (newStatus: string) => {
                     await onUpdateActivity?.(activity.pageId, { status: newStatus });
@@ -584,7 +607,7 @@ export function UnifiedActivityModal({
                 <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400">
                   Descripción de la Actividad:
                 </span>
-                {editable && !isEditingDescription && (
+                {editable && !activity.isReviewMirror && !isEditingDescription && (
                   <button
                     type="button"
                     onClick={() => setIsEditingDescription(true)}

@@ -133,9 +133,13 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
   }
   return scanActivityTags(title).some(tag=>{
     if(matchCase&&tag.token!==query)return false;
-    if(tag.person!==wanted.person||tag.role!==wanted.role)return false;
-    if(wanted.role==='review')return true;
+    if(tag.person!==wanted.person)return false;
+    if(wanted.role==='review')return tag.role==='review';
     if(wanted.role==='template')return tag.token.toLowerCase()===query.toLowerCase();
+    if(tag.role==='template'){
+      return !wanted.priority||tag.priority===wanted.priority||wanted.priority==='11';
+    }
+    if(tag.role!==wanted.role)return false;
     return wanted.priority===tag.priority;
   });
 }

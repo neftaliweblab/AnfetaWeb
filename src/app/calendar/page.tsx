@@ -16,6 +16,15 @@ import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
 import { Search, X, Sparkles, ExternalLink, Calendar, RefreshCw } from "lucide-react";
 
 export default function StandaloneCalendarPage() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    const targetId = p.get("activity") || p.get("pageId");
+    if (targetId) {
+      window.location.replace('/?activity=' + encodeURIComponent(targetId));
+      return;
+    }
+  }, []);
   const [currentDate, setCurrentDate] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search);

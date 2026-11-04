@@ -101,6 +101,13 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         return revisions&&/(?:\bpprog\b|\bsoftware\b|\bdesarrollo\b|\.prog\b|\bzs\b|\bprogramas?\b)/i.test(name);
       });
 
+    case "plantillas":
+      return items.filter(x => {
+        if (!isNotionItem(x)) return false;
+        const name = String(x.name || '').toLowerCase();
+        return /(?:plantilla|#ffase00|aaprtuzs|\beed11\b|\bee-d11\b)/i.test(name);
+      });
+
     case "zpagar":
       return items.filter((x) => {
         if (!isNotionItem(x)) return false;

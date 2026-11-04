@@ -28,6 +28,20 @@ import {
 
 const people = ['John', 'Neftali', 'Karla', 'Brian', 'Isaias', 'Andrade', 'Genaro', 'Sotelo', 'Acalli', 'Edwin'];
 
+const DEFAULT_DOMAINS = [
+  'anfeta.com',
+  'novakid.com',
+  'clinicaalfa.mx',
+  'cqvpersa.mx',
+  'fromm-pack.com.mx',
+  'recorcholis.com.mx',
+  'weblab.mx',
+  'apantallante.com',
+  'lcacalderas.com',
+  'solucionesviales.mx',
+  'cumbreseguros.com',
+];
+
 interface CreateActivityModalProps {
   currentUser: string;
   date: string;
@@ -51,6 +65,28 @@ export function CreateActivityModal({
 }: CreateActivityModalProps) {
   const [title, setTitle] = useState('');
   const [domain, setDomain] = useState('');
+  const [cachedDomains, setCachedDomains] = useState<string[]>(DEFAULT_DOMAINS);
+  const [showDomainDropdown, setShowDomainDropdown] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('anfeta_cached_domains');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCachedDomains([...new Set([...DEFAULT_DOMAINS, ...parsed])]);
+        }
+      }
+    } catch {}
+  }, []);
+
+  const predictiveDomains = useMemo(() => {
+    const q = domain.trim().toLowerCase();
+    if (!q) return [];
+    return cachedDomains
+      .filter((d) => d.toLowerCase().includes(q) && d.toLowerCase() !== q)
+      .slice(0, 5);
+  }, [domain, cachedDomains]);
   const [person, setPerson] = useState(() => {
     if (initialPerson) return normalizePerson(initialPerson);
     return normalizePerson(currentUser);
@@ -383,13 +419,39 @@ export function CreateActivityModal({
               <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
                 Dominio / Proyecto *
               </label>
-              <input
-                required
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="ejemplo.com"
-                className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
-              />
+              <div className="relative">
+                <input
+                  required
+                  value={domain}
+                  onChange={(e) => {
+                    setDomain(e.target.value);
+                    setShowDomainDropdown(true);
+                  }}
+                  onFocus={() => setShowDomainDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDomainDropdown(false), 200)}
+                  placeholder="ejemplo.com"
+                  className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] transition-colors"
+                />
+                {showDomainDropdown && predictiveDomains.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-[#0c141e] border border-[#284358] rounded-lg shadow-2xl z-50 overflow-hidden divide-y divide-[#1e2e40]">
+                    {predictiveDomains.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setDomain(item);
+                          setShowDomainDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-white hover:bg-[#1E2E40] hover:text-[#38BDF8] flex items-center justify-between cursor-pointer transition-colors"
+                      >
+                        <span className="font-mono">{item}</span>
+                        <span className="text-[10px] text-[#64748B]">Sugerencia local</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>

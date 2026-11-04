@@ -42,6 +42,7 @@ const DATABASE_SCOPES: ScopeItem[] = [
 
 const FILTER_SCOPES: ScopeItem[] = [
   { id: "Programas", label: "Software · Revisiones", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Software / Desarrollo dentro de Revisiones; conserva la búsqueda y los demás filtros" },
+  { id: "Plantillas", label: "Plantillas", category: "filter", icon: FileText, badge: "Filtro", tooltip: "Plantillas Fase 1 con eed11 (Edwin) · activa ámbito Notion y búsqueda rápida" },
   { id: "zPAGAR", label: "zPAGAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de pagos pendientes" },
   { id: "zCOBRAR", label: "zCOBRAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de cobros pendientes" },
 ];

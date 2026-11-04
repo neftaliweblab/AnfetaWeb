@@ -207,7 +207,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
 
       // Person
       if (type === "people" && Array.isArray(propVal.people) && propVal.people.length > 0) {
-        person = propVal.people.map((p: any) => p?.name || "").filter(Boolean).join(", ");
+        person = propVal.people.map((p: any) => p?.person?.email || p?.name || "").filter(Boolean).join(", ");
       } else if (type === "select" && (lowerName.includes("persona") || lowerName.includes("responsable") || lowerName.includes("asignado"))) {
         person = propVal.select?.name || person;
       }

@@ -1,13 +1,14 @@
 import {calendarDomain} from '../services/calendarPresentation';
 import {workflowPresentation} from '../services/activityWorkflow';
 import {stripProgressiveStage,progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
+
 export interface VisualParts {
   title: string;        // Título limpio para la tabla
   rawTitle: string;     // Título original completo sin tocar
   workflow: string;     // PENDIENTE, EN REVISIÓN, SUSPENDIDA, POR HACER, TERMINADA
   workflowColor: string;
   area: string;         // ADS, WEB, SEO, DIS, CONT, APP, PROG, MAPS, BIBLIA, etc.
-  monthCode: string;    // ej: 08AGO, 09SEP, 10OCT
+  monthCode: string;    // ej: 11, 08AGO, 09SEP, 10OCT
   orderCode: string;    // ej: 01.00, 04.00, 90.00, 15
   domain: string;       // ej: novakid.com, clinicaalfa.mx
   contentSnippet?: string;
@@ -41,7 +42,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   display = display.replace(/^\[[^\]]{1,40}\]\s*/i, '').trim();
 
   // 2. Extraer Workflow token (sprtuzREVISION, aprtuzREVISION, prtuzREVISION, rtuzREVISION, zREVISION)
-  let workflow = '',areaFromStage='';
+  let workflow = '', areaFromStage = '';
   const wfMatch = display.match(/(?<![\w_])(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION)(?![\w_])/i);
   if (wfMatch) {
     const val = wfMatch[1].toUpperCase();
@@ -60,6 +61,16 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     else if (s.includes('prtuz por hacer') || s.includes('prtuz') || s.includes('pendiente')) workflow = 'PENDIENTE';
   }
 
+  // Detección de doble "A" para suspendidas / borradores (aaprtuz, aaprtuzS, aartuz, aapr, WA, AA)
+  // Sin colisionar con dominios o tags de persona (aads, aacce, aapli, aacal, aan11)
+  const doubleAMatch = display.match(/(?<![\w_])(aaprtuz[rsS]?|aartuz[rsS]?|aapr[rsS]?|WA\b|AA\b)(?![\w_])/i);
+  if (doubleAMatch && !/^(?:aacce|aads|aapli|aacal|aan11)/i.test(doubleAMatch[1])) {
+    if (!workflow || workflow === 'PENDIENTE') {
+      workflow = 'SUSPENDIDA';
+    }
+    display = display.replace(doubleAMatch[0], ' ');
+  }
+
   let workflowColor = '#94A3B8';
   if (workflow === 'PENDIENTE') workflowColor = '#FBBF24';
   else if (workflow === 'EN REVISIÓN') workflowColor = '#F87171';
@@ -67,24 +78,63 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   else if (workflow === 'SUSPENDIDA') workflowColor = '#FACC15';
   else if (workflow === 'POR HACER') workflowColor = '#C084FC';
 
-  const presentation=workflowPresentation(status||'',rawTitle);
-  if(presentation.state!=='unknown'){workflow=presentation.label.toUpperCase();workflowColor={pending:'#FBBF24',review:'#F87171',completed:'#38BDF8',suspended:'#FACC15',unknown:'#94A3B8'}[presentation.state];}
-  if(PROGRESSIVE_WORKFLOW_PRIMARY){const stage=progressiveStage(rawTitle);display=stripProgressiveStage(display);if(stage?.category==='software')areaFromStage='PROG';if(stage?.category==='cobro')areaFromStage='COBRO';if(stage?.category==='pago')areaFromStage='PAGO';}
+  const presentation = workflowPresentation(status || '', rawTitle);
+  if (presentation.state !== 'unknown') {
+    workflow = presentation.label.toUpperCase();
+    workflowColor = { pending: '#FBBF24', review: '#F87171', completed: '#38BDF8', suspended: '#FACC15', unknown: '#94A3B8' }[presentation.state];
+  }
+  if (PROGRESSIVE_WORKFLOW_PRIMARY) {
+    const stage = progressiveStage(rawTitle);
+    display = stripProgressiveStage(display);
+    if (stage?.category === 'software') areaFromStage = 'PROG';
+    if (stage?.category === 'cobro') areaFromStage = 'COBRO';
+    if (stage?.category === 'pago') areaFromStage = 'PAGO';
+  }
 
-  // 3. Extraer Mes (ej. 26-[08AGO], [08AGO], (2609SEPT), 08AGO)
   let monthCode = '';
-  const monthMatch = display.match(/(?<![\w_])(?:\d{2}-)?\[?\(?(\d{1,2}[A-Za-z]{3,4})\)?\]?(?:\s*-\s*|\s+)?/i);
-  if (monthMatch && monthMatch.index! < 50) {
-    monthCode = monthMatch[1].toUpperCase();
-    display = display.replace(monthMatch[0], '');
+  let orderCode = '';
+  let area = areaFromStage;
+
+  // 3a. Estructura moderna de títulos: 📅? MM.c.OO.SS (ej. 11.s.01.00 o 11.a.01.00)
+  // - Mes: MM = 11 (Noviembre, nunca el orden de la actividad)
+  // - Vertiente: c = s (Software), a (App), w (Web), d (Diseño), etc.
+  // - Orden principal: OO = 01
+  // - Suborden: SS = 00
+  // - Badge visible de orden: OO.SS = 01.00
+  const structMatch = display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(\d{1,2})\.(\d{2})(?!\d)/i);
+  if (structMatch) {
+    monthCode = String(parseInt(structMatch[1], 10)).padStart(2, '0');
+    orderCode = `${structMatch[3]}.${structMatch[4]}`;
+    const strand = structMatch[2].toLowerCase();
+    if (!area) {
+      if (strand === 's') area = 'PROG';
+      else if (strand === 'a') area = 'APP';
+      else if (strand === 'w') area = 'WEB';
+      else if (strand === 'd') area = 'DISEÑO';
+      else if (strand === 'm') area = 'MAPS';
+      else if (strand === 'r') area = 'REDES';
+      else if (strand === 'c') area = 'COTIZACIÓN';
+    }
+    display = display.replace(structMatch[0], ' ');
+  }
+
+  // 3b. Extraer Mes heredado si no vino de la estructura moderna (ej. 26-[08AGO], [08AGO], (2609SEPT), 08AGO)
+  if (!monthCode) {
+    const monthMatch = display.match(/(?<![\w_])(?:\d{2}-)?\[?\(?(\d{1,2}[A-Za-z]{3,4})\)?\]?(?:\s*-\s*|\s+)?/i);
+    if (monthMatch && monthMatch.index! < 50) {
+      monthCode = monthMatch[1].toUpperCase();
+      display = display.replace(monthMatch[0], '');
+    }
   }
 
   // 4. Extraer Dominio (ej. webs.apantallante.com, seo.lcacalderas.com, novakid.com)
   let domain = '';
-  const classifiedToken=display.match(/(?:\[|\()?([pd]\.(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|app|dev|info)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*)(?:\]|\))?(?=\s|$)/i);
-  if(classifiedToken){domain=calendarDomain(classifiedToken[1]);display=display.replace(classifiedToken[0],' ');}
+  const classifiedToken = display.match(/(?:\[|\()?([pd]\.(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|app|dev|info)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*)(?:\]|\))?(?=\s|$)/i);
+  if (classifiedToken) {
+    domain = calendarDomain(classifiedToken[1]);
+    display = display.replace(classifiedToken[0], ' ');
+  }
 
-  let area = areaFromStage;
   const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co)))\b\s*(?:\]|\))?/i;
   const domainMatch = display.match(domainRegex);
   if (domainMatch) {
@@ -124,17 +174,22 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     }
   }
 
-  // 6. Extraer Orden / Código (ej. 01.00, 04.00, mes 1.00, 15)
-  let orderCode = '';
-  const orderMatch = display.match(/(?<![\w_])(?:mes|orden|ord|num|no|act|m|#)?\s*(\d{1,3}(?:\.\d{1,2})?)(?!\d)(?:\s*-\s*|\s+)?/i);
-  if (orderMatch && orderMatch.index! < 50) {
-    orderCode = orderMatch[1];
-    display = display.replace(orderMatch[0], '');
+  // 6. Extraer Orden heredado si no vino de la estructura moderna (ej. 01.00, 04.00, mes 1.00, 15)
+  if (!orderCode) {
+    const orderMatch = display.match(/(?<![\w_])(?:mes|orden|ord|num|no|act|m|#)?\s*(\d{1,3}(?:\.\d{1,2})?)(?!\d)(?:\s*-\s*|\s+)?/i);
+    if (orderMatch && orderMatch.index! < 50) {
+      orderCode = orderMatch[1];
+      display = display.replace(orderMatch[0], '');
+    }
   }
 
-  // 7. Limpieza de prefijos técnicos residuales
+  // 7. Limpieza de prefijos técnicos residuales y decoraciones de Notion
   display = display.replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '');
   display = display.replace(/\[\s*\]|\(\s*\)/g, '');
+  // Limpiar delimitadores pipe | y emojis visuales de Notion
+  display = display.replace(/[💻📅🌐🛠🔄👥✅ℹ️🔍]/gu, ' ');
+  display = display.replace(/\|/g, ' ');
+  display = display.replace(/(?:^|\s)#[a-zA-Z0-9_-]+/g, ' ');
   display = display.replace(/\s{2,}/g, ' ').replace(/^[\s\-–—|:]+|[\s\-–—|:]+$/g, '').trim();
 
   const finalParsed: VisualParts = {
@@ -155,4 +210,3 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   visualPartsGlobalCache.set(cacheKey, finalParsed);
   return finalParsed;
 }
-

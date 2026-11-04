@@ -28,6 +28,7 @@ import {
   FileText,
   FileSpreadsheet,
   Download,
+  Calendar,
 } from "lucide-react";
 import { playCopyChime } from "@/services/windowsIntegration";
 import { ImageLightbox, LightboxImage } from "./ImageLightbox";
@@ -40,6 +41,7 @@ interface DetailsPaneProps {
   onTogglePin?:()=>void;
   onOpen: (item: any) => void;
   onOpenLocation: (item: any) => void;
+  onOpenDetailModal?: (item: any) => void;
   onSearchDomain?: (domain: string) => void;
   onOpenUploadDropbox?: (targetDir?: string) => void;
   onOpenGlobalPaste?: () => void;
@@ -180,6 +182,7 @@ function DetailsPaneComponent({
   onTogglePin,
   onOpen,
   onOpenLocation,
+  onOpenDetailModal,
   onSearchDomain,
   onOpenUploadDropbox,
   onOpenGlobalPaste,
@@ -1150,6 +1153,17 @@ function DetailsPaneComponent({
         >
           {isNotion ? "Abrir Notion" : "Ubicación"}
         </button>
+        {isNotion && onOpenDetailModal && (
+          <button
+            type="button"
+            onClick={() => onOpenDetailModal(item)}
+            className="flex-1 h-[26px] bg-purple-600 hover:bg-purple-500 border border-purple-400 text-white font-medium text-[11px] rounded transition-colors flex items-center justify-center gap-1 shadow-sm px-1.5 cursor-pointer"
+            title="Abrir detalle interactivo de la actividad en modal flotante"
+          >
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Abrir detalle</span>
+          </button>
+        )}
         <div className="relative">
           <button
             type="button"

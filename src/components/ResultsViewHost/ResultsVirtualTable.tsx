@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
-import {lastSearchTerm,isFutureScheduled} from '@/lib/searchPresentation';
+import {lastSearchTerm,isFutureScheduled,isFullMatch} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery, type SearchMatchOptions} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {workflowState} from '@/services/activityWorkflow';
@@ -21,7 +21,7 @@ import {
   FileSpreadsheet,
   Image as ImageIcon,
   FileCode,
-  Check,
+  Check, Calendar,
   Trash2,
   Upload,
   Star,
@@ -148,6 +148,7 @@ interface ResultsTableProps {
   textScale?: string;
   groupBy?: string;
   headerActions?: React.ReactNode;
+  onOpenDetailModal?: (item: any) => void;
 }
 
 function ResultsVirtualTableComponent({
@@ -178,6 +179,7 @@ function ResultsVirtualTableComponent({
   onToggleSelectAll,
   onClearSelection,
   onDeleteSelected,
+  onOpenDetailModal,
   onOpenUploadDropbox,
   onDropFiles,
   showPath = true,
@@ -504,7 +506,7 @@ function ResultsVirtualTableComponent({
       <div key={item.id} style={{ contentVisibility: isExpanded ? 'visible' : 'auto', containIntrinsicSize: '0 34px' }} className={"flex flex-col border-b border-[#17212F]/70 "+(item.ftfVerified?"rounded border border-emerald-400 shadow-[inset_0_0_8px_#34d39955]":"")}>
         <div
           data-search-result={item.id}
-          data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
+          data-full-match={!upcoming && isFullMatch(item, searchQuery)}
           tabIndex={-1}
           aria-label={item.name}
           onClick={() => onSelect(item)}
@@ -518,7 +520,7 @@ function ResultsVirtualTableComponent({
             paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
             paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
           }}
-          className={`flex items-center px-3 cursor-pointer transition-colors ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-inset ring-cyan-500/50 bg-cyan-950/20":""} ${
+          className={`flex items-center px-3 cursor-pointer transition-colors ${!upcoming && isFullMatch(item, searchQuery) ? "ring-1 ring-inset ring-cyan-400/60 bg-cyan-950/25" : ""} ${
             isSelected
               ? "bg-[#1E293B] border-l-2 border-[#38BDF8] text-white"
               : isChecked
@@ -703,7 +705,25 @@ function ResultsVirtualTableComponent({
         )}
 
         {/* Favorito + Checkbox + Eliminar */}
-        <div className="w-[62px] shrink-0 flex items-center justify-center gap-1">
+        <div className="w-[110px] shrink-0 flex items-center justify-end gap-1 px-1">
+          {onOpenDetailModal && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetailModal(item);
+              }}
+              style={{
+                height: `${Math.round(18 * scale)}px`,
+                fontSize: `${(9 * scale).toFixed(1)}px`,
+              }}
+              className="px-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-colors"
+              title="Abrir detalle interactivo"
+            >
+              <Calendar style={{ width: `${Math.round(10 * scale)}px`, height: `${Math.round(10 * scale)}px` }} />
+              <span className="hidden xl:inline">Abrir</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -843,7 +863,7 @@ function ResultsVirtualTableComponent({
       <div
         key={item.id}
         data-search-result={item.id}
-        data-latest-match={!!lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))}
+        data-full-match={!upcoming && isFullMatch(item, searchQuery)}
         tabIndex={-1}
         aria-label={item.name}
         onClick={() => onSelect(item)}
@@ -852,7 +872,7 @@ function ResultsVirtualTableComponent({
           e.preventDefault();
           setContextMenu({ item, x: e.clientX, y: e.clientY });
         }}
-        className={`${item.ftfVerified?"ring-1 ring-emerald-400 shadow-[0_0_10px_#34d39955]":""} relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${!upcoming&&lastSearchTerm(searchQuery)&&matchesFlexibleOrQuotedQuery(item,JSON.stringify(lastSearchTerm(searchQuery)))?"ring-1 ring-cyan-500/60":""} ${
+        className={`${item.ftfVerified?"ring-1 ring-emerald-400 shadow-[0_0_10px_#34d39955]":""} relative flex flex-col justify-between p-2.5 rounded-lg border transition-all cursor-pointer min-h-[90px] ${!upcoming && isFullMatch(item, searchQuery) ? "ring-1 ring-cyan-400/60 bg-cyan-950/25" : ""} ${
           isSelected
             ? "bg-[#1E293B] border-[#38BDF8] shadow-lg shadow-[#38BDF8]/10"
             : isChecked

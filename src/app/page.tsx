@@ -134,7 +134,7 @@ export default function AnfetaApp() {
     if (typeof window === "undefined") return "results";
     try {
       const urlP = new URLSearchParams(window.location.search);
-      if(urlP.get('activity') || urlP.get('pageId')) return 'calendar';
+      if(urlP.get('activity') || urlP.get('pageId')) return 'results';
       if(urlP.get('view')==='messages')return 'messages';
       const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
       if (savedView && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(savedView)) {
@@ -166,7 +166,7 @@ export default function AnfetaApp() {
         const data = await r.json();
         if (data.success && data.activity) {
           if (data.date) setCurrentDate(data.date);
-          setActiveView("calendar");
+          setActiveView("results");
           setCalendarActivities((prev) => {
             if (prev.some((a) => a.pageId === data.activity.pageId)) return prev;
             return [data.activity, ...prev];
@@ -660,6 +660,8 @@ export default function AnfetaApp() {
           }`} aria-hidden={activeView !== "results"}
         >
           <ResultsViewHost
+            initialDirectActivity={directSelectedActivity}
+            initialSelectedPageId={directSelectedActivity?.pageId}
             onShowResults={()=>setActiveView('results')}
             isActive={activeView === "results"}
             items={searchIndex}

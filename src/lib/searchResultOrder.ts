@@ -74,13 +74,19 @@ export function getPathOrderRank(row: any): number {
   return 6;
 }
 
-function getOrderNumericRank(row: any): number {
+export function getOrderNumericRank(row: any): number {
   const order = row.orderChip || row.OrderChip;
   if (order) {
     const num = parseFloat(order);
     if (Number.isFinite(num)) return num;
   }
   const name = String(row.Name || row.name || '');
+  // Detección de estructura canónica moderna: 📅? MM.c.OO.SS -> Orden numérico OO.SS
+  const structMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.(\d{1,2})\.(\d{2})/i);
+  if (structMatch) {
+    const num = parseFloat(`${parseInt(structMatch[1], 10)}.${structMatch[2]}`);
+    if (Number.isFinite(num)) return num;
+  }
   const m = name.match(/(?<![a-zA-Z0-9_])(\d{1,3}\.\d{1,2})(?![a-zA-Z0-9_])/);
   if (m && m.index !== undefined && m.index < 80) {
     const num = parseFloat(m[1]);
@@ -89,11 +95,77 @@ function getOrderNumericRank(row: any): number {
   return Number.MAX_VALUE;
 }
 
+export function cleanSearchTitle(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/^\[[^\]]{1,40}\]\s*/i, '')
+    .replace(/[💻📅🌐🛠🔄👥✅ℹ️🔍]/gu, ' ')
+    .replace(/\|/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Calcula la relevancia de búsqueda según los 4 niveles solicitados:
+ * 1. Coincidencia exacta del título completo con el texto buscado (100)
+ * 2. Coincidencia de la frase completa dentro del título (80)
+ * 3. Coincidencia con todos los términos buscados en el título (60)
+ * 4. Coincidencias en otros campos (40) o parciales (20)
+ */
+export function calculateSearchRelevance(row: any, query: string): number {
+  if (!row || !query) return 0;
+  const rawQ = query.trim();
+  if (!rawQ) return 0;
+  const cleanQ = cleanSearchTitle(rawQ);
+  if (!cleanQ) return 0;
+
+  const rawTitle = String(row.Name || row.name || row.title || '').trim();
+  const cleanTitle = cleanSearchTitle(rawTitle);
+
+  // 1. Coincidencia exacta del título completo
+  if (cleanTitle === cleanQ || rawTitle.toLowerCase() === rawQ.toLowerCase()) {
+    return 100;
+  }
+
+  // 2. Coincidencia de la frase completa dentro del título
+  if (cleanTitle.includes(cleanQ) || rawTitle.toLowerCase().includes(rawQ.toLowerCase())) {
+    return 80;
+  }
+
+  // 3. Coincidencia con todos los términos buscados en el título
+  const terms = cleanQ.split(/\s+/).filter(t => t.length > 0);
+  if (terms.length > 0 && terms.every(term => cleanTitle.includes(term))) {
+    return 60;
+  }
+
+  // 4. Coincidencias con todos los términos en otros campos del item
+  const otherFields = [
+    row.path,
+    row.description,
+    row.searchText,
+    row.SearchText,
+    row.folder,
+    row.Folder,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const combined = cleanTitle + ' ' + otherFields;
+  if (terms.length > 0 && terms.every(term => combined.includes(term))) {
+    return 40;
+  }
+
+  // 5. Coincidencias parciales
+  if (terms.some(term => cleanTitle.includes(term))) {
+    return 20;
+  }
+
+  return 0;
+}
+
 export function getRecencyTime(row: any): number {
   if (!row) return 0;
   let best = 0;
   // Límite de horizonte futuro: 30 días a partir de hoy.
-  // Fechas en 2028, 2029, 2030 (renovaciones de hosting en Cobrar y Pagar) NO son eventos recientes.
   const maxFuture = Date.now() + 30 * 86400000;
 
   const candidates = [
@@ -112,7 +184,6 @@ export function getRecencyTime(row: any): number {
   const sched = row.ScheduledDate || row.scheduledDate;
   if (sched) {
     const st = parseDateCandidate(sched);
-    // Solo considerar scheduledDate si está dentro del horizonte actual (no en 2030)
     if (st > 0 && st <= maxFuture) {
       candidates.push(sched);
     }
@@ -136,7 +207,7 @@ export function newestFirst(a: any, b: any) {
   const timeB = getRecencyTime(b);
   if (timeB !== timeA) return timeB - timeA;
 
-  // 3. Orden numérico (ej. 1.00 antes de 2.00)
+  // 3. Orden numérico (ej. 01.00 antes de 02.00 antes de 10.00)
   const numA = getOrderNumericRank(a);
   const numB = getOrderNumericRank(b);
   if (numA !== numB) return numA - numB;

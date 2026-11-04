@@ -2,6 +2,9 @@ export type OperationalState='pending'|'review'|'completed'|'suspended'|'unknown
 export const PROGRESSIVE_WORKFLOW_PRIMARY=process.env.NEXT_PUBLIC_ANFETA_LEGACY_WORKFLOW!=='1';
 const phases={
  saprtuz:{state:'suspended',label:'Suspendida',financial:'unknown'},
+ aaprtuz:{state:'suspended',label:'Suspendida',financial:'unknown'},
+ aartuz:{state:'suspended',label:'Suspendida',financial:'unknown'},
+ aapr:{state:'suspended',label:'Suspendida',financial:'unknown'},
  aprtuz:{state:'pending',label:'Por asignar',financial:'unknown'},
  prtuz:{state:'pending',label:'Por hacer',financial:'unknown'},
  rtuz:{state:'review',label:'Por revisar',financial:'unknown'},
@@ -10,8 +13,10 @@ const phases={
  z:{state:'completed',label:'Cerrada · cobrada/pagada',financial:'settled'},
 } as const;
 export function progressiveStage(text:string){
- const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aprtuz|prtuz|rtuz|tuz|uz|z)(r)(?![\p{L}\p{N}_@.\/-])/iu);
- if(match){const key=match[1].toLowerCase() as keyof typeof phases;return {code:key+'R',category:'revision',...phases[key],token:match[0],index:match.index!};}
+ const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)(?![\p{L}\p{N}_@.\/-])/iu);
+ if(match){const key=match[1].toLowerCase() as keyof typeof phases;const suffix=match[2]||'';return {code:key+suffix.toUpperCase(),category:'revision',...phases[key],token:match[0],index:match.index!};}
+ const wa=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(WA|AA)(?![\p{L}\p{N}_@.\/-])/u);
+ if(wa){return {code:wa[1],category:'revision',state:'suspended' as const,label:'Suspendida',financial:'unknown' as const,token:wa[0],index:wa.index!};}
  const other=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])z([scp])(?![\p{L}\p{N}_@.\/-])/iu);
  if(!other)return null;
  const category={s:'software',c:'cobro',p:'pago'}[other[1].toLowerCase()]!;

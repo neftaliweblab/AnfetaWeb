@@ -1,3 +1,6 @@
+const cleanPageId = (id: unknown) => String(id || '').replace(/-/g, '').toLowerCase();
+import type { NotionCalendarActivity } from '@/types/anfeta';
+import { UnifiedActivityModal } from "@/components/CalendarHost/UnifiedActivityModal";
 "use client";
 import {focusSearchField,closeSearchTab} from "@/lib/searchTabNavigation";
 import {SearchShortcutSettings} from "./SearchShortcutSettings";
@@ -25,7 +28,7 @@ import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
-import {sortSearchRows,lastSearchTerm,searchMexicoDay} from '@/lib/searchPresentation';
+import {sortSearchRows,lastSearchTerm,searchMexicoDay,itemMatchesScheduledDay} from '@/lib/searchPresentation';
 import {activeResultsFirst, orderSearchResults} from '@/lib/activeResultsFirst';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -35,7 +38,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -100,6 +103,8 @@ interface ResultsViewHostProps {
   onChangeCurrentUser?: (user: string) => void;
   onTriggerAutomation?: () => void;
   onOpenAnnouncements?: () => void;
+  initialDirectActivity?: NotionCalendarActivity | null;
+  initialSelectedPageId?: string;
 }
 
 export function ResultsViewHost({
@@ -130,6 +135,8 @@ export function ResultsViewHost({
   onChangeCurrentUser,
   onTriggerAutomation,
   onOpenAnnouncements,
+  initialDirectActivity,
+  initialSelectedPageId,
 }: ResultsViewHostProps) {
   // Tabs state
   const [tabs, setTabs] = useState<SearchTab[]>([
@@ -171,6 +178,76 @@ export function ResultsViewHost({
   const [monthSelection,setSelectedMonth]=useState('Actual');
   const [currentMonth,setCurrentMonth]=useState('');
   const [currentSearchDay,setCurrentSearchDay]=useState('');
+  const [filterToday, setFilterToday] = useState(false);
+  const [floatingModalActivity, setFloatingModalActivity] = useState<NotionCalendarActivity | null>(null);
+  const [loadingModalId, setLoadingModalId] = useState<string | null>(null);
+
+  const handleOpenUnifiedModal = useCallback(async (item: any) => {
+    const pid = cleanPageId(item.pageId || item.id || item.PageId || item.externalId);
+    if (!pid) return;
+    setLoadingModalId(pid);
+    try {
+      const res = await fetch('/api/data?type=calendar-activity&pageId=' + encodeURIComponent(pid));
+      const data = await res.json();
+      if (data.success && data.activity) {
+        setFloatingModalActivity(data.activity);
+      } else {
+        setFloatingModalActivity({
+          pageId: pid,
+          pageUrl: item.url || item.path || item.target || '',
+          title: item.name || item.title || '',
+          person: resultAssignedPerson(item),
+          start: item.dateStart || item.start || new Date().toISOString(),
+          end: item.dateEnd || item.end || new Date().toISOString(),
+          status: item.updateStatus || item.status || '',
+          domain: item.domain || '',
+        } as any);
+      }
+    } catch {
+      setFloatingModalActivity({
+          pageId: pid,
+          pageUrl: item.url || item.path || item.target || '',
+          title: item.name || item.title || '',
+          person: resultAssignedPerson(item),
+          start: item.dateStart || item.start || new Date().toISOString(),
+          end: item.dateEnd || item.end || new Date().toISOString(),
+          status: item.updateStatus || item.status || '',
+          domain: item.domain || '',
+        } as any);
+    } finally {
+      setLoadingModalId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialDirectActivity) return;
+    setSelectedScope("Notion");
+    const cleanId = cleanPageId(initialDirectActivity.pageId);
+    const existing = items.find(it => cleanPageId(it.id || (it as any).pageId || it.externalId) === cleanId);
+    if (existing) {
+      setSelectedItem(existing);
+      setSelectedIds(new Set([existing.id]));
+    } else {
+      const directRow: SearchResultRow = ({
+        id: initialDirectActivity.pageId,
+        name: initialDirectActivity.title,
+        source: 'Notion',
+        sourceName: 'Revisiones',
+        type: 'PAGE',
+        path: initialDirectActivity.pageUrl || ('https://notion.so/' + cleanId),
+        target: initialDirectActivity.pageUrl || ('https://notion.so/' + cleanId),
+        scheduledDate: initialDirectActivity.start,
+        updateStatus: initialDirectActivity.status,
+        assignedPerson: initialDirectActivity.person,
+        domain: initialDirectActivity.domain,
+        isFolder: false,
+      } as any);
+      setItems(prev => [directRow, ...prev.filter(x => cleanPageId(x.id || (x as any).pageId) !== cleanId)]);
+      setSelectedItem(directRow);
+      setSelectedIds(new Set([directRow.id]));
+    }
+    setIsDetailsOpen(true);
+  }, [initialDirectActivity]);
   useEffect(()=>{const refresh=()=>{setCurrentMonth(currentSearchMonth());setCurrentSearchDay(searchMexicoDay(new Date()));};refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
   const selectedMonth=effectiveSearchMonth(monthSelection,currentMonth,deferredQuery);
   const [viewZoom,setViewZoom]=useState<"list"|"small"|"medium"|"large">('list');
@@ -1330,6 +1407,10 @@ export function ResultsViewHost({
       res=res.filter(item=>resultAssignedPerson(item)===normalizePerson(resultPerson));
     }
 
+    if (filterToday) {
+      const todayStr = searchMexicoDay(new Date());
+      res = res.filter(item => itemMatchesScheduledDay(item, todayStr));
+    }
     if (selectedMonth && selectedMonth !== "Todos") {
       res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
     }
@@ -1350,9 +1431,9 @@ export function ResultsViewHost({
       return true;
     });
 
-    res = sortSearchRows(res,resultSort);
+    res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter]);
+  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday]);
 
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
@@ -1481,6 +1562,12 @@ export function ResultsViewHost({
       <ScopePillsRow
         selectedScope={selectedScope}
         onSelectScope={(scope) => {
+          if (scope === "Plantillas") {
+            setSelectedScope("Notion");
+            handleQueryChange("eed11");
+            focusSearch();
+            return;
+          }
           setSelectedScope(scope);focusSearch();
           // Si el usuario tenía su tag personal y selecciona una base global, limpiar el tag para ver todos los registros
           const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
@@ -1493,6 +1580,29 @@ export function ResultsViewHost({
         onOpenSettings={onOpenSettings}
         textScale={textScale}
       />
+
+            {/* Barra de Filtro Rápido Hoy */}
+      <div className="flex items-center gap-2 px-3 py-1 bg-[#0f1722] border-b border-[#1b2636] text-xs shrink-0">
+        <button
+          type="button"
+          onClick={() => setFilterToday(!filterToday)}
+          className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+            filterToday
+              ? "bg-cyan-600 text-white shadow-sm ring-1 ring-cyan-400"
+              : "bg-[#16212e] text-slate-300 hover:text-white hover:bg-[#1f2e40] border border-[#23354a]"
+          }`}
+          title="Ver únicamente actividades programadas para hoy en CDMX (por horario real, no mes del título)"
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          <span>📅 Hoy</span>
+          {filterToday && <span className="ml-1 text-[10px] bg-cyan-800 px-1 rounded">Activo ✕</span>}
+        </button>
+        {filterToday && (
+          <span className="text-[11px] text-cyan-300 font-mono">
+            Filtrando horario de hoy ({searchMexicoDay(new Date())}) · combinable con persona
+          </span>
+        )}
+      </div>
 
       {/* 3. Barra de Configuración y Toggles */}
       <SearchConfigRow
