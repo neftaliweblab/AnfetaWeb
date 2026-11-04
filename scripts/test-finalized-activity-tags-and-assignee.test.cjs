@@ -36,7 +36,7 @@ const { reviewTitle } = require(root + '/src/services/reviewTitle.ts');
 const { assignedPerson } = require(root + '/src/services/notionCalendar.ts');
 const { normalizeActivity } = require(root + '/src/services/dataNormalizers.ts');
 
-console.log('--- 1. Testing completedActivityTags: retains last active tag ---');
+console.log('--- 1. Testing completedActivityTags: deactivates owner tag ---');
 {
   // Neftalí active tag nne11
   const completedNeftali = completedActivityTags(
@@ -45,9 +45,9 @@ console.log('--- 1. Testing completedActivityTags: retains last active tag ---')
     'Neftali'
   );
   console.log('Neftali completed title:', completedNeftali);
-  assert.ok(completedNeftali.includes('nne11'), 'Must retain nne11 in title');
+  assert.ok(completedNeftali.includes('ne11'), 'Must retain passive ne11 in title');
   assert.ok(!completedNeftali.includes('jjo000'), 'Must remove reviewer tag');
-  assert.ok(!/\bne11\b/.test(completedNeftali), 'Must not downgrade to reference ne11');
+  assert.ok(!/\bnne11\b/.test(completedNeftali), 'Must not retain active nne11');
 
   // Edwin active tag eed11
   const completedEdwin = completedActivityTags(
@@ -56,9 +56,9 @@ console.log('--- 1. Testing completedActivityTags: retains last active tag ---')
     'Edwin'
   );
   console.log('Edwin completed title:', completedEdwin);
-  assert.ok(completedEdwin.includes('eed11'), 'Must retain eed11 in title');
+  assert.ok(completedEdwin.includes('ed11'), 'Must retain passive ed11 in title');
   assert.ok(!completedEdwin.includes('jjo000'), 'Must remove reviewer tag');
-  assert.ok(!/\bed11\b/.test(completedEdwin), 'Must not downgrade to reference ed11');
+  assert.ok(!/\beed11\b/.test(completedEdwin), 'Must not retain active eed11');
 
   // If title only had reference tag ne11, promote back to active tag nne11
   const restoredFromRef = completedActivityTags(
@@ -67,19 +67,19 @@ console.log('--- 1. Testing completedActivityTags: retains last active tag ---')
     'Neftali'
   );
   console.log('Restored from reference:', restoredFromRef);
-  assert.ok(restoredFromRef.includes('nne11'), 'Must restore reference ne11 to active nne11');
+  assert.ok(restoredFromRef.includes('ne11'), 'Must preserve passive ne11');
 }
-console.log('OK: completedActivityTags preserves last active tag.');
+console.log('OK: completedActivityTags preserves passive tag.');
 
-console.log('\n--- 2. Testing reviewTitle: approved state retains active tag ---');
+console.log('\n--- 2. Testing reviewTitle: approved state retains passive tag ---');
 {
   const sent = 'rtuzR aapli 26-[10OCT] d.anfeta.com.aplicacion.web Mejoras ne11 jjo000';
   const approved = reviewTitle(sent, 'Neftali', 'John', 'approved');
   console.log('Approved review title:', approved);
-  assert.ok(approved.includes('nne11'), 'Approved title must have owner active tag nne11');
+  assert.ok(approved.includes('ne11'), 'Approved title must have passive owner ne11');
   assert.ok(!approved.includes('jjo000'), 'Approved title must not have reviewer tag');
 }
-console.log('OK: reviewTitle approved preserves active tag.');
+console.log('OK: reviewTitle approved preserves passive tag.');
 
 console.log('\n--- 3. Testing inferActivityPerson with reference tags ---');
 {

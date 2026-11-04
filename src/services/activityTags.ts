@@ -147,13 +147,12 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
   });
 }
 
-/** Completed titles preserve the last active tag of the person who executed the activity. */
+/** Completed titles preserve passive references and remove review assignments. */
 export function completedActivityTags(title:string,reviewer='',original=''){
   const reviewKey=activityPerson(reviewer),ownerKey=activityPerson(original);
   let result=title;
   for(const tag of [...scanActivityTags(title)].reverse()){
     const legacyOwner=tag.legacy&&tag.person===ownerKey&&tag.token.toLowerCase()===ACTIVITY_TAGS[tag.person].review;
-    const isOwner = ownerKey ? tag.person === ownerKey : (tag.role === 'active' || tag.role === 'reference');
     const remove=(tag.role==='review'&&!legacyOwner)||(reviewKey&&reviewKey!==ownerKey&&tag.person===reviewKey);
     let replacement = tag.token;
     if (remove) {
@@ -161,9 +160,12 @@ export function completedActivityTags(title:string,reviewer='',original=''){
     } else if (legacyOwner) {
       replacement = ACTIVITY_TAGS[tag.person].passive + tag.suffix;
     } else if (tag.role === 'active') {
-      replacement = tag.token;
-    } else if (tag.role === 'reference' && isOwner) {
-      replacement = ACTIVITY_TAGS[tag.person].active + (tag.suffix || '11');
+      replacement = tag.token.slice(1);
+    } else if (tag.role === 'template') {
+      const entry = ACTIVITY_TAGS[tag.person];
+      const compact = tag.token.toLowerCase().startsWith(entry.active[0] + '-') ? tag.token.slice(2).replace(/-/g, '') : tag.token.replace(/-/g, '');
+      if (parseActivityTag(compact)?.role === 'review') replacement = ' ';
+      else if (compact.toLowerCase().startsWith(entry.active)) replacement = compact.slice(1);
     }
     result=result.slice(0,tag.index)+replacement+result.slice(tag.index+tag.token.length);
   }

@@ -94,14 +94,14 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     process.env.NOTION_PERSON_IDS=JSON.stringify({Neftali:'neft-id'});
     const confirmed=await route.POST(request('create-activity',{...payload,allowOverlap:true}));const data=await confirmed.json();assert.equal(confirmed.status,200,data.error);assert.equal(data.success,true);assert.equal(state.calls.filter(c=>c.target==='pages'&&c.method==='POST').length,1);
   });
-  await test('Cierre de plantilla y rápida conserva último tag activo',async()=>{
+  await test('Cierre de plantilla y rápida desactiva el tag del responsable',async()=>{
     for(const initial of ['prtuzR 26-[10OCT] Reporte ADS nne11','prtuzR [Actividad rápida] Grabación nne00']){
       reset();state.page.properties.Name.title=[{text:{content:initial}}];
       const page=await mutations.mutateActivity(settings,'Neftali',pid,{status:'Terminada'});
       const title=page.properties.Name.title[0].text.content;
-      assert.match(title,/\bnne(?:11|00)\b/);
+      assert.match(title,/\bne(?:11|00)\b/);
       const tags=require('../src/services/activityTags.ts').scanActivityTags(title);
-      assert.ok(tags.some(t=>t.role==='active'));
+      assert.ok(!tags.some(t=>t.role==='active'));
     }
   });
   await test('Ciclo real de tags revisión aprobación devuelve responsable y limpia respuesta',async()=>{
@@ -111,13 +111,13 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     assert.match(state.page.properties.Name.title[0].text.content,/\bjjo000\b/);
     const approved=await mutations.mutateActivity(settings,'John',pid,{status:'Terminada'});
     const title=approved.properties.Name.title[0].text.content;
-    assert.match(title,/\bnne11\b/);assert.doesNotMatch(title,/\b(?:jo000|jjo000|jjohn)\b/);
+    assert.match(title,/\bne11\b/);assert.doesNotMatch(title,/\b(?:jo000|jjo000|jjohn)\b/);
     assert.equal(approved.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
     const {sendReviewNotification}=require('../src/services/reviewNotifications.ts');
     state.flow.AlertPageId='';await sendReviewNotification(settings,approved,state.flow,'John',true);
     const created=state.calls.filter(c=>c.target==='pages'&&c.method==='POST').at(-1);
     const notification=Object.values(created.body.properties).find(p=>p.title).title.map(t=>t.text.content).join('');
-    assert.match(notification,/\[RESPUESTA\]/);assert.doesNotMatch(notification,/\b(?:jo000|jjo000)\b/);assert.match(notification,/\bnne11\b/);
+    assert.match(notification,/\[RESPUESTA\]/);assert.doesNotMatch(notification,/\b(?:jo000|jjo000)\b/);assert.match(notification,/\bne11\b/);
   });
   await test('Revisión con título actual de Acalli conserva responsable y copia en calendario',async()=>{
     state.page.properties.Name.title=[{text:{content:'prtuzR rrede 26-[08AGO] Redes Video - Facebook Campaña aads cercaspararancho.com jo11 aac11 jjohn'}}];
@@ -160,7 +160,7 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
   await test('Karla puede recibir y resolver su revisión sin obtener permisos globales',async()=>{process.env.NOTION_PERSON_IDS=JSON.stringify({Karla:'karla-id'});await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'Karla',status:'rtuzREVISION'});state.page.properties['Assignee/Ejecutor Principal'].people[0].name='Karla';assert.equal(state.flow.ReviewAssignee,'Karla');assert.equal(permissions.isReviewer('Karla'),false);await mutations.mutateActivity(settings,'Karla',pid,{status:'zREVISION'});assert.equal(state.flow.State,'approved');assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');});
   await test('Cuenta de revisor no resuelta impide éxito falso',async()=>{state.usersMissing=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/cuenta real/);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
   await test('Si falla el metadato se restaura la actividad anterior',async()=>{state.failMetadata=true;await assert.rejects(mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'}),/restauró/);assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(state.page.properties.Name.title[0].text.content,/^(?:prtuzREVISION|prtuzR)/);});
-  await test('Terminar revisión conserva zREVISION y devuelve al responsable original',async()=>{await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});const page=await mutations.mutateActivity(settings,'jjohn',pid,{status:'zREVISION'});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^(?:zREVISION|tuzR).*\b(?:nne11|neft)\b/);assert.ok(!page.properties.Name.title[0].text.content.includes('john'));assert.equal(state.flow.State,'approved');});
+  await test('Terminar revisión conserva zREVISION y devuelve al responsable original',async()=>{await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION'});const page=await mutations.mutateActivity(settings,'jjohn',pid,{status:'zREVISION'});assert.equal(page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');assert.match(page.properties.Name.title[0].text.content,/^(?:zREVISION|tuzR).*\b(?:ne11|neft)\b/);assert.ok(!page.properties.Name.title[0].text.content.includes('john'));assert.equal(state.flow.State,'approved');});
   await test('Revisión con urgencia conserva prioridad como referencia y revisor completo',async()=>{const page=await mutations.mutateActivity(settings,'nneft',pid,{reviewer:'John',status:'rtuzREVISION',isUrgent:true});assert.match(page.properties.Name.title[0].text.content,/^(?:rtuzREVISION|rtuzR).*ne00 (?:jjohn|jo000|jjo000)$/);});
   await test('API de checklist propaga el rechazo de Notion',async()=>{state.failChecklist=true;const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.match((await res.json()).error,/rejected/);});
   await test('API impide editar una tarea de otra actividad',async()=>{const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'foreign-block',checked:true,currentUser:'nneft'}));assert.equal(res.status,400);assert.equal(state.calls.filter(c=>c.method==='PATCH').length,0);});
