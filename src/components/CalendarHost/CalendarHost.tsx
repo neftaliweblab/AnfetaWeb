@@ -269,6 +269,13 @@ export function CalendarHost({
   });
   const [selectedPersonPreview, setSelectedPersonPreview] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<NotionCalendarActivity | null>(() => initialSelectedActivity || null);
+
+  useEffect(() => {
+    if (initialSelectedActivity) {
+      setSelectedActivity(initialSelectedActivity);
+      setIsDetailOpen(true);
+    }
+  }, [initialSelectedActivity]);
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setActivitiesList(prev=>filterDeletedPages(prev,currentUser));setSelectedActivity(prev=>prev&&filterDeletedPages([prev],currentUser).length?prev:null);};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
   const watchCalendarRows = useMemo(() => {
     const list = selectedActivity ? [selectedActivity] : [];

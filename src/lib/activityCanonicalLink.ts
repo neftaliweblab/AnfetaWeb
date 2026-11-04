@@ -87,6 +87,7 @@ export function canonicalActivityUrl(pageId: string, options?: { baseUrl?: strin
  * Matches exact name "Abrir en ANFETA" (case-insensitive) or any URL property containing "anfeta".
  */
 export function findActivityLinkProperty(properties: Record<string, any> = {}): {
+  id?: string;
   name: string;
   type: string;
   isValid: boolean;
@@ -99,9 +100,10 @@ export function findActivityLinkProperty(properties: Record<string, any> = {}): 
   if (exact) {
     const [name, prop] = exact;
     if (prop?.type === 'url') {
-      return { name, type: 'url', isValid: true };
+      return { id: prop?.id, name, type: 'url', isValid: true };
     }
     return {
+      id: prop?.id,
       name,
       type: prop?.type || 'unknown',
       isValid: false,
@@ -112,13 +114,13 @@ export function findActivityLinkProperty(properties: Record<string, any> = {}): 
   // 2. Fallback: Any URL property referencing anfeta
   const fallback = entries.find(([name, prop]) => prop?.type === 'url' && /abrir en anfeta|anfeta/i.test(name));
   if (fallback) {
-    return { name: fallback[0], type: 'url', isValid: true };
+    return { id: fallback[1]?.id, name: fallback[0], type: 'url', isValid: true };
   }
 
   // 3. Fallback: Any URL property referencing enlace anfeta
   const linkProp = entries.find(([name, prop]) => prop?.type === 'url' && /enlace/i.test(name));
   if (linkProp) {
-    return { name: linkProp[0], type: 'url', isValid: true };
+    return { id: linkProp[1]?.id, name: linkProp[0], type: 'url', isValid: true };
   }
 
   return null;

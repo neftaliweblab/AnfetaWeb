@@ -5,7 +5,11 @@ import {
   findActivityLinkProperty,
   saveActivityLinkToNotion,
   verifyEnabledBasesLinkProperty,
-  backfillActivityLinks
+  backfillActivityLinks,
+  auditBasesActivityLinks,
+  executeBasesBackfill,
+  isLinkBackfillRunning,
+  resolvePublicBaseUrlFromRequest,
 } from "@/services/activityLinkService";
 import {notionStatusValue} from '@/services/notionStatusValue';
 import {notionBaseLinks} from '@/services/notionBaseLinks';
@@ -2693,17 +2697,45 @@ async function POSTLive(req: NextRequest) {
       }
     }
 
+    if (action === 'audit-bases-activity-links' || action === 'preview-bases-activity-links') {
+      try {
+        const input = payload || body;
+        const settings = getSettings();
+        const token = (input?.token || resolveNotionToken(req) || settings.notionToken || '').trim();
+        if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const audit = await auditBasesActivityLinks({ ...settings, notionToken: token }, {
+          maxPagesPerBase: input?.limit || 50,
+          baseUrl: resolvePublicBaseUrlFromRequest(req),
+        });
+        return NextResponse.json({ success: true, audit });
+      } catch (error) {
+        return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Error al auditar bases.' }, { status: 500 });
+      }
+    }
+
     if (action === 'preview-backfill-activity-links' || action === 'run-backfill-activity-links') {
       try {
         const input = payload || body;
         const settings = getSettings();
         const token = (input?.token || resolveNotionToken(req) || settings.notionToken || '').trim();
         if (!token) return NextResponse.json({ success: false, error: 'Token de Notion no configurado.' }, { status: 401 });
+        const dryRun = action === 'preview-backfill-activity-links' || input?.dryRun === true;
+
+        if (input?.byBases === true || input?.mode === 'by-base') {
+          const report = await executeBasesBackfill({ ...settings, notionToken: token }, {
+            dryRun,
+            limitPerBase: input?.limit || 50,
+            baseUrl: resolvePublicBaseUrlFromRequest(req),
+          });
+          return NextResponse.json({ success: true, report, mode: 'by-base' });
+        }
+
         const report = await backfillActivityLinks({ ...settings, notionToken: token }, {
           cursor: input?.cursor,
           limit: input?.limit,
-          dryRun: action === 'preview-backfill-activity-links' || input?.dryRun === true,
+          dryRun,
           filterDatabaseId: input?.databaseId,
+          baseUrl: resolvePublicBaseUrlFromRequest(req),
         });
         return NextResponse.json({ success: true, report });
       } catch (error) {
