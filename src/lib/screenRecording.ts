@@ -18,7 +18,7 @@ export async function startScreenRecording(onFinish:(blob:Blob,notice:string)=>v
     const stop=()=>{if(recorder.state!=='inactive')recorder.stop();};
     recorder.ondataavailable=event=>{if(discarded||!event.data.size)return;chunks.push(event.data);size+=event.data.size;options.onProgress?.(size);if(size>=RECORDING_MAX_BYTES){notice='Se alcanzó el límite de 128 MB; descarga el video. Si lo supera, no podrá subirse.';stop();}};
     recorder.onerror=()=>{notice='La grabación se interrumpió. Revisa el video recuperado antes de enviarlo.';stop();};
-    recorder.onstop=()=>{cleanup();if(!discarded){const blob=new Blob(chunks,{type:recorder.mimeType||mimeType||'video/webm'});chunks=[];const compatibility=blob.type.includes('webm')?'Este navegador generó WebM. En Notion se incrustará el reproductor y se conservará como archivo descargable.':'';onFinish(blob,[notice,compatibility].filter(Boolean).join(' '));}else chunks=[];};
+    recorder.onstop=()=>{cleanup();if(!discarded){const blob=new Blob(chunks,{type:recorder.mimeType||mimeType||'video/webm'});chunks=[];const compatibility=blob.type.includes('webm')?'Este navegador generó WebM. En Notion se conservará como archivo descargable; la vista previa está disponible aquí.':'';onFinish(blob,[notice,compatibility].filter(Boolean).join(' '));}else chunks=[];};
     display.getVideoTracks()[0].addEventListener('ended',stop,{once:true});
     microphone?.getAudioTracks()[0]?.addEventListener('ended',()=>{notice='Se desconectó el micrófono; se detuvo y conservó el video.';stop();},{once:true});
     recorder.start(1000);

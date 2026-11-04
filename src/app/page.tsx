@@ -152,41 +152,6 @@ export default function AnfetaApp() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [calendarPopupBlocked,setCalendarPopupBlocked]=useState(false);
-  const [directSelectedActivity, setDirectSelectedActivity] = useState<NotionCalendarActivity | null>(null);
-  const [directActivityError, setDirectActivityError] = useState("");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const p = new URLSearchParams(window.location.search);
-    const targetId = p.get("activity") || p.get("pageId");
-    if (!targetId) return;
-
-    fetch("/api/data?type=calendar-activity&pageId=" + encodeURIComponent(targetId))
-      .then(async (r) => {
-        const data = await r.json();
-        if (data.success && data.activity) {
-          if (data.date) setCurrentDate(data.date);
-          setActiveView("results");
-          setCalendarActivities((prev) => {
-            if (prev.some((a) => a.pageId === data.activity.pageId)) return prev;
-            return [data.activity, ...prev];
-          });
-          setDirectSelectedActivity(data.activity);
-        } else if (data.error) {
-          setDirectActivityError(data.error);
-        }
-      })
-      .catch((e) => setDirectActivityError(e instanceof Error ? e.message : "Error al abrir la actividad."));
-  }, []);
-  const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
-  useEffect(()=>{
-    const update=(event:Event)=>{
-      const data=(event as CustomEvent).detail||{};
-      setIndexSyncLabel(indexAvailability(data));
-    };
-    window.addEventListener('anfeta_index_status',update);
-    return()=>window.removeEventListener('anfeta_index_status',update);
-  },[]);
   const [currentUser, setCurrentUser] = useState(() => {
     if (typeof window === "undefined") return "nneft";
     try {
@@ -203,6 +168,40 @@ export default function AnfetaApp() {
     } catch {}
     return "nneft";
   });
+  const [directSelectedActivity, setDirectSelectedActivity] = useState<NotionCalendarActivity | null>(null);
+  const [directActivityError, setDirectActivityError] = useState("");
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    const params = new URLSearchParams(window.location.search);
+    const targetId = (params.get('activity') || params.get('pageId') || '').replace(/-/g,'').toLowerCase();
+    if (!targetId) return;
+    if (!/^[a-f0-9]{32}$/.test(targetId)) {setDirectActivityError('El enlace de actividad no es válido.');return;}
+    const controller=new AbortController();
+    setDirectActivityError('');
+    void fetch('/api/data?type=calendar-activity&pageId='+targetId,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(40000)])})
+      .then(async response=>{
+        const data=await response.json();
+        if(controller.signal.aborted)return;
+        if(!response.ok||!data.success||!data.activity)throw Error(data.error||'No se pudo abrir la actividad.');
+        if(data.date)setCurrentDate(data.date);
+        setActiveView('results');
+        setCalendarActivities(previous=>previous.some(item=>item.pageId===data.activity.pageId)?previous:[data.activity,...previous]);
+        setDirectSelectedActivity(data.activity);
+      })
+      .catch(error=>{if(!controller.signal.aborted)setDirectActivityError(error instanceof Error?error.message:'No se pudo abrir la actividad.');});
+    return()=>controller.abort();
+  }, [isAuthenticated,currentUser]);
+  const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
+  useEffect(()=>{
+    const update=(event:Event)=>{
+      const data=(event as CustomEvent).detail||{};
+      setIndexSyncLabel(indexAvailability(data));
+    };
+    window.addEventListener('anfeta_index_status',update);
+    return()=>window.removeEventListener('anfeta_index_status',update);
+  },[]);
+
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAnnounceOpen, setIsAnnounceOpen] = useState(false);

@@ -15,7 +15,7 @@ const phases={
 export function progressiveStage(text:string){
  const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)(?![\p{L}\p{N}_@.\/-])/iu);
  if(match){const key=match[1].toLowerCase() as keyof typeof phases;const suffix=match[2]||'';return {code:key+suffix.toUpperCase(),category:'revision',...phases[key],token:match[0],index:match.index!};}
- const wa=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(WA|AA)(?![\p{L}\p{N}_@.\/-])/u);
+ const wa=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(AA)(?![\p{L}\p{N}_@.\/-])/u);
  if(wa){return {code:wa[1],category:'revision',state:'suspended' as const,label:'Suspendida',financial:'unknown' as const,token:wa[0],index:wa.index!};}
  const other=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])z([scp])(?![\p{L}\p{N}_@.\/-])/iu);
  if(!other)return null;

@@ -99,6 +99,7 @@ export function CalendarTemplatesModal({
   const [isConfigStep, setIsConfigStep] = useState(false);
   const [configPerson, setConfigPerson] = useState(initialPerson || "");
   const [configReviewer, setConfigReviewer] = useState("");
+  const [configNames,setConfigNames]=useState<Record<string,string>>({});
   const [configDomain, setConfigDomain] = useState("");
   const [configDate, setConfigDate] = useState(currentDate);
   const [configTime, setConfigTime] = useState(initialTime);
@@ -170,7 +171,8 @@ export function CalendarTemplatesModal({
     setConfigDomain(suggestedDomain || "");
 
     // Duración por defecto según la categoría
-    setConfigDuration(selectedCategory.defaultDurationMinutes || 60);
+    setConfigDuration(60);
+    setConfigNames({});
 
     if (singleItem) {
       setSelectedIds(new Set([singleItem.PageId || singleItem.pageId]));
@@ -200,7 +202,7 @@ export function CalendarTemplatesModal({
         projectToken: selectedCategory.projectToken,
         selectedDate: dateObj,
         orderToken: order,
-        description: cleanDesc,
+        description: configNames[tpl.PageId||tpl.pageId]?.trim() || cleanDesc,
         domain: configDomain,
         personName: configPerson,
         reviewerName: configReviewer,
@@ -210,6 +212,7 @@ export function CalendarTemplatesModal({
   }, [
     isConfigStep,
     selectedTemplatesList,
+    configNames,
     configDate,
     configDomain,
     configPerson,
@@ -750,6 +753,17 @@ export function CalendarTemplatesModal({
                   </label>
                 </div>
               )}
+
+              <fieldset className="space-y-2 rounded-lg border border-cyan-900 p-3" disabled={isSubmitting}>
+                <legend className="px-1 text-xs font-semibold text-cyan-200">Nombres de las actividades (editables)</legend>
+                <p className="text-[11px] text-slate-400">Se propone el nombre de cada plantilla. Puedes cambiarlo sin modificar la plantilla original.</p>
+                {selectedTemplatesList.map(tpl=>{
+                  const key=tpl.PageId||tpl.pageId;
+                  return <label key={key} className="block text-xs text-slate-300">Nombre de la actividad
+                    <input value={configNames[key]??cleanCalendarQuickTemplateActivityTitle(tpl.Title||tpl.title||'',selectedCategory.projectToken)} onChange={event=>setConfigNames(previous=>({...previous,[key]:event.target.value}))} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-white"/>
+                  </label>;
+                })}
+              </fieldset>
 
               {/* Vista previa en tiempo real de títulos generados */}
               <div>

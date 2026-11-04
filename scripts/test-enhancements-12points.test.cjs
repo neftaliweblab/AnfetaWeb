@@ -59,7 +59,7 @@ assert.equal(progressiveStage('aaprtuzR Tarea')?.state, 'suspended', 'aaprtuzR i
 assert.equal(progressiveStage('aaprtuzS Tarea')?.state, 'suspended', 'aaprtuzS is suspended');
 assert.equal(progressiveStage('aartuzR Tarea')?.state, 'suspended', 'aartuzR is suspended');
 assert.equal(progressiveStage('aaprR Tarea')?.state, 'suspended', 'aaprR is suspended');
-assert.equal(progressiveStage('WA Tarea')?.state, 'suspended', 'WA is suspended');
+assert.equal(progressiveStage('WA Tarea'), null, 'WA is ordinary text, not a suspended prefix');
 assert.equal(progressiveStage('AA Tarea')?.state, 'suspended', 'AA is suspended');
 
 // Ensure no collision with tags/domains
@@ -128,4 +128,60 @@ assert.equal(itemMatchesScheduledDay(itemPast, todayStr), false, 'Past item does
 assert.equal(itemMatchesScheduledDay(itemSpan, todayStr), true, 'Spanning item matches');
 console.log('  OK: Scheduled day range filtering strictly handles CDMX today.');
 
-console.log('\nALL 12-POINT ENHANCEMENT TESTS PASSED!');
+console.log('\nALL 6 HELPER GROUPS PASSED (not an end-to-end verification of the 12 features).');
+
+// Presentation must not expose template slots or infer a responsible user from them.
+const {calendarDisplayTitle,calendarDomain}=require(root+'/src/services/calendarPresentation.ts');
+const {resultAssignedPerson}=require(root+'/src/services/activityTags.ts');
+const raw='prtuzR | 11.s.01.00 Definición-instalador | #p.dominio.com.instalador | #descripcion | #ffase00 | #nne11 #gge000';
+const visual=parseVisualParts(raw);
+assert.equal(visual.rawTitle,raw);
+assert.equal(visual.domain,'');
+assert.ok(!visual.title.includes('#')&&!visual.title.includes('dominio.com'));
+assert.equal(visual.orderCode,'01.00');
+assert.ok(!calendarDisplayTitle(raw).includes('#'));
+assert.equal(calendarDomain(raw),'general');
+assert.equal(resultAssignedPerson({name:raw,source:'Notion'}),'');
+assert.equal(resultAssignedPerson({name:raw,source:'Notion',assignedPerson:'Edwin'}),'Edwin');
+assert.equal(parseVisualParts('#p.dominio.com #descripcion').title,'Sin título');
+assert.notEqual(parseVisualParts('WA Redactar aviso').workflow,'SUSPENDIDA');
+console.log('OK full placeholder slots hidden; raw titles searchable; actual owner preserved.');
+
+const {buildCalendarQuickTemplateFinalTitle}=require(root+'/src/lib/templateCatalog.ts');
+const software=require('../data/notion_template_phase1_catalog_v2.json').Items.filter(row=>/\b11\.[sp]\.0[1-4]\.00\b/.test(row.Title));
+assert.equal(software.length,4);
+for(const row of software){
+  const created=buildCalendarQuickTemplateFinalTitle({templateOriginalTitle:row.Title,selectedDate:new Date('2026-11-04T12:00:00'),description:'Nombre editado',domain:'anfeta.com',personName:'Edwin'});
+  assert.match(created,/Nombre editado/);
+  assert.match(created,/d\.anfeta\.com/);
+  assert.ok(!created.includes('#d.anfeta.com'),'Resolved domain is real data, not a hidden slot');
+  assert.match(created,/eed11/);
+  const view=parseVisualParts(created);
+  assert.equal(view.domain,'anfeta.com');
+  assert.ok(!view.title.includes('#'));
+  assert.ok(!view.title.includes('eed11'));
+  assert.ok(!view.title.includes('jj-o11'));
+}
+console.log('OK four Software templates: edited name, real visible domain and Edwin assignment.');
+
+const {stripTitlePlaceholders}=require(root+'/src/lib/titlePlaceholders.ts');
+assert.equal(stripTitlePlaceholders('Nombre | 🛠️#descripcion | 🌐 #d.dominio.com'), 'Nombre | 🛠️ | 🌐');
+assert.ok(!parseVisualParts('zR | 💻 pprog | 📅 11.p.01.00 Instalar | 🛠️#descripcion | 👥 nn-e11 aa-n11').title.includes('nn-e11'));
+assert.equal(parseVisualParts('prtuzR | 📅 11.p.01.00 Instalar').area,'PROG');
+const {softwareTemplatePhase}=require(root+'/src/lib/softwareTemplatePhases.ts');
+for(const row of software)assert.ok(softwareTemplatePhase(row));
+assert.equal(softwareTemplatePhase({Title:'aaprtuzS | 💻 ssoft | 📅 11.s.01.00 Instalar | 🌐 #p.dominio.com'}),1);
+console.log('OK current live pprog/11.p format and previous ssoft/11.s format coexist.');
+
+const {workflowState}=require(root+'/src/services/activityWorkflow.ts');
+for(const status of ['NO TERMINADA','NO COMPLETADO','NO FINALIZADA'])assert.equal(workflowState(status,'prtuzR Tarea'),'pending');
+assert.equal(workflowState('TERMINADA CON ÉXITO','prtuzR Tarea'),'completed');
+console.log('OK negated completion states remain pending.');
+
+const {scanActivityTags,stripActivityTags}=require(root+'/src/services/activityTags.ts');
+const tagged='Tarea nne11 gge000 kka22';
+const before=scanActivityTags(tagged).map(tag=>tag.token);
+assert.equal(stripActivityTags(tagged).trim(),'Tarea');
+assert.equal(stripActivityTags(tagged).trim(),'Tarea');
+assert.deepEqual(scanActivityTags(tagged).map(tag=>tag.token),before);
+console.log('OK repeated visual cleanup does not mutate shared tag ordering.');

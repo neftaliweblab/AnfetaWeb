@@ -341,7 +341,7 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     const activityField = dateField.replace(/\d{2}(?=\.[a-z]\.)/i, month)
       .replace(structured.name, () => description);
     const resolvedDomain = cleanDom && !/^(?:[pd]\.)?dominio\.com(?:\.|$)/i.test(cleanDom)
-      ? domainField.replace(/dominio\.com/i, () => cleanDom.replace(/^[pd]\./i, ""))
+      ? domainField.replace(/dominio\.com/i, () => cleanDom.replace(/^[pd]\./i, "")).replace(/#(?=[pd]\.)/i, "")
       : domainField;
     const descriptiveFields = metadata.filter(field => /^\S*\s*#(?:descripcion|ffase)/i.test(field));
     return revisionPhaseTitle(

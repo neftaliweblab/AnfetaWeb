@@ -1,3 +1,5 @@
+import {stripActivityTags} from '../services/activityTags';
+import {stripTitlePlaceholders} from './titlePlaceholders';
 import {calendarDomain} from '../services/calendarPresentation';
 import {workflowPresentation} from '../services/activityWorkflow';
 import {stripProgressiveStage,progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
@@ -24,10 +26,11 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
 
   let display = (rawName || '').trim();
   const rawTitle = display;
+  display = stripTitlePlaceholders(display);
   if (!display) {
     return {
       title: 'Sin título',
-      rawTitle: '',
+      rawTitle,
       workflow: '',
       workflowColor: '#94A3B8',
       area: '',
@@ -61,9 +64,9 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     else if (s.includes('prtuz por hacer') || s.includes('prtuz') || s.includes('pendiente')) workflow = 'PENDIENTE';
   }
 
-  // Detección de doble "A" para suspendidas / borradores (aaprtuz, aaprtuzS, aartuz, aapr, WA, AA)
+  // Detección de doble "A" para suspendidas / borradores (aaprtuz, aaprtuzS, aartuz, aapr, AA)
   // Sin colisionar con dominios o tags de persona (aads, aacce, aapli, aacal, aan11)
-  const doubleAMatch = display.match(/(?<![\w_])(aaprtuz[rsS]?|aartuz[rsS]?|aapr[rsS]?|WA\b|AA\b)(?![\w_])/i);
+  const doubleAMatch = display.match(/(?<![\w_])(aaprtuz[rsS]?|aartuz[rsS]?|aapr[rsS]?|AA\b)(?![\w_])/i);
   if (doubleAMatch && !/^(?:aacce|aads|aapli|aacal|aan11)/i.test(doubleAMatch[1])) {
     if (!workflow || workflow === 'PENDIENTE') {
       workflow = 'SUSPENDIDA';
@@ -78,13 +81,13 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   else if (workflow === 'SUSPENDIDA') workflowColor = '#FACC15';
   else if (workflow === 'POR HACER') workflowColor = '#C084FC';
 
-  const presentation = workflowPresentation(status || '', rawTitle);
+  const presentation = workflowPresentation(status || '', stripTitlePlaceholders(rawTitle));
   if (presentation.state !== 'unknown') {
     workflow = presentation.label.toUpperCase();
     workflowColor = { pending: '#FBBF24', review: '#F87171', completed: '#38BDF8', suspended: '#FACC15', unknown: '#94A3B8' }[presentation.state];
   }
   if (PROGRESSIVE_WORKFLOW_PRIMARY) {
-    const stage = progressiveStage(rawTitle);
+    const stage = progressiveStage(stripTitlePlaceholders(rawTitle));
     display = stripProgressiveStage(display);
     if (stage?.category === 'software') areaFromStage = 'PROG';
     if (stage?.category === 'cobro') areaFromStage = 'COBRO';
@@ -107,7 +110,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     orderCode = `${structMatch[3]}.${structMatch[4]}`;
     const strand = structMatch[2].toLowerCase();
     if (!area) {
-      if (strand === 's') area = 'PROG';
+      if (strand === 's' || strand === 'p') area = 'PROG';
       else if (strand === 'a') area = 'APP';
       else if (strand === 'w') area = 'WEB';
       else if (strand === 'd') area = 'DISEÑO';
@@ -183,17 +186,18 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     }
   }
 
+  display = stripActivityTags(display).replace(/(?<![\w.])ssoft(?![\w.])/gi,' ');
   // 7. Limpieza de prefijos técnicos residuales y decoraciones de Notion
   display = display.replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '');
   display = display.replace(/\[\s*\]|\(\s*\)/g, '');
   // Limpiar delimitadores pipe | y emojis visuales de Notion
-  display = display.replace(/[💻📅🌐🛠🔄👥✅ℹ️🔍]/gu, ' ');
+  display = display.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' ');
   display = display.replace(/\|/g, ' ');
   display = display.replace(/(?:^|\s)#[a-zA-Z0-9_-]+/g, ' ');
   display = display.replace(/\s{2,}/g, ' ').replace(/^[\s\-–—|:]+|[\s\-–—|:]+$/g, '').trim();
 
   const finalParsed: VisualParts = {
-    title: display || rawTitle,
+    title: display || 'Sin título',
     rawTitle,
     workflow,
     workflowColor,

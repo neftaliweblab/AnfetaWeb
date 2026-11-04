@@ -9,7 +9,7 @@ export function reviewTitleLegacy(title:string,original:string,reviewer:string,s
   const useNew=mode==='new'||scanActivityTags(title).some(tag=>tag.role==='review'&&!tag.legacy);
   if(state==='pending'&&ACTIVITY_TAGS[previousKey]&&previousKey!==reviewKey&&previousKey!==ownerKey){
     let source=title;
-    for(const tag of scanActivityTags(title).reverse())if(tag.person===previousKey&&tag.role==='review')source=source.slice(0,tag.index)+(tag.legacy?ACTIVITY_TAGS[previousKey].passive:' ')+source.slice(tag.index+tag.token.length);
+    for(const tag of [...scanActivityTags(title)].reverse())if(tag.person===previousKey&&tag.role==='review')source=source.slice(0,tag.index)+(tag.legacy?ACTIVITY_TAGS[previousKey].passive:' ')+source.slice(tag.index+tag.token.length);
     // Carry the new format across reviewer changes without switching old titles globally.
     if(useNew)source+=' '+pendingReviewTag(reviewer);
     return reviewTitleLegacy(source,original,reviewer,state,'',mode);

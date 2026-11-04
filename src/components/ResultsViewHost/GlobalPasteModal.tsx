@@ -37,6 +37,8 @@ interface Props {
   onSuccess: (item: any) => void;
   initialDestination?: 'both' | 'dropbox' | 'notion';
   initialDomain?: string;
+  initialPerson?: string;
+  initialAction?: 'create' | 'attach';
   attachmentOnly?: boolean;
   suggestedTarget?: SearchResultRow | null;
 }
@@ -58,6 +60,8 @@ export function GlobalPasteModal({
   onSuccess,
   initialDestination,
   initialDomain,
+  initialPerson,
+  initialAction,
   attachmentOnly=false,
   suggestedTarget
 }: Props) {
@@ -70,7 +74,15 @@ export function GlobalPasteModal({
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
   const [quickType,setQuickType]=useState('Actividad rápida'),[quickTitle,setQuickTitle]=useState(''),[quickDescription,setQuickDescription]=useState('');
   const [customType,setCustomType]=useState(false),[domainRows,setDomainRows]=useState<any[]>([]);
-  const domains=useMemo(()=>catalogDomains(domainRows),[domainRows]);
+  const [cachedDomains,setCachedDomains]=useState<string[]>([]);
+  const domains=useMemo(()=>[...new Set([...catalogDomains(domainRows),...cachedDomains])],[domainRows,cachedDomains]);
+  useEffect(()=>{
+    if(!isOpen)return;
+    try {
+      const saved=JSON.parse(localStorage.getItem('anfeta_cached_domains')||'[]');
+      setCachedDomains(Array.isArray(saved)?saved.filter((value:unknown):value is string=>typeof value==='string'&&/^[a-z0-9.-]+$/i.test(value)).slice(0,2000):[]);
+    } catch {setCachedDomains([]);}
+  },[isOpen]);
   const documentation=!!documentationKind(quickType)&&!attachmentOnly;
   useEffect(()=>{if(!isOpen)return;let active=true;setDomainRows([]);void loadCachedIndex(currentUser).then(data=>{if(active)setDomainRows(data?.items||[]);});return()=>{active=false;};},[isOpen,currentUser]);
   useEffect(()=>{if(documentation&&!started)setMode('notion');},[documentation]);
@@ -171,7 +183,7 @@ export function GlobalPasteModal({
     setRoot(detected.root);
     setCategory(detected.category);
     setMonth(m);
-    setPerson('');
+    setPerson(reviewers.find(p=>p.person===initialPerson)?.tag||'');
     setBody(initialText || '');
     setSeparate(false);
     setError('');
@@ -187,7 +199,7 @@ export function GlobalPasteModal({
     const direct=attachmentOnly?activityAttachmentPlan(suggestedTarget,filesToUse[0]?.filename||'Grabacion.webm'):null;
     setCustomFolder(direct?.customFolder||'');
     if(direct){setTitle(direct.title);setPerson('');setBody('');}
-  }, [initialDomain, initialText, initialDestination, attachmentOnly, suggestedTarget]);
+  }, [initialDomain, initialText, initialDestination, initialPerson, attachmentOnly, suggestedTarget]);
 
   const applyDraft = useCallback((draft: UploadDraft) => {
     recovery.current = draft;
@@ -252,7 +264,7 @@ export function GlobalPasteModal({
     const batch = initialFiles.length ? initialFiles : (initialImage ? [initialImage] : []);
 
     // Sugerir tarjeta si había un elemento seleccionado
-    setActionType('create');setSelectedCard(null);
+    setActionType(initialAction||'create');setSelectedCard(null);
     if (suggestedTarget) {
       const rawId = suggestedTarget.externalId || suggestedTarget.id;
       const clean = String(rawId || '').replace(/-/g, '');
@@ -308,7 +320,7 @@ export function GlobalPasteModal({
     });
 
     return () => { stopped = true; };
-  }, [isOpen, currentUser, suggestedTarget, initFormFromFiles, applyDraft]);
+  }, [isOpen, currentUser, suggestedTarget, initialAction, initFormFromFiles, applyDraft]);
 
   // Autoguardado debounced únicamente cuando no hay conflicto pendiente
   useEffect(() => {
@@ -347,6 +359,12 @@ export function GlobalPasteModal({
     setTitle(old => replaceUploadPrefix(old, previous, prefix));
     prefixRef.current = prefix;
   }, [domain, root, month, person, isOpen, attachmentOnly]);
+
+  useEffect(()=>{
+    if(!isOpen||initialAction!=='attach'||actionType!=='attach'||!selectedCard||started)return;
+    const plan=activityAttachmentPlan(selectedCard,files[0]?.filename||'Grabacion.webm');
+    if(plan)setCustomFolder(plan.customFolder);
+  },[isOpen,initialAction,actionType,selectedCard?.id,started]);
 
   if (!isOpen||typeof document==='undefined') return null;
   let folder = '';
@@ -692,7 +710,7 @@ export function GlobalPasteModal({
           {!directAttachment&&<>
           {/* Configuración de Dominio y DRX */}
           <div className={mode === 'notion' ? "grid gap-3 sm:grid-cols-3" : "grid grid-cols-2 gap-3 md:grid-cols-5"}>
-            <label className="text-xs">Dominio del proyecto {mode !== 'dropbox' && actionType === 'create' && !documentation && <span className="text-cyan-300">(obligatorio)</span>}<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="Ej. anfeta.com" /><datalist id="anfeta-domain-suggestions">{suggestDomains(domains,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Escribe el dominio sin https:// ni rutas. Hay sugerencias desde 3 letras.</span></label>
+            <label className="text-xs">Dominio del proyecto {mode !== 'dropbox' && actionType === 'create' && !documentation && <span className="text-cyan-300">(obligatorio)</span>}<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="Ej. anfeta.com" /><datalist id="anfeta-domain-suggestions">{suggestDomains(domains,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Escribe el dominio sin https:// ni rutas. Hay sugerencias desde 3 letras.</span><span className="mt-1 flex flex-wrap gap-1" aria-label="Dominios sugeridos">{suggestDomains(domains,domain).filter(value=>value!==domain).map(value=><button type="button" key={value} onClick={()=>setDomain(value)} className="rounded border border-cyan-800 px-2 py-1 text-cyan-200 hover:bg-cyan-950">{value}</button>)}</span></label>
             {mode !== 'notion' && <>
               <label className="text-xs">Tipo<select value={root} onChange={e => { setRoot(e.target.value); setCategory(e.target.value); }} className={style}><option value="proyecto">Proyecto</option><option value="software">Software</option></select></label>
               <label className="text-xs">Categoría<select value={category} onChange={e => setCategory(e.target.value)} className={style}>{(root === 'software' ? softwareCategories : projectCategories).map(c => <option key={c}>{c}</option>)}</select></label>

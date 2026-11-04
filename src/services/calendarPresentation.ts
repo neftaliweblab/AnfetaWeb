@@ -1,3 +1,4 @@
+import {stripTitlePlaceholders} from '../lib/titlePlaceholders';
 import {classifiedDomain} from '../lib/contentClassification';
 import {stripProgressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY,progressiveStage} from './progressiveWorkflow';
 
@@ -15,11 +16,13 @@ const TYPES: [RegExp, string][] = [
   [/\b(?:soporte|ticket|mantenimiento)\b/i, 'SOPORTE'],
 ];
 export function calendarDomain(title: string, project = '') {
-  const match = (project + ' ' + title).match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*(?=[\s/\](),:;]|$)/i);
+  const match = stripTitlePlaceholders(project + ' ' + title).match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*(?=[\s/\](),:;]|$)/i);
   if (!match) return 'general';
   return classifiedDomain(match[0].replace(/^https?:\/\//i,'').replace(/(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))+$/i,'')).replace(/^(?:(?:www|webs|web|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto)\.)+/i,'').toLowerCase();
 }
 export function calendarType(title: string, project = '') {
+  title = stripTitlePlaceholders(title);
+  project = stripTitlePlaceholders(project);
   const category=PROGRESSIVE_WORKFLOW_PRIMARY?progressiveStage(title)?.category:null;
   if(category==='software')return 'PROGRAMAS';if(category==='cobro')return 'COBRO';if(category==='pago')return 'PAGO';
   // Official tokens take priority over words in the description.
@@ -27,9 +30,10 @@ export function calendarType(title: string, project = '') {
   return TYPES.find(([pattern]) => pattern.test(official || title + ' ' + (/^(sin|no content|general)/i.test(project) ? '' : project)))?.[1] || null;
 }
 export function calendarUrgent(title: string) {
-  return scanActivityTags(title).some(tag=>tag.role==='active'&&tag.priority==='00');
+  return scanActivityTags(stripTitlePlaceholders(title)).some(tag=>tag.role==='active'&&tag.priority==='00');
 }
 export function calendarDisplayTitle(title: string, domain = '') {
+  title = stripTitlePlaceholders(title);
   let text = stripActivityTags(PROGRESSIVE_WORKFLOW_PRIMARY?stripProgressiveStage(title):title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
     .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma|eedwin|eedwi|eed|edwin|ed)(?:0{2,4}|00[1-3])?\b/gi, '')

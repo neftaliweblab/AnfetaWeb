@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),ts=require('typescript'),Module=require('node:module');
+Module._extensions['.ts']=(m,file)=>m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,file);
+const {dataUrlBase64,blobToBase64}=require('../src/lib/blobBase64.ts');
+const bytes=Buffer.from('actual video frames, not the codec header');
+const payload=bytes.toString('base64');
+const url='data:video/webm;codecs=vp8,opus;base64,'+payload;
+assert.equal(dataUrlBase64(url),payload);
+assert.deepEqual(Buffer.from(dataUrlBase64(url),'base64'),bytes);
+assert.equal(dataUrlBase64('data:video/mp4;base64,'+payload),payload);
+assert.throws(()=>dataUrlBase64('data:video/webm;codecs=vp8,opus'),/leer/);
+assert.throws(()=>dataUrlBase64('data:video/webm;base64,'),/contenido/);
+(async()=>{
+  global.FileReader=class{readAsDataURL(){this.result=url;this.onload();}};
+  assert.equal(await blobToBase64(new Blob([bytes],{type:'video/webm;codecs=vp8,opus'})),payload);
+  global.FileReader=class{readAsDataURL(){this.onerror();}};
+  await assert.rejects(blobToBase64(new Blob([bytes])),/conserva/);
+  global.FileReader=class{readAsDataURL(){this.onabort();}};
+  await assert.rejects(blobToBase64(new Blob([bytes])),/cancelada/);
+  console.log('OK production recording reader: codec comma, MP4, invalid data, read errors and cancellation. FileReader simulated.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

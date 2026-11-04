@@ -1,3 +1,4 @@
+import {stripTitlePlaceholders} from '../lib/titlePlaceholders';
 import {workflowState} from './activityWorkflow';
 import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from './progressiveWorkflow';
 /** Title tokens only. Identity/login aliases remain a separate concern. */
@@ -102,6 +103,8 @@ export function inferActivityPerson(title:string,status=''){
   return candidate?.person||'';
 }
 export function resultAssignedPerson(item:any){
+  const visibleTitle=stripTitlePlaceholders(String(item?.name||item?.title||item?.Name||''));
+  item = {...item, name:visibleTitle, title:visibleTitle, Name:visibleTitle};
   const review=currentReviewTagPerson(String(item?.name||item?.title||item?.Name||''),String(item?.updateStatus||item?.status||''));
   if(review&&!item?.isReviewMirror&&!item?.IsReviewMirror&&!item?.isHandoffMirror)return review;
   for(const value of [item?.assignedPerson,item?.AssignedPerson,item?.person,...(item?.assignmentKeys||[])]){
@@ -122,7 +125,7 @@ export function activityTagPattern(){
   return new RegExp('(?<![\\p{L}\\p{N}_@./-])(?:'+tokens.sort((a,b)=>b.length-a.length).join('|')+')(?![\\p{L}\\p{N}_@./-])','giu');
 }
 export function stripActivityTags(title:string){
-  let result=title;for(const tag of scanActivityTags(title).reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);return result;
+  let result=title;for(const tag of [...scanActivityTags(title)].reverse())result=result.slice(0,tag.index)+' '+result.slice(tag.index+tag.token.length);return result;
 }
 /** Structured tag queries never fall back to substring/identity aliases. */
 export function matchesActivityTagQuery(title:string,query:string,matchCase=false,status=''):boolean|undefined{
@@ -148,7 +151,7 @@ export function matchesActivityTagQuery(title:string,query:string,matchCase=fals
 export function completedActivityTags(title:string,reviewer='',original=''){
   const reviewKey=activityPerson(reviewer),ownerKey=activityPerson(original);
   let result=title;
-  for(const tag of scanActivityTags(title).reverse()){
+  for(const tag of [...scanActivityTags(title)].reverse()){
     const legacyOwner=tag.legacy&&tag.person===ownerKey&&tag.token.toLowerCase()===ACTIVITY_TAGS[tag.person].review;
     const isOwner = ownerKey ? tag.person === ownerKey : (tag.role === 'active' || tag.role === 'reference');
     const remove=(tag.role==='review'&&!legacyOwner)||(reviewKey&&reviewKey!==ownerKey&&tag.person===reviewKey);

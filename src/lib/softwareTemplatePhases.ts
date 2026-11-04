@@ -1,8 +1,8 @@
 export function softwareTemplatePhase(template:any):number|null{
  const title=String(template.Title||template.title||'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
  const fields=title.split('|').map(field=>field.trim());
- if(fields.length>=4&&/\bssoft$/.test(fields[1])){
-  const order=fields[2].match(/\b\d{2}\.s\.0([1-4])\.00\s/);
+ if(fields.length>=4&&/\b(?:ssoft|pprog)$/.test(fields[1])){
+  const order=fields[2].match(/\b\d{2}\.[sp]\.0([1-4])\.00\s/);
   return order ? Number(order[1]) : null;
  }
  if(!/\bpprog\b/.test(title))return null;

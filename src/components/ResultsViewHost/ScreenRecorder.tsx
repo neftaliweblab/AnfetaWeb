@@ -9,20 +9,9 @@ import {startScreenRecording,recordingMime,RECORDING_MAX_BYTES} from '@/lib/scre
 import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
 import {playCheckChime,sendWindowsNotification} from '@/services/windowsIntegration';
+import {blobToBase64} from '@/lib/blobBase64';
+import {ACTIVITY_TAGS} from '@/services/activityTags';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = String(reader.result || '');
-      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
 
 function getMexicoToday(): string {
   try {
@@ -39,18 +28,15 @@ function getMexicoToday(): string {
   }
 }
 
-const QUICK_NOTION_DESTINATIONS = [
-  { code: 'gge00', label: 'gge00 notion', person: 'Genaro' },
-  { code: 'nne00', label: 'nne00 notion', person: 'Neftali' },
-  { code: 'jjo00', label: 'jjo00 notion', person: 'John' },
-  { code: 'kka00', label: 'kka00 notion', person: 'Karla' },
-  { code: 'aan00', label: 'aan00 notion', person: 'Andrade' },
-  { code: 'iis00', label: 'iis00 notion', person: 'Isaias' },
-  { code: 'sso00', label: 'sso00 notion', person: 'Sotelo' },
-] as const;
+const QUICK_NOTION_DESTINATIONS = Object.entries(ACTIVITY_TAGS).map(([person, entry]) => ({
+  person, code: entry.active + '00', label: entry.active + '00 notion',
+}));
+export type RecordingUploadOptions = {person?: string; domain?: string; attach?: boolean};
+const DIRECT_NOTION_MAX_BYTES = 2500000;
 
-export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDetailed?:()=>void;onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null)=>Promise<boolean>;disabled?:boolean}){
+export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDetailed?:()=>void;onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null,options?:RecordingUploadOptions)=>Promise<boolean>;disabled?:boolean}){
   const clipboardSubmission=useRef(false);
+  const recordingSubmission=useRef(false);
   const [target,setTarget]=useState<RecordingTarget|null>(null),targetRef=useRef<RecordingTarget|null>(null);
   const [phase,setPhase]=useState<'idle'|'configure'|'starting'|'recording'|'preview'>('idle');
   const [microphone,setMicrophone]=useState(true),[bytes,setBytes]=useState(0);
@@ -83,13 +69,13 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
     finally{starting.current=false;}
   }
 
-  async function send(){
+  async function send(attach=false){
     if(!video||sending||quickSavingCode)return;
     if(video.size>RECORDING_MAX_BYTES){setNotice('El video supera 128 MB. Descárgalo para reducirlo antes de subir.');return;}
     setSending(true);
     try{
       const file={filename:'Grabacion_ANFETA_'+new Date().toISOString().replace(/[:.]/g,'-')+(video.type.includes('mp4')?'.mp4':'.webm'),contentType:video.type,sizeBytes:video.size,blob:video,base64:'',dataUrl:''};
-      if(await onReady(file,targetRef.current)){
+      if(await onReady(file,targetRef.current,{domain:customDomain,attach})){
         setVideo(null);setPhase('idle');setNotice('');setCustomDomain('');
       }
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo preparar la subida.');}
@@ -97,14 +83,23 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   }
 
   async function quickUploadDirectNotion(dest: typeof QUICK_NOTION_DESTINATIONS[number]) {
-    if (!video || sending || quickSavingCode) return;
+    if (!video || sending || quickSavingCode || recordingSubmission.current) return;
     if (video.size > RECORDING_MAX_BYTES) {
       setNotice('El video supera 128 MB. Descárgalo para reducirlo antes de subir.');
       return;
     }
+    recordingSubmission.current=true;
     setQuickSavingCode(dest.code);
     setNotice(`Subiendo directo a Notion para ${dest.person} (${dest.code})...`);
     try {
+      if (video.size > DIRECT_NOTION_MAX_BYTES) {
+        // Large base64 bodies exceed Vercel's request limit. Hand off before reading the blob.
+        const file={filename:'Grabacion_'+dest.code+(video.type.includes('mp4')?'.mp4':'.webm'),contentType:video.type,sizeBytes:video.size,blob:video,base64:'',dataUrl:''};
+        if (await onReady(file,targetRef.current,{person:dest.person,domain:customDomain})) {
+          setVideo(null);setPhase('idle');setNotice('');setCustomDomain('');
+        }
+        return;
+      }
       const base64 = await blobToBase64(video);
       const today = getMexicoToday();
       const start = `${today}T09:00:00-06:00`;
@@ -126,7 +121,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
             end,
             calendarEntryKind:'recording',
             files: [{
-              filename: `Grabacion_${dest.code}_${today}_${Date.now()}.webm`,
+              filename: `Grabacion_${dest.code}_${today}_${Date.now()}${video.type.includes('mp4')?'.mp4':'.webm'}`,
               contentType: video.type || 'video/webm',
               base64
             }]
@@ -134,24 +129,18 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         })
       });
       const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
+      if (!response.ok || data.error || data.success !== true || !data.pageId) {
+        throw new Error(data.error || 'No se confirmó el guardado. Tu grabación se conserva; verifica Notion antes de repetir.');
       }
       playCheckChime();
       sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) en el horario confirmado`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
       setNotice(`✅ Actividad creada en Notion con éxito para ${dest.person} (${dest.code}) en el horario confirmado`);
-      setTimeout(() => {
-        if (mounted.current) {
-          setVideo(null);
-          setPhase('idle');
-          setNotice('');
-          setCustomDomain('');
-        }
-      }, 1500);
+      setVideo(null);setPhase('idle');setCustomDomain('');
     } catch (err: any) {
       setNotice(err instanceof Error ? err.message : 'Error al subir a Notion');
     } finally {
+      recordingSubmission.current=false;
       if (mounted.current) setQuickSavingCode(null);
     }
   }
@@ -231,7 +220,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         })
       });
       const data = await response.json();
-      if (!response.ok || data.error) {
+      if (!response.ok || data.error || data.success !== true || !data.pageId) {
         throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
       }
       playCheckChime();
@@ -263,14 +252,16 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
     {target&&<p className="mt-2 break-words text-cyan-100 font-medium">{phase==='preview'?'Destino vinculado: ':'Grabando para: '}{target.title}</p>}
     {phase==='recording'&&<><p role="status" className="my-2">{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')} · {(bytes/1048576).toFixed(1)} MB · Máximo 10 minutos / 128 MB</p>{(seconds>=540||bytes>=RECORDING_MAX_BYTES*.9)&&<p role="status" className="my-2 text-amber-200">Cerca del límite. La grabación se detendrá automáticamente; podrás revisarla.</p>}<button onClick={()=>session.current?.stop()} className="rounded bg-rose-700 px-3 py-2">Detener y revisar</button></>}
     {phase==='preview'&&<>
+      {!!video&&video.size>DIRECT_NOTION_MAX_BYTES&&<p className="rounded border border-amber-700 p-2 text-xs text-amber-200">Video mayor de 2.5 MB: elige un responsable para abrir la subida por fragmentos. Revisa Notion + Dropbox antes de confirmar; Solo Notion admite hasta 2.5 MB.</p>}
       <video src={url} controls className="my-3 w-full max-h-[45dvh] rounded"/>
       <p className="text-[11px] text-slate-300">
         {((video?.size||0)/1048576).toFixed(1)} MB · {video?.type.includes('mp4')?'MP4':'WebM'} · {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')} · {microphone?'Con micrófono':'Sin micrófono'}
       </p>
       <div className="mt-2.5 flex flex-wrap gap-2 items-center">
-        <button disabled={sending||!!quickSavingCode||!video||video.size>RECORDING_MAX_BYTES} onClick={send} className="rounded bg-cyan-800 hover:bg-cyan-700 px-3 py-1.5 font-medium transition-colors cursor-pointer text-xs disabled:opacity-50">
+        <button disabled={sending||!!quickSavingCode||!video||video.size>RECORDING_MAX_BYTES} onClick={()=>void send()} className="rounded bg-cyan-800 hover:bg-cyan-700 px-3 py-1.5 font-medium transition-colors cursor-pointer text-xs disabled:opacity-50">
           {sending?'Preparando…':'Subir a Notion / Dropbox'}
         </button>
+        <button disabled={sending||!!quickSavingCode} onClick={()=>void send(true)} className="rounded border border-cyan-700 px-3 py-1.5 text-xs text-cyan-200">Adjuntar a actividad existente</button>
         <a href={url} download={'Grabacion_ANFETA'+(video?.type.includes('mp4')?'.mp4':'.webm')} className="px-2 py-1 underline text-slate-300 hover:text-white">
           Descargar
         </a>
@@ -295,9 +286,9 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       </div>
 
       {/* Botones rápidos: Guardado directo en Notion 9am */}
-      <div className="mt-2.5 space-y-1.5">
+      {!target&&<div className="mt-2.5 space-y-1.5">
         <span className="block text-[10.5px] font-semibold text-cyan-300">
-          Guardar directo en Notion (9am hoy · prioridad 00):
+          {video&&video.size>DIRECT_NOTION_MAX_BYTES?'Preparar subida por fragmentos (confirma destino y datos):':'Guardar en Notion (9am hoy · prioridad 00):'}
         </span>
         <div className="grid grid-cols-3 gap-1.5">
           {QUICK_NOTION_DESTINATIONS.map((dest) => (
@@ -313,14 +304,14 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
               }`}
               title={`Crear actividad en Notion con video adjunto para ${dest.person} a las 9am (${dest.code})`}
             >
-              {quickSavingCode === dest.code ? 'Subiendo...' : dest.label}
+              {quickSavingCode === dest.code ? 'Preparando...' : video&&video.size>DIRECT_NOTION_MAX_BYTES?dest.person:dest.label}
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       <p className="mt-2 text-[10px] text-amber-200/80 leading-snug">
-        Este navegador generó WebM. En Notion se incrustará el reproductor y se conservará como archivo descargable.
+        {video?.type.includes('mp4')?'Se guardará el video MP4 en Notion.':'WebM se conservará como archivo descargable en Notion; puedes revisar el video aquí.'}
       </p>
     </>}
     {notice&&<p role="status" className="mt-2 text-amber-200 font-medium">{notice}</p>}

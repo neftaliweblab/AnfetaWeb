@@ -1,7 +1,7 @@
+"use client";
 const cleanPageId = (id: unknown) => String(id || '').replace(/-/g, '').toLowerCase();
 import type { NotionCalendarActivity } from '@/types/anfeta';
 import { UnifiedActivityModal } from "@/components/CalendarHost/UnifiedActivityModal";
-"use client";
 import {focusSearchField,closeSearchTab} from "@/lib/searchTabNavigation";
 import {SearchShortcutSettings} from "./SearchShortcutSettings";
 import {useSearchTabShortcuts} from "./useSearchTabShortcuts";
@@ -219,35 +219,27 @@ export function ResultsViewHost({
     }
   }, []);
 
+  const openedDirectLink=useRef('');
   useEffect(() => {
-    if (!initialDirectActivity) return;
-    setSelectedScope("Notion");
-    const cleanId = cleanPageId(initialDirectActivity.pageId);
-    const existing = items.find(it => cleanPageId(it.id || (it as any).pageId || it.externalId) === cleanId);
-    if (existing) {
-      setSelectedItem(existing);
-      setSelectedIds(new Set([existing.id]));
-    } else {
-      const directRow: SearchResultRow = ({
-        id: initialDirectActivity.pageId,
-        name: initialDirectActivity.title,
-        source: 'Notion',
-        sourceName: 'Revisiones',
-        type: 'PAGE',
-        path: initialDirectActivity.pageUrl || ('https://notion.so/' + cleanId),
-        target: initialDirectActivity.pageUrl || ('https://notion.so/' + cleanId),
-        scheduledDate: initialDirectActivity.start,
-        updateStatus: initialDirectActivity.status,
-        assignedPerson: initialDirectActivity.person,
-        domain: initialDirectActivity.domain,
-        isFolder: false,
-      } as any);
-      setItems(prev => [directRow, ...prev.filter(x => cleanPageId(x.id || (x as any).pageId) !== cleanId)]);
-      setSelectedItem(directRow);
-      setSelectedIds(new Set([directRow.id]));
-    }
-    setIsDetailsOpen(true);
-  }, [initialDirectActivity]);
+    if (!initialDirectActivity || tabsOwner!==tabsKey) return;
+    const cleanId=cleanPageId(initialDirectActivity.pageId);
+    const identity=tabsKey+':'+cleanId;
+    if(openedDirectLink.current===identity)return;
+    openedDirectLink.current=identity;
+    const tabId='activity_'+cleanId;
+    // A dedicated tab preserves the user's other search tabs.
+    setTabs(previous=>previous.some(tab=>tab.id===tabId)?previous:[...previous,{id:tabId,query:'',canClose:true}]);
+    setActiveTabId(tabId);setQuery('');setSettledQuery('');onSearchChange?.('');
+    setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');
+    setFilterFavorites(false);setClassification('all');setFilterToday(false);setStatusFilter('all');
+    const directRow={id:initialDirectActivity.pageId,externalId:initialDirectActivity.pageId,name:initialDirectActivity.title,
+      source:'Notion',sourceName:'Revisiones',type:'PAGE',folder:'',extension:'',sizeBytes:0,modifiedLocalDate:'',path:initialDirectActivity.pageUrl,target:initialDirectActivity.pageUrl,
+      scheduledDate:initialDirectActivity.start,scheduledEnd:initialDirectActivity.end,updateStatus:initialDirectActivity.status,
+      assignedPerson:initialDirectActivity.person,domain:initialDirectActivity.domain,isFolder:false} as SearchResultRow;
+    setItems(previous=>[directRow,...previous.filter(item=>cleanPageId(item.externalId||item.id)!==cleanId)]);
+    setSelectedItem(directRow);setSelectedIds(new Set([directRow.id]));
+    setFloatingModalActivity(initialDirectActivity);setIsDetailsOpen(false);setCurrentPage(1);
+  }, [initialDirectActivity,tabsOwner,tabsKey]);
   useEffect(()=>{const refresh=()=>{setCurrentMonth(currentSearchMonth());setCurrentSearchDay(searchMexicoDay(new Date()));};refresh();const timer=setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
   const selectedMonth=effectiveSearchMonth(monthSelection,currentMonth,deferredQuery);
   const [viewZoom,setViewZoom]=useState<"list"|"small"|"medium"|"large">('list');
@@ -286,6 +278,7 @@ export function ResultsViewHost({
   const [isResponseCleanupOpen, setIsResponseCleanupOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [recordingUpload,setRecordingUpload]=useState(false);
+  const [recordingOptions,setRecordingOptions]=useState<{person?:string;domain?:string;attach?:boolean}>({});
   const [recordingDestination,setRecordingDestination]=useState<SearchResultRow|null>(null);
   const resultsRoot=useRef<HTMLDivElement>(null),keyboardStart=useRef(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -1386,6 +1379,9 @@ export function ResultsViewHost({
   const filteredItems = useMemo(() => {
     const isContentScope = selectedScope === "Contenido";
     let baseList = filterDeletedPages(items, currentUser).filter(item => !isLegacyDropboxDiskItem(item));
+    if(initialDirectActivity&&activeTabId==='activity_'+cleanPageId(initialDirectActivity.pageId)&&!deferredQuery.trim()) {
+      return baseList.filter(item=>cleanPageId(item.externalId||item.id)===cleanPageId(initialDirectActivity.pageId));
+    }
 
     if (selectedScope && selectedScope !== "Todo") {
       baseList = filterByNotionBase(baseList as any, selectedScope) as any;
@@ -1433,7 +1429,7 @@ export function ResultsViewHost({
 
     res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
     return orderSearchResults(res, groupBy);
-  }, [items, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday]);
+  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday]);
 
   useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
@@ -1901,7 +1897,7 @@ export function ResultsViewHost({
       />
 
       {/* Grabador flotante persistente entre módulos */}
-      <ScreenRecorder onOpenDetailed={()=>void triggerGlobalPaste(null)} disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async (file,target)=>{onShowResults?.();setRecordingDestination(target?{id:target.id,externalId:target.id,name:target.title,source:'Notion',type:'PAGE'} as SearchResultRow:null);setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
+      <ScreenRecorder onOpenDetailed={()=>void triggerGlobalPaste(null)} disabled={isGlobalPasteOpen||isDropboxModalOpen} onReady={async (file,target,options)=>{onShowResults?.();setRecordingOptions(options||{});setRecordingDestination(target?{id:target.id,externalId:target.id,name:target.title,source:'Notion',type:'PAGE'} as SearchResultRow:null);setRecordingUpload(true);setGlobalFiles([file]);setGlobalPasteText('');setGlobalPasteImage(null);setIsGlobalPasteOpen(true);return true;}}/>
 
       {/* Modal Editor para Nuevo/Editar Pendiente */}
       <QuickPendingCapture active={isActive} onSave={onAddPendingTask}/>
@@ -1986,6 +1982,9 @@ export function ResultsViewHost({
         currentUser={currentUser}
         initialFiles={globalFiles}
         initialDestination={recordingUpload?'both':undefined}
+        initialDomain={recordingUpload?recordingOptions.domain:undefined}
+        initialPerson={recordingUpload?recordingOptions.person:undefined}
+        initialAction={recordingUpload&&recordingOptions.attach?'attach':undefined}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
         attachmentOnly={recordingUpload&&!!recordingDestination}

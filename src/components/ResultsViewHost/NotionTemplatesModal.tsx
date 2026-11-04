@@ -95,9 +95,10 @@ export function NotionTemplatesModal({
   const [configDomain, setConfigDomain] = useState("");
   const [configPerson, setConfigPerson] = useState("");
   const [configReviewer, setConfigReviewer] = useState("john");
+  const [configNames,setConfigNames]=useState<Record<string,string>>({});
   const [configDate, setConfigDate] = useState(() => currentDate || new Date().toISOString().split("T")[0]);
   const [configTime, setConfigTime] = useState("10:00");
-  const [configDuration, setConfigDuration] = useState<number>(30);
+  const [configDuration, setConfigDuration] = useState<number>(60);
   const [configSequential, setConfigSequential] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
@@ -162,6 +163,7 @@ export function NotionTemplatesModal({
   // Abrir configuración para 1 sola plantilla
   const handleOpenConfigSingle = (tpl: NotionTemplate) => {
     setTemplatesToConfig([tpl]);
+    setConfigNames({});setConfigDuration(60);
     const detected = extractCalendarQuickTemplateDomain(tpl.Title);
     setConfigDomain(detected);
     setIsConfigOpen(true);
@@ -172,6 +174,7 @@ export function NotionTemplatesModal({
     const list = templates.filter((t) => selectedIds.has(t.PageId));
     if (list.length === 0) return;
     setTemplatesToConfig(list);
+    setConfigNames({});setConfigDuration(60);
     const firstDetected = list.map((t) => extractCalendarQuickTemplateDomain(t.Title)).find(Boolean) || "";
     setConfigDomain(firstDetected);
     setIsConfigOpen(true);
@@ -188,7 +191,7 @@ export function NotionTemplatesModal({
         projectToken: selectedCategory.projectToken,
         selectedDate: new Date(configDate + "T12:00:00"),
         orderToken: order,
-        description: cleanTitle,
+        description: configNames[tpl.PageId]?.trim() || cleanTitle,
         domain: configDomain,
         personName: configPerson,
         reviewerName: configReviewer,
@@ -197,6 +200,7 @@ export function NotionTemplatesModal({
     });
   }, [
     templatesToConfig,
+    configNames,
     configDomain,
     configPerson,
     configReviewer,
@@ -853,6 +857,17 @@ export function NotionTemplatesModal({
                   </label>
                 </div>
               )}
+
+              <fieldset className="space-y-2 rounded-lg border border-cyan-900 p-3" disabled={isSubmitting}>
+                <legend className="px-1 text-xs font-semibold text-cyan-200">Nombres de las actividades (editables)</legend>
+                <p className="text-[11px] text-slate-400">Se propone el nombre de cada plantilla. Puedes cambiarlo sin modificar la plantilla original.</p>
+                {templatesToConfig.map(tpl=>{
+                  const key=tpl.PageId;
+                  return <label key={key} className="block text-xs text-slate-300">Nombre de la actividad
+                    <input value={configNames[key]??cleanCalendarQuickTemplateActivityTitle(tpl.Title||'',selectedCategory.projectToken)} onChange={event=>setConfigNames(previous=>({...previous,[key]:event.target.value}))} className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-white"/>
+                  </label>;
+                })}
+              </fieldset>
 
               {/* Previsualización en Tiempo Real */}
               <div className="space-y-1.5">
