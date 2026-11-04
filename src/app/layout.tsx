@@ -1,3 +1,4 @@
+import { CreationFeedback } from "@/components/CreationFeedback";
 import {ConnectionStatus} from '@/components/Pwa/ConnectionStatus';
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className="h-full w-full overflow-hidden bg-[#080B0F] text-[#F1F5F9]">
         {children}
         <ConnectionStatus />
+        <CreationFeedback />
       </body>
     </html>
   );

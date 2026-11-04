@@ -1,4 +1,6 @@
 "use client";
+import { TemplateModalGuide } from "@/components/TemplateModalGuide";
+import { showCreationResult } from "@/components/CreationFeedback";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
 import { mexicoDate } from "@/services/calendarPresentation";
 
@@ -271,14 +273,18 @@ export function CalendarTemplatesModal({
 
       const data = await res.json();
       if (data.createdActivities?.length) onActivitiesCreated?.(data.createdActivities);
-      if (res.ok && data.success) onClose();
+      if (res.ok && data.success && data.createdActivities?.length === requests.length) {
+        showCreationResult(true, requests.length === 1 ? "Actividad creada" : `${requests.length} actividades creadas`);
+        onClose();
+      }
       else {
         const successful = new Set((data.results || []).filter((item:any)=>item.success).map((item:any)=>requests[item.index]?.sourcePageId));
         setSelectedIds(prev=>new Set([...prev].filter(id=>!successful.has(id))));
         setCreationError(data.error || 'No se confirmó la creación en Notion.');
+        showCreationResult(false, successful.size ? 'Creación parcial' : 'No se confirmó la creación', successful.size ? `${successful.size} de ${requests.length} actividades confirmadas. Revisa las pendientes.` : 'Revisa el detalle en el formulario.');
       }
     } catch (err: any) {
-      console.error("Error al aplicar plantillas:", err);
+      showCreationResult(false, "No se confirmó la creación", "Revisa el detalle en el formulario.");
       setCreationError(err.message || "No se pudo conectar con Notion.");
     } finally {
       submissionBusy.current=false;
@@ -291,10 +297,10 @@ export function CalendarTemplatesModal({
   return (
     <div
       className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 select-none"
-      onClick={onClose}
+      onClick={() => { if (!isSubmitting) onClose(); }}
     >
       <div
-        className={`w-full bg-[#0B0F15] border border-[#223848] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-in fade-in zoom-in-95 duration-150 transition-all ${
+        className={`w-full bg-[#0B0F15] border border-[#223848] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-in fade-in zoom-in-95 duration-150 transition-all ${
           modalSize === "small" ? "max-w-2xl" : modalSize === "large" ? "max-w-6xl" : "max-w-4xl"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -341,7 +347,7 @@ export function CalendarTemplatesModal({
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#38BDF8]" : ""}`} />
             </button>
             <button
-              onClick={onClose}
+              onClick={() => { if (!isSubmitting) onClose(); }}
               className="p-1.5 text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-[#1E293B] rounded transition-colors cursor-pointer"
               title="Cerrar modal"
             >
@@ -350,11 +356,13 @@ export function CalendarTemplatesModal({
           </div>
         </div>
 
+        <TemplateModalGuide configuring={isConfigStep} />
+
         {/* CONTENIDO: PASO 1 (Explorador y selector) */}
         {!isConfigStep && (
           <div className="flex-1 flex flex-col min-h-0">
             {/* Categorías ANFETA en barra horizontal deslizable */}
-            <div className="px-3 py-2 bg-[#0C1118] border-b border-[#1E2836] flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0">
+            <div className="px-4 py-3 bg-[#0C1118] border-b border-[#1E2836] flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto shrink-0">
               {CALENDAR_QUICK_TEMPLATES.map((cat) => {
                 const isActive = selectedCategory.key === cat.key;
                 const catCount = filterTemplatesByCategory(templates, cat).length;
@@ -557,7 +565,7 @@ export function CalendarTemplatesModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => { if (!isSubmitting) onClose(); }}
                   className="px-3.5 py-1.5 rounded bg-[#131B26] hover:bg-[#192433] text-[#94A3B8] text-xs font-medium border border-[#223348] cursor-pointer"
                 >
                   Cancelar
@@ -596,7 +604,7 @@ export function CalendarTemplatesModal({
                   <span>Volver a lista</span>
                 </button>
                 <h4 className="text-xs font-bold text-[#F1F5F9]">
-                  Crear proyecto desde Plantilla Fase1 · {selectedCategory.label}
+                  Configurar actividades · {selectedCategory.label}
                 </h4>
               </div>
 

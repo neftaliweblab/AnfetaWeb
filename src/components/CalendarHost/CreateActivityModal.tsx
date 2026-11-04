@@ -1,4 +1,5 @@
 'use client';
+import { showCreationResult } from "@/components/CreationFeedback";
 import {fetchWithScheduleChoice} from '@/lib/scheduleChoice';
 import {createPortal} from 'react-dom';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -242,8 +243,10 @@ export function CreateActivityModal({
               if (!response.ok || !data.success) {
                 throw new Error(data.error || 'No se pudo crear la actividad');
               }
+              showCreationResult(true, "Actividad creada");
               onCreated(data.activity);
             } catch (err) {
+              showCreationResult(false, 'No se confirmó la creación', 'Revisa el detalle en el formulario.');
               const message=err instanceof Error?err.message:'Error de conexión';
               if(/otro horario|otro dispositivo|otra instalación/.test(message))setRetrySeconds(5);
               setError(err instanceof Error&&err.name==='TimeoutError'?'No se confirmó el guardado a tiempo. Actualiza el calendario antes de repetir; el formulario conserva tus datos.':message);

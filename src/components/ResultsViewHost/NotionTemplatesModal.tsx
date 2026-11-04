@@ -1,4 +1,6 @@
 "use client";
+import { TemplateModalGuide } from "@/components/TemplateModalGuide";
+import { showCreationResult } from "@/components/CreationFeedback";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -19,7 +21,6 @@ import {
   ArrowLeft,
   CheckSquare,
   Square,
-  Sparkles,
 } from "lucide-react";
 import {
   CALENDAR_QUICK_TEMPLATES,
@@ -99,7 +100,7 @@ export function NotionTemplatesModal({
   const [configDuration, setConfigDuration] = useState<number>(30);
   const [configSequential, setConfigSequential] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [creationSuccessMsg, setCreationSuccessMsg] = useState<string | null>(null);
+  const [creationError, setCreationError] = useState<string | null>(null);
 
   // Modo Preproyectos (Paridad 1:1 con PreProjectGeneratorService de Desktop)
   const [isPreProjectTab, setIsPreProjectTab] = useState(false);
@@ -123,7 +124,7 @@ export function NotionTemplatesModal({
       loadTemplates();
       setIsConfigOpen(false);
       setSelectedIds(new Set());
-      setCreationSuccessMsg(null);
+      setCreationError(null);
       if (currentDate) setConfigDate(currentDate);
     }
   }, [isOpen, currentDate]);
@@ -205,7 +206,8 @@ export function NotionTemplatesModal({
 
   // Ejecutar creación en backend (/api/data)
   const handleExecuteCreation = async () => {
-    if (templatesToConfig.length === 0) return;
+    if (isSubmitting || templatesToConfig.length === 0) return;
+    setCreationError(null);
     setIsSubmitting(true);
 
     try {
@@ -254,25 +256,29 @@ export function NotionTemplatesModal({
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const created = data.createdActivities || [];
-        if (onActivitiesCreated) {
-          onActivitiesCreated(created);
-        }
-
-        setCreationSuccessMsg(
-          `¡Se ${created.length === 1 ? "creó 1 actividad" : `crearon ${created.length} actividades`} con éxito en Notion y Calendario!`
-        );
-        setTimeout(() => {
-          onClose();
-        }, 1200);
+      const data = await res.json();
+      const created = data.createdActivities || [];
+      if (created.length) onActivitiesCreated?.(created);
+      if (res.ok && data.success && created.length === requests.length) {
+        showCreationResult(true, created.length === 1 ? "Actividad creada" : `${created.length} actividades creadas`);
+        onClose();
       } else {
-        alert("Ocurrió un error al crear la actividad desde la plantilla.");
+        const completed = new Set<number>(
+          (data.results || []).filter((item: { success: boolean }) => item.success)
+            .map((item: { index: number }) => item.index),
+        );
+        if (completed.size) {
+          const completedIds = new Set(requests.filter((_, index) => completed.has(index)).map(item => item.sourcePageId));
+          setTemplatesToConfig(previous => previous.filter(template => !completedIds.has(template.PageId)));
+          setSelectedIds(previous => new Set([...previous].filter(id => !completedIds.has(id))));
+        }
+        setCreationError(data.error || "No se confirmó la creación en Notion.");
+        showCreationResult(false, created.length ? "Creación parcial" : "No se confirmó la creación",
+          created.length ? `${created.length} de ${requests.length} actividades confirmadas. Revisa las pendientes.` : "Revisa el detalle en el formulario.");
       }
     } catch (err) {
-      console.error("Error creating activities:", err);
-      alert("Error de conexión al crear actividades.");
+      setCreationError(err instanceof Error ? err.message : "Error de conexión al crear actividades.");
+      showCreationResult(false, "No se confirmó la creación", "Revisa el detalle en el formulario.");
     } finally {
       setIsSubmitting(false);
     }
@@ -283,12 +289,13 @@ export function NotionTemplatesModal({
   return (
     <div
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 select-none animate-in fade-in duration-150"
-      onClick={onClose}
+      onClick={() => { if (!isSubmitting) onClose(); }}
     >
       <div
-        className="w-full max-w-4xl bg-[#0F141C] border border-[#26323E] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all"
+        className="w-full max-w-4xl bg-[#0F141C] border border-[#26323E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all"
         onClick={(e) => e.stopPropagation()}
       >
+        <TemplateModalGuide configuring={isConfigOpen} />
         {/* ======================================================== */}
         {/* PASO 1: EXPLORADOR DE PLANTILLAS                          */}
         {/* ======================================================== */}
@@ -299,7 +306,7 @@ export function NotionTemplatesModal({
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-[#38BDF8]" />
                 <h3 className="text-xs sm:text-sm font-bold text-[#F1F5F9]">
-                  Plantillas Rápidas de Notion (Plantilla Fase1)
+                  Plantillas de Notion · Fase 1
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#0C4A6E] text-[#38BDF8] border border-[#38BDF8]/40">
                   {templates.length} disponibles
@@ -342,7 +349,7 @@ export function NotionTemplatesModal({
                 </button>
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => { if (!isSubmitting) onClose(); }}
                   className="text-[#94A3B8] hover:text-[#F1F5F9] p-1 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -351,7 +358,7 @@ export function NotionTemplatesModal({
             </div>
 
             {/* Categorías ANFETA: Scroll horizontal elegante sin flechas feas de Windows */}
-            <div className="px-3 py-2 bg-[#0C1118] border-b border-[#1E2836] flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0">
+            <div className="px-4 py-3 bg-[#0C1118] border-b border-[#1E2836] flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto shrink-0">
               {CALENDAR_QUICK_TEMPLATES.map((cat) => {
                 const isActive = selectedCategory.key === cat.key;
                 const count = filterTemplatesByCategory(templates, cat).length;
@@ -670,7 +677,7 @@ export function NotionTemplatesModal({
 
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => { if (!isSubmitting) onClose(); }}
                   className="px-3.5 py-1.5 bg-[#18212B] hover:bg-[#223848] text-[#CBD5E1] text-xs font-medium rounded cursor-pointer"
                 >
                   Cerrar
@@ -720,12 +727,7 @@ export function NotionTemplatesModal({
                 </div>
               </div>
 
-              {creationSuccessMsg && (
-                <div className="p-3 rounded-lg bg-[#0369A1]/30 border border-[#38BDF8] text-xs text-[#38BDF8] font-bold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 animate-spin" />
-                  <span>{creationSuccessMsg}</span>
-                </div>
-              )}
+              {creationError && <p role="alert" className="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-200">{creationError}</p>}
 
               {/* Grid 1: Dominio, Responsable, Revisor */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

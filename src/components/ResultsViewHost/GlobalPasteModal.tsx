@@ -1,4 +1,5 @@
 "use client";
+import { showCreationResult } from "@/components/CreationFeedback";
 import {UPLOAD_ACTIVITY_TYPES,documentationKind,catalogDomains,suggestDomains,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {loadCachedIndex} from '@/lib/clientIndexCache';
 import {ACTIVITY_TAGS, activityPerson} from '@/services/activityTags';
@@ -42,7 +43,7 @@ interface Props {
 
 const EMPTY: GlobalPasteImagePayload[] = [];
 const reviewers = [
- {name:'(Sin asignar)',tag:'',person:''},
+ {name:'Usar opción predeterminada',tag:'',person:''},
  {name:'🚨 John urgente',tag:'john0000',person:'John'},
  ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name+' · '+value.active+'11',tag:name==='Edwin'?'eed11':value.review,person:name}))
 ];
@@ -480,6 +481,7 @@ export function GlobalPasteModal({
 
       const warnings = [...(data.warnings || []), data.warning].filter(Boolean);
       setLocked(true);
+      showCreationResult(true, frozen.mode === 'dropbox' ? 'Archivo guardado' : frozen.actionType === 'attach' ? 'Adjunto guardado' : 'Página creada', warnings.length ? 'Consulta los avisos del lote.' : undefined);
       setStatus('Guardado correctamente.' + (warnings.length ? ' Advertencias: ' + warnings.join(' ') : ''));
       try {
         localStorage.setItem('anfeta_upload_destination', mode);
@@ -493,6 +495,7 @@ export function GlobalPasteModal({
       }
     } catch (e: any) {
       setError(e instanceof Error ? e.message : 'No se pudo subir.');
+      showCreationResult(false, 'El envío no se completó', 'Revisa el detalle en el formulario.');
     } finally {
       submitLock.current=false;setBusy(false);
     }
@@ -559,14 +562,6 @@ export function GlobalPasteModal({
           </div>
         )}
 
-        {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||started||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="min-w-0 rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
-          <p className="font-semibold text-cyan-200">{documentation?'Se documentará en la base de Notion elegida, sin crear una actividad en el calendario.':'Se guardará en Revisiones como actividad rápida, sin horario automático.'}</p>
-          <div className="grid gap-2 sm:grid-cols-2"><label>Tipo de actividad<select aria-label="Tipo de actividad" value={customType?'Otro':quickType} onChange={e=>{const other=e.target.value==='Otro';setCustomType(other);setQuickType(other?'':e.target.value);}} className="mt-1 w-full rounded bg-slate-800 p-2">{UPLOAD_ACTIVITY_TYPES.map(value=><option key={value}>{value}</option>)}</select>{customType&&<input aria-label="Otro tipo de actividad" value={quickType} onChange={e=>setQuickType(e.target.value)} placeholder="Escribe el tipo de actividad" maxLength={100} required className="mt-2 w-full rounded bg-slate-800 p-2"/>}</label><label>Título de actividad<input value={quickTitle} onChange={e=>setQuickTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Error al mover actividad"/></label></div>
-          <label className="block">Descripción breve<input value={quickDescription} onChange={e=>setQuickDescription(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Revisar el horario mostrado"/></label>
-          <p role="status" className="break-words rounded bg-slate-900 p-2 text-cyan-100">{documentation?`${quickType}: ${quickTitle||"Escribe un título"}`:quickPreview||quickError}</p>
-          {documentation&&<label className="block rounded border border-cyan-900 p-2">Base de documentación en Notion<select aria-label="Tipo de destino de documentación" value={notionTarget==='database'?'database':'source'} onChange={e=>setNotionTarget(e.target.value)} className="ml-2 rounded bg-slate-800 p-2"><option value="source">Fuente de datos</option><option value="database">Base de datos</option></select><input aria-label="Base de documentación de Notion" value={notionTargetId} onChange={e=>{setNotionTargetId(e.target.value);}} placeholder="Enlace o ID de la fuente de datos de Correos / Contraseñas" className="mt-1 w-full rounded bg-slate-800 p-2"/><span className="mt-1 block text-slate-400">Vacío: usa Correos Contraseñas del catálogo de ANFETA (o el destino configurado en el servidor). Se valida el acceso antes de guardar; no se envía a Dropbox.</span></label>}
-          <p className="text-slate-400">{documentation?"El registro se guarda en la base de documentación, sin generar una tarea ni horario.":"La etiqueta y la asignación corresponden a Persona / Revisor. Si no eliges otra persona, se asignará a tu cuenta."} {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío: 2.5 MB.'}</p>
-        </fieldset>}
         <fieldset disabled={busy || started || !draftReady || Boolean(pendingConflict)} className="min-w-0 space-y-4">
           {/* Selector de Destino */}
           <div className="grid min-w-0 grid-cols-1 sm:grid-cols-3 gap-2 rounded-xl bg-slate-800 p-1">
@@ -602,6 +597,15 @@ export function GlobalPasteModal({
               </div>
             </div>
           )}
+
+        {mode!=='dropbox'&&actionType==='create'&&<fieldset disabled={busy||started||locked||!draftReady||Boolean(pendingConflict)||Boolean(recovery.current?.receipts.some(r=>r.kind==='notion'))} className="min-w-0 rounded-xl border border-cyan-900 p-3 space-y-2 text-xs">
+          <p className="font-semibold text-cyan-200">{documentation?'Se documentará en la base de Notion elegida, sin crear una actividad en el calendario.':'Se guardará en Revisiones como actividad rápida, sin horario automático.'}</p>
+          <legend className="px-1 font-semibold text-cyan-200">Datos de la página nueva</legend>
+          <div className="grid gap-3 sm:grid-cols-2"><label>Tipo de actividad<select aria-label="Tipo de actividad" value={customType?'Otro':quickType} onChange={e=>{const other=e.target.value==='Otro';setCustomType(other);setQuickType(other?'':e.target.value);}} className="mt-1 w-full rounded bg-slate-800 p-2">{UPLOAD_ACTIVITY_TYPES.map(value=><option key={value}>{value}</option>)}</select>{customType&&<input aria-label="Otro tipo de actividad" value={quickType} onChange={e=>setQuickType(e.target.value)} placeholder="Escribe el tipo de actividad" maxLength={100} required className="mt-2 w-full rounded bg-slate-800 p-2"/>}</label><label>Nombre de la actividad <span className="text-cyan-300">(obligatorio)</span><input value={quickTitle} onChange={e=>setQuickTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Ej. Corregir horario del calendario"/><span className="mt-1 block text-slate-400">Escribe una acción breve que el equipo pueda reconocer.</span></label></div>
+          <label className="block">Detalles <span className="text-slate-400">(opcional)</span><input value={quickDescription} onChange={e=>setQuickDescription(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Ej. Al mover la tarjeta, el horario cambia una hora."/></label>
+          {documentation&&<label className="block rounded border border-cyan-900 p-2">Base de documentación en Notion<select aria-label="Tipo de destino de documentación" value={notionTarget==='database'?'database':'source'} onChange={e=>setNotionTarget(e.target.value)} className="ml-2 rounded bg-slate-800 p-2"><option value="source">Fuente de datos</option><option value="database">Base de datos</option></select><input aria-label="Base de documentación de Notion" value={notionTargetId} onChange={e=>{setNotionTargetId(e.target.value);}} placeholder="Enlace o ID de la fuente de datos de Correos / Contraseñas" className="mt-1 w-full rounded bg-slate-800 p-2"/><span className="mt-1 block text-slate-400">Vacío: usa Correos Contraseñas del catálogo de ANFETA (o el destino configurado en el servidor). Se valida el acceso antes de guardar; no se envía a Dropbox.</span></label>}
+          <p className="text-slate-400">{documentation?"El registro se guarda en la base de documentación, sin generar una tarea ni horario.":"El título técnico se arma automáticamente con estos datos."} {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío: 2.5 MB.'}</p>
+        </fieldset>}
 
           {/* Panel de Selección y Búsqueda de Tarjeta Existente */}
           {(directAttachment||(mode !== 'dropbox' && actionType === 'attach')) && (
@@ -687,14 +691,14 @@ export function GlobalPasteModal({
 
           {!directAttachment&&<>
           {/* Configuración de Dominio y DRX */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <label className="text-xs">Dominio<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="dominio.com" /><datalist id="anfeta-domain-suggestions">{suggestDomains(domains,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Sugerencias del catálogo desde 3 letras.</span></label>
+          <div className={mode === 'notion' ? "grid gap-3 sm:grid-cols-3" : "grid grid-cols-2 gap-3 md:grid-cols-5"}>
+            <label className="text-xs">Dominio del proyecto {mode !== 'dropbox' && actionType === 'create' && !documentation && <span className="text-cyan-300">(obligatorio)</span>}<input aria-label="Dominio" list="anfeta-domain-suggestions" autoComplete="off" value={domain} onChange={e => setDomain(e.target.value.toLowerCase())} className={style} placeholder="Ej. anfeta.com" /><datalist id="anfeta-domain-suggestions">{suggestDomains(domains,domain).map(value=><option key={value} value={value}/>)}</datalist><span className="text-[10px] text-slate-400">Escribe el dominio sin https:// ni rutas. Hay sugerencias desde 3 letras.</span></label>
             {mode !== 'notion' && <>
               <label className="text-xs">Tipo<select value={root} onChange={e => { setRoot(e.target.value); setCategory(e.target.value); }} className={style}><option value="proyecto">Proyecto</option><option value="software">Software</option></select></label>
               <label className="text-xs">Categoría<select value={category} onChange={e => setCategory(e.target.value)} className={style}>{(root === 'software' ? softwareCategories : projectCategories).map(c => <option key={c}>{c}</option>)}</select></label>
             </>}
-            {!documentation&&<label className="text-xs">Mes<input value={month} onChange={e => setMonth(e.target.value)} className={style} /></label>}
-            <label className="text-xs">Persona / Revisor<select value={person} onChange={e => setPerson(e.target.value)} className={style}>{reviewers.map(p => <option key={p.tag} value={p.tag}>{p.name}</option>)}</select></label>
+            {!documentation&&<label className="text-xs">Mes de referencia<input value={month} onChange={e => setMonth(e.target.value)} className={style} /><span className="mt-1 block text-slate-400">Ejemplo del mes actual: {monthToken()}. No programa un horario.</span></label>}
+            <label className="text-xs">{mode !== 'dropbox' && actionType === 'create' && !documentation ? 'Responsable de la actividad' : 'Persona de referencia'}<select value={person} onChange={e => setPerson(e.target.value)} className={style}>{reviewers.map(p => <option key={p.tag} value={p.tag}>{!p.tag && mode !== 'dropbox' && actionType === 'create' && !documentation ? `Yo (${currentUser})` : p.tag ? p.name : 'Sin seleccionar'}</option>)}</select></label>
           </div>
 
           {!documentation && !(mode === 'notion' && actionType === 'create') && <label className="block text-xs">Título / Nombre<input aria-label="Título / Nombre" autoFocus value={title} onChange={e => setTitle(e.target.value)} className={style} placeholder="Descripción del archivo" /></label>}
@@ -873,6 +877,19 @@ export function GlobalPasteModal({
           </details>}
         </fieldset>
 
+        {mode !== 'dropbox' && actionType === 'create' && !directAttachment && (
+          <section aria-label="Vista previa de Notion" className="space-y-2 rounded-xl border border-cyan-800 bg-cyan-950/25 p-3 text-xs">
+            <h3 className="text-sm font-semibold text-cyan-200">Vista previa de la página en Notion</h3>
+            {!documentation && <p className="text-slate-300">Destino: Revisiones · Responsable: {chosen?.person || currentUser} · Sin horario</p>}
+            <p role="status" className="break-words rounded-lg bg-slate-950 p-2.5 text-cyan-100">
+              {documentation
+                ? (quickTitle.trim() ? `${quickType}: ${quickTitle.trim()}` : 'Escribe el nombre del registro para ver el título final.')
+                : quickPreview || quickError}
+            </p>
+            {!documentation && !quickPreview && <p className="text-slate-400">Ejemplo de captura: nombre «Corregir horario del calendario», dominio «anfeta.com» y responsable «Yo».</p>}
+          </section>
+        )}
+
         {/* Reporte separado de confirmaciones */}
         {confirmedDropbox.length > 0 && (
           <div className="rounded-lg bg-emerald-950/40 border border-emerald-600/50 p-2.5 text-xs text-emerald-300 space-y-1">
@@ -912,7 +929,7 @@ export function GlobalPasteModal({
             className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 hover:from-sky-600 hover:to-sky-400 px-4 py-2 font-bold text-white text-sm disabled:opacity-50 cursor-pointer"
           >
             {busy && <Loader2 size={16} className="animate-spin" />}
-            {busy ? 'Subiendo…' : started ? 'Retomar lote' : 'Continuar y subir'}
+            {busy ? 'Subiendo…' : started ? 'Retomar lote' : mode === 'notion' ? (actionType === 'attach' ? 'Adjuntar a la página' : 'Crear página en Notion') : 'Continuar y subir'}
           </button>
         </footer>
       </form>
