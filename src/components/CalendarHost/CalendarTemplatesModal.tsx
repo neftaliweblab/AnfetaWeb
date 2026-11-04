@@ -1,7 +1,5 @@
 "use client";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
-import {SoftwareTemplatePhases} from '../ResultsViewHost/SoftwareTemplatePhases';
-import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 import { mexicoDate } from "@/services/calendarPresentation";
 
 
@@ -86,7 +84,6 @@ export function CalendarTemplatesModal({
 }: CalendarTemplatesModalProps) {
   // Estado general
   const [templates, setTemplates] = useState<any[]>([]);
-  const [softwarePhase,setSoftwarePhase]=useState<number|null>(null);
   const [creationError, setCreationError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CalendarQuickTemplateDefinition>(
@@ -136,8 +133,8 @@ export function CalendarTemplatesModal({
 
   // Lista filtrada según categoría y texto de búsqueda
   const filteredTemplates = useMemo(() => {
-    const rows=filterTemplatesByCategory(templates, selectedCategory, searchQuery);return selectedCategory.key==='programas'&&softwarePhase!==null?rows.filter(row=>softwareTemplatePhase(row)===softwarePhase):rows;
-  }, [templates, selectedCategory, searchQuery,softwarePhase]);
+    return filterTemplatesByCategory(templates, selectedCategory, searchQuery);
+  }, [templates, selectedCategory, searchQuery]);
 
   // Manejo de selecciones
   const handleToggleSelect = (pageId: string) => {
@@ -388,7 +385,6 @@ export function CalendarTemplatesModal({
               })}
             </div>
 
-            {selectedCategory.key==='programas'&&<SoftwareTemplatePhases templates={templates} value={softwarePhase} onChange={setSoftwarePhase}/>}
             {/* Barra de Búsqueda y Selección masiva */}
             <div className="p-3 bg-[#0E141E] border-b border-[#1E2836] flex items-center justify-between gap-3">
               <div className="flex-1 flex items-center gap-2 bg-[#121A26] border border-[#223348] rounded px-3 py-1.5 focus-within:border-[#38BDF8]">

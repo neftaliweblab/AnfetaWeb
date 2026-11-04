@@ -1,3 +1,4 @@
+import phaseOneCatalog from '../../../../data/notion_template_phase1_catalog_v2.json';
 import {
   canonicalActivityUrl,
   evaluateActivityLink,
@@ -743,9 +744,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     if(type==='notion-base-links')return NextResponse.json(await notionBaseLinks({...getSettings(),notionToken:resolveNotionToken(req,searchParams),notionSignal:AbortSignal.timeout(55000)}),{headers:{'Cache-Control':'no-store'}});
 
     if (type === "templates") {
-      const catalog = readLocalJson<any>("notion_template_phase1_catalog_v2.json", null) ||
-                      readLocalJson<any>("notion_template_phase1_catalog_v1.json", {});
-      const items = catalog?.Items || [];
+      const items = phaseOneCatalog.Items;
       return NextResponse.json({ total: items.length, items });
     }
 

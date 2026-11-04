@@ -1,3 +1,4 @@
+import {softwareTemplatePhase} from './softwareTemplatePhases';
 import {revisionPhaseTitle} from '../services/progressiveWorkflow';
 import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags} from '../services/activityTags';
 /**
@@ -5,6 +6,16 @@ import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePrio
  * Catálogo y utilidades de Plantillas Fase1 para ANFETA.
  * Paridad 1:1 con NotionTemplateCatalogService.cs y SearchView.Calendar.cs de WinUI 3.
  */
+
+// The new catalog separates title, classification and assignment metadata.
+function structuredTemplate(title: string) {
+  const fields = title.split("|").map(field => field.trim());
+  const type = fields[1]?.match(/(?:^|\s)([a-z]{3,})(?:$|\s)/i)?.[1];
+  const detail = fields[2]?.match(/(?:^|\s)(\d{2}\.[a-z]\.(\d{2}\.\d{2}))\s+(.+)$/i);
+  const domain = fields[3]?.match(/#([pd]\.dominio\.com(?:\.[a-z0-9-]+)*)/i)?.[1];
+  if (!type || !detail || !domain) return null;
+  return { type, order: detail[2], name: detail[3], domain, fields };
+}
 
 export interface CalendarQuickTemplateDefinition {
   key: string;
@@ -159,7 +170,7 @@ export const CALENDAR_QUICK_TEMPLATES: CalendarQuickTemplateDefinition[] = [
     projectToken: "pprog",
     icon: "⚙️",
     defaultDurationMinutes: 60,
-    hint: "Plantilla Fase1 con el tag exacto pprog.",
+    hint: "Definición e instalación, tutoriales web y usos para Weblab y cliente.",
     sourceUrl: CALENDAR_TEMPLATE_HUB_URL,
   },
 ];
@@ -173,6 +184,9 @@ export function cleanCalendarQuickTemplateActivityTitle(
   rawTitle: string,
   projectToken = ""
 ): string {
+  const structured = structuredTemplate(rawTitle || "");
+  if (structured) return structured.name;
+
   let value = stripActivityTags(rawTitle || "").trim().replace(/\s+/g, " ");
   if (!value) return "Actividad desde plantilla";
 
@@ -218,6 +232,8 @@ export function cleanCalendarQuickTemplateActivityTitle(
  */
 export function extractCalendarQuickTemplateOrder(title: string): string {
   if (!title) return "";
+  const structured = structuredTemplate(title);
+  if (structured) return structured.order;
   const match = title.match(/(?:mes|fase)?\s*(\d{1,3}\.\d{1,3})/i);
   return match ? match[1].trim() : "";
 }
@@ -227,6 +243,8 @@ export function extractCalendarQuickTemplateOrder(title: string): string {
  */
 export function extractCalendarQuickTemplateDomain(title: string): string {
   if (!title) return "";
+  const structured = structuredTemplate(title);
+  if (structured) return structured.domain;
   const match = title.match(/\[\s*([a-z0-9_.-]+\.[a-z]{2,})\s*\]/i);
   if (match) return match[1].trim();
 
@@ -316,6 +334,23 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
 
   const personTag = personName ? activePersonTag(personName,titlePriority(templateOriginalTitle,personName)||scanActivityTags(templateOriginalTitle).find(tag=>tag.role==='template'&&tag.person===activityPerson(personName)&&tag.priority)?.priority) : "";
   const reviewerTag = reviewerName ? getCalendarReviewerTag(reviewerName) : "";
+  const structured = structuredTemplate(templateOriginalTitle);
+  if (structured) {
+    const [, typeField, dateField, domainField, ...metadata] = structured.fields;
+    const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+    const activityField = dateField.replace(/\d{2}(?=\.[a-z]\.)/i, month)
+      .replace(structured.name, () => description);
+    const resolvedDomain = cleanDom && !/^(?:[pd]\.)?dominio\.com(?:\.|$)/i.test(cleanDom)
+      ? domainField.replace(/dominio\.com/i, () => cleanDom.replace(/^[pd]\./i, ""))
+      : domainField;
+    const descriptiveFields = metadata.filter(field => /^\S*\s*#(?:descripcion|ffase)/i.test(field));
+    return revisionPhaseTitle(
+      [typeField, activityField, resolvedDomain, ...descriptiveFields, personTag, reviewerTag]
+        .filter(Boolean).join(" | "),
+      "pending",
+    ).replace(" ", " | ");
+  }
+
   const incomingReviewTags=scanActivityTags(templateOriginalTitle).filter(tag=>tag.role==='review'&&!tag.legacy);
   const pendingTemplateTags=!reviewerName?[...new Set(incomingReviewTags.map(tag=>ACTIVITY_TAGS[tag.person].reference+'11'))].join(' '):'';
 
@@ -356,6 +391,9 @@ export function filterTemplatesByCategory(
     const token = categoryDef.projectToken.toLowerCase();
     list = list.filter((item) => {
       const title = (item.Title || item.title || "").toLowerCase();
+      if (token === "pprog") {
+        return softwareTemplatePhase(item) !== null;
+      }
       if (token === "rrapi") {
         return /\[ttipo-actividad(?:-rrapi\s+rapido)?\]/i.test(title);
       }
@@ -392,7 +430,7 @@ export function filterTemplatesByCategory(
   }
 
   // Ordenar numéricamente por orden si existe, luego por título
-  return list.sort((a, b) => {
+  return [...list].sort((a, b) => {
     const tA = a.Title || a.title || "";
     const tB = b.Title || b.title || "";
     const ordA = parseFloat(extractCalendarQuickTemplateOrder(tA)) || 999999;

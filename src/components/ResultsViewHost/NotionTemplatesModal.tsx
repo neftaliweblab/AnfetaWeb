@@ -1,7 +1,5 @@
 "use client";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
-import {SoftwareTemplatePhases} from './SoftwareTemplatePhases';
-import {softwareTemplatePhase} from '@/lib/softwareTemplatePhases';
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -84,7 +82,6 @@ export function NotionTemplatesModal({
     CALENDAR_QUICK_TEMPLATES[0] // "todas"
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [softwarePhase,setSoftwarePhase]=useState<number|null>(null);
 
   // Selección múltiple
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -132,8 +129,8 @@ export function NotionTemplatesModal({
   }, [isOpen, currentDate]);
 
   const filtered = useMemo(() => {
-    const rows=filterTemplatesByCategory(templates, selectedCategory, search);return selectedCategory.key==='programas'&&softwarePhase!==null?rows.filter(row=>softwareTemplatePhase(row)===softwarePhase):rows;
-  }, [templates, selectedCategory, search,softwarePhase]);
+    return filterTemplatesByCategory(templates, selectedCategory, search);
+  }, [templates, selectedCategory, search]);
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -383,7 +380,6 @@ export function NotionTemplatesModal({
               })}
             </div>
 
-            {selectedCategory.key==='programas'&&<SoftwareTemplatePhases templates={templates} value={softwarePhase} onChange={setSoftwarePhase}/>}
             {/* Buscador y Controles de Selección */}
             <div className="p-3 border-b border-[#1E2836] bg-[#0B0F15] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
               <div className="flex-1 flex items-center gap-2 bg-[#141B26] border border-[#26354A] rounded px-3 py-1.5 focus-within:border-[#38BDF8]">

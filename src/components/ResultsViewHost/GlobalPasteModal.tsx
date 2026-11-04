@@ -44,7 +44,7 @@ const EMPTY: GlobalPasteImagePayload[] = [];
 const reviewers = [
  {name:'(Sin asignar)',tag:'',person:''},
  {name:'🚨 John urgente',tag:'john0000',person:'John'},
- ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name,tag:name==='Edwin'?'eed11':value.review,person:name}))
+ ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name+' · '+value.active+'11',tag:name==='Edwin'?'eed11':value.review,person:name}))
 ];
 
 export function GlobalPasteModal({
@@ -391,7 +391,7 @@ export function GlobalPasteModal({
         category,
         month,
         personTag: person,
-        title: documentation?`${quickType}: ${quickTitle.trim()}`:title.trim(),
+        title: documentation ? `${quickType}: ${quickTitle.trim()}` : effectiveMode === 'notion' && actionType === 'create' ? quickPreview : title.trim(),
         body: actionType==='create'?[quickDescription,body,(!files.length?quickTitle:'')].filter(Boolean).join('\n'):body,
         files,
         separatePages: separate,
@@ -697,7 +697,7 @@ export function GlobalPasteModal({
             <label className="text-xs">Persona / Revisor<select value={person} onChange={e => setPerson(e.target.value)} className={style}>{reviewers.map(p => <option key={p.tag} value={p.tag}>{p.name}</option>)}</select></label>
           </div>
 
-          {!documentation&&<label className="block text-xs">Título / Nombre<input aria-label="Título / Nombre" autoFocus value={title} onChange={e => setTitle(e.target.value)} className={style} placeholder="Descripción del archivo" /></label>}
+          {!documentation && !(mode === 'notion' && actionType === 'create') && <label className="block text-xs">Título / Nombre<input aria-label="Título / Nombre" autoFocus value={title} onChange={e => setTitle(e.target.value)} className={style} placeholder="Descripción del archivo" /></label>}
           {count > 1 && mode !== 'dropbox' && actionType === 'create' && (
             <select aria-label="Organización de páginas" value={separate ? 'separate' : 'single'} onChange={e => setSeparate(e.target.value === 'separate')} className={style}>
               <option value="single">Una sola página para todos</option>
