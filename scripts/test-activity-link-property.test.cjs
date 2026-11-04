@@ -46,19 +46,19 @@ async function runTests() {
   console.log('--- TEST 1: Canonical URL & Domain Security ---');
   {
     // Test rejection of localhost, 127.0.0.1, and preview URLs
-    assert.equal(getPublicBaseUrl('http://localhost:3000'), 'https://anfeta.com');
-    assert.equal(getPublicBaseUrl('http://127.0.0.1:8080'), 'https://anfeta.com');
-    assert.equal(getPublicBaseUrl('https://my-app-git-branch.preview.vercel.app'), 'https://anfeta.com');
+    assert.equal(getPublicBaseUrl('http://localhost:3000'), 'https://anfeta-web.vercel.app');
+    assert.equal(getPublicBaseUrl('http://127.0.0.1:8080'), 'https://anfeta-web.vercel.app');
+    assert.equal(getPublicBaseUrl('https://my-app-git-branch.preview.vercel.app'), 'https://anfeta-web.vercel.app');
 
     // Test valid custom or production URLs
     assert.equal(getPublicBaseUrl('https://anfeta.weblab.mx/'), 'https://anfeta.weblab.mx');
-    assert.equal(getPublicBaseUrl('https://anfeta.com'), 'https://anfeta.com');
+    assert.equal(getPublicBaseUrl('https://anfeta-web.vercel.app'), 'https://anfeta-web.vercel.app');
 
     // Test canonicalActivityUrl formatting
     const pageId = '384abd7d-91b7-809c-ac11-f0beda59eaab';
     const cleanId = '384abd7d91b7809cac11f0beda59eaab';
-    const canonical = canonicalActivityUrl(pageId, { baseUrl: 'https://anfeta.com' });
-    assert.equal(canonical, `https://anfeta.com/calendar?activity=${cleanId}`);
+    const canonical = canonicalActivityUrl(pageId, { baseUrl: 'https://anfeta-web.vercel.app' });
+    assert.equal(canonical, `https://anfeta-web.vercel.app/calendar?activity=${cleanId}`);
 
     // Invalid IDs return empty string
     assert.equal(canonicalActivityUrl('invalid-id'), '');
@@ -116,28 +116,29 @@ async function runTests() {
     const cleanId = '384abd7d91b7809cac11f0beda59eaab';
 
     // 1. Empty link
-    const evalEmpty = evaluateActivityLink(pageId, null, { baseUrl: 'https://anfeta.com' });
+    const evalEmpty = evaluateActivityLink(pageId, null, { baseUrl: 'https://anfeta-web.vercel.app' });
     assert.equal(evalEmpty.status, 'empty');
 
     // 2. Exact link
-    const exactUrl = `https://anfeta.com/calendar?activity=${cleanId}`;
-    const evalExact = evaluateActivityLink(pageId, exactUrl, { baseUrl: 'https://anfeta.com' });
+    const exactUrl = `https://anfeta-web.vercel.app/calendar?activity=${cleanId}`;
+    const evalExact = evaluateActivityLink(pageId, exactUrl, { baseUrl: 'https://anfeta-web.vercel.app' });
     assert.equal(evalExact.status, 'exact');
+    assert.equal(evaluateActivityLink(pageId, `https://anfeta.com/calendar?activity=${cleanId}`, {baseUrl:'https://anfeta-web.vercel.app'}).status, 'needs_repair');
 
     // 3. Needs repair: localhost or old path
     const localhostUrl = `http://localhost:3000/calendar?activity=${cleanId}`;
-    const evalLocal = evaluateActivityLink(pageId, localhostUrl, { baseUrl: 'https://anfeta.com' });
+    const evalLocal = evaluateActivityLink(pageId, localhostUrl, { baseUrl: 'https://anfeta-web.vercel.app' });
     assert.equal(evalLocal.status, 'needs_repair');
 
     // 4. Needs repair: inherited link from another page (duplicated template)
-    const inheritedUrl = `https://anfeta.com/calendar?activity=11111111111111111111111111111111`;
-    const evalInherited = evaluateActivityLink(pageId, inheritedUrl, { baseUrl: 'https://anfeta.com' });
+    const inheritedUrl = `https://anfeta-web.vercel.app/calendar?activity=11111111111111111111111111111111`;
+    const evalInherited = evaluateActivityLink(pageId, inheritedUrl, { baseUrl: 'https://anfeta-web.vercel.app' });
     assert.equal(evalInherited.status, 'needs_repair');
     assert.equal(evalInherited.detectedId, '11111111111111111111111111111111');
 
     // 5. Foreign URL: Dropbox, Google Drive, or other portal -> MUST BE PRESERVED
     const foreignUrl = 'https://dropbox.com/scl/fi/my-file-link';
-    const evalForeign = evaluateActivityLink(pageId, foreignUrl, { baseUrl: 'https://anfeta.com' });
+    const evalForeign = evaluateActivityLink(pageId, foreignUrl, { baseUrl: 'https://anfeta-web.vercel.app' });
     assert.equal(evalForeign.status, 'foreign');
     console.log('OK: All link evaluation categories (empty, exact, needs_repair, foreign) verified.');
   }
@@ -178,13 +179,13 @@ async function runTests() {
       const saveRes = await saveActivityLinkToNotion(
         { notionToken: 'test-token', currentUser: 'nneft' },
         pageId,
-        { existingProperties: existingProps, baseUrl: 'https://anfeta.com' }
+        { existingProperties: existingProps, baseUrl: 'https://anfeta-web.vercel.app' }
       );
 
       assert.equal(saveRes.success, true);
       assert.equal(saveRes.status, 'updated');
       assert.equal(saveRes.property, 'Abrir en ANFETA');
-      assert.equal(saveRes.url, `https://anfeta.com/calendar?activity=${cleanId}`);
+      assert.equal(saveRes.url, `https://anfeta-web.vercel.app/calendar?activity=${cleanId}`);
 
       // Verify STRICT isolation: only 'Abrir en ANFETA' is in the PATCH payload!
       assert.ok(interceptedPatch);
@@ -192,16 +193,16 @@ async function runTests() {
       assert.equal(patchedProps.length, 1);
       assert.equal(patchedProps[0], 'Abrir en ANFETA');
       assert.deepEqual(interceptedPatch.properties['Abrir en ANFETA'], {
-        url: `https://anfeta.com/calendar?activity=${cleanId}`
+        url: `https://anfeta-web.vercel.app/calendar?activity=${cleanId}`
       });
 
       // Verify that calling again when already exact sends ZERO patch requests (loop prevention)
       interceptedPatch = null;
-      existingProps['Abrir en ANFETA'].url = `https://anfeta.com/calendar?activity=${cleanId}`;
+      existingProps['Abrir en ANFETA'].url = `https://anfeta-web.vercel.app/calendar?activity=${cleanId}`;
       const secondRes = await saveActivityLinkToNotion(
         { notionToken: 'test-token', currentUser: 'nneft' },
         pageId,
-        { existingProperties: existingProps, baseUrl: 'https://anfeta.com' }
+        { existingProperties: existingProps, baseUrl: 'https://anfeta-web.vercel.app' }
       );
       assert.equal(secondRes.status, 'already_up_to_date');
       assert.equal(interceptedPatch, null, 'Should not send PATCH when already up to date!');
@@ -211,7 +212,7 @@ async function runTests() {
       const foreignRes = await saveActivityLinkToNotion(
         { notionToken: 'test-token', currentUser: 'nneft' },
         pageId,
-        { existingProperties: existingProps, baseUrl: 'https://anfeta.com' }
+        { existingProperties: existingProps, baseUrl: 'https://anfeta-web.vercel.app' }
       );
       assert.equal(foreignRes.status, 'foreign_preserved');
       assert.equal(interceptedPatch, null, 'Should not overwrite foreign URLs!');
@@ -247,7 +248,7 @@ async function runTests() {
         object: 'page',
         properties: {
           'TITULO PRINCIPAL': { type: 'title', title: [{ plain_text: 'Copia de Actividad 1' }] },
-          'Abrir en ANFETA': { type: 'url', url: `https://anfeta.com/calendar?activity=${page1Id}` }
+          'Abrir en ANFETA': { type: 'url', url: `https://anfeta-web.vercel.app/calendar?activity=${page1Id}` }
         }
       },
       // Page 3: Already exact -> skipped
@@ -256,7 +257,7 @@ async function runTests() {
         object: 'page',
         properties: {
           'TITULO PRINCIPAL': { type: 'title', title: [{ plain_text: 'Actividad 3' }] },
-          'Abrir en ANFETA': { type: 'url', url: `https://anfeta.com/calendar?activity=${page3Id}` }
+          'Abrir en ANFETA': { type: 'url', url: `https://anfeta-web.vercel.app/calendar?activity=${page3Id}` }
         }
       }
     ];
@@ -281,7 +282,7 @@ async function runTests() {
       // 1. Dry run preview
       const preview = await backfillActivityLinks(
         { notionToken: 'test-token', currentUser: 'nneft' },
-        { limit: 10, dryRun: true, baseUrl: 'https://anfeta.com' }
+        { limit: 10, dryRun: true, baseUrl: 'https://anfeta-web.vercel.app' }
       );
 
       assert.equal(preview.processed, 3);
@@ -291,7 +292,7 @@ async function runTests() {
       assert.equal(preview.updatedPages.length, 2);
       assert.equal(preview.updatedPages[0].action, 'filled');
       assert.equal(preview.updatedPages[1].action, 'repaired');
-      assert.equal(preview.updatedPages[1].newUrl, `https://anfeta.com/calendar?activity=${page2Id}`);
+      assert.equal(preview.updatedPages[1].newUrl, `https://anfeta-web.vercel.app/calendar?activity=${page2Id}`);
       console.log('OK: Paged backfill correctly previews filled and repaired duplicated pages.');
     } finally {
       global.fetch = originalFetch;

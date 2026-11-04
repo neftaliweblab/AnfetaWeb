@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import {CALENDAR_WIDTH_MIN,CALENDAR_WIDTH_MAX} from '@/lib/calendarDisplayOptions';
 import { Users, Check, X } from "lucide-react";
 import { getPersonColor } from "@/services/identityNormalizer";
 
@@ -48,7 +49,7 @@ export function CalendarPeoplePickerModal({
           <label className="flex justify-between" htmlFor="calendar-column-width"><span>Ancho de todas las columnas</span><span>{columnWidth}px</span></label>
           <div className="flex items-center gap-3 mt-2">
             <button type="button" aria-label="Reducir ancho de columnas" disabled={columnWidth <= 180} onClick={() => onChangeWidth(Math.max(180, columnWidth - 20))} className="px-2 py-1 rounded border border-slate-600 disabled:opacity-30">−</button>
-            <input id="calendar-column-width" type="range" min="180" max="600" step="20" value={columnWidth} onChange={e => onChangeWidth(Number(e.target.value))} className="min-w-0 flex-1 accent-cyan-500" />
+            <input id="calendar-column-width" type="range" min={CALENDAR_WIDTH_MIN} max={CALENDAR_WIDTH_MAX} step="20" value={columnWidth} onChange={e => onChangeWidth(Number(e.target.value))} className="min-w-0 flex-1 accent-cyan-500" />
             <button type="button" aria-label="Aumentar ancho de columnas" disabled={columnWidth >= 600} onClick={() => onChangeWidth(Math.min(600, columnWidth + 20))} className="px-2 py-1 rounded border border-slate-600 disabled:opacity-30">+</button>
           </div>
           <p className="mt-2 text-[11px] text-slate-400">Usa las flechas para ordenar. Tamaño, orden y personas visibles se guardan automáticamente en este navegador.</p>

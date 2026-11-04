@@ -31,6 +31,7 @@ export interface SearchResultRow {
   monthChip?: string;
   orderChip?: string;
   domainChip?: string;
+  domain?: string;
   assignedPerson?: string;
   isChecked?: boolean;
   isFolder?: boolean;

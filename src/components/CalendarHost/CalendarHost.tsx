@@ -1,4 +1,6 @@
 "use client";
+import {CalendarDisplaySettings} from './CalendarDisplaySettings';
+import {calendarGridInterval,calendarDisplayHeight,calendarDisplayWidth,calendarLabelDivisions} from '@/lib/calendarDisplayOptions';
 import {isTemporaryCalendarResponse} from '@/services/calendarEntryPolicy';
 import {DailyWorkspace} from '../DailyWorkspace';
 import {rememberReviewFailure} from '@/lib/reviewOutcome';
@@ -15,7 +17,7 @@ import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
-import {CalendarHourGrid,gridDivisions} from './CalendarHourGrid';
+import {CalendarHourGrid} from './CalendarHourGrid';
 import {calendarThemes,parseCalendarTheme} from '@/lib/calendarTheme';
 import {offlineAwareFetch} from '@/services/offlineQueue';
 import {CalendarSummaryModal} from './CalendarSummaryModal';
@@ -205,6 +207,8 @@ export function CalendarHost({
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
   const [gridInterval,setGridInterval]=useState(30);
+  const [expandedCalendar,setExpandedCalendar]=useState(false);
+  useEffect(()=>{if(!expandedCalendar)return;const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!event.defaultPrevented&&!document.querySelector('dialog[open],[role="dialog"]'))setExpandedCalendar(false);};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);},[expandedCalendar]);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -240,27 +244,29 @@ export function CalendarHost({
   const [peopleOrder, setPeopleOrder] = useState<string[]>(DEFAULT_COLLABORATORS);
   const [columnWidth, setColumnWidth] = useState(260);
   const [preferencesLoaded, setPreferencesLoaded] = useState('');
+  const [hasWindowLayout,setHasWindowLayout]=useState(false);
   const preferencesKey = 'anfeta-calendar-layout-v1:' + normalizePerson(currentUser);
   useEffect(() => {
     let visible = DEFAULT_COLLABORATORS, order = DEFAULT_COLLABORATORS, width = 260, height = 72;
     try {
-      const saved = JSON.parse(localStorage.getItem(preferencesKey) || 'null');
+      const saved = JSON.parse(sessionStorage.getItem(preferencesKey+':window') || localStorage.getItem(preferencesKey) || 'null');
       if (saved) {
         const valid = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((p): p is string => typeof p === 'string' && DEFAULT_COLLABORATORS.includes(p)))] : DEFAULT_COLLABORATORS;
         order = valid(saved.order);
         order = [...order, ...DEFAULT_COLLABORATORS.filter(p => !order.includes(p))];
         visible = valid(saved.visible);
-        if (Number.isFinite(saved.width)) width = Math.min(600, Math.max(180, saved.width));
-        if (Number.isFinite(saved.height)) height = Math.min(192, Math.max(48, saved.height));
+        if (Number.isFinite(saved.width)) width = calendarDisplayWidth(saved.width);
+        if (Number.isFinite(saved.height)) height = calendarDisplayHeight(saved.height);
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(localStorage.getItem(preferencesKey)||'null');setGridInterval([15,20,30].includes(saved?.gridInterval)?saved.gridInterval:30);setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
+    try {const saved=JSON.parse(sessionStorage.getItem(preferencesKey+':window')||localStorage.getItem(preferencesKey)||'null');setGridInterval(calendarGridInterval(saved?.gridInterval));setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
+    try{setHasWindowLayout(!!sessionStorage.getItem(preferencesKey+':window'));}catch{setHasWindowLayout(false);}
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { localStorage.setItem(preferencesKey, JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders})); }
+    try { const snapshot=JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders});sessionStorage.setItem(preferencesKey+':window',snapshot);localStorage.setItem(preferencesKey,snapshot); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
   }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, gridInterval, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,financeSlots,showReminders]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
@@ -414,19 +420,10 @@ export function CalendarHost({
   },[currentDate,currentUser,filterCobros,filterPagos,active]);
 
   const handleChangeZoom = (delta: number) => {
-    setPixelsPerHour((prev) => Math.min(192, Math.max(48, prev + delta)));
+    setPixelsPerHour((prev) => calendarDisplayHeight(prev + delta));
   };
 
-  const handleGridIntervalChange = (newInterval: number) => {
-    setGridInterval(newInterval);
-    if (newInterval === 15) {
-      setPixelsPerHour(prev => Math.max(prev, 144));
-    } else if (newInterval === 20) {
-      setPixelsPerHour(prev => (prev === 144 ? 108 : Math.max(prev, 108)));
-    } else if (newInterval === 30) {
-      setPixelsPerHour(prev => (prev === 144 || prev === 108 ? 72 : prev));
-    }
-  };
+  const handleGridIntervalChange = (newInterval:number) => setGridInterval(calendarGridInterval(newInterval));
 
   const handleUpdateActivity = React.useCallback(async (pageId: string, updates: Partial<NotionCalendarActivity> & { reviewer?: string; handoff?:boolean; reviewAction?:'return'|'reassign';note?:string;leaveVisualCopy?: boolean;titleDescription?:string;expectedTitle?:string;expectedStart?:string;expectedEnd?:string;allowOverlap?:boolean }) => {
     const original = activitiesListRef.current.find((a: NotionCalendarActivity) => a.pageId === pageId);
@@ -644,11 +641,20 @@ export function CalendarHost({
     : null;
 
   const displayedPeople=peopleOrder.filter(person=>visiblePeople.includes(person));
+  const currentLayout={order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders};
+  const applyCalendarLayout=(raw:any)=>{
+    const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;
+    setHasWindowLayout(true);
+    setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);
+    setColumnWidth(saved.width);setPixelsPerHour(saved.height);setGridInterval(saved.gridInterval);
+    setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);
+    setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);
+  };
   const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} loading={financeLoading} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} order={financeSlot(financeSlots[kind],displayedPeople.length)*3+(kind==='cobro'?0:1)} slot={financeSlot(financeSlots[kind],displayedPeople.length)} people={displayedPeople} onPosition={slot=>setFinanceSlots(prev=>({...prev,[kind]:slot}))} onWidth={setColumnWidth} onRefresh={()=>window.dispatchEvent(new Event('anfeta_finance_refresh'))} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
 
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#080B0F] relative" style={{'--anfeta-grid-step':`${pixelsPerHour*gridInterval/60}px`,'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
+    <div className={"flex flex-col overflow-hidden bg-[#080B0F] "+(expandedCalendar?"fixed inset-0 z-[90]":"relative h-full flex-1")} style={{'--anfeta-grid-step':`${pixelsPerHour*gridInterval/60}px`,'--anfeta-calendar-bg':gridTheme.background,'--anfeta-hour-line':gridTheme.lines,'--anfeta-half-line':gridTheme.lines+'88','--anfeta-quarter-line':gridTheme.lines+'33','--anfeta-hour-text':gridTheme.hours} as React.CSSProperties}>
       <DailyWorkspace currentUser={currentUser}/>
       <UpdateNotice message={refreshWarning} owner={currentUser}/>
       {/* Notificación de Error / Alerta Visible y Elegante */}
@@ -683,7 +689,7 @@ export function CalendarHost({
           }}
         />
       )}
-      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={{order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders}} onRestore={raw=>{const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);setColumnWidth(saved.width);setPixelsPerHour(saved.height);setGridInterval(saved.gridInterval);setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);}} currentUser={currentUser} onTriggerAutomation={onRunAutomation} onOpenAnnouncements={onOpenAnnouncements} cacheMeta={cacheMeta} />}
+      {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={currentLayout} onRestore={applyCalendarLayout} autoRestore={!hasWindowLayout} currentUser={currentUser} onTriggerAutomation={onRunAutomation} onOpenAnnouncements={onOpenAnnouncements} cacheMeta={cacheMeta} />}
       <CalendarTopControls
         phaseFilter={phaseFilter}
         onPhaseFilter={setPhaseFilter}
@@ -712,6 +718,7 @@ export function CalendarHost({
         totalActivitiesCount={countedCalendarActivities(filteredActivities).length}
         pixelsPerHour={pixelsPerHour}
         gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
+        displayControls={<CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/>}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
@@ -774,7 +781,7 @@ export function CalendarHost({
                       className="absolute right-0 w-2.5 h-[2px] bg-[#496278] pointer-events-none z-10"
                     />
                     {/* Divisiones visuales, independientes de los horarios guardados */}
-                    {idx<hoursList.length-1&&gridDivisions(gridInterval).map(minute=><div key={minute} style={{top:`${idx*pixelsPerHour+minute*pixelsPerHour/60}px`}} className="absolute right-0 flex -translate-y-1/2 items-center text-right pr-2 text-[9px] font-mono text-cyan-300/80"><span>:{String(minute).padStart(2,'0')}</span><span className="ml-1 h-px w-2 bg-cyan-800"/></div>)}
+                    {idx<hoursList.length-1&&calendarLabelDivisions(gridInterval,pixelsPerHour).map(minute=><div key={minute} style={{top:`${idx*pixelsPerHour+minute*pixelsPerHour/60}px`}} className="absolute right-0 flex -translate-y-1/2 items-center text-right pr-2 text-[9px] font-mono text-cyan-300/80"><span>:{String(minute).padStart(2,'0')}</span><span className="ml-1 h-px w-2 bg-cyan-800"/></div>)}
                   </div>
                 );
               })}

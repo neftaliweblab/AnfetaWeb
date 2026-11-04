@@ -1,4 +1,5 @@
 "use client";
+import {directActivitySearchRow} from '@/lib/activityDeepLink';
 const cleanPageId = (id: unknown) => String(id || '').replace(/-/g, '').toLowerCase();
 import type { NotionCalendarActivity } from '@/types/anfeta';
 import { UnifiedActivityModal } from "@/components/CalendarHost/UnifiedActivityModal";
@@ -232,10 +233,7 @@ export function ResultsViewHost({
     setActiveTabId(tabId);setQuery('');setSettledQuery('');onSearchChange?.('');
     setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');
     setFilterFavorites(false);setClassification('all');setFilterToday(false);setStatusFilter('all');
-    const directRow={id:initialDirectActivity.pageId,externalId:initialDirectActivity.pageId,name:initialDirectActivity.title,
-      source:'Notion',sourceName:'Revisiones',type:'PAGE',folder:'',extension:'',sizeBytes:0,modifiedLocalDate:'',path:initialDirectActivity.pageUrl,target:initialDirectActivity.pageUrl,
-      scheduledDate:initialDirectActivity.start,scheduledEnd:initialDirectActivity.end,updateStatus:initialDirectActivity.status,
-      assignedPerson:initialDirectActivity.person,domain:initialDirectActivity.domain,isFolder:false} as SearchResultRow;
+    const directRow=directActivitySearchRow(initialDirectActivity);
     setItems(previous=>[directRow,...previous.filter(item=>cleanPageId(item.externalId||item.id)!==cleanId)]);
     setSelectedItem(directRow);setSelectedIds(new Set([directRow.id]));
     setFloatingModalActivity(initialDirectActivity);setIsDetailsOpen(false);setCurrentPage(1);
@@ -1380,7 +1378,8 @@ export function ResultsViewHost({
     const isContentScope = selectedScope === "Contenido";
     let baseList = filterDeletedPages(items, currentUser).filter(item => !isLegacyDropboxDiskItem(item));
     if(initialDirectActivity&&activeTabId==='activity_'+cleanPageId(initialDirectActivity.pageId)&&!deferredQuery.trim()) {
-      return baseList.filter(item=>cleanPageId(item.externalId||item.id)===cleanPageId(initialDirectActivity.pageId));
+      const indexed=baseList.find(item=>cleanPageId(item.externalId||item.id)===cleanPageId(initialDirectActivity.pageId));
+      return filterDeletedPages([directActivitySearchRow(initialDirectActivity,indexed)],currentUser);
     }
 
     if (selectedScope && selectedScope !== "Todo") {

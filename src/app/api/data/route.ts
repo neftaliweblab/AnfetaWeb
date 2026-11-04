@@ -561,6 +561,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const live = extractNotionPageData(page);
         const activity = normalizeActivity({
           pageId: page.id,
+          serverModified:page.last_edited_time,
           pageUrl: live.url,
           title: live.title,
           person: live.person,

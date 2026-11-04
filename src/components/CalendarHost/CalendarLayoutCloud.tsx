@@ -5,6 +5,7 @@ import { loadAccountPreferences, saveAccountPreferences } from '@/lib/accountPre
 import { TopBarUtilities } from '../TopBarUtilities';
 
 export interface CalendarLayoutCloudProps {
+  autoRestore?:boolean;
   value: any;
   onRestore: (value: any) => void;
   currentUser?: string;
@@ -15,12 +16,14 @@ export interface CalendarLayoutCloudProps {
 
 export function CalendarLayoutCloud({
   value,
+  autoRestore=true,
   onRestore,
   currentUser,
   onTriggerAutomation,
   onOpenAnnouncements,
   cacheMeta,
 }: CalendarLayoutCloudProps) {
+  const allowAutomaticRestore=useRef(autoRestore);allowAutomaticRestore.current=autoRestore;
   const latest = useRef(value);
   const restore = useRef(onRestore);
   latest.current = value;
@@ -37,7 +40,7 @@ export function CalendarLayoutCloud({
       .then((state) => {
         if (!alive.current) return;
         const saved = state.values?.calendarLayouts?.primary;
-        if (saved && JSON.stringify(latest.current) === before) {
+        if (saved && allowAutomaticRestore.current && JSON.stringify(latest.current) === before) {
           restore.current(saved);
           setMessage('Configuración recuperada de tu cuenta.');
         }

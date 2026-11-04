@@ -47,32 +47,6 @@ export default function StandaloneCalendarPage() {
   const [searchFilterQuery, setSearchFilterQuery] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [syncStatus, setSyncStatus] = useState<string>("Sincronizado con Buscador Principal");
-  const [directActivity, setDirectActivity] = useState<NotionCalendarActivity | null>(null);
-  const [directActivityError, setDirectActivityError] = useState("");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const p = new URLSearchParams(window.location.search);
-    const targetId = p.get("activity") || p.get("pageId");
-    if (!targetId) return;
-
-    fetch("/api/data?type=calendar-activity&pageId=" + encodeURIComponent(targetId))
-      .then(async (r) => {
-        const data = await r.json();
-        if (data.success && data.activity) {
-          if (data.date) setCurrentDate(data.date);
-          setCalendarActivities((prev) => {
-            if (prev.some((a) => a.pageId === data.activity.pageId)) return prev;
-            return [data.activity, ...prev];
-          });
-          setDirectActivity(data.activity);
-        } else if (data.error) {
-          setDirectActivityError(data.error);
-        }
-      })
-      .catch((e) => setDirectActivityError(e instanceof Error ? e.message : "Error al abrir la actividad."));
-  }, []);
-
   const loadRevision=useRef(0);
   // Cargar actividades de la fecha
   const loadCalendarData = useCallback(async (dateToLoad: string) => {
@@ -215,9 +189,8 @@ export default function StandaloneCalendarPage() {
       {/* Canvas del Calendario */}
       <main className="flex-1 relative overflow-hidden">
         <CalendarRecordingWorkspace currentUser={currentUser}/>
-        {directActivityError && <div role="alert" className="p-3 bg-red-950 border-b border-red-800 text-red-200 text-xs flex justify-between items-center"><span>{directActivityError}</span><button onClick={()=>setDirectActivityError("")} className="font-bold underline ml-2">Cerrar</button></div>}
         <CalendarHost
-          initialSelectedActivity={directActivity}
+          initialSelectedActivity={null}
                 loadError={calendarLoadError} initialCacheMeta={calendarCacheMeta}
           currentUser={currentUser}
           activities={calendarActivities}

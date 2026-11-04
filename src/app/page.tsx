@@ -1,4 +1,5 @@
 "use client";
+import {activityLinkPageId} from '@/lib/activityDeepLink';
 import {NotesPanel} from '@/components/ResultsViewHost/NotesPanel';
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
@@ -170,28 +171,33 @@ export default function AnfetaApp() {
   });
   const [directSelectedActivity, setDirectSelectedActivity] = useState<NotionCalendarActivity | null>(null);
   const [directActivityError, setDirectActivityError] = useState("");
+  const [directActivityLoading,setDirectActivityLoading]=useState(false);
+  const [directActivityRetry,setDirectActivityRetry]=useState(0);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
     const params = new URLSearchParams(window.location.search);
-    const targetId = (params.get('activity') || params.get('pageId') || '').replace(/-/g,'').toLowerCase();
-    if (!targetId) return;
-    if (!/^[a-f0-9]{32}$/.test(targetId)) {setDirectActivityError('El enlace de actividad no es válido.');return;}
+    const requested=params.get('activity')||params.get('pageId');
+    if(!requested)return;
+    const targetId=activityLinkPageId(requested);
+    if(!targetId) {setDirectActivityError('El enlace de actividad no es válido.');return;}
     const controller=new AbortController();
-    setDirectActivityError('');
+    setDirectActivityError('');setDirectActivityLoading(true);setActiveView('results');
     void fetch('/api/data?type=calendar-activity&pageId='+targetId,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(40000)])})
       .then(async response=>{
         const data=await response.json();
         if(controller.signal.aborted)return;
         if(!response.ok||!data.success||!data.activity)throw Error(data.error||'No se pudo abrir la actividad.');
+        if(activityLinkPageId(data.activity.pageId)!==targetId)throw Error('La página recibida no coincide con el enlace. No se abrió otra actividad.');
         if(data.date)setCurrentDate(data.date);
         setActiveView('results');
         setCalendarActivities(previous=>previous.some(item=>item.pageId===data.activity.pageId)?previous:[data.activity,...previous]);
         setDirectSelectedActivity(data.activity);
       })
-      .catch(error=>{if(!controller.signal.aborted)setDirectActivityError(error instanceof Error?error.message:'No se pudo abrir la actividad.');});
+      .catch(error=>{if(!controller.signal.aborted)setDirectActivityError(error instanceof Error?error.message:'No se pudo abrir la actividad.');})
+      .finally(()=>{if(!controller.signal.aborted)setDirectActivityLoading(false);});
     return()=>controller.abort();
-  }, [isAuthenticated,currentUser]);
+  }, [isAuthenticated,currentUser,directActivityRetry]);
   const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
   useEffect(()=>{
     const update=(event:Event)=>{
@@ -650,6 +656,8 @@ export default function AnfetaApp() {
         onTriggerAutomation={() => setShowAutomation(true)}
       />
 
+      {directActivityLoading&&<div role="status" className="border-b border-cyan-900 bg-cyan-950/50 px-4 py-2 text-xs text-cyan-200">Abriendo la página enlazada en el buscador…</div>}
+      {directActivityError&&<div role="alert" className="flex flex-wrap items-center gap-3 border-b border-amber-800 bg-amber-950/40 px-4 py-2 text-xs text-amber-200"><span>{directActivityError}</span><button type="button" onClick={()=>setDirectActivityRetry(previous=>previous+1)} className="rounded border border-amber-700 px-2 py-1">Reintentar enlace</button><button type="button" aria-label="Cerrar aviso del enlace" onClick={()=>setDirectActivityError('')} className="rounded px-2 py-1">Cerrar</button></div>}
       {/* Multi-Host Container (0ms latency, persistent in memory) */}
       <main className="flex-1 relative overflow-hidden">
         {/* Layer 1: ResultsViewHost (Search & Files) */}
