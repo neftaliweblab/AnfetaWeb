@@ -531,6 +531,12 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   children.push(...await notionFileBlocks(settings,payload.files||[]));
   if(children.length>100)throw new Error('El contenido y adjuntos exceden 100 bloques. Divide la creación.');
   const page = await notionRequest(settings, 'pages', 'POST', { parent: sourceId ? {data_source_id:sourceId} : { database_id: databaseId }, properties, children });
+  try {
+    const { saveActivityLinkToNotion } = await import('./activityLinkService');
+    await saveActivityLinkToNotion(settings, page.id);
+  } catch (linkError) {
+    console.warn('No se pudo guardar el enlace inicial "Abrir en ANFETA":', linkError);
+  }
   return { page, activity: normalizeActivity({ serverModified:page.last_edited_time||page.created_time,pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
 }
 

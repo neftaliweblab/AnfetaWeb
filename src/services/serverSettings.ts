@@ -6,9 +6,43 @@ const WIN_SETTINGS_DIR = path.join(process.env.LOCALAPPDATA || 'C:/Users/nanoc/A
 const WIN_SETTINGS_FILE = path.join(WIN_SETTINGS_DIR, 'settings.json');
 let memorySettings: any = null;
 
+function cleanToken(token: string | undefined): string {
+  if (!token) return '';
+  return token.trim().replace(/^[:'"]+|[:'"]+$/g, '');
+}
+
+export function ensureEnvLoaded() {
+  if (!process.env.NOTION_TOKEN) {
+    try {
+      const { loadEnvConfig } = require('@next/env');
+      loadEnvConfig(process.cwd());
+    } catch {
+      try {
+        const envLocalPath = path.join(process.cwd(), '.env.local');
+        if (fs.existsSync(envLocalPath)) {
+          const content = fs.readFileSync(envLocalPath, 'utf-8');
+          for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eq = trimmed.indexOf('=');
+            if (eq > 0) {
+              const key = trimmed.slice(0, eq).trim();
+              const val = cleanToken(trimmed.slice(eq + 1));
+              if (!process.env[key]) {
+                process.env[key] = val;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
 export function getSettings() {
+  ensureEnvLoaded();
   let settings = {
-    notionToken: process.env.NOTION_TOKEN || "",
+    notionToken: cleanToken(process.env.NOTION_TOKEN) || "",
     notionDatabaseId: process.env.NOTION_DATABASE_ID || "",
     dropboxToken: process.env.DROPBOX_ACCESS_TOKEN || "",
     dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
@@ -30,7 +64,10 @@ export function getSettings() {
   if (memorySettings) {
     settings = { ...settings, ...memorySettings };
   }
-  if (process.env.NOTION_TOKEN) settings.notionToken = process.env.NOTION_TOKEN;
+  // Environment variable NOTION_TOKEN (e.g. from .env.local or Vercel) strictly overrides old settings.json values
+  if (process.env.NOTION_TOKEN?.trim()) {
+    settings.notionToken = cleanToken(process.env.NOTION_TOKEN);
+  }
   if (process.env.NOTION_DATABASE_ID) settings.notionDatabaseId = process.env.NOTION_DATABASE_ID;
   if (process.env.DROPBOX_ACCESS_TOKEN) settings.dropboxToken = process.env.DROPBOX_ACCESS_TOKEN;
   return settings;

@@ -699,6 +699,7 @@ export default function AnfetaApp() {
         >
           {showAutomation && <CalendarAutomationModal currentUser={currentUser} date={currentDate} onClose={()=>setShowAutomation(false)} onComplete={report=>{setAutomationReport(report);try{localStorage.setItem('anfeta-calendar-automation-report',JSON.stringify(report));}catch{}window.dispatchEvent(new Event('anfeta_data_refreshed'));}} />}
           <CalendarHost active={activeView === "calendar"}
+            initialSelectedActivity={directSelectedActivity}
                 loadError={calendarLoadError} initialCacheMeta={calendarCacheMeta}
             currentUser={currentUser}
             activities={calendarActivities}
