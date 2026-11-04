@@ -157,11 +157,28 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
   if (completed) {
     const orig = previousFlow?.OriginalPerson && normalizePerson(previousFlow.OriginalPerson) !== 'Sin asignar' ? normalizePerson(previousFlow.OriginalPerson) : '';
-    const actPerson = activity.person && normalizePerson(activity.person) !== 'Sin asignar' ? normalizePerson(activity.person) : '';
-    const inferred = inferActivityPerson(title, updates.status || currentStatusName);
-    const resolvedOwner = orig || (previousFlow?.OriginalPerson === 'Sin asignar' ? '' : (actPerson || inferred));
+    const actPerson = activity.person && normalizePerson(activity.person) !== 'Sin asignar' && normalizePerson(activity.person) !== normalizePerson(previousFlow?.ReviewAssignee) ? normalizePerson(activity.person) : '';
+    const activeOwnerTag = scanActivityTags(title).find(tag => tag.role === 'active');
+    const activeOwner = activeOwnerTag?.person ? normalizePerson(activeOwnerTag.person) : '';
+
+    let resolvedOwner = '';
+    if (orig) {
+      resolvedOwner = orig;
+    } else if (activeOwner && activeOwner !== 'Sin asignar') {
+      // Si el título tiene un tag activo explícito (ej. nne11, eed11, ed11), ese integrante es el autor real
+      resolvedOwner = activeOwner;
+    } else if (previousFlow?.OriginalPerson === 'Sin asignar') {
+      // Actividad sin asignar explícita sin tag activo: conservar sin asignar
+      resolvedOwner = 'Sin asignar';
+    } else {
+      const inferred = inferActivityPerson(title, updates.status || currentStatusName);
+      resolvedOwner = (inferred && normalizePerson(inferred) !== 'Sin asignar' ? normalizePerson(inferred) : '') || actPerson;
+    }
+
     if (resolvedOwner && normalizePerson(resolvedOwner) !== 'Sin asignar') {
       updates = { ...updates, person: resolvedOwner };
+    } else if (resolvedOwner === 'Sin asignar' || previousFlow?.OriginalPerson === 'Sin asignar') {
+      updates = { ...updates, person: 'Sin asignar' };
     } else if (previousFlow?.OriginalPerson) {
       updates = { ...updates, person: previousFlow.OriginalPerson };
     }
@@ -188,13 +205,15 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if (updates.person || updates.reviewer) {
     const target = updates.reviewer || updates.person;
     const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'rtuzR' || updates.status === 'EN REVISIÓN' || (!!updates.status && workflowState(updates.status) === 'review');
+    const isCompleting = completed || (!!updates.status && workflowState(updates.status) === 'completed');
     const restoringAssignedReview=(completed||returned)&&previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee);
-    if (!handoff && !restoringAssignedReview && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
+    if (!handoff && !restoringAssignedReview && !isCompleting && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
     }
     const person = normalizePerson(target);
     if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===person))throw Error('Selecciona un integrante activo del equipo como revisor.');
-    const clearing = (returned && person === 'Sin asignar') || (completed && previousFlow?.OriginalPerson === 'Sin asignar' && !previousFlow?.OriginalAssigneeUserId);
+    const hasActiveTagOwner = Boolean(scanActivityTags(title).some(tag => tag.role === 'active'));
+    const clearing = (returned && person === 'Sin asignar') || (completed && person === 'Sin asignar' && !hasActiveTagOwner);
     const restoring = (completed || returned) && previousFlow?.OriginalAssigneeUserId;
     if (!PERSON_ALIASES[person] && !clearing && !restoring) throw new Error('Selecciona un responsable válido del equipo.');
     const personField = assignedField(page);
@@ -216,8 +235,18 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
             cursor = users.has_more ? users.next_cursor : undefined;
           } while (!userId && cursor);
         }
-        if (!userId) throw new Error('No se pudo resolver la cuenta real de Notion para ' + person + '. Configura NOTION_PERSON_IDS.');
-        properties[name] = { people: [{ id: userId }] };
+        if (!userId && Array.isArray(prop.people) && prop.people.length > 0 && prop.people[0]?.id && normalizePerson(prop.people[0].name) === person) {
+          userId = prop.people[0].id;
+        }
+        if (!userId) {
+          if (completed && Array.isArray(prop.people) && prop.people.length > 0 && normalizePerson(prop.people[0]?.name) === person) {
+            delete properties[name];
+          } else {
+            throw new Error('No se pudo resolver la cuenta real de Notion para ' + person + '. Configura NOTION_PERSON_IDS.');
+          }
+        } else {
+          properties[name] = { people: [{ id: userId }] };
+        }
       } else properties[name] = prop.type === 'select' ? { select: clearing ? null : { name:person } } : {rich_text:clearing ? [] : [{text:{content:person}}]};
     }
     const titleField = fields.find(([,p]) => p.type === 'title');
@@ -299,7 +328,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const field=fields.find(([,p])=>p.type==='title');
     if(field){
       const composed=(properties[field[0]]?.title||[]).map((t:any)=>t.text?.content||t.plain_text||'').join('')||title;
-      properties[field[0]]={title:[{text:{content:completedActivityTags(composed,previousFlow?.ReviewAssignee,previousFlow?.OriginalPerson||activity.person)}}]};
+      const effectiveOwner = updates.person || previousFlow?.OriginalPerson || activity.person;
+      properties[field[0]]={title:[{text:{content:completedActivityTags(composed,previousFlow?.ReviewAssignee,effectiveOwner)}}]};
     }
   }
   if (!Object.keys(properties).length) throw new Error('No hay cambios válidos para guardar.');

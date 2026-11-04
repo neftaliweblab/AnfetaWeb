@@ -7,6 +7,7 @@ import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
 import { normalizePerson, PERSON_ALIASES } from './identityNormalizer';
+import { NOTION_BASE_DATABASE_IDS } from '@/lib/notionBaseCatalog';
 
 export type CalendarSettings = { notionToken: string; currentUser: string; notionDataSourceId?: string; notionSignal?: AbortSignal };
 export const REVIEW_PREFIX = '[ANFETA_REVIEW_FLOW_V1]';
@@ -77,12 +78,21 @@ export async function resolveTeamPersonId(settings: CalendarSettings, person: st
   if (!ids?.size) {
     // Workspace /users excludes guests. Resolve the actual People ids used by Revisiones.
     const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
+    const databaseId = NOTION_BASE_DATABASE_IDS[source] || source;
+    const cleanDbId = databaseId.replace(/-/g, '');
     let cursor: string | undefined;
     do {
-      const data = await notionRequest(settings,'data_sources/' + source + '/query','POST',{page_size:100,...(cursor ? {start_cursor:cursor} : {})});
-      rememberPeople(settings, data.results || []);
-      if (data.has_more && (!data.next_cursor || data.next_cursor === cursor)) throw new Error('No se pudo completar el directorio de asignación.');
-      cursor = data.has_more ? data.next_cursor : undefined;
+      try {
+        const data = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', {
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {})
+        });
+        rememberPeople(settings, data.results || []);
+        if (data.has_more && (!data.next_cursor || data.next_cursor === cursor)) break;
+        cursor = data.has_more ? data.next_cursor : undefined;
+      } catch {
+        break;
+      }
     } while (cursor);
     ids = teamIds.get(settings.notionToken)?.get(person);
   }
