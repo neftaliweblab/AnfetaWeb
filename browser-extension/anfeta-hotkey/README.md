@@ -31,3 +31,11 @@ Referencia: [Commands API y alcance global](https://developer.chrome.com/docs/ex
 Descarga de nuevo la versión 1.1.1 y extrae su contenido en una carpeta permanente. El paquete usa ZIP estándar, sin una entrada raíz ./ ni herramientas tar del sistema. Selecciona la carpeta extraída que contiene manifest.json. Si ya está instalada, reemplaza los archivos en su carpeta y pulsa Recargar en Extensiones.
 
 Chrome informa la combinación registrada, pero no devuelve el alcance Global en commands.getAll(). Compruébalo en Atajos de extensiones. Ctrl+Shift+8 funciona desde otras aplicaciones solo con alcance Global y navegador ejecutándose; los atajos de búsquedas internas no reemplazan este comando.
+
+## v1.1.2: carpeta permanente y alternativa nativa
+
+Extrae el ZIP y ejecuta `Preparar-carpeta.ps1` desde PowerShell si la política de tu equipo lo permite. No requiere administrador, no cambia políticas ni instala la extensión: copia los seis archivos de ejecución/documentación a `%LOCALAPPDATA%/ANFETA/Extension`. Selecciona esa carpeta en Cargar descomprimida; para actualizar, vuelve a copiar y pulsa Recargar. No borres la carpeta permanente. Si ya tienes otra instalación, revisa sus atajos antes de quitarla.
+
+Una desaparición no puede diagnosticarse solo desde la web. Comprueba carpeta, perfil, habilitación y políticas del navegador. El reposo del service worker es normal y no elimina la extensión. No hay código de autodesinstalación.
+
+Sin extensión: instala la PWA desde el navegador y ancla ANFETA a la barra. Windows + número abre/cambia a la aplicación de esa posición. Windows + flecha abajo minimiza la ventana activa (desde maximizada puede requerir dos pulsaciones). No es un atajo global personalizado de la web.

@@ -48,16 +48,16 @@
 
   <div class="box">
     <strong>💬 Sincronizador de Grupos de WhatsApp:</strong>
-    <p class="hint">Al tener abierto <strong>web.whatsapp.com</strong> en este navegador, aparecerá un botón flotante: <code style="color:#38bdf8;">⚡ Sincronizar con ANFETA</code>. Al pulsarlo, enviará los nombres de tus grupos al módulo de búsqueda de ANFETA sin usar servidores ni arriesgar tu cuenta.</p>
+    <p class="hint">Al tener abierto <strong>web.whatsapp.com</strong> en este navegador, aparecerá un botón flotante: <code style="color:#38bdf8;">⚡ Sincronizar con ANFETA</code>. Al pulsarlo, enviará los nombres de tus grupos al módulo de búsqueda de ANFETA mediante la API de ANFETA. Este acceso no es una integración oficial de WhatsApp.</p>
   </div>
 
-  <h2>Instrucciones y funcionamiento</h2>
+  <h2>Si desaparece o no responde</h2><div class="box"><p>Extrae el ZIP y ejecuta <strong>Preparar-carpeta.ps1</strong>. Copia los archivos a <code>%LOCALAPPDATA%\ANFETA\Extension</code>. Luego carga esa carpeta desde Extensiones. No la borres ni la muevas. Para actualizar, repite la copia y pulsa Recargar.</p><p>Si la extensión está listada, revisa que esté habilitada, recárgala y verifica combinación, alcance Global y perfil. Un service worker inactivo es normal; no significa que se haya desinstalado. Si no está listada, revisa si cambiaste de perfil o si tu equipo aplica políticas.</p><p>Sin extensión: instala ANFETA como app, ánclala a la barra y usa Win + su número para abrirla o cambiar a ella. Win + flecha abajo minimiza la ventana activa; maximizada puede requerir dos pulsaciones.</p></div><h2>Instrucciones y funcionamiento</h2>
   <ol>
     <li>Usa el mismo navegador y perfil en el que iniciaste sesión en ANFETA.</li>
     <li>En la configuración de atajos del navegador, comprueba que la combinación tenga alcance <strong>Global</strong> (no solo "En Chrome").</li>
     <li><strong>Minimizar / Restaurar:</strong> Si ANFETA está en una ventana dedicada y activa al frente, pulsar el atajo la minimiza. Volver a pulsarlo la restaura y enfoca.</li>
     <li><strong>Seguridad de pestañas:</strong> Si ANFETA está en una pestaña normal compartida con otras webs, el atajo la enfoca directamente sin minimizar las demás pestañas.</li>
-    <li>Esta extensión no lee contraseñas, tokens ni notas privadas. Solo gestiona la ventana de la aplicación.</li>
+    <li>Esta extensión no lee contraseñas, tokens ni notas privadas. Gestiona la ventana y, al solicitarlo, envía el directorio de grupos de WhatsApp a ANFETA.</li>
   </ol>
 
   <script src="options.js"></script>
