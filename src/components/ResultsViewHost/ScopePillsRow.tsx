@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Star, Globe, Folder, FileText, Settings, Database, Search, Layers } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Star, Globe, Folder, FileText, Database, Search, Layers, ChevronDown } from "lucide-react";
 
 interface ScopePillsRowProps {
   selectedScope: string;
@@ -12,7 +12,7 @@ interface ScopePillsRowProps {
   textScale?: string;
 }
 
-export type ScopeCategory = "general" | "database" | "filter";
+export type ScopeCategory = "source" | "database" | "filter";
 
 export interface ScopeItem {
   id: string;
@@ -23,28 +23,30 @@ export interface ScopeItem {
   tooltip: string;
 }
 
-const GENERAL_SCOPES: ScopeItem[] = [
-  { id: "Todo", label: "Todo", category: "general", icon: null, tooltip: "Ver todos los resultados (Notion y Dropbox)" },
-  { id: "Notion", label: "Notion", category: "general", icon: Globe, tooltip: "Todas las actividades y páginas de Notion" },
-  { id: "Dropbox", label: "Dropbox", category: "general", icon: Folder, tooltip: "Archivos sincronizados en Dropbox" },
-  { id: "Carpetas", label: "Carpetas", category: "general", icon: Folder, tooltip: "Carpetas y directorios locales/Dropbox" },
-  { id: "Contenido", label: "Contenido", category: "general", icon: FileText, tooltip: "Búsqueda en texto y contenido interno · notas, descripciones y documentos" },
-  { id: "Todas bases", label: "Todas bases", category: "general", icon: Layers, tooltip: "Consolida todas las bases de datos de Notion" },
+// 1. Fuentes principales (Notion es fuente, NO BD)
+const SOURCE_SCOPES: ScopeItem[] = [
+  { id: "Todo", label: "Todo", category: "source", icon: null, tooltip: "Ver todos los resultados (Notion y Dropbox)" },
+  { id: "Notion", label: "Notion", category: "source", icon: Globe, tooltip: "Fuente principal Notion: todas las páginas y actividades" },
+  { id: "Dropbox", label: "Dropbox", category: "source", icon: Folder, tooltip: "Fuente Dropbox: archivos y carpetas sincronizados en la nube" },
+  { id: "Carpetas", label: "Carpetas", category: "source", icon: Folder, tooltip: "Directorios locales y carpetas Dropbox" },
+  { id: "Contenido", label: "Contenido", category: "source", icon: FileText, tooltip: "Búsqueda interna profunda en texto de notas y documentos" },
 ];
 
+// 2. Bases de datos reales (identificadas con BD)
 const DATABASE_SCOPES: ScopeItem[] = [
-  { id: "Revisiones", label: "Revisiones", category: "database", icon: Database, badge: "BD", tooltip: "Base Revisiones en ANFETA · conserva la búsqueda y los filtros activos" },
-  { id: "zClientes", label: "zClientes", category: "database", icon: Database, badge: "BD", tooltip: "Base Clientes en ANFETA · conserva la búsqueda y los filtros activos" },
-  { id: "zDominios", label: "zDominios", category: "database", icon: Database, badge: "BD", tooltip: "Base Dominios en ANFETA · conserva la búsqueda y los filtros activos" },
-  { id: "zProyectos", label: "zProyectos", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo de Programas y Proyectos" },
-  { id: "zCorreos", label: "zCorreos", category: "database", icon: Database, badge: "BD", tooltip: "Base de datos real · Catálogo de Correos y Contraseñas" },
+  { id: "Revisiones", label: "Revisiones", category: "database", icon: Database, badge: "BD", tooltip: "Base real Revisiones · conserva la búsqueda y los filtros activos" },
+  { id: "zClientes", label: "Clientes", category: "database", icon: Database, badge: "BD", tooltip: "Base real Clientes · conserva la búsqueda y los filtros activos" },
+  { id: "zDominios", label: "Dominios", category: "database", icon: Database, badge: "BD", tooltip: "Base real Dominios · sitios web y servidores" },
+  { id: "zProyectos", label: "zProyectos", category: "database", icon: Database, badge: "BD", tooltip: "Base real de Catálogo de Programas y Proyectos" },
+  { id: "zCorreos", label: "zCorreos", category: "database", icon: Database, badge: "BD", tooltip: "Base real de Cuentas y Accesos" },
 ];
 
+// 3. Búsquedas especiales dentro de bases (identificadas con FILTRO)
 const FILTER_SCOPES: ScopeItem[] = [
-  { id: "Programas", label: "Software · Revisiones", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Software / Desarrollo dentro de Revisiones; conserva la búsqueda y los demás filtros" },
-  { id: "Plantillas", label: "Plantillas", category: "filter", icon: FileText, badge: "Filtro", tooltip: "Plantillas Fase 1 con eed11 (Edwin) · activa ámbito Notion y búsqueda rápida" },
-  { id: "zPAGAR", label: "zPAGAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de pagos pendientes" },
-  { id: "zCOBRAR", label: "zCOBRAR", category: "filter", icon: Search, badge: "Filtro", tooltip: "Búsqueda dentro de base · Filtra actividades de cobros pendientes" },
+  { id: "Programas", label: "Software", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de Software / Desarrollo dentro de base Revisiones" },
+  { id: "Plantillas", label: "Plantillas", category: "filter", icon: FileText, badge: "FILTRO", tooltip: "Filtro rápido de Plantillas con código eed11 (Edwin)" },
+  { id: "zPAGAR", label: "zPAGAR", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de cuentas y actividades de pago por realizar" },
+  { id: "zCOBRAR", label: "zCOBRAR", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de cobranzas y cobros pendientes" },
 ];
 
 export function ScopePillsRow({
@@ -55,11 +57,24 @@ export function ScopePillsRow({
   onOpenSettings,
   textScale = "100%",
 }: ScopePillsRowProps) {
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
   const scale = (() => {
     if (!textScale) return 1.0;
     const num = parseFloat(textScale.replace("%", "").trim());
     return !isNaN(num) && num > 0 ? num / 100 : 1.0;
   })();
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setShowMoreMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const renderScopeButton = (item: ScopeItem) => {
     const isSelected = selectedScope === item.id;
@@ -148,71 +163,73 @@ export function ScopePillsRow({
             padding: `${Math.max(2, Math.round(3 * scale))}px ${Math.round(8 * scale)}px`,
             gap: `${Math.round(5 * scale)}px`,
           }}
-          className={`flex items-center rounded font-medium border transition-colors shrink-0 cursor-pointer ${
+          className={`flex items-center rounded border transition-colors shrink-0 cursor-pointer ${
             filterFavorites
-              ? "bg-[#D97706]/30 border-[#F59E0B] text-[#FDE68A] font-bold shadow-[0_0_8px_rgba(245,158,11,0.3)]"
-              : "bg-[#161F2C] border-[#26354A] text-[#CBD5E1] hover:bg-[#1E2836] hover:text-[#FFFFFF]"
+              ? "bg-[#F59E0B]/20 border-[#F59E0B] text-[#F59E0B] font-bold shadow-[0_0_8px_rgba(245,158,11,0.3)]"
+              : "bg-[#161F2C] border-[#26354A] text-[#F8FAFC] hover:bg-[#1E293B] hover:text-[#FFFFFF]"
           }`}
-          title="Filtrar solo elementos favoritos"
+          title="Ver únicamente elementos marcados como Favoritos (⭐)"
         >
           <Star
             style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }}
-            className={`${filterFavorites ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#94A3B8]"}`}
+            className={filterFavorites ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#64748B]"}
           />
           <span>Favoritos</span>
         </button>
 
-        {/* 1. Ámbitos generales */}
-        {GENERAL_SCOPES.map(renderScopeButton)}
+        <div className="h-4 w-px bg-[#26354A] mx-0.5 shrink-0" />
 
-        {/* Separador hacia Bases de Datos Reales */}
-        <div className="flex items-center gap-1 shrink-0 px-1 border-l border-slate-700/60 pl-2">
-          <span
-            style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
-            className="font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1 select-none"
-            title="Bases de datos reales de Notion · Muestran todos los registros de cada base"
-          >
-            <Database
-              style={{ width: `${Math.round(11 * scale)}px`, height: `${Math.round(11 * scale)}px` }}
-              className="text-cyan-400"
-            />
-            Bases:
-          </span>
-        </div>
+        {/* 1. Fuentes Principales */}
+        {SOURCE_SCOPES.map(renderScopeButton)}
 
-        {/* 2. Bases de Datos Reales de Notion */}
-        {DATABASE_SCOPES.map(renderScopeButton)}
+        <div className="h-4 w-px bg-[#26354A] mx-0.5 shrink-0" />
 
-        {/* Separador hacia Filtros / Búsquedas por tipo */}
-        <div className="flex items-center gap-1 shrink-0 px-1 border-l border-slate-700/60 pl-2">
-          <span
-            style={{ fontSize: `${(9.5 * scale).toFixed(1)}px` }}
-            className="font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1 select-none"
-            title="Filtros y búsquedas por tipo o categoría dentro de la base de datos"
-          >
-            <Search
-              style={{ width: `${Math.round(11 * scale)}px`, height: `${Math.round(11 * scale)}px` }}
-              className="text-amber-400"
-            />
-            Filtros:
-          </span>
-        </div>
+        {/* 2. Bases Reales (BD) */}
+        {DATABASE_SCOPES.slice(0, 3).map(renderScopeButton)}
 
-        {/* 3. Filtros dentro de Base */}
+        <div className="h-4 w-px bg-[#26354A] mx-0.5 shrink-0" />
+
+        {/* 3. Filtros Especiales (FILTRO) */}
         {FILTER_SCOPES.map(renderScopeButton)}
-      </div>
 
-      {/* Botón Accesorios Derecha (Configuración) */}
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          style={{ padding: `${Math.round(4 * scale)}px` }}
-          className="rounded bg-[#161F2C] border border-[#26354A] text-[#94A3B8] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer"
-          title="Configuración"
-        >
-          <Settings style={{ width: `${Math.round(14 * scale)}px`, height: `${Math.round(14 * scale)}px` }} />
-        </button>
+        {/* Botón "Más ▾" para agrupar accesos restantes */}
+        <div ref={moreRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            style={{
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              padding: `${Math.max(2, Math.round(3 * scale))}px ${Math.round(8 * scale)}px`,
+            }}
+            className="flex items-center gap-1 rounded border border-[#26354A] bg-[#141B26] text-slate-300 hover:text-white hover:bg-[#1A2536] cursor-pointer"
+            title="Ver más bases y fuentes secundarias"
+          >
+            <span>Más</span>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
+          {showMoreMenu && (
+            <div className="absolute left-0 mt-1 w-52 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1.5 space-y-1">
+              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400 border-b border-[#1E293B]">
+                Bases adicionales (BD)
+              </div>
+              {DATABASE_SCOPES.slice(3).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectScope(item.id);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left px-2 py-1 rounded text-xs text-slate-300 hover:bg-[#1A2536] hover:text-white flex items-center justify-between"
+                >
+                  <span>{item.label}</span>
+                  <span className="text-[9px] bg-cyan-950 text-cyan-300 px-1 rounded border border-cyan-700">BD</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

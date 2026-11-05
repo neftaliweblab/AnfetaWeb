@@ -1,4 +1,5 @@
 "use client";
+import {migrateGroupByPreference,normalizeSearchTabConfig} from '@/lib/searchTabConfig';
 import {directActivitySearchRow} from '@/lib/activityDeepLink';
 const cleanPageId = (id: unknown) => String(id || '').replace(/-/g, '').toLowerCase();
 import type { NotionCalendarActivity } from '@/types/anfeta';
@@ -30,7 +31,8 @@ import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {sortSearchRows,lastSearchTerm,searchMexicoDay,itemMatchesScheduledDay} from '@/lib/searchPresentation';
-import {activeResultsFirst, orderSearchResults} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isCompletedResult} from '@/lib/activeResultsFirst';
+import {type ActiveSearchCriterion, type InlineSearchSuggestion, itemMatchesStructuredType} from '@/lib/inlinePredictiveEngine';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
 import {normalizePerson} from '@/services/identityNormalizer';
@@ -38,7 +40,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
-import { SearchTabsRow, SearchTab } from "./SearchTabsRow";
+import { SearchTabsRow, SearchTab, SearchTabConfig } from "./SearchTabsRow";
 import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
@@ -108,6 +110,8 @@ interface ResultsViewHostProps {
   initialSelectedPageId?: string;
 }
 
+export {migrateGroupByPreference} from '@/lib/searchTabConfig';
+
 export function ResultsViewHost({
   items: initialItems, isActive = true,
   pendingTasks,
@@ -152,11 +156,17 @@ export function ResultsViewHost({
     let defaults={selectedTag:'Ninguno',customTag:''};try{defaults=readSearchDefaults(localStorage,owner);}catch{}
     setStatusFilter('all');
     setSelectedTag(defaults.selectedTag);setCustomTag(defaults.customTag);
-    let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setClassification(view.classification);setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);setGroupBy(view.groupBy);setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
+    let view=readSearchView({getItem:()=>null},owner);try{view=readSearchView(localStorage,owner);}catch{}setClassification(view.classification);setResultPerson(view.resultPerson);setSelectedScope(view.selectedScope);setFilterFavorites(view.filterFavorites);
+    const migratedGroup = migrateGroupByPreference(view.groupBy);
+    setGroupBy(migratedGroup.groupBy);
+    if (migratedGroup.billingFilter) setBillingFilter(migratedGroup.billingFilter);
+    if (migratedGroup.paymentFilter) setPaymentFilter(migratedGroup.paymentFilter);
+    if (migratedGroup.hideTerminated) setHideTerminated(true);
+    setSelectedMonth(view.monthSelection);setViewZoom(view.viewZoom as any);setTextScale(view.textScale);setResultSort(view.resultSort);setSearchOptions(view.searchOptions);
     let saved=null;try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+owner));setHasLegacyTabs(!!legacy);saved=parseSearchTabs(localStorage.getItem(tabsKey))||legacy;}catch{setHasLegacyTabs(false);}
     const next=personalFirstSearch(saved||{tabs:[{id:'tab_1',query:externalQuery||newSearchQuery(defaults.selectedTag,defaults.customTag),canClose:false}],activeTabId:'tab_1'},owner);
     setTabs(next.tabs);setActiveTabId(next.activeTabId);const restored=next.tabs.find(t=>t.id===next.activeTabId)?.query||'';
-    setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
+    applyTabConfig(next.tabs.find(t=>t.id===next.activeTabId)?.config||{...view,selectedMonth:view.monthSelection});setQuery(restored);onSearchChange?.(restored);setTabsOwner(tabsKey);
   },[tabsKey]);
   useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(tabsKey,JSON.stringify({tabs,activeTabId}));}catch{}},[tabs,activeTabId,tabsOwner,tabsKey]);
 
@@ -176,6 +186,41 @@ export function ResultsViewHost({
   const [textScale, setTextScale] = useState("100%");
   const [classification,setClassification]=useState('all');
   const [groupBy, setGroupBy] = useState("none");
+  const [hideTerminated, setHideTerminated] = useState(false);
+  const [billingFilter, setBillingFilter] = useState<'include' | 'exclude' | 'only'>('include');
+  const [paymentFilter, setPaymentFilter] = useState<'include' | 'exclude' | 'only'>('include');
+  const [activeCriteria, setActiveCriteria] = useState<ActiveSearchCriterion[]>([]);
+
+  const handleGroupByChange = (val: string) => {
+    const migrated = migrateGroupByPreference(val);
+    setGroupBy(migrated.groupBy);
+    if (migrated.billingFilter) setBillingFilter(migrated.billingFilter);
+    if (migrated.paymentFilter) setPaymentFilter(migrated.paymentFilter);
+    if (migrated.hideTerminated) setHideTerminated(true);
+    focusSearch();
+  };
+
+  const handleSelectSuggestion = (sug: InlineSearchSuggestion) => {
+    setActiveCriteria(prev => {
+      if (prev.some(c => c.id === sug.id)) return prev;
+      return [...prev.filter(c=>sug.type!=='person'||c.type!=='person'), { id: sug.id, type: sug.type, label: sug.label, value: sug.value, icon: sug.icon }];
+    });
+    if (sug.type === 'person') {
+      setResultPerson(sug.value);
+    }
+    focusSearch();
+  };
+
+  const handleRemoveCriterion = (id: string) => {
+    setActiveCriteria(prev => {
+      const removed = prev.find(c => c.id === id);
+      if (removed && removed.type === 'person' && resultPerson !== '__all__') {
+        setResultPerson('__all__');
+      }
+      return prev.filter(c => c.id !== id);
+    });
+    focusSearch();
+  };
   const [monthSelection,setSelectedMonth]=useState('Actual');
   const [currentMonth,setCurrentMonth]=useState('');
   const [currentSearchDay,setCurrentSearchDay]=useState('');
@@ -230,7 +275,7 @@ export function ResultsViewHost({
     const tabId='activity_'+cleanId;
     // A dedicated tab preserves the user's other search tabs.
     setTabs(previous=>previous.some(tab=>tab.id===tabId)?previous:[...previous,{id:tabId,query:'',canClose:true}]);
-    setActiveTabId(tabId);setQuery('');setSettledQuery('');onSearchChange?.('');
+    applyTabConfig(null);setActiveTabId(tabId);setQuery('');setSettledQuery('');onSearchChange?.('');
     setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');
     setFilterFavorites(false);setClassification('all');setFilterToday(false);setStatusFilter('all');
     const directRow=directActivitySearchRow(initialDirectActivity);
@@ -562,45 +607,48 @@ export function ResultsViewHost({
   const focusSearch=()=>requestSearchFocus(value=>value+1);
   useEffect(()=>{if(!isActive)return;const frame=requestAnimationFrame(()=>focusSearchField(resultsRoot.current));return()=>cancelAnimationFrame(frame);},[searchFocusRequest,isActive,currentUser]);
 
-  const handleSelectTab = (tabId: string) => {
-    focusSearch();
-    setActiveTabId(tabId);
-    setTabs(previous=>previous.map(tab=>tab.id===tabId?{...tab,unseen:false,pending:false,remindAt:undefined}:tab));
-    const target = tabs.find((t) => t.id === tabId);
-    if (target) {
-      setQuery(target.query);
-      onSearchChange?.(target.query);
-    }
+  function currentTabConfig(){return normalizeSearchTabConfig({hideTerminated,billingFilter,paymentFilter,activeCriteria,selectedScope,selectedMonth,resultPerson,groupBy,resultSort,classification,filterFavorites,filterToday,statusFilter,searchOptions});}
+  function applyTabConfig(raw:unknown){
+    const config=normalizeSearchTabConfig(raw);
+    setHideTerminated(config.hideTerminated);setBillingFilter(config.billingFilter);setPaymentFilter(config.paymentFilter);setActiveCriteria(config.activeCriteria);
+    setSelectedScope(config.selectedScope);setSelectedMonth(config.selectedMonth);setResultPerson(config.resultPerson);setGroupBy(config.groupBy);setResultSort(config.resultSort);
+    setClassification(config.classification);setFilterFavorites(config.filterFavorites);setFilterToday(config.filterToday);setStatusFilter(config.statusFilter);setSearchOptions(config.searchOptions);
+  }
+  // Persist the active configuration too, even if the user reloads without changing tabs.
+  useEffect(()=>{
+    if(tabsOwner!==tabsKey)return;
+    const config=currentTabConfig();
+    setTabs(previous=>previous.map(tab=>tab.id===activeTabId&&JSON.stringify(tab.config)!==JSON.stringify(config)?{...tab,config}:tab));
+  },[tabsOwner,tabsKey,activeTabId,hideTerminated,billingFilter,paymentFilter,activeCriteria,selectedScope,selectedMonth,resultPerson,groupBy,resultSort,classification,filterFavorites,filterToday,statusFilter,searchOptions]);
+  const handleSelectTab=(tabId:string)=>{
+    const target=tabs.find(tab=>tab.id===tabId);if(!target)return;
+    focusSearch();if(tabId===activeTabId)return;
+    const config=currentTabConfig();
+    setTabs(previous=>previous.map(tab=>tab.id===activeTabId?{...tab,config}:tab.id===tabId?{...tab,unseen:false,pending:false,remindAt:undefined}:tab));
+    applyTabConfig(target.config);setActiveTabId(tabId);setQuery(target.query);onSearchChange?.(target.query);
   };
-
-  const handleCloseTab = (tabId: string) => {
-    focusSearch();
-    const next=closeSearchTab(tabs,activeTabId,tabId);if(next.tabs===tabs)return;
-    setTabs(next.tabs);
-    if(next.activeId!==activeTabId){const adjacent=next.tabs.find(tab=>tab.id===next.activeId)!;setActiveTabId(adjacent.id);setQuery(adjacent.query);onSearchChange?.(adjacent.query);}
+  const handleCloseTab=(tabId:string)=>{
+    const config=currentTabConfig();
+    const saved=tabs.map(tab=>tab.id===activeTabId?{...tab,config}:tab);
+    const next=closeSearchTab(saved,activeTabId,tabId);if(next.tabs===saved)return;
+    focusSearch();setTabs(next.tabs);
+    if(next.activeId!==activeTabId){const target=next.tabs.find(tab=>tab.id===next.activeId)!;applyTabConfig(target.config);setActiveTabId(target.id);setQuery(target.query);onSearchChange?.(target.query);}
   };
-
-  const handleNewTab = () => {
-    focusSearch();
-    if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas guardadas.');return;}
-    const newId = `tab_${crypto.randomUUID()}`;
-    const initialQuery=newSearchQuery(selectedTag,customTag);
-    const newTab: SearchTab = { id: newId, query: initialQuery, canClose: true };
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newId);
-    setQuery(initialQuery);
-    onSearchChange?.(initialQuery);
+  const handleNewTab=()=>{
+    focusSearch();if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas guardadas.');return;}
+    const id='tab_'+crypto.randomUUID(),query=newSearchQuery(selectedTag,customTag),config=currentTabConfig(),newConfig=normalizeSearchTabConfig(null);
+    setTabs(previous=>previous.map(tab=>tab.id===activeTabId?{...tab,config}:tab).concat({id,query,canClose:true,config:newConfig}));
+    applyTabConfig(newConfig);setActiveTabId(id);setQuery(query);onSearchChange?.(query);
   };
 
   const shortcuts=useSearchTabShortcuts({root:resultsRoot,active:isActive,owner:normalizePerson(currentUser),onNew:handleNewTab,onClose:()=>handleCloseTab(activeTabId)});
-  const openPersonSearch=(query:string)=>{
-    focusSearch();
-    const existing=findSearchTab(tabs,query);
-    if(existing){handleSelectTab(existing.id);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');return;}
-    if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
-    const id='tab_'+crypto.randomUUID();setTabs(previous=>[...previous,{id,query,canClose:true}]);setActiveTabId(id);setQuery(query);onSearchChange?.(query);setSelectedScope('Notion');setResultPerson('__all__');setSelectedMonth('Todos');setFilterFavorites(false);setClassification('all');
-  };
-  const handleTagChange = (newTag: string) => {
+  const openPersonSearch=(personQuery:string)=>{
+    const existing=findSearchTab(tabs,personQuery);if(existing){handleSelectTab(existing.id);return;}
+    focusSearch();if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
+    const id='tab_'+crypto.randomUUID(),config=currentTabConfig(),targetConfig=normalizeSearchTabConfig(null);
+    setTabs(previous=>previous.map(tab=>tab.id===activeTabId?{...tab,config}:tab).concat({id,query:personQuery,canClose:true,config:targetConfig}));
+    applyTabConfig(targetConfig);setActiveTabId(id);setQuery(personQuery);onSearchChange?.(personQuery);
+  };  const handleTagChange = (newTag: string) => {
     focusSearch();
     const next={selectedTag:newTag,customTag};
     setSelectedTag(newTag);
@@ -614,7 +662,6 @@ export function ResultsViewHost({
     handleQueryChange(replaceInitialSearchTag(query,{selectedTag,customTag},next));
   };
 
-  const handleGroupByChange=(group:string)=>{setGroupBy(group);focusSearch();};
 
   const handleTextScaleChange=(scale:string)=>setTextScale(scale);
 
@@ -1411,6 +1458,35 @@ export function ResultsViewHost({
     }
 
     res=res.filter(item=>matchesResultStatus(item,statusFilter));
+    if (hideTerminated) {
+      res = res.filter(it => !isCompletedResult(it));
+    }
+    if (billingFilter === 'only' && paymentFilter === 'only') {
+      res = res.filter(it => isCobroItem(it) || isPagoItem(it));
+    } else {
+      if (billingFilter === 'only') {
+        res = res.filter(it => isCobroItem(it));
+      } else if (billingFilter === 'exclude') {
+        res = res.filter(it => !isCobroItem(it));
+      }
+      if (paymentFilter === 'only') {
+        res = res.filter(it => isPagoItem(it));
+      } else if (paymentFilter === 'exclude') {
+        res = res.filter(it => !isPagoItem(it));
+      }
+    }
+    if (activeCriteria && activeCriteria.length > 0) {
+      for (const crit of activeCriteria) {
+        if (crit.type === 'person') {
+          res = res.filter(it => resultAssignedPerson(it) === normalizePerson(crit.value));
+        } else if (crit.type === 'domain') {
+          const domLower = crit.value.toLowerCase();
+          res = res.filter(it => String(it.name || (it as any).title || '').toLowerCase().includes(domLower) || String((it as any).domain || '').toLowerCase().includes(domLower));
+        } else if (crit.type === 'type') {
+          res = res.filter(it => itemMatchesStructuredType(it, crit.value));
+        }
+      }
+    }
     res=res.filter(item=>matchesContentClassification(item.name,classification));
 
     // Deduplicar filas por identidad canónica y excluir copias de revisión
@@ -1428,9 +1504,9 @@ export function ResultsViewHost({
 
     res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
     return orderSearchResults(res, groupBy);
-  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday]);
+  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday,hideTerminated,billingFilter,paymentFilter,activeCriteria]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter,hideTerminated,billingFilter,paymentFilter,activeCriteria]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
@@ -1507,38 +1583,87 @@ export function ResultsViewHost({
       className="flex-1 flex flex-col h-full text-[#F1F5F9] select-none overflow-hidden transition-colors duration-200"
       style={{ backgroundColor: themeBg }}
     >
-      {/* 0. Pestañas de Búsqueda (SearchTabs) */}
+      {/* FRANJA B: Fuentes y Accesos */}
+      <ScopePillsRow
+        selectedScope={selectedScope}
+        onSelectScope={(scope) => {
+          if (scope === "Plantillas") {
+            setSelectedScope("Notion");
+            handleQueryChange("eed11");
+            focusSearch();
+            return;
+          }
+          setSelectedScope(scope);
+          focusSearch();
+          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
+          if (userTags.includes(query.trim().toLowerCase())) {
+            handleQueryChange("");
+          }
+        }}
+        filterFavorites={filterFavorites}
+        onToggleFavorites={() => setFilterFavorites(!filterFavorites)}
+        onOpenSettings={onOpenSettings}
+        textScale={textScale}
+      />
+
+      {/* FRANJA C: Pestañas de Búsqueda Inmediatamente Encima del Campo */}
       <SearchTabsRow
         tabs={tabs}
         activeTabId={activeTabId}
         onSelectTab={handleSelectTab}
-        onMarkPending={(id,pending,minutes)=>setTabs(previous=>previous.map(tab=>tab.id===id?{...tab,pending,unseen:pending&&tab.id!==activeTabId,remindAt:pending&&minutes?Date.now()+minutes*60000:undefined}:tab))}
+        onMarkPending={(id, pending, minutes) =>
+          setTabs(previous =>
+            previous.map(tab =>
+              tab.id === id
+                ? { ...tab, pending, unseen: pending && tab.id !== activeTabId, remindAt: pending && minutes ? Date.now() + minutes * 60000 : undefined }
+                : tab
+            )
+          )
+        }
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
         shortcutMode={shortcuts.mode}
-        onRestorePrevious={hasLegacyTabs?()=>{try{const legacy=parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:'+normalizePerson(currentUser)));if(legacy)setTabs(current=>recoverSearchTabs(current,legacy));}catch{setStatusError('No se pudo leer el respaldo de búsquedas.');}}:undefined}
+        onRestorePrevious={
+          hasLegacyTabs
+            ? () => {
+                try {
+                  const legacy = parseSearchTabs(localStorage.getItem('anfeta_search_tabs_v1:' + normalizePerson(currentUser)));
+                  if (legacy) setTabs(current => recoverSearchTabs(current, legacy));
+                } catch {
+                  setStatusError('No se pudo leer el respaldo de búsquedas.');
+                }
+              }
+            : undefined
+        }
         textScale={textScale}
         currentUser={currentUser}
         onTriggerAutomation={onTriggerAutomation}
         onOpenAnnouncements={onOpenAnnouncements}
       />
 
-      {/* 1. Barra de Búsqueda Principal + Acciones */}
+      {/* FRANJA C: Buscador Principal con Predictivo Integrado en la Misma Fila */}
       <SearchInputBar
-        shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode}/>}
+        shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode} />}
         currentUser={currentUser}
-        onSubmitSearch={()=>setSettledQuery(query)}
+        onSubmitSearch={() => setSettledQuery(query)}
         query={query}
         onChangeQuery={handleQueryChange}
         searchOptions={searchOptions}
         onToggleSearchOption={handleToggleSearchOption}
         searchIndex={items}
+        filteredItems={deferredQuery===query?filteredItems:[]}
+        activeCriteria={activeCriteria}
+        onRemoveCriterion={handleRemoveCriterion}
+        onSelectSuggestion={handleSelectSuggestion}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
         onOpenHelp={() => setIsHelpOpen(true)}
         onSelectThemeBg={handleSelectThemeBg}
-        onSelectSavedView={(v) => {setSelectedScope(v);focusSearch();}}
+        onSelectSavedView={(v) => {
+          setSelectedScope(v);
+          focusSearch();
+        }}
         textScale={textScale}
         onToggleCalendarView={onToggleCalendarView}
         isCalendarActive={isCalendarActive}
@@ -1553,78 +1678,45 @@ export function ResultsViewHost({
         onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
       />
 
-      {/* 2. Pills de Ámbitos / Bases Notion */}
-      <ScopePillsRow
-        selectedScope={selectedScope}
-        onSelectScope={(scope) => {
-          if (scope === "Plantillas") {
-            setSelectedScope("Notion");
-            handleQueryChange("eed11");
-            focusSearch();
-            return;
-          }
-          setSelectedScope(scope);focusSearch();
-          // Si el usuario tenía su tag personal y selecciona una base global, limpiar el tag para ver todos los registros
-          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
-          if (userTags.includes(query.trim().toLowerCase())) {
-            handleQueryChange("");
-          }
-        }}
-        filterFavorites={filterFavorites}
-        onToggleFavorites={() => setFilterFavorites(!filterFavorites)}
-        onOpenSettings={onOpenSettings}
-        textScale={textScale}
-      />
-
-            {/* Barra de Filtro Rápido Hoy */}
-      <div className="flex items-center gap-2 px-3 py-1 bg-[#0f1722] border-b border-[#1b2636] text-xs shrink-0">
-        <button
-          type="button"
-          onClick={() => setFilterToday(!filterToday)}
-          className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-            filterToday
-              ? "bg-cyan-600 text-white shadow-sm ring-1 ring-cyan-400"
-              : "bg-[#16212e] text-slate-300 hover:text-white hover:bg-[#1f2e40] border border-[#23354a]"
-          }`}
-          title="Ver únicamente actividades programadas para hoy en CDMX (por horario real, no mes del título)"
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          <span>📅 Hoy</span>
-          {filterToday && <span className="ml-1 text-[10px] bg-cyan-800 px-1 rounded">Activo ✕</span>}
-        </button>
-        {filterToday && (
-          <span className="text-[11px] text-cyan-300 font-mono">
-            Filtrando horario de hoy ({searchMexicoDay(new Date())}) · combinable con persona
-          </span>
-        )}
-      </div>
-
-      {/* 3. Barra de Configuración y Toggles */}
+      {/* FRANJA D: Barra de Trabajo Unificada (Ordenar, Persona, Mes, Agrupar, Terminadas, Cobros, Pagos, Herramientas, Paneles) */}
       <SearchConfigRow
-        classification={classification}
-        onChangeClassification={value=>{setClassification(value);focusSearch();}}
-        databaseScope={selectedScope}
-        databaseOptions={databaseOptions}
-        onChangeDatabaseScope={value=>{setSelectedScope(value);focusSearch();}}
-        resultSort={resultSort} onChangeResultSort={value=>{setResultSort(value);focusSearch();}}
+          onResetFilters={()=>{applyTabConfig(null);focusSearch();}}
+        resultSort={resultSort}
+        onChangeResultSort={(value) => {
+          setResultSort(value);
+          focusSearch();
+        }}
         currentUser={resultPerson}
-        onChangeCurrentUser={person=>{setResultPerson(person);focusSearch();}}
+        onChangeCurrentUser={(person) => {
+          setResultPerson(person);setActiveCriteria(previous=>previous.filter(c=>c.type!=='person'));
+          focusSearch();
+        }}
+        selectedMonth={monthSelection}
+        currentMonth={currentMonth}
+        onChangeMonth={(value) => {
+          setSelectedMonth(value);
+          focusSearch();
+        }}
+        groupBy={groupBy}
+        onChangeGroupBy={handleGroupByChange}
+        hideTerminated={hideTerminated}
+        onToggleHideTerminated={() => setHideTerminated(!hideTerminated)}
+        billingFilter={billingFilter}
+        onChangeBillingFilter={(b) => setBillingFilter(b)}
+        paymentFilter={paymentFilter}
+        onChangePaymentFilter={(p) => setPaymentFilter(p)}
         onSyncNotion={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
         onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
         onSyncDropbox={handleSyncDropbox}
         isSyncingDropbox={isSyncingDropbox}
+        onOpenHelp={() => setIsHelpOpen(true)}
         selectedTag={selectedTag}
         onChangeTag={handleTagChange}
         customTag={customTag}
         onChangeCustomTag={handleCustomTagChange}
         textScale={textScale}
         onChangeTextScale={handleTextScaleChange}
-        groupBy={groupBy}
-        onChangeGroupBy={handleGroupByChange}
-        selectedMonth={monthSelection}
-        currentMonth={currentMonth}
-        onChangeMonth={value=>{setSelectedMonth(value);focusSearch();}}
         viewZoom={viewZoom}
         onChangeViewZoom={handleChangeViewZoom}
         isPendientesOpen={isPendientesOpen}
@@ -1634,10 +1726,6 @@ export function ResultsViewHost({
         onToggleFilters={() => setIsFiltersOpen(!isFiltersOpen)}
         isDetailsOpen={isDetailsOpen}
         onToggleDetails={() => setIsDetailsOpen(!isDetailsOpen)}
-        visibleCols={visibleCols}
-        onToggleCol={(col) => setVisibleCols((prev) => ({ ...prev, [col]: !prev[col] }))}
-        onMaximizeNameCol={() => setVisibleCols({ path: false, status: false, scheduledDate: false, modifiedDate: false })}
-        onResetCols={() => setVisibleCols({ path: true, status: true, scheduledDate: true, modifiedDate: true })}
         hasNotionToken={hasNotionToken}
         hasDropboxToken={hasDropboxToken}
         onOpenSettings={onOpenSettings}
@@ -1787,13 +1875,8 @@ export function ResultsViewHost({
                     type="button"
                     className="underline cursor-pointer"
                     onClick={() => {
-                      handleQueryChange("");
-                      setSelectedScope("Todo");
-                      setClassification("all");
-                      setFilterFavorites(false);
-                      setSelectedMonth("Todos");
-                      setSelectedTag("Ninguno");
-                      setResultPerson("__all__");
+                      applyTabConfig({selectedScope:'Todo'});
+                      focusSearch();
                     }}
                   >
                     Limpiar filtros

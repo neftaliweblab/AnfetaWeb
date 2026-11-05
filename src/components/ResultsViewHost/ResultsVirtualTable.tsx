@@ -3,6 +3,8 @@ import {RESULT_STATUS_FILTERS,resultDuration,matchesResultStatus} from '@/lib/re
 import {ResultUnderstanding} from './ResultUnderstanding';
 import {VisibleActivityDetails} from '../VisibleActivityDetails';
 import {ContentClassificationBadge} from '../ContentClassificationBadge';
+import {NotionHoverPreview} from './NotionHoverPreview';
+import {SearchResultRow} from '@/types/anfeta';
 
 import React, { useState, useEffect, useRef } from "react";
 import { parseVisualParts } from "@/lib/visualTitleParser";
@@ -217,6 +219,51 @@ function ResultsVirtualTableComponent({
   useEffect(() => {
     viewZoomRef.current = viewZoom;
   }, [viewZoom]);
+
+  const [hoveredPreview, setHoveredPreview] = useState<{
+    item: SearchResultRow;
+    rect: DOMRect;
+  } | null>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const leaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(()=>()=>{if(hoverTimerRef.current)clearTimeout(hoverTimerRef.current);if(leaveTimerRef.current)clearTimeout(leaveTimerRef.current);},[]);
+  const handleTitleMouseEnter = (item: SearchResultRow, el: HTMLElement) => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    hoverTimerRef.current = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      setHoveredPreview({ item, rect });
+    }, 250);
+  };
+
+  const handleTitleMouseLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    leaveTimerRef.current = setTimeout(() => {
+      setHoveredPreview(null);
+    }, 220);
+  };
+
+  const handlePopoverMouseEnter = () => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  };
+
+  const handlePopoverMouseLeave = () => {
+    leaveTimerRef.current = setTimeout(() => {
+      setHoveredPreview(null);
+    }, 220);
+  };
 
   useEffect(() => {
     const el = containerRef.current;
@@ -645,8 +692,15 @@ function ResultsVirtualTableComponent({
             </span>
           )}
           <span
+            onMouseEnter={(e) => {
+              const isNotion = item.source === 'Notion' || item.sourceName === 'Notion' || item.externalSourceName === 'Notion' || /^[a-f0-9]{32}$/i.test((item.externalId || item.id || '').replace(/-/g, '')) || /[a-f0-9]{32}/i.test(item.target || '');
+              if (isNotion) {
+                handleTitleMouseEnter(item, e.currentTarget);
+              }
+            }}
+            onMouseLeave={handleTitleMouseLeave}
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-            className={'block truncate font-semibold '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0]')}
+            className={'block truncate font-semibold cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0] hover:text-purple-300')}
           >
             {highlightMatch(parsed.title)}
           </span>
@@ -1091,8 +1145,15 @@ function ResultsVirtualTableComponent({
         )}
         <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions}/>
         <div
+          onMouseEnter={(e) => {
+            const isNotion = item.source === 'Notion' || item.sourceName === 'Notion' || item.externalSourceName === 'Notion' || /^[a-f0-9]{32}$/i.test((item.externalId || item.id || '').replace(/-/g, '')) || /[a-f0-9]{32}/i.test(item.target || '');
+            if (isNotion) {
+              handleTitleMouseEnter(item, e.currentTarget);
+            }
+          }}
+          onMouseLeave={handleTitleMouseLeave}
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
-          className={'font-semibold line-clamp-2 mb-2 '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0]')}
+          className={'font-semibold line-clamp-2 mb-2 cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0] hover:text-purple-300')}
         >
           {highlightMatch(parsed.title)}
         </div>
@@ -1879,6 +1940,13 @@ function ResultsVirtualTableComponent({
           })()}
         </div>
       )}
+      <NotionHoverPreview
+        item={hoveredPreview?.item || null}
+        anchorRect={hoveredPreview?.rect || null}
+        isOpen={Boolean(hoveredPreview)}
+        onMouseEnter={handlePopoverMouseEnter}
+        onMouseLeave={handlePopoverMouseLeave}
+      />
     </div>
   );
 }

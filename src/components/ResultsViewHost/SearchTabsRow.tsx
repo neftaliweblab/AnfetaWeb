@@ -1,9 +1,13 @@
 "use client";
 
 import type {SearchShortcutMode} from "@/lib/searchTabNavigation";
+import type {ActiveSearchCriterion} from "@/lib/inlinePredictiveEngine";
 import React, {useEffect,useState} from "react";
 import { Search, Plus, X, Star, Timer } from "lucide-react";
 import { TopBarUtilities } from "../TopBarUtilities";
+
+export type {SearchTabConfig} from '@/lib/searchTabConfig';
+import type {SearchTabConfig} from '@/lib/searchTabConfig';
 
 export interface SearchTab {
   id: string;
@@ -12,6 +16,7 @@ export interface SearchTab {
   unseen?: boolean;
   pending?: boolean;
   remindAt?: number;
+  config?: SearchTabConfig;
 }
 
 interface SearchTabsRowProps {

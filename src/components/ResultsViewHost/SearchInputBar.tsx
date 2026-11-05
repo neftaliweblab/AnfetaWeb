@@ -16,19 +16,21 @@ import {
   MessageCircle,
   Bell,
 } from "lucide-react";
-import {SearchQueryTools} from './SearchQueryTools';
-import {IndexSyncStatus} from './IndexSyncStatus';
-import {FavoritesBackup} from './FavoritesBackup';
-import {SavedSearches} from './SavedSearches';
-import { SearchPredictiveFlyout } from "./SearchPredictiveFlyout";
-import { buildPredictiveData } from "@/lib/searchPredictiveService";
+import { SearchQueryTools } from "./SearchQueryTools";
+import { IndexSyncStatus } from "./IndexSyncStatus";
+import { FavoritesBackup } from "./FavoritesBackup";
+import { SavedSearches } from "./SavedSearches";
 import { SearchMatchOptions } from "@/services/advancedQuery";
-import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
+import {
+  ActiveSearchCriterion,
+  InlineSearchSuggestion,
+  computeInlineSuggestions,
+} from "@/lib/inlinePredictiveEngine";
 
 interface SearchInputBarProps {
-  shortcutControl?:React.ReactNode;
-  currentUser?:string;
-  onSubmitSearch?:()=>void;
+  shortcutControl?: React.ReactNode;
+  currentUser?: string;
+  onSubmitSearch?: () => void;
   query: string;
   onChangeQuery: (q: string) => void;
   searchOptions?: SearchMatchOptions;
@@ -42,6 +44,10 @@ interface SearchInputBarProps {
   onSelectThemeBg?: (theme: string) => void;
   textScale?: string;
   searchIndex?: any[];
+  filteredItems?: any[];
+  activeCriteria?: ActiveSearchCriterion[];
+  onRemoveCriterion?: (id: string) => void;
+  onSelectSuggestion?: (sug: InlineSearchSuggestion) => void;
   onToggleCalendarView?: () => void;
   isCalendarActive?: boolean;
   onOpenStandaloneCalendar?: () => void;
@@ -57,7 +63,7 @@ interface SearchInputBarProps {
 
 export function SearchInputBar({
   shortcutControl,
-  currentUser='',
+  currentUser = "",
   onSubmitSearch,
   query,
   onChangeQuery,
@@ -72,6 +78,10 @@ export function SearchInputBar({
   onSelectThemeBg,
   textScale = "100%",
   searchIndex = [],
+  filteredItems = [],
+  activeCriteria = [],
+  onRemoveCriterion,
+  onSelectSuggestion,
   onToggleCalendarView,
   isCalendarActive = false,
   onOpenStandaloneCalendar,
@@ -84,104 +94,191 @@ export function SearchInputBar({
   onOpenWhatsappGroups,
   onOpenResponseCleanup,
 }: SearchInputBarProps) {
-  const [showViewsMenu, setShowViewsMenu] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showThemesMenu, setShowThemesMenu] = useState(false);
-  const [isPredictiveOpen, setIsPredictiveOpen] = useState(false);
-  const viewsRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
+  const [showMoreSuggestions, setShowMoreSuggestions] = useState(false);
   const barContainerRef = useRef<HTMLDivElement>(null);
-
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRowRef=useRef<HTMLDivElement>(null);
+  const sizingRef=useRef<HTMLDivElement>(null);
+  const [maxVisible,setMaxVisible]=useState(0);
   const scale = (() => {
     if (!textScale) return 1.0;
     const num = parseFloat(textScale.replace("%", "").trim());
     return !isNaN(num) && num > 0 ? num / 100 : 1.0;
   })();
 
-  const predictiveData = useMemo(() => {
-    if (!isPredictiveOpen) return { headerText: "", suggestions: [], savedSearches: [], hintText: "" };
-    return buildPredictiveData(query, searchIndex);
-  }, [query, searchIndex, isPredictiveOpen]);
+  // Predictivo dentro de la misma barra calculado en memoria con base en los resultados actuales
+  // Si filteredItems es 0, no sustituye por todo el índice (Punto 4)
+  const suggestions = useMemo(() => {
+    const dataset = filteredItems !== undefined ? filteredItems : searchIndex;
+    return computeInlineSuggestions(query, dataset, activeCriteria);
+  }, [query, filteredItems, searchIndex, activeCriteria]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (viewsRef.current && !viewsRef.current.contains(event.target as Node)) {
-        setShowViewsMenu(false);
-      }
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
-        setShowMoreMenu(false);
-        setShowThemesMenu(false);
-      }
-      if (barContainerRef.current && !barContainerRef.current.contains(event.target as Node)) {
-        setIsPredictiveOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useEffect(()=>{
+    const row=inputRowRef.current,sizing=sizingRef.current;if(!row||!sizing)return;
+    const measure=()=>{
+      const fixed=Array.from(row.children).filter(el=>el!==inputRef.current&&!el.hasAttribute('data-inline-suggestions')).reduce((sum,el)=>sum+el.getBoundingClientRect().width,0);
+      const available=row.clientWidth-fixed-200-Array.from(row.children).length*8-20;
+      const widths=Array.from(sizing.children).map(el=>el.getBoundingClientRect().width+6);
+      let count=0,used=0;
+      for(let i=0;i<Math.min(3,widths.length);i++){const next=used+widths[i];if(next+(i+1<widths.length?44:0)>available)break;used=next;count++;}
+      setMaxVisible(count);
+    };
+    measure();const observer=new ResizeObserver(measure);observer.observe(row);for(const child of Array.from(row.children))observer.observe(child);return()=>observer.disconnect();
+  },[suggestions,activeCriteria,scale]);
 
-  const THEMES = [
-    { id: "gray", label: "Gris oscuro", color: "#151515" },
-    { id: "blue", label: "Azul noche", color: "#0F172A" },
-    { id: "purple", label: "Morado oscuro", color: "#1E182E" },
-    { id: "green", label: "Verde oscuro", color: "#10201C" },
-    { id: "navy", label: "Azul profundo", color: "#0A1628" },
-    { id: "midnight", label: "Azul medianoche", color: "#0C1220" },
-    { id: "violet", label: "Violeta oscuro", color: "#231B37" },
-    { id: "wine", label: "Vino oscuro", color: "#2D1420" },
-    { id: "slate", label: "Pizarra oscuro", color: "#181F2A" },
-    { id: "coffee", label: "Café oscuro", color: "#201A16" },
-  ];
+  const visibleSuggestions = suggestions.slice(0, maxVisible);
+  const remainingSuggestions = suggestions.slice(maxVisible);
 
   return (
     <div
       ref={barContainerRef}
       style={{
-        paddingTop: `${Math.max(2, Math.round(4 * scale))}px`,
-        paddingBottom: `${Math.max(2, Math.round(4 * scale))}px`,
+        paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
+        paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
       }}
       className="px-3 bg-transparent transition-colors relative"
     >
-      <div
+      <div ref={inputRowRef}
         style={{
-          padding: `${Math.max(3, Math.round(4 * scale))}px ${Math.round(10 * scale)}px`,
-          gap: `${Math.round(8 * scale)}px`,
+          padding: `${Math.max(3, Math.round(4 * scale))}px ${Math.round(8 * scale)}px`,
+          gap: `${Math.round(6 * scale)}px`,
         }}
-        className="flex items-center bg-[#11161D] border border-[#1E2836] rounded-lg focus-within:border-[#38BDF8] shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-all"
+        className="flex items-center bg-[#11161D] border border-[#1E2836] rounded-lg focus-within:border-[#38BDF8] shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-all min-w-0"
       >
         {shortcutControl}
-        <button type="button" onClick={onSubmitSearch} aria-label="Buscar"><Search
-          style={{ width: `${Math.round(15 * scale)}px`, height: `${Math.round(15 * scale)}px` }}
-          className="text-[#64748B] shrink-0"
-        /></button>
+
+        <button
+          type="button"
+          onClick={onSubmitSearch}
+          aria-label="Buscar"
+          className="cursor-pointer text-[#64748B] hover:text-cyan-300 transition shrink-0"
+        >
+          <Search
+            style={{ width: `${Math.round(15 * scale)}px`, height: `${Math.round(15 * scale)}px` }}
+          />
+        </button>
+
+        {/* 1. Criterios Activos Seleccionados (Chips con X) */}
+        {activeCriteria && activeCriteria.length > 0 && (
+          <div className="flex max-w-[25%] items-center gap-1.5 overflow-x-auto shrink-0 select-none">
+            {activeCriteria.map((crit) => (
+              <span
+                key={crit.id}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-cyan-950/80 border border-cyan-500/80 text-cyan-200 animate-in fade-in"
+              >
+                <span>{crit.icon || "🏷️"}</span>
+                <span>{crit.label}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRemoveCriterion?.(crit.id);
+                    inputRef.current?.focus();
+                  }}
+                  className="text-cyan-400 hover:text-white hover:bg-cyan-800 rounded px-1 ml-0.5 transition cursor-pointer"
+                  title="Quitar criterio"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* 2. Campo de Texto Principal (Prioridad de Foco y Cursor) */}
         <input
+          ref={inputRef}
+          id="anfeta-search-input"
           data-search-query="true"
           aria-label="Buscar páginas y archivos. Tab selecciona el primer resultado"
           type="text"
           value={query}
-          onFocus={() => setIsPredictiveOpen(false)}
-          onClick={() => setIsPredictiveOpen(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              setIsPredictiveOpen(false);
+              onChangeQuery("");
             } else if (e.key === "Enter") {
-              e.preventDefault();onSubmitSearch?.();
-              setIsPredictiveOpen(false);
+              e.preventDefault();
+              onSubmitSearch?.();
             }
           }}
-          onChange={(e) => {
-            onChangeQuery(e.target.value);
-            setIsPredictiveOpen(false);
-          }}
-          placeholder="Buscar páginas, archivos, notas, etiquetas o comodines..."
+          onChange={(e) => onChangeQuery(e.target.value)}
+          placeholder={
+            activeCriteria && activeCriteria.length > 0
+              ? "Añadir más términos..."
+              : "Buscar páginas, archivos, notas, etiquetas o comodines..."
+          }
           style={{ fontSize: `${(12.5 * scale).toFixed(1)}px` }}
-          className="flex-1 bg-transparent text-[#F8FAFC] placeholder-[#64748B] focus:outline-none"
+          className="bg-transparent text-[#F8FAFC] placeholder-[#64748B] focus:outline-none min-w-[140px] flex-shrink flex-1"
         />
+
+        {/* 3. Sugerencias Predictivas DENTRO DEL CONTENEDOR EN LA MISMA FILA */}
+        {query.trim().length > 0 && suggestions.length > 0 && (
+          <div data-inline-suggestions className="flex items-center gap-1.5 shrink-0 select-none py-0.5">
+            {visibleSuggestions.map((sug) => (
+              <button
+                key={sug.id}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelectSuggestion?.(sug);
+                  inputRef.current?.focus();
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-[#1A2536] hover:bg-cyan-950 hover:text-cyan-300 hover:border-cyan-600 border border-[#2A3B52] text-slate-300 transition cursor-pointer shrink-0"
+                title={`Añadir criterio ${sug.label} (${sug.count} coincidencias)`}
+              >
+                <span className="text-cyan-400 font-bold">+</span>
+                <span>{sug.label}</span>
+                <span className="text-[10px] text-slate-400 font-mono bg-[#111824] px-1 rounded">
+                  {sug.count}
+                </span>
+              </button>
+            ))}
+
+            {/* Botón compacto +N con las sugerencias restantes */}
+            {remainingSuggestions.length > 0 && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowMoreSuggestions(!showMoreSuggestions)}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#182333] hover:bg-[#202E42] text-slate-400 hover:text-cyan-300 border border-[#26374D] cursor-pointer"
+                  title={`${remainingSuggestions.length} sugerencias más...`}
+                >
+                  +{remainingSuggestions.length}
+                </button>
+                {showMoreSuggestions && (
+                  <div className="absolute right-0 mt-1 w-48 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1 space-y-1">
+                    {remainingSuggestions.map((sug) => (
+                      <button
+                        key={sug.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectSuggestion?.(sug);
+                          setShowMoreSuggestions(false);
+                          inputRef.current?.focus();
+                        }}
+                        className="w-full text-left flex items-center justify-between px-2 py-1 rounded text-xs text-slate-300 hover:bg-[#1A2536] hover:text-white"
+                      >
+                        <span>{sug.icon || "+"} {sug.label}</span>
+                        <span className="text-[10px] text-slate-400 font-mono bg-[#0D131D] px-1 rounded">
+                          {sug.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 4. Botón Limpiar Búsqueda */}
         {query && (
           <button
             type="button"
-            onClick={() => onChangeQuery("")}
-            className="p-1 text-slate-400 hover:text-cyan-300 rounded-md transition-colors shrink-0"
+            onClick={() => {
+              onChangeQuery("");
+              inputRef.current?.focus();
+            }}
+            className="p-1 text-slate-400 hover:text-cyan-300 rounded-md transition-colors shrink-0 cursor-pointer"
             title="Limpiar búsqueda (Esc)"
             aria-label="Limpiar búsqueda"
           >
@@ -189,17 +286,17 @@ export function SearchInputBar({
           </button>
         )}
 
-        {/* Opciones avanzadas de coincidencia (Mayúsculas, Palabra completa, Regex) */}
+        {/* 5. Modos de Coincidencia (Aa, "w", .*) */}
         {onToggleSearchOption && (
-          <div style={{ gap: `${Math.round(3 * scale)}px` }} className="flex items-center shrink-0">
+          <div style={{ gap: `${Math.round(2 * scale)}px` }} className="flex items-center shrink-0">
             <button
               type="button"
               onClick={() => onToggleSearchOption("matchCase")}
               style={{
                 fontSize: `${(10 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(4 * scale)}px`,
               }}
-              className={`rounded font-mono font-bold transition-all border ${
+              className={`rounded font-mono font-bold transition-all border cursor-pointer ${
                 searchOptions?.matchCase
                   ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
                   : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
@@ -213,9 +310,9 @@ export function SearchInputBar({
               onClick={() => onToggleSearchOption("matchWholeWord")}
               style={{
                 fontSize: `${(10 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(4 * scale)}px`,
               }}
-              className={`rounded font-mono font-bold transition-all border ${
+              className={`rounded font-mono font-bold transition-all border cursor-pointer ${
                 searchOptions?.matchWholeWord
                   ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
                   : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
@@ -229,9 +326,9 @@ export function SearchInputBar({
               onClick={() => onToggleSearchOption("matchRegex")}
               style={{
                 fontSize: `${(10 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(4 * scale)}px`,
               }}
-              className={`rounded font-mono font-bold transition-all border ${
+              className={`rounded font-mono font-bold transition-all border cursor-pointer ${
                 searchOptions?.matchRegex
                   ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
                   : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
@@ -243,333 +340,15 @@ export function SearchInputBar({
           </div>
         )}
 
-        {/* Botones de acción derecha */}
-        <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0 select-none">
-          <SavedSearches query={query} onSelect={onChangeQuery} /><FavoritesBackup />
-          <IndexSyncStatus owner={currentUser}/>
-
-          {/* Botón ⚡ Plantillas */}
-          <button
-            type="button"
-            onClick={onOpenTemplates}
-            style={{
-              fontSize: `${(10.5 * scale).toFixed(1)}px`,
-              padding: `${Math.max(2, Math.round(3 * scale))}px ${Math.round(8 * scale)}px`,
-              gap: `${Math.round(4 * scale)}px`,
-            }}
-            className="flex items-center rounded bg-[#1E293B] border border-[#38BDF8] text-[#38BDF8] font-bold hover:bg-[#0C4A6E] transition-colors cursor-pointer"
-            title="Plantillas rápidas de Notion"
-          >
-            <Zap style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }} className="fill-current" />
-            <span>Plantillas</span>
-          </button>
-
-          {/* Botón 🔄 Recargar índice */}
-          <button
-            type="button"
-            onClick={onRefreshIndex}
-            style={{ padding: `${Math.round(4 * scale)}px` }}
-            className="rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer"
-            title="Refrescar índice local (F5)"
-          >
-            <RotateCw style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-          </button>
-
-          {/* Separador */}
-          <div className="w-px h-4 bg-[#26354A] mx-0.5" />
-
-          {/* Botón 📅 Calendario de Revisiones */}
-          {onToggleCalendarView && (
-            <button
-              type="button"
-              onClick={onToggleCalendarView}
-              style={{ padding: `${Math.round(4 * scale)}px` }}
-              className={`rounded border transition-colors cursor-pointer ${
-                isCalendarActive
-                  ? "bg-[#1E3A5F] border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
-                  : "bg-[#161F2C] border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8]"
-              }`}
-              title="📅 Abrir / Cerrar Calendario de Revisiones"
-            >
-              <Calendar style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-            </button>
-          )}
-
-          {/* Botón ⧉ Abrir Calendario en Ventana Independiente (Multi-Monitor) */}
-          {onOpenStandaloneCalendar && (
-            <button
-              type="button"
-              onClick={onOpenStandaloneCalendar}
-              style={{ padding: `${Math.round(4 * scale)}px` }}
-              className="rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer"
-              title="⧉ Abrir Calendario en ventana independiente (Multi-monitor vinculado en tiempo real)"
-            >
-              <ExternalLink style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-            </button>
-          )}
-
-          {/* Menú 📋 Vistas ▾ */}
-          <div className="relative" ref={viewsRef}>
-            <button
-              type="button"
-              onClick={() => setShowViewsMenu(!showViewsMenu)}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#F1F5F9] text-[10.5px] transition-colors cursor-pointer"
-            >
-              <span>Vistas</span>
-              <ChevronDown className="w-3 h-3 text-[#64748B]" />
-            </button>
-            {showViewsMenu && (
-              <div className="absolute right-0 top-8 z-50 w-64 bg-[#111822] border border-[#253549] rounded-lg shadow-2xl p-1 text-xs space-y-1">
-                <div className="px-2 py-1 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
-                  Notion · Revisiones
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.open(
-                      "https://app.notion.com/p/2eeabd7d91b781348ed5c537ec14962e?v=3a5abd7d91b78097ac57000cd9017ac3&source=copy_link",
-                      "_blank"
-                    );
-                    setShowViewsMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#38BDF8] text-[11px] font-medium transition-colors flex items-center justify-between"
-                >
-                  <span>Seguimiento HOY Proyectos — Tabla</span>
-                  <span className="text-[10px] opacity-70">↗</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.open(
-                      "https://app.notion.com/p/2eeabd7d91b781348ed5c537ec14962e?v=3a1abd7d91b7809d9351000c725547e4&source=copy_link",
-                      "_blank"
-                    );
-                    setShowViewsMenu(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#38BDF8] text-[11px] font-medium transition-colors flex items-center justify-between"
-                >
-                  <span>Seguimiento HOY Proyectos — Tablero</span>
-                  <span className="text-[10px] opacity-70">↗</span>
-                </button>
-                <div className="h-px bg-[#26354A] my-1" />
-                <div className="px-2 py-1 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
-                  Bases de búsqueda
-                </div>
-                {["Revisiones", "zClientes", "zDominios", "zProyectos", "Programas", "zPAGAR", "zCOBRAR", "zCorreos"].map(
-                  (v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => {
-                        onSelectSavedView?.(v);
-                        setShowViewsMenu(false);
-                      }}
-                      className="w-full text-left px-2.5 py-1 rounded hover:bg-[#1E2836] text-[#CBD5E1] hover:text-[#38BDF8] text-[11px] transition-colors"
-                    >
-                      {v==='Programas'?'Software':v}
-                    </button>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Separador */}
-          <div className="w-px h-4 bg-[#26354A] mx-0.5" />
-
-          {/* Botón 💬 Mensajes y notas del equipo */}
-          {onToggleMessagesView && (
-            <button
-              type="button"
-              onClick={onToggleMessagesView}
-              style={{ padding: `${Math.round(4 * scale)}px` }}
-              className={`relative rounded border transition-colors cursor-pointer ${
-                isMessagesActive
-                  ? "bg-[#1E3A5F] border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
-                  : "bg-[#161F2C] border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8]"
-              }`}
-              title="💬 Abrir bandeja de mensajes y notas del equipo"
-            >
-              <MessageSquare style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-              {messagesCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 bg-[#E5484D] text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none">
-                  {messagesCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Botón 🔔 Calendario de recordatorios programados */}
-          {onToggleRemindersView && (
-            <button
-              type="button"
-              onClick={onToggleRemindersView}
-              style={{ padding: `${Math.round(4 * scale)}px` }}
-              className={`relative rounded border transition-colors cursor-pointer ${
-                isRemindersActive
-                  ? "bg-[#2E1A47] border-[#A855F7] text-[#C084FC] shadow-[0_0_8px_rgba(168,85,247,0.3)]"
-                  : "bg-[#161F2C] border-[#26354A] text-[#CBD5E1] hover:text-[#C084FC] hover:border-[#A855F7]"
-              }`}
-              title="🔔 Calendario de recordatorios programados"
-            >
-              <Bell style={{ width: `${Math.round(13 * scale)}px`, height: `${Math.round(13 * scale)}px` }} />
-              {remindersCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 bg-[#A855F7] text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none">
-                  {remindersCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {/* Botón WhatsApp Grupos */}
-          {onOpenWhatsappGroups && (
-            <button
-              type="button"
-              onClick={onOpenWhatsappGroups}
-              style={{ padding: `${Math.round(4 * scale)}px` }}
-              className="relative rounded border bg-[#161F2C] border-[#26354A] text-[#25D366] hover:bg-[#1A2E24] hover:border-[#25D366] transition-colors cursor-pointer"
-              title="Directorio de Grupos de WhatsApp de proyectos"
-            >
-              <WhatsAppIcon style={{ width: `${Math.round(14 * scale)}px`, height: `${Math.round(14 * scale)}px` }} />
-            </button>
-          )}
-
-          {/* Separador */}
-          <div className="w-px h-4 bg-[#26354A] mx-0.5" />
-
-          {/* Botón ❓ Ayuda (HelpV2) */}
-          <button
-            type="button"
-            onClick={onOpenHelp}
-            style={{
-              padding: `${Math.round(4 * scale)}px`,
-              minWidth: `${Math.round(28 * scale)}px`,
-              fontSize: `${(11 * scale).toFixed(1)}px`,
-            }}
-            className="rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#38BDF8] transition-colors cursor-pointer font-bold flex items-center justify-center"
-            title="❓ Guía rápida de comandos, carpetas, archivos y filtros"
-          >
-            ?
-          </button>
-
-          {/* Menú ⋯ Más opciones */}
-          <div className="relative" ref={moreRef}>
-            <button
-              type="button"
-              onClick={() => setShowMoreMenu(!showMoreMenu)}
-              className="p-1.5 rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] text-[10.5px] transition-colors cursor-pointer"
-              title="⚙️ Más opciones y sincronización"
-            >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            </button>
-            {showMoreMenu && (
-              <div className="absolute right-0 top-8 z-50 w-56 bg-[#111822] border border-[#253549] rounded-lg shadow-2xl p-1 text-xs space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMoreMenu(false);
-                    onSaveSearch?.();
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] cursor-pointer"
-                >
-                  Nuevo filtro guardado
-                </button>
-                <div className="h-px bg-[#26354A] my-1" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMoreMenu(false);
-                    alert("Importación de filtros CSV lista para sincronizar.");
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] cursor-pointer"
-                >
-                  Importar CSV
-                </button>
-                {onOpenResponseCleanup && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMoreMenu(false);
-                      onOpenResponseCleanup();
-                    }}
-                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#A5B4FC] text-[11px] font-medium cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span>🧹</span>
-                    <span>Limpieza y escaneo [RESPUESTA]</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={isSyncingNotion}
-                  onClick={() => {
-                    setShowMoreMenu(false);
-                    onRefreshIndex?.();
-                  }}
-                  className={`w-full text-left px-2.5 py-1.5 rounded text-[11px] font-semibold transition ${
-                    isSyncingNotion
-                      ? "text-slate-500 cursor-not-allowed"
-                      : "hover:bg-[#1E2836] text-[#38BDF8] cursor-pointer"
-                  }`}
-                >
-                  {isSyncingNotion ? "Cargando catálogo..." : "Sincronizar índice Notion"}
-                </button>
-
-                <div className="h-px bg-[#26354A] my-1" />
-
-                {/* Submenú Color de Fondo */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowThemesMenu(!showThemesMenu)}
-                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center justify-between cursor-pointer"
-                  >
-                    <span>Color de fondo</span>
-                    <ChevronDown className="w-3 h-3 text-[#64748B]" />
-                  </button>
-
-                  {showThemesMenu && (
-                    <div className="mt-1 bg-[#0A0F16] border border-[#233549] rounded-lg p-1 space-y-0.5">
-                      {THEMES.map((th) => (
-                        <button
-                          key={th.id}
-                          type="button"
-                          onClick={() => {
-                            onSelectThemeBg?.(th.id);
-                            setShowThemesMenu(false);
-                            setShowMoreMenu(false);
-                          }}
-                          className="w-full text-left px-2 py-1 rounded hover:bg-[#1E2836] text-[10.5px] text-[#E2E8F0] flex items-center gap-2 cursor-pointer"
-                        >
-                          <span
-                            className="w-2.5 h-2.5 rounded-full border border-white/20 shrink-0"
-                            style={{ backgroundColor: th.color }}
-                          />
-                          <span>{th.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+        {/* 6. Utilidades Rápidas de Búsqueda */}
+        <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0 select-none">
+          {onOpenTemplates&&<button type="button" onClick={onOpenTemplates} title="Abrir catálogo de plantillas" aria-label="Abrir catálogo de plantillas" className="rounded border border-cyan-800 p-1 text-cyan-300"><Zap className="h-3.5 w-3.5"/></button>}
+          <SavedSearches query={query} onSelect={onChangeQuery} />
+          <FavoritesBackup />
+          <IndexSyncStatus owner={currentUser} />
         </div>
       </div>
-
-      {/* Panel Predictivo Flotante estilo ANFETA WinUI 3 */}
-      <SearchPredictiveFlyout
-        isOpen={isPredictiveOpen}
-        onClose={() => setIsPredictiveOpen(false)}
-        headerText={predictiveData.headerText}
-        suggestions={predictiveData.suggestions}
-        savedSearches={predictiveData.savedSearches}
-        hintText={predictiveData.hintText}
-        currentQuery={query}
-        onApplyQuery={(newQ) => {
-          onChangeQuery(newQ);
-        }}
-      />
-      <SearchQueryTools query={query} onChange={onChangeQuery} onHelp={onOpenHelp} regex={searchOptions?.matchRegex}/>
+      <div ref={sizingRef} aria-hidden="true" className="pointer-events-none invisible absolute flex whitespace-nowrap overflow-hidden" style={{top:0,left:0,width:1,height:1}}>{suggestions.map(sug=><span key={sug.id} className="flex shrink-0 items-center gap-1 border px-2 py-0.5 text-[11px]"><span>+</span><span>{sug.label}</span><span className="px-1 text-[10px] font-mono">{sug.count}</span></span>)}</div>
     </div>
   );
 }

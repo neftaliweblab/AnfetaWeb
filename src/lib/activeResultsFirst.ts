@@ -15,10 +15,23 @@ export function isCompletedResult(item: any): boolean {
 }
 
 export function isBillingItem(item: any): boolean {
+  return isCobroItem(item) || isPagoItem(item);
+}
+
+export function isCobroItem(item: any): boolean {
+  if (!item) return false;
   const src = String(item?.sourceName || '').toLowerCase();
-  const name = String(item?.name || item?.title || '').toLowerCase();
-  const category=PROGRESSIVE_WORKFLOW_PRIMARY?progressiveStage(name)?.category:null;
-  return category==='cobro'||category==='pago'||src.includes("pagar") || src.includes("cobrar") || name.includes("cobrar") || name.includes("pagar");
+  const name = String(item?.name || item?.title || item?.Name || item?.Title || '').toLowerCase();
+  const category = PROGRESSIVE_WORKFLOW_PRIMARY ? progressiveStage(name)?.category : null;
+  return category === 'cobro' || /^(?:cobros?|por cobrar)$/.test(src) || /\b(?:zcobrar|ccobro|ccobr)\b/i.test(name) || /^cobrar\s/i.test(name);
+}
+
+export function isPagoItem(item: any): boolean {
+  if (!item) return false;
+  const src = String(item?.sourceName || '').toLowerCase();
+  const name = String(item?.name || item?.title || item?.Name || item?.Title || '').toLowerCase();
+  const category = PROGRESSIVE_WORKFLOW_PRIMARY ? progressiveStage(name)?.category : null;
+  return category === 'pago' || /^(?:pagos?|por pagar)$/.test(src) || /\b(?:zpagar|ppago|ppaga)\b/i.test(name) || /^pagar\s/i.test(name);
 }
 
 export function getItemGroupKey(item: any, groupBy: string): string {
@@ -35,10 +48,10 @@ export function getItemGroupKey(item: any, groupBy: string): string {
 
   if (groupBy === "domain" || groupBy === "domain_nobilling") {
     const dom = parsed.domain || item.domainChip || item.domain || item.sourceName || "General";
-    const status = parsed.workflow || item.updateStatus || item.status || "Activo";
-    return `🌐 ${dom} · ${status}`;
+    return `🌐 ${dom}`;
   }
 
+  if(groupBy==='status')return 'Estado: '+(parsed.workflow||'Sin clasificar');
   if (groupBy === "project_suffix") {
     const dom = parsed.domain || item.domainChip || item.domain || "General";
     const suffixMatch = String(item.name || item.title || "").match(/\.(webs|ads|seo|app|prog)\b/i);
@@ -50,7 +63,7 @@ export function getItemGroupKey(item: any, groupBy: string): string {
     return resultMonthKey(item);
   }
 
-  if (groupBy === "area" || groupBy === "area_nobilling") {
+  if (groupBy === "project_type" || groupBy === "area" || groupBy === "area_nobilling") {
     return parsed.area || item.areaChip ? `🏷️ Área: ${parsed.area || item.areaChip}` : "🏷️ Otros";
   }
 

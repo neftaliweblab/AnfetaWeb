@@ -109,6 +109,7 @@ export function TopBar({
         </div>
 
         {/* Campo de Búsqueda Global Amplio (Máximo espacio disponible y nunca aplastado) */}
+        {activeView !== "results" ? (
         <div
           ref={searchContainerRef}
           className="flex-1 min-w-[180px] sm:min-w-[260px] md:min-w-[340px] lg:min-w-[420px] max-w-4xl relative"
@@ -129,7 +130,6 @@ export function TopBar({
                 if (
                   e.key === "Tab" &&
                   !e.shiftKey &&
-                  activeView === "results" &&
                   !e.nativeEvent.isComposing
                 ) {
                   e.preventDefault();
@@ -145,7 +145,7 @@ export function TopBar({
                 onSearchChange(e.target.value);
                 if (activeView !== "calendar") {
                   setIsPredictiveOpen(true);
-                  if (activeView !== "results") onSelectView("results");
+                  onSelectView("results");
                 }
               }}
               placeholder={
@@ -178,11 +178,18 @@ export function TopBar({
               currentQuery={searchQuery}
               onApplyQuery={(newQ) => {
                 onSearchChange(newQ);
-                if (activeView !== "results") onSelectView("results");
+                onSelectView("results");
               }}
             />
           )}
         </div>
+        ) : (
+          <div className="flex-1 flex items-center px-3">
+            <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+              Módulo Buscador · <span className="text-cyan-400 font-semibold">Ctrl+Alt+B</span> enfoca la barra principal
+            </span>
+          </div>
+        )}
 
         {/* Botones de Navegación Responsive (Iconos compactos en pantallas pequeñas/medianas) */}
         <nav className="flex items-center gap-1 shrink-0">
