@@ -186,8 +186,15 @@ export function CalendarFtfPanel({
             const isExpanded = !!expandedPeople[person.name];
 
             const percent = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
-            const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
+            let completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
             const lastEditTime = person.lastActivityEdited ? calendarTime(person.lastActivityEdited) : null;
+
+            // Evitar mostrar 00:00 cuando existe una hora real de edición en Notion
+            if ((!completionTime || completionTime === '00:00') && lastEditTime && lastEditTime !== '00:00') {
+              completionTime = lastEditTime;
+            }
+            const hasValidCompletionTime = completionTime && completionTime !== '00:00';
+            const hasValidLastEditTime = lastEditTime && lastEditTime !== '00:00';
 
             return (
               <div
@@ -230,9 +237,12 @@ export function CalendarFtfPanel({
                   {/* Estado / Horario */}
                   <div className="shrink-0 text-right">
                     {isComplete ? (
-                      <span className="inline-flex items-center gap-1 rounded bg-emerald-900/60 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-300 border border-emerald-500/50">
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-emerald-900/60 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-300 border border-emerald-500/50"
+                        title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : (person.completedAt ? `Registrado: ${person.completedAt}` : undefined)}
+                      >
                         <CheckCircle2 size={11} />
-                        <span>{completionTime ? `${completionTime}` : 'Completó'}</span>
+                        <span>{hasValidCompletionTime ? completionTime : 'Completó'}</span>
                       </span>
                     ) : isPending ? (
                       <span className="inline-flex items-center gap-1 rounded bg-amber-900/60 px-1.5 py-0.5 text-[10.5px] font-medium text-amber-300 border border-amber-500/50">
@@ -265,10 +275,10 @@ export function CalendarFtfPanel({
 
                 {/* Información de último registro / modificación */}
                 <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>
+                  <span title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : undefined}>
                     {isComplete
-                      ? `Finalizado ${completionTime || lastEditTime || ''}`
-                      : lastEditTime
+                      ? `Finalizado ${hasValidCompletionTime ? `a las ${completionTime}` : hasValidLastEditTime ? `a las ${lastEditTime}` : 'hoy'}`
+                      : hasValidLastEditTime
                       ? `Último cambio: ${lastEditTime}`
                       : 'Sin cambios registrados'}
                   </span>

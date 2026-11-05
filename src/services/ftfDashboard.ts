@@ -38,8 +38,28 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       .at(-1) || null;
 
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
-    const completedAt=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime()?record.updated:null;
-    const late=!!completedAt&&stamp>cutoff;
+    const validRecord=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime();
+    
+    let completedAt: string | null = null;
+    if (validRecord) {
+      const recTime = record.completedAt || record.updated;
+      const recIsMidnight = mexicoMinutes(recTime) === 0;
+      const actTime = lastActivityEdited && mexicoDate(lastActivityEdited) === day ? lastActivityEdited : null;
+      const actIsMidnight = actTime ? mexicoMinutes(actTime) === 0 : true;
+
+      if (actTime && !actIsMidnight && !recIsMidnight) {
+        // Both exist and are non-midnight: choose the latest actual modification
+        completedAt = Date.parse(actTime) >= Date.parse(recTime) ? actTime : recTime;
+      } else if (actTime && !actIsMidnight) {
+        // Use true Notion activity modification time instead of dummy 00:00 midnight
+        completedAt = actTime;
+      } else {
+        completedAt = recTime;
+      }
+    }
+
+    const lateStamp = completedAt ? Date.parse(completedAt) : stamp;
+    const late = !!completedAt && Number.isFinite(lateStamp) && lateStamp > cutoff;
     const status=!all.length?'empty':pending.length?'pending':completedAt?'complete':'unconfirmed';
     return {
       ...person,
