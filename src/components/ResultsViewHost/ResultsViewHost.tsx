@@ -1623,6 +1623,7 @@ export function ResultsViewHost({
         onCloseTab={handleCloseTab}
         onNewTab={handleNewTab}
         shortcutMode={shortcuts.mode}
+        shortcutBindings={shortcuts.effectiveBindings}
         onRestorePrevious={
           hasLegacyTabs
             ? () => {
@@ -1643,7 +1644,7 @@ export function ResultsViewHost({
 
       {/* FRANJA C: Buscador Principal con Predictivo Integrado en la Misma Fila */}
       <SearchInputBar
-        shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode} />}
+        shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode} bindings={shortcuts.bindings} onChangeBindings={shortcuts.setBindings} />}
         currentUser={currentUser}
         onSubmitSearch={() => setSettledQuery(query)}
         query={query}

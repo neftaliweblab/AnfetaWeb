@@ -1,4 +1,5 @@
 "use client";
+import {mirrorVisibilityKey,calendarCopyVisible} from '@/lib/calendarMirrorVisibility';
 import {CalendarDisplaySettings} from './CalendarDisplaySettings';
 import {calendarGridInterval,calendarDisplayHeight,calendarDisplayWidth,calendarLabelDivisions} from '@/lib/calendarDisplayOptions';
 import {isTemporaryCalendarResponse} from '@/services/calendarEntryPolicy';
@@ -509,9 +510,19 @@ export function CalendarHost({
     return list;
   }, [startHour, endHour]);
 
+  const [copyPreference,setCopyPreference]=useState<{owner:string;show:boolean}>({owner:'',show:true});
+  const copyOwner=normalizePerson(currentUser),showCopies=copyPreference.owner===copyOwner?copyPreference.show:true;
+  useEffect(()=>{
+    const key=mirrorVisibilityKey(copyOwner);
+    const restore=()=>{let show=true;try{show=localStorage.getItem(key)!=='hidden';}catch{}setCopyPreference({owner:copyOwner,show});};
+    restore();const storage=(event:StorageEvent)=>{if(event.key===key||event.key===null)restore();};
+    window.addEventListener('storage',storage);return()=>window.removeEventListener('storage',storage);
+  },[copyOwner]);
+  const toggleCopies=()=>{const show=!showCopies;setCopyPreference({owner:copyOwner,show});try{localStorage.setItem(mirrorVisibilityKey(copyOwner),show?'visible':'hidden');}catch{}};
+
   const filteredActivities = useMemo(() => {
     return filterDeletedPages(activitiesList,currentUser).filter((act) => {
-      if(isTemporaryCalendarResponse(act))return false;
+      if(isTemporaryCalendarResponse(act)||!calendarCopyVisible(act,showCopies))return false;
       if(!act.start||mexicoDate(act.start)!==currentDate)return false;
       if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
@@ -522,7 +533,7 @@ export function CalendarHost({
       }
       return true;
     });
-  }, [activitiesList, searchFilterQuery, phaseFilter,currentDate,currentUser]);
+  }, [activitiesList, searchFilterQuery, phaseFilter,currentDate,currentUser,showCopies]);
 
   useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>(old&&available.find(a=>a.pageId===old.pageId))||available[0]||null);},[filteredActivities,visiblePeople]);
   const activitiesByPerson = useMemo(() => {
@@ -718,7 +729,7 @@ export function CalendarHost({
         totalActivitiesCount={countedCalendarActivities(filteredActivities).length}
         pixelsPerHour={pixelsPerHour}
         gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
-        displayControls={<CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/>}
+        displayControls={<><button type="button" aria-pressed={showCopies} onClick={toggleCopies} title="Mostrar u ocultar solo las copias visuales transferidas; no cambia actividades originales ni la vista de otros usuarios" className="rounded border border-cyan-900 px-2 py-1 text-xs text-cyan-200">Copias transferidas: {showCopies?'visibles':'ocultas'}</button><CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/></>}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}

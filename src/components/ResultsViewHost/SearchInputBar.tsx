@@ -342,7 +342,7 @@ export function SearchInputBar({
 
         {/* 6. Utilidades Rápidas de Búsqueda */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0 select-none">
-          {onOpenTemplates&&<button type="button" onClick={onOpenTemplates} title="Abrir catálogo de plantillas" aria-label="Abrir catálogo de plantillas" className="rounded border border-cyan-800 p-1 text-cyan-300"><Zap className="h-3.5 w-3.5"/></button>}
+          {onOpenTemplates&&<button type="button" onClick={onOpenTemplates} title="Abrir catálogo de plantillas" aria-label="Crear con plantilla" className="flex items-center gap-1 rounded border border-cyan-700 bg-cyan-950/50 px-2 py-1 text-xs font-semibold text-cyan-200"><Zap className="h-3.5 w-3.5"/><span>Crear con plantilla</span></button>}
           <SavedSearches query={query} onSelect={onChangeQuery} />
           <FavoritesBackup />
           <IndexSyncStatus owner={currentUser} />

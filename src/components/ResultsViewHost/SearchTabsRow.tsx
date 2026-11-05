@@ -1,6 +1,6 @@
 "use client";
 
-import type {SearchShortcutMode} from "@/lib/searchTabNavigation";
+import type {SearchShortcutBindings,SearchShortcutMode} from "@/lib/searchTabNavigation";
 import type {ActiveSearchCriterion} from "@/lib/inlinePredictiveEngine";
 import React, {useEffect,useState} from "react";
 import { Search, Plus, X, Star, Timer } from "lucide-react";
@@ -26,6 +26,7 @@ interface SearchTabsRowProps {
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
   shortcutMode?:SearchShortcutMode;
+  shortcutBindings?:SearchShortcutBindings;
   onMarkPending?: (id:string,pending:boolean,minutes?:number)=>void;
   onRestorePrevious?: () => void;
   textScale?: string;
@@ -41,6 +42,7 @@ function SearchTabsRowComponent({
   onCloseTab,
   onNewTab,
   shortcutMode="compatible",
+  shortcutBindings={new:"Ctrl+Alt+T",close:"Ctrl+Alt+W"},
   onMarkPending,
   onRestorePrevious,
   textScale = "100%",
@@ -120,7 +122,7 @@ function SearchTabsRowComponent({
                   }}
                   className="ml-1 p-0.5 rounded hover:bg-[#EF4444]/20 hover:text-[#F87171] text-[#64748B] transition-colors cursor-pointer"
                   aria-label="Cerrar búsqueda"
-                  title={"Cerrar búsqueda interna"+(shortcutMode==='off'?'':' · Ctrl+Alt+W')}
+                  title={"Cerrar búsqueda interna"+(shortcutMode==='off'?'':' · '+shortcutBindings.close)}
                 >
                   <X style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }} />
                 </button>
@@ -134,7 +136,7 @@ function SearchTabsRowComponent({
           onClick={onNewTab}
           className="w-6 h-6 flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#38BDF8] hover:bg-[#1E293B] hover:border-[#38BDF8] text-xs font-bold transition-colors ml-1 shrink-0"
           aria-label="Nueva pestaña de búsqueda"
-          title={"Nueva búsqueda"+(shortcutMode==='off'?'':' · Ctrl+Alt+T')}
+          title={"Nueva búsqueda"+(shortcutMode==='off'?'':' · '+shortcutBindings.new)}
         >
           <Plus className="w-3.5 h-3.5" />
         </button>

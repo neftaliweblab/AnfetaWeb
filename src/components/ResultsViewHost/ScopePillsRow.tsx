@@ -1,5 +1,6 @@
 "use client";
 
+import {createPortal} from "react-dom";
 import React, { useState, useRef, useEffect } from "react";
 import { Star, Globe, Folder, FileText, Database, Search, Layers, ChevronDown } from "lucide-react";
 
@@ -58,7 +59,15 @@ export function ScopePillsRow({
   textScale = "100%",
 }: ScopePillsRowProps) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null),menuRef=useRef<HTMLDivElement>(null);
+  const [menuPosition,setMenuPosition]=useState({left:12,top:80,width:240,maxHeight:320});
+  useEffect(()=>{
+    if(!showMoreMenu)return;
+    const place=()=>{const button=moreRef.current?.querySelector('button');if(!button)return;const rect=button.getBoundingClientRect(),width=Math.min(260,window.innerWidth-24);setMenuPosition({left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12)),top:Math.min(rect.bottom+6,window.innerHeight-100),width,maxHeight:Math.max(80,window.innerHeight-rect.bottom-24)});};
+    place();const frame=requestAnimationFrame(()=>menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+    window.addEventListener('resize',place);window.addEventListener('scroll',place,true);
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);};
+  },[showMoreMenu]);
 
   const scale = (() => {
     if (!textScale) return 1.0;
@@ -68,7 +77,7 @@ export function ScopePillsRow({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) {
         setShowMoreMenu(false);
       }
     }
@@ -196,6 +205,7 @@ export function ScopePillsRow({
         <div ref={moreRef} className="relative shrink-0">
           <button
             type="button"
+            aria-haspopup="menu" aria-expanded={showMoreMenu}
             onClick={() => setShowMoreMenu(!showMoreMenu)}
             style={{
               fontSize: `${(10.5 * scale).toFixed(1)}px`,
@@ -208,15 +218,19 @@ export function ScopePillsRow({
             <ChevronDown className="w-3 h-3 text-slate-400" />
           </button>
 
-          {showMoreMenu && (
-            <div className="absolute left-0 mt-1 w-52 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1.5 space-y-1">
+          {showMoreMenu && typeof document!=="undefined" && createPortal(
+            <div ref={menuRef} role="menu" aria-label="Bases adicionales" style={{position:'fixed',...menuPosition,zIndex:6000}} className="overflow-y-auto bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl p-1.5 space-y-1" onKeyDown={event=>{
+                const buttons=Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button')||[]),index=buttons.indexOf(document.activeElement as HTMLButtonElement);
+                if(event.key==='Escape'){event.preventDefault();setShowMoreMenu(false);moreRef.current?.querySelector('button')?.focus();}
+                if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
+              }}>
               <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400 border-b border-[#1E293B]">
                 Bases adicionales (BD)
               </div>
               {DATABASE_SCOPES.slice(3).map((item) => (
                 <button
                   key={item.id}
-                  type="button"
+                  role="menuitem" type="button"
                   onClick={() => {
                     onSelectScope(item.id);
                     setShowMoreMenu(false);
@@ -228,7 +242,7 @@ export function ScopePillsRow({
                 </button>
               ))}
             </div>
-          )}
+          ,document.body)}
         </div>
       </div>
     </div>
