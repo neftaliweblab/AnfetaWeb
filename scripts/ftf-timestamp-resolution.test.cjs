@@ -18,6 +18,7 @@ Module._extensions['.ts'] = (m, p) => m._compile(
 );
 
 const { buildFtfDashboard } = require(root + '/src/services/ftfDashboard.ts');
+const { completedFtfPeople } = require(root + '/src/services/ftfCompletion.ts');
 const { calendarTime } = require(root + '/src/services/calendarPresentation.ts');
 
 const day = '2026-11-05';
@@ -77,4 +78,22 @@ const reportBoth = buildFtfDashboard('John', day, people, [act1], { ['ftf:' + da
 const neftaliBoth = reportBoth.people.find(p => p.name === 'Neftali');
 assert.equal(calendarTime(neftaliBoth.completedAt), '15:27'); // 15:27 > 14:00
 
-console.log('OK: Resolución de timestamps FTF validada exitosamente. 00:00 evitado y hora real de Notion preservada.');
+// Case 4: [RESPUESTA] notification cards must NEVER be counted as work activities in FTF
+const respAct = {
+  pageId: 'resp1',
+  person: 'Neftali',
+  title: '11-05 15:36 de: [RESPUESTA] Revisión aprobada - SEO Optimización Técnica Posicionamiento SEO',
+  start: day + 'T09:00:00-06:00',
+  ftfAvailable: false,
+  ftfVerified: false,
+};
+const reportWithResp = buildFtfDashboard('John', day, people, [act1, respAct], { ['ftf:' + day + ':Neftali']: midnightReceipt }, now);
+const neftaliWithResp = reportWithResp.people.find(p => p.name === 'Neftali');
+assert.equal(neftaliWithResp.total, 1, 'Activities with [RESPUESTA] must not be counted in total');
+assert.equal(neftaliWithResp.pending.length, 0, '[RESPUESTA] must not be added to pending list');
+assert.equal(neftaliWithResp.status, 'complete', 'Status remains complete when only real activities are checked');
+
+const completedList = completedFtfPeople([act1, respAct], now);
+assert.deepEqual(completedList, ['Neftali'], 'completedFtfPeople must ignore [RESPUESTA]');
+
+console.log('OK: Resolución de timestamps FTF y exclusión de [RESPUESTA] validadas exitosamente.');

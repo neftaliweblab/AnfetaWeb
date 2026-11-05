@@ -2,6 +2,7 @@ import {NotionCalendarActivity} from '@/types/anfeta';
 import {mexicoDate,mexicoMinutes,mexicoMinutes as toMinutes} from './calendarPresentation';
 import {normalizePerson} from './identityNormalizer';
 import {isFtfReminder} from './progressKpis';
+import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
 
 export function canViewFtfDashboard(user:string){return ['John','Neftali'].includes(normalizePerson(user));}
 
@@ -22,7 +23,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
   const rows=team.filter(p=>normalizePerson(p.name)!=='Emmanuel'&&normalizePerson(p.name)!=='Sin asignar').map(person=>{
     const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>();
     for(const activity of activities){
-      if(!activity.start||activity.isReviewMirror||activity.isHandoffMirror||isFtfReminder(activity)||normalizePerson(activity.person)!==name||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
+      if(!activity.start||activity.isReviewMirror||activity.isHandoffMirror||isFtfReminder(activity)||isTemporaryCalendarResponse(activity)||normalizePerson(activity.person)!==name||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
       unique.set(activity.pageId,activity);
     }
     const all=[...unique.values()],pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified).sort((a,b)=>a.start.localeCompare(b.start));
