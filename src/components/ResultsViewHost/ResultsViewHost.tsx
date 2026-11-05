@@ -1947,6 +1947,7 @@ export function ResultsViewHost({
             onSearchDomain={(domain) => handleQueryChange(domain)}
             onOpenUploadDropbox={handleOpenDropboxUpload}
             onOpenGlobalPaste={() => triggerGlobalPaste(null)}
+            onRename={handleRenamePrompt}
             onDelete={handleDeleteItem}
             textScale={textScale}
             searchQuery={deferredQuery}

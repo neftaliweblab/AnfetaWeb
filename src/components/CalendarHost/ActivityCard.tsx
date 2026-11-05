@@ -14,7 +14,8 @@ import {isFtfReminder} from '@/services/progressKpis';
 import React, { useState, useRef, useMemo } from "react";
 import {createPortal} from 'react-dom';
 import {offlineAwareFetch} from '@/services/offlineQueue';
-import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3 } from "lucide-react";
+import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3, Sparkles } from "lucide-react";
+import { ActivityTitleFieldEditor } from '../ActivityTitleFieldEditor';
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { openNotionPage } from "@/services/windowsIntegration";
@@ -131,6 +132,7 @@ function ActivityCardComponent({
     return "medium";
   });
   const [showAllChecks, setShowAllChecks] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const [showEditDateModal, setShowEditDateModal] = useState(false);
   const [editDay, setEditDay] = useState(() => mexicoDate(activity.start || new Date()));
   const [editStart, setEditStart] = useState(() => calendarTime(activity.start || '08:00'));
@@ -763,6 +765,19 @@ function ActivityCardComponent({
               <span>Editar fecha y horario...</span>
             </button>
           )}
+          {editable && (
+            <button
+              disabled={isCompleted || isSaving}
+              onClick={() => {
+                closeContextMenu();
+                setShowRenameModal(true);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#1E2836] text-purple-300 flex items-center gap-2"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>Renombrar por campos (ficha)…</span>
+            </button>
+          )}
           {editable&&!isCompleted&&<QuickScheduleActions activity={activity} currentUser={currentUser} disabled={isSaving} onClose={closeContextMenu} onSave={updates=>onUpdateActivity?.(activity.pageId,updates)}/>}
           <button
             onClick={() => {
@@ -795,6 +810,24 @@ function ActivityCardComponent({
             setShowReviewModal(false);
           }}
         />
+      )}
+
+      {/* Modal interactivo: Renombrar por campos */}
+      {showRenameModal && createPortal(
+        <div className="fixed inset-0 z-[450] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-xl">
+            <ActivityTitleFieldEditor
+              pageId={activity.pageId}
+              initialTitle={activity.title || ''}
+              onSaveSuccess={(newTitle) => {
+                setShowRenameModal(false);
+                onUpdateActivity?.(activity.pageId, { title: newTitle });
+              }}
+              onCancel={() => setShowRenameModal(false)}
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal interactivo: Editar fecha y hora */}

@@ -47,6 +47,7 @@ interface DetailsPaneProps {
   onSearchDomain?: (domain: string) => void;
   onOpenUploadDropbox?: (targetDir?: string) => void;
   onOpenGlobalPaste?: () => void;
+  onRename?: (item: any) => void;
   onDelete?: (item: any) => void;
   textScale?: string;
   searchQuery?: string;
@@ -81,6 +82,7 @@ function DetailsPaneComponent({
   onSearchDomain,
   onOpenUploadDropbox,
   onOpenGlobalPaste,
+  onRename,
   onDelete,
   textScale = "100%",
   searchQuery = "",
@@ -925,10 +927,7 @@ function DetailsPaneComponent({
                   type="button"
                   onClick={() => {
                     setIsMoreMenuOpen(false);
-                    const newName = prompt("Nuevo nombre para el elemento:", item.name);
-                    if (newName && newName !== item.name) {
-                      alert(`Renombrando a "${newName}"...`);
-                    }
+                    onRename?.(item);
                   }}
                   className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#162232] hover:text-[#A78BFA] flex items-center gap-2 cursor-pointer transition-colors"
                 >

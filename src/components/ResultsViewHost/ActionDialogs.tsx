@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Edit2, Copy, FolderPlus } from "lucide-react";
+import { ActivityTitleFieldEditor } from "../ActivityTitleFieldEditor";
 
 // Modal para Renombrar
 interface RenameModalProps {
@@ -21,6 +22,30 @@ export function RenameModal({ isOpen, item, onClose, onConfirm }: RenameModalPro
   }, [item]);
 
   if (!isOpen || !item) return null;
+
+  if (item.source === "Notion") {
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <div
+          className="w-full max-w-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ActivityTitleFieldEditor
+            pageId={item.externalId || item.id}
+            initialTitle={item.name || ""}
+            onSaveSuccess={(newName) => {
+              onConfirm(item, newName);
+              onClose();
+            }}
+            onCancel={onClose}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

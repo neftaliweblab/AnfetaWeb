@@ -31,6 +31,13 @@ export function CalendarDisplaySettings({currentUser,value,onChange,expanded,onT
   const remember=(id:string)=>{try{sessionStorage.setItem(ownerKey+':active',id);}catch{}};
   const apply=(profile:MonitorProfile)=>{setSelected(profile.id);setName(profile.name);remember(profile.id);onChange(profile.value);setMessage('Vista aplicada solo a esta ventana.');};
   const change=(patch:Record<string,any>)=>{setSelected('');remember('');onChange({...value,...patch});setMessage('Ajuste visual aplicado. Puedes guardarlo con un nombre.');};
+  const fitScreenHeight=()=>{
+    if(typeof window==='undefined')return;
+    const available=window.innerHeight-180;
+    const targetHourHeight=Math.max(CALENDAR_HEIGHT_MIN,Math.min(CALENDAR_HEIGHT_MAX,Math.round(available/14)));
+    change({height:targetHourHeight});
+    setMessage(`Altura ajustada a tu pantalla (${targetHourHeight}px por hora, ${Math.round(targetHourHeight/72*100)}%).`);
+  };
   const save=()=>{
     const clean=name.trim().slice(0,60);if(!clean){setMessage('Escribe un nombre para la vista.');return;}
     const existing=profiles.find(p=>p.name.toLowerCase()===clean.toLowerCase());
@@ -52,7 +59,18 @@ export function CalendarDisplaySettings({currentUser,value,onChange,expanded,onT
       <header className="mb-4 flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-base font-semibold text-cyan-200"><Monitor size={20}/>Pantallas y tamaño del calendario</h2><button type="button" aria-label="Cerrar ajustes de pantalla" onClick={()=>dialog.current?.close()} className="rounded p-2 hover:bg-slate-800"><X size={18}/></button></header>
       <p className="mb-4 text-xs leading-relaxed text-slate-400">Ajusta cada ventana a su monitor. Las actividades siguen sincronizadas; la altura, las columnas y las líneas de esta ventana son independientes. Estos controles no cambian los horarios de Notion.</p>
       <section className="space-y-3 rounded-xl border border-slate-700 p-3">
-        <h3 className="text-sm font-semibold">Tamaños rápidos</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Tamaños rápidos</h3>
+          <button
+            type="button"
+            onClick={fitScreenHeight}
+            className="rounded border border-cyan-700 bg-cyan-950/60 px-2.5 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-900 transition-colors flex items-center gap-1.5"
+            title="Calcula automáticamente la altura ideal para llenar esta ventana o monitor sin dejar huecos abajo"
+          >
+            <Maximize2 size={13} />
+            Llenar altura de pantalla
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{CALENDAR_DISPLAY_PRESETS.map(preset=><button type="button" key={preset.id} onClick={()=>change({height:preset.height,width:preset.width})} className="rounded border border-cyan-900 bg-cyan-950/30 px-2 py-2 text-xs text-cyan-200 hover:bg-cyan-900">{preset.label}<span className="block text-[10px] text-slate-400">{Math.round(preset.height/72*100)}% de altura</span></button>)}</div>
         <label className="block text-xs">Altura por hora · {Math.round(value.height/72*100)}%<input aria-label="Altura del calendario" type="range" min={CALENDAR_HEIGHT_MIN} max={CALENDAR_HEIGHT_MAX} step={12} value={value.height} onChange={event=>change({height:Number(event.target.value)})} className="mt-2 block w-full accent-cyan-400"/></label>
         <label className="block text-xs">Ancho de columnas · {value.width} px<input aria-label="Ancho de columnas del calendario" type="range" min={CALENDAR_WIDTH_MIN} max={CALENDAR_WIDTH_MAX} step={20} value={value.width} onChange={event=>change({width:Number(event.target.value)})} className="mt-2 block w-full accent-cyan-400"/></label>
