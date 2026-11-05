@@ -1,6 +1,6 @@
-import {mexicoDate,mexicoMinutes} from './calendarPresentation';
-import {normalizePerson} from './identityNormalizer';
 import {NotionCalendarActivity} from '@/types/anfeta';
+import {mexicoDate,mexicoMinutes,mexicoMinutes as toMinutes} from './calendarPresentation';
+import {normalizePerson} from './identityNormalizer';
 import {isFtfReminder} from './progressKpis';
 
 export function canViewFtfDashboard(user:string){return ['John','Neftali'].includes(normalizePerson(user));}
@@ -18,31 +18,50 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
   if(!canViewFtfDashboard(actor))throw Error('Este panel está disponible únicamente para John y Neftalí.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
-  let earliestStartMin = 1440;
+  
   const rows=team.filter(p=>normalizePerson(p.name)!=='Emmanuel'&&normalizePerson(p.name)!=='Sin asignar').map(person=>{
     const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>();
     for(const activity of activities){
       if(!activity.start||activity.isReviewMirror||activity.isHandoffMirror||isFtfReminder(activity)||normalizePerson(activity.person)!==name||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
       unique.set(activity.pageId,activity);
-      const mins = mexicoMinutes(activity.start);
-      if (mins < earliestStartMin) earliestStartMin = mins;
     }
     const all=[...unique.values()],pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified).sort((a,b)=>a.start.localeCompare(b.start));
     const verifiedActivities = all.filter(a => a.ftfAvailable && a.ftfVerified);
     const assignedHours = Number(all.reduce((sum, a) => sum + activityHours(a), 0).toFixed(1));
     const completedHours = Number(verifiedActivities.reduce((sum, a) => sum + activityHours(a), 0).toFixed(1));
+    
+    // Exact last modified time of activities in Notion for this person
+    const lastActivityEdited = all
+      .map(a => (a as any).serverModified || (a as any).lastEdited || (a as any).last_edited_time)
+      .filter(v => v && Number.isFinite(Date.parse(v)))
+      .sort()
+      .at(-1) || null;
+
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
     const completedAt=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime()?record.updated:null;
     const late=!!completedAt&&stamp>cutoff;
     const status=!all.length?'empty':pending.length?'pending':completedAt?'complete':'unconfirmed';
-    return {...person,name,total:all.length,verified:all.length-pending.length,pending,completedAt,late,timeKind:record?.timeKind||'observed',status,assignedHours,completedHours};
+    return {
+      ...person,
+      name,
+      total:all.length,
+      verified:all.length-pending.length,
+      pending,
+      completedAt,
+      late,
+      timeKind:record?.timeKind||'observed',
+      status,
+      assignedHours,
+      completedHours,
+      lastActivityEdited,
+    };
   });
+  
   const totalAssignedHours = Number(rows.reduce((sum, p) => sum + (p.assignedHours || 0), 0).toFixed(1));
   const totalCompletedHours = Number(rows.reduce((sum, p) => sum + (p.completedHours || 0), 0).toFixed(1));
-  const initialTime = earliestStartMin < 1440
-    ? `${String(Math.floor(earliestStartMin / 60)).padStart(2, '0')}:${String(earliestStartMin % 60).padStart(2, '0')}`
-    : '08:00';
+  const initialTime = '10:00';
   const finalTime = '18:00';
+  const jornadaHours = 8;
 
   return {
     day,
@@ -59,5 +78,6 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     totalCompletedHours,
     initialTime,
     finalTime,
+    jornadaHours,
   };
 }

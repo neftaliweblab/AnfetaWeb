@@ -546,6 +546,26 @@ export function ResultsViewHost({
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
   useEffect(()=>{const receive=(event:Event)=>{const detail=(event as CustomEvent).detail;if(detail?.owner!==currentUser||!detail.row?.id)return;setItems(previous=>[detail.row,...previous.filter(row=>row.id!==detail.row.id)]);};window.addEventListener('anfeta_note_created',receive);return()=>window.removeEventListener('anfeta_note_created',receive);},[currentUser]);
   useEffect(() => {
+    const handleRenamed = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail?.id || !detail?.newName) return;
+      const cleanTargetId = String(detail.id).replace(/-/g, '').toLowerCase();
+      setItems((prev) =>
+        prev.map((it) => {
+          const itId = String(it.externalId || it.id || '').replace(/-/g, '').toLowerCase();
+          return itId === cleanTargetId ? { ...it, name: detail.newName } : it;
+        })
+      );
+      setSelectedItem((prev: any) => {
+        if (!prev) return null;
+        const prevId = String(prev.externalId || prev.id || '').replace(/-/g, '').toLowerCase();
+        return prevId === cleanTargetId ? { ...prev, name: detail.newName } : prev;
+      });
+    };
+    window.addEventListener('anfeta_item_renamed', handleRenamed);
+    return () => window.removeEventListener('anfeta_item_renamed', handleRenamed);
+  }, []);
+  useEffect(() => {
     const onContentLoaded = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       const pid = String(detail?.pageId || "").replace(/-/g, "").toLowerCase();

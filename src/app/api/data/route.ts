@@ -499,7 +499,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const settings=getSettings(),tomorrow=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
         const {activeTeam}=await import('@/services/teamDirectory');
         const [pages,people]=await Promise.all([queryCalendarPages(settings,day,tomorrow,true),activeTeam()]);
-        const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page)},0);});
+        const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page)},0);});
         let warning='';
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const state=await readUserState(settings,'John');

@@ -1,13 +1,30 @@
 "use client";
-import React,{useEffect,useState} from 'react';
-import {canViewFtfDashboard} from '@/services/ftfDashboard';
-import {calendarDisplayTitle,calendarDomain,calendarTime} from '@/services/calendarPresentation';
-import {NotionCalendarActivity} from '@/types/anfeta';
-import type {buildFtfDashboard} from '@/services/ftfDashboard';
-type Report=ReturnType<typeof buildFtfDashboard>&{warning?:string;automation?:{state:string;secretConfigured:boolean;actorConfigured:boolean;jobs:{kind:string;status:string;updatedAt:string;failed:number;remaining:number}[]}};
+import React, { useEffect, useState, useMemo } from 'react';
+import { NotionCalendarActivity } from '@/types/anfeta';
+import { calendarDisplayTitle, calendarDomain, calendarTime, mexicoDate } from '@/services/calendarPresentation';
+import { buildFtfDashboard, canViewFtfDashboard } from '@/services/ftfDashboard';
+import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User } from 'lucide-react';
 
-export function CalendarFtfPanel({currentUser,date,onOpenActivity}:{currentUser:string;date:string;onOpenActivity:(activity:NotionCalendarActivity)=>void}){
-  const [report,setReport]=useState<Report|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[revision,setRevision]=useState(0);
+type Report = ReturnType<typeof buildFtfDashboard> & {
+  warning?: string;
+  automation?: { state: string; secretConfigured: boolean; actorConfigured: boolean; jobs: any[] };
+};
+
+export function CalendarFtfPanel({
+  currentUser,
+  date,
+  onOpenActivity,
+}: {
+  currentUser: string;
+  date: string;
+  onOpenActivity: (activity: NotionCalendarActivity) => void;
+}) {
+  const [report, setReport] = useState<Report | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [expandedPeople, setExpandedPeople] = useState<Record<string, boolean>>({});
+
   const reviewStorageKey = 'anfeta_bitacora_review:' + date;
   const [supervisorReview, setSupervisorReview] = useState<{ reviewer: string; reviewedAt: string } | null>(null);
 
@@ -35,82 +52,277 @@ export function CalendarFtfPanel({currentUser,date,onOpenActivity}:{currentUser:
     }
   };
 
-  useEffect(()=>{
-    setReport(null);setError('');
-    if(!canViewFtfDashboard(currentUser))return;
-    let stopped=false,busy=false;const controller=new AbortController();
-    const refresh=async()=>{
-      if(stopped||busy||document.hidden)return;busy=true;setLoading(true);
-      try{
-        const response=await fetch('/api/data?type=ftf-dashboard&date='+encodeURIComponent(date),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])});
-        const data=await response.json();if(!response.ok||data.error)throw Error(data.error||'No se pudo comprobar la Bitácora.');
-        if(!stopped){setReport(data);setError('');}
-      }catch(e){if(!stopped)setError(e instanceof Error?e.message:'No se pudo actualizar la Bitácora.');}
-      finally{busy=false;if(!stopped)setLoading(false);}
+  const togglePersonExpand = (name: string) => {
+    setExpandedPeople(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  useEffect(() => {
+    setReport(null);
+    setError('');
+    if (!canViewFtfDashboard(currentUser)) return;
+    const controller = new AbortController();
+    let stopped = false,
+      busy = false;
+
+    const refresh = async () => {
+      if (stopped || busy || document.hidden) return;
+      busy = true;
+      setLoading(true);
+      try {
+        const response = await fetch('/api/data?type=ftf-dashboard&date=' + encodeURIComponent(date), {
+          cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]),
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'No se pudo comprobar la Bitácora.');
+        if (!stopped) {
+          setReport(data);
+          setError('');
+        }
+      } catch (e) {
+        if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar la Bitácora.');
+      } finally {
+        busy = false;
+        if (!stopped) setLoading(false);
+      }
     };
+
     void refresh();
-    window.addEventListener('anfeta_review_saved',refresh);window.addEventListener('anfeta_calendar_refresh',refresh);
-    return ()=>{stopped=true;controller.abort();window.removeEventListener('anfeta_review_saved',refresh);window.removeEventListener('anfeta_calendar_refresh',refresh);};
-  },[currentUser,date,revision]);
-  if(!canViewFtfDashboard(currentUser))return null;
-  return <details open className="shrink-0 border-b border-cyan-900/60 bg-slate-950/70 px-3 py-2">
-    <summary className="cursor-pointer text-xs font-semibold text-cyan-200">
-      Bitácora del equipo (FTF) · {date}
-      {report && (
-        <span className="ml-3 font-normal text-slate-300">
-          {report.completed} a tiempo · {report.late} tarde · {report.pending} pendientes
-          {report.totalAssignedHours !== undefined && (
-            <span className="ml-2 text-cyan-300 font-medium">
-              · {report.totalAssignedHours} h asignadas · {report.totalCompletedHours || 0} h terminadas
+    window.addEventListener('anfeta_review_saved', refresh);
+    window.addEventListener('anfeta_calendar_refresh', refresh);
+    return () => {
+      stopped = true;
+      controller.abort();
+      window.removeEventListener('anfeta_review_saved', refresh);
+      window.removeEventListener('anfeta_calendar_refresh', refresh);
+    };
+  }, [currentUser, date, revision]);
+
+  if (!canViewFtfDashboard(currentUser)) return null;
+
+  return (
+    <section className="shrink-0 border-b border-cyan-900/50 bg-[#0B101B]/95 px-3 py-2.5 text-slate-200">
+      {/* Header General */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 font-semibold text-cyan-200 text-xs">
+            <ShieldCheck size={16} className="text-cyan-400" />
+            <span>Bitácora del equipo (FTF) · {date}</span>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] text-slate-300">
+            <span className="rounded bg-slate-800/80 px-2 py-0.5 border border-slate-700 text-slate-300 font-mono">
+              ⏱ Jornada: 10:00 a 18:00 (8 hrs)
             </span>
+
+            {report && (
+              <>
+                <span className="rounded bg-cyan-950/60 px-2 py-0.5 border border-cyan-800/60 text-cyan-200 font-mono">
+                  {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h terminadas
+                </span>
+                <span className="text-slate-400">
+                  <strong className="text-emerald-400">{report.completed}</strong> al día ·{' '}
+                  <strong className="text-amber-400">{report.pending}</strong> pendientes
+                  {report.late > 0 && <span className="text-rose-400"> · {report.late} tarde</span>}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Supervisor y Botón Actualizar */}
+        <div className="flex items-center gap-2">
+          {supervisorReview ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+              <CheckCircle2 size={13} className="text-emerald-400" />
+              <span>
+                Bitácora revisada por <strong>{supervisorReview.reviewer}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={toggleSupervisorReview}
+                className="ml-1 text-[10px] text-slate-400 underline hover:text-white"
+              >
+                Desmarcar
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleSupervisorReview}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-600/70 bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/60"
+              title="Marcar que el supervisor ya revisó y cuadró la bitácora del día"
+            >
+              <CheckCircle2 size={13} />
+              <span>✓ Ya revisé bitácora</span>
+            </button>
           )}
-        </span>
-      )}
-    </summary>
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span>Bitácora inicial: <strong className="text-slate-200">{report?.initialTime || '08:00'}</strong> · Bitácora final: <strong className="text-slate-200">{report?.finalTime || '18:00'}</strong></span>
-        {supervisorReview ? (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/50 text-emerald-300 text-[10.5px]">
-            <span>✓ Bitácora revisada por <strong>{supervisorReview.reviewer}</strong></span>
-            <button type="button" onClick={toggleSupervisorReview} className="text-slate-400 hover:text-white underline ml-1 text-[10px]">Desmarcar</button>
-          </span>
-        ) : (
+
           <button
             type="button"
-            onClick={toggleSupervisorReview}
-            className="rounded border border-emerald-600/70 bg-emerald-950/40 hover:bg-emerald-900/60 px-2 py-0.5 text-[10.5px] font-medium text-emerald-300 transition-colors"
-            title="Marcar que el supervisor ya revisó y cuadró la bitácora del día"
+            disabled={loading}
+            onClick={() => setRevision(v => v + 1)}
+            className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-xs text-cyan-200 transition-colors hover:bg-slate-800 disabled:opacity-50"
           >
-            ✓ Ya revisé bitácora
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            <span>{loading ? 'Comprobando…' : 'Actualizar'}</span>
           </button>
-        )}
+        </div>
       </div>
-      <button type="button" disabled={loading} onClick={()=>setRevision(v=>v+1)} className="rounded border border-slate-700 px-2 py-1 text-cyan-200 disabled:opacity-50">{loading?'Comprobando…':'Actualizar Bitácora'}</button>
-    </div>
-    {error&&<p role="alert" className="mt-2 text-xs text-rose-300">{error}{report?' Se conserva la última lectura; no es una confirmación actual.':''}</p>}
-    {report?.warning&&<p role="status" className="mt-2 text-xs text-amber-200">{report.warning}</p>}
-    {report?.automation&&<p className="mt-2 text-[11px] text-slate-400">Preparación diaria 05:00: {report.automation.state==='missing'?'Sin registro para este día':report.automation.state==='unavailable'?'No se pudo consultar el registro':['reset','rollover'].map(kind=>report.automation!.jobs.find(j=>j.kind===kind)||{kind,status:'missing',updatedAt:'',failed:0,remaining:0}).map(j=>(j.kind==='reset'?'Verificación':'Tarjeta FTF')+': '+(j.status==='completed'?'completado':j.status==='failed'?'falló':j.status==='pending'?'pendiente':j.status==='missing'?'sin registro':'en proceso')+(j.updatedAt?' '+calendarTime(j.updatedAt):'')).join(' · ')}{!report.automation.secretConfigured||!report.automation.actorConfigured?' · Revisa la configuración del cron en Vercel.':''}</p>}
-    {report&&<div className="mt-2 grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
-      {report.people.map(person=><details key={person.name} className={'rounded-lg border px-3 py-2 '+(person.status==='complete'?'border-emerald-700/60 bg-emerald-950/25':person.status==='pending'?'border-amber-800/60 bg-amber-950/15':'border-slate-700 bg-slate-900/60')}>
-        <summary className="cursor-pointer text-xs">
-          <span className="font-semibold text-slate-100">{person.name}</span>
-          <span className={'ml-2 '+(person.status==='complete'?'text-emerald-300':person.status==='pending'?'text-amber-200':'text-slate-400')}>
-            {person.status==='complete'?(person.timeKind==='confirmed'?'✓ Completó':'Verificado al consultar')+(person.late?' tarde':'')+' '+calendarTime(person.completedAt!):person.status==='pending'?(report.deadlinePassed?'Fuera de plazo · ':'')+person.pending.length+' por verificar':person.status==='empty'?'Sin actividades antes de las 18:00':'Verificado · sin registro antes de las 18:00'}
-          </span>
-          <span className="ml-2 text-slate-400">
-            {person.verified}/{person.total}
-            {person.assignedHours !== undefined && (
-              <span className="ml-1 text-cyan-300/80 font-mono text-[10px]">({person.assignedHours}h)</span>
-            )}
-          </span>
-        </summary>
-        <p className="mt-2 text-[10px] text-slate-400">{person.alias} · {person.role||'Integrante del equipo'}{person.completedAt&&person.timeKind!=='confirmed'?' · Hora de detección; la hora exacta de marcado no está confirmada.':''}</p>
-        {person.pending.length>0&&person.completedAt&&<p className="mt-1 text-[11px] text-amber-200">Tuvo un registro a las {calendarTime(person.completedAt)}; ahora hay actividades sin verificar.</p>}
-        {person.status==='unconfirmed'&&<p className="mt-2 text-[11px] text-slate-400">Las casillas están marcadas, pero no existe un registro que confirme cumplimiento antes del corte.</p>}
-        {person.pending.map(activity=><button type="button" key={activity.pageId} onClick={()=>onOpenActivity(activity)} className="mt-2 block w-full rounded border border-slate-700 bg-slate-950/60 p-2 text-left text-[11px] text-slate-200 hover:border-cyan-500"><span className="text-cyan-300">{calendarTime(activity.start)} · {calendarDomain(activity.title)}</span><span className="mt-1 block break-words">{calendarDisplayTitle(activity.title,calendarDomain(activity.title))}</span>{!activity.ftfAvailable&&<span className="mt-1 block text-amber-200">Falta la casilla FTF en Notion.</span>}</button>)}
-      </details>)}
-    </div>}
-    {report&&<p className="mt-2 text-[10px] text-slate-500">Última comprobación: {calendarTime(report.updatedAt)} · {report.empty} integrantes sin actividades en este horario.</p>}
-  </details>;
+
+      {error && (
+        <div role="alert" className="mt-2 rounded border border-rose-800/60 bg-rose-950/40 p-2 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {/* Grid de Colaboradores: items-start evita deformación de filas al desplegar */}
+      {report && (
+        <div className="mt-3 grid max-h-[380px] grid-cols-1 gap-2.5 overflow-y-auto pr-1 items-start sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {report.people.map(person => {
+            const isComplete = person.status === 'complete';
+            const isPending = person.status === 'pending';
+            const isEmpty = person.status === 'empty';
+            const isExpanded = !!expandedPeople[person.name];
+
+            const percent = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
+            const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
+            const lastEditTime = person.lastActivityEdited ? calendarTime(person.lastActivityEdited) : null;
+
+            return (
+              <div
+                key={person.name}
+                className={`rounded-xl border transition-all ${
+                  isComplete
+                    ? 'border-emerald-600/40 bg-emerald-950/20'
+                    : isPending
+                    ? 'border-amber-600/40 bg-amber-950/20'
+                    : 'border-slate-800 bg-slate-900/40 opacity-75'
+                } p-2.5 shadow-md`}
+              >
+                {/* Cabecera del colaborador */}
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px] ${
+                        isComplete
+                          ? 'bg-emerald-900 text-emerald-200 border border-emerald-500'
+                          : isPending
+                          ? 'bg-amber-900 text-amber-200 border border-amber-500'
+                          : 'bg-slate-800 text-slate-300 border border-slate-600'
+                      }`}
+                    >
+                      {person.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="truncate">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="font-semibold text-xs text-slate-100">{person.name}</span>
+                        {person.role && (
+                          <span className="text-[10px] text-slate-400 truncate">({person.role})</span>
+                        )}
+                      </div>
+                      <div className="text-[10.5px] text-slate-400">
+                        {person.verified}/{person.total} checks · {person.assignedHours || 0}h asignadas
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Estado / Horario */}
+                  <div className="shrink-0 text-right">
+                    {isComplete ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-emerald-900/60 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-300 border border-emerald-500/50">
+                        <CheckCircle2 size={11} />
+                        <span>{completionTime ? `${completionTime}` : 'Completó'}</span>
+                      </span>
+                    ) : isPending ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-900/60 px-1.5 py-0.5 text-[10.5px] font-medium text-amber-300 border border-amber-500/50">
+                        <Clock size={11} />
+                        <span>{person.pending.length} pend.</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic">Sin horario</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Barra de progreso */}
+                <div className="mt-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+                    <span>Avance: {percent}%</span>
+                    <span>
+                      {person.completedHours || 0}h / {person.assignedHours || 0}h
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950 border border-slate-800">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        isComplete ? 'bg-emerald-500' : isPending ? 'bg-amber-500' : 'bg-slate-600'
+                      }`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Información de último registro / modificación */}
+                <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>
+                    {isComplete
+                      ? `Finalizado ${completionTime || lastEditTime || ''}`
+                      : lastEditTime
+                      ? `Último cambio: ${lastEditTime}`
+                      : 'Sin cambios registrados'}
+                  </span>
+                  {person.late && <span className="font-semibold text-rose-400">Tarde (&gt;18:00)</span>}
+                </div>
+
+                {/* Desplegable de Actividades Pendientes (con scroll interno de max-h-40) */}
+                {person.pending.length > 0 && (
+                  <div className="mt-2 border-t border-slate-800/80 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => togglePersonExpand(person.name)}
+                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-[11px] font-medium text-amber-200 hover:bg-slate-800/60"
+                    >
+                      <span>
+                        {isExpanded ? 'Ocultar' : 'Ver'} {person.pending.length} actividad
+                        {person.pending.length > 1 ? 'es' : ''} pendiente
+                        {person.pending.length > 1 ? 's' : ''}
+                      </span>
+                      {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-1 max-h-40 overflow-y-auto space-y-1.5 pr-1 select-text">
+                        {person.pending.map(activity => (
+                          <button
+                            type="button"
+                            key={activity.pageId}
+                            onClick={() => onOpenActivity(activity)}
+                            className="block w-full rounded border border-slate-800 bg-slate-950/80 p-2 text-left text-[10.5px] text-slate-200 transition-colors hover:border-cyan-500 hover:bg-slate-900"
+                          >
+                            <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px] mb-0.5">
+                              <span>{calendarTime(activity.start)}</span>
+                              <span className="truncate max-w-[120px]">{calendarDomain(activity.title)}</span>
+                            </div>
+                            <div className="line-clamp-2 text-slate-200 font-normal">
+                              {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
+                            </div>
+                            {!activity.ftfAvailable && (
+                              <span className="mt-1 block text-[10px] text-amber-300">
+                                ⚠ Falta la casilla FTF en Notion.
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }

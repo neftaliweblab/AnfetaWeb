@@ -30,7 +30,13 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
   const [revision, setRevision] = useState(0);
   const [viewport, setViewport] = useState({ width: 1200, height: 800 });
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [overrideTitle, setOverrideTitle] = useState('');
   const overlayOpen = useRef(false);
+
+  useEffect(() => {
+    setOverrideTitle('');
+    setIsEditingTitle(false);
+  }, [id]);
 
   useEffect(() => {
     const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -82,8 +88,9 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
   if (!isOpen || !item || !anchorRect || !id || typeof document === 'undefined') return null;
 
   const current = state.id === id ? state : { id, blocks: [], content: '', loading: true, error: '' };
-  const title = calendarDisplayTitle(item.name || ''),
-    domain = calendarDomain(item.name || '', item.domainChip || item.domain || '');
+  const rawName = overrideTitle || item.name || '';
+  const title = calendarDisplayTitle(rawName),
+    domain = calendarDomain(rawName, item.domainChip || item.domain || '');
   const bounds = hoverPreviewBounds(anchorRect, viewport.width, viewport.height);
 
   return createPortal(
@@ -127,13 +134,21 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
         <div className="shrink-0 border-b border-purple-800/80 bg-[#140a24] p-3 max-h-[360px] overflow-y-auto">
           <ActivityTitleFieldEditor
             pageId={id}
-            initialTitle={item.name || ''}
+            initialTitle={rawName}
             compact
             onSaveSuccess={newTitle => {
               item.name = newTitle;
+              setOverrideTitle(newTitle);
               setIsEditingTitle(false);
               overlayOpen.current = false;
               setRevision(n => n + 1);
+              try {
+                window.dispatchEvent(
+                  new CustomEvent('anfeta_item_renamed', {
+                    detail: { id, newName: newTitle },
+                  })
+                );
+              } catch {}
             }}
             onCancel={() => {
               setIsEditingTitle(false);

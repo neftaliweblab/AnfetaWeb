@@ -9,77 +9,112 @@ export interface ParsedActivityTitle {
   domain: string;
   name: string;
   tags: string;
+  statusPosition?: 'start' | 'before_blocks';
 }
 
 export function parseActivityTitleParts(rawTitle: string): ParsedActivityTitle {
   const title = (rawTitle || '').trim();
   let remaining = title;
 
-  // 1. Extract status / prefix
+  // 1. Detect Status Token ANYWHERE in the string
   let status = '';
-  const statusMatch = remaining.match(/^(?:\[([^\]]+)\]\s*)?(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|sprtuz|aprtuz|prtuz|rtuz|tuzR|rtuzR|zCOBRAR|zPAGAR|eed11|ed11|nne11|bbria)\b/i);
+  let statusPosition: 'start' | 'before_blocks' = 'start';
+  const statusMatch = remaining.match(
+    /(?<![\w@.\/-])(?:(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)|(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|zCOBRAR|zPAGAR|eed11|ed11|nne11|bbria))(?![\w@.\/-])/i
+  );
+
   if (statusMatch) {
-    status = statusMatch[1] || statusMatch[0];
-    remaining = remaining.replace(statusMatch[0], '').trim();
+    status = statusMatch[0];
+    const matchIndex = statusMatch.index || 0;
+    if (remaining.includes('|') && matchIndex > 0) {
+      statusPosition = 'before_blocks';
+    } else {
+      statusPosition = 'start';
+    }
+    remaining = (remaining.slice(0, matchIndex) + ' ' + remaining.slice(matchIndex + status.length)).trim();
   }
 
-  // 2. Extract Code / Phase / Order first (to prevent sub-parts being treated as isolated months)
+  // 2. Extract Code / Phase / Order
   let code = '';
   const codeMatch = remaining.match(/(?<![a-z0-9])(\d{1,2}\.[a-z0-9.]+|ffase\d+|fase\d+|0\d\.\d{2})(?![a-z0-9])/i);
   if (codeMatch) {
     code = codeMatch[1];
-    remaining = remaining.replace(codeMatch[0], '').trim();
+    remaining = remaining.replace(codeMatch[0], ' ').trim();
   }
 
-  // 3. Extract Month (from legacy tag, standalone 2-digit number, or extracted from code if missing)
+  // 3. Extract Month (legacy format, code prefix, or standalone 2-digit number)
   let month = '';
   const legacyMonthMatch = remaining.match(/(?:\d{2}-)?\[?(\d{2})[A-ZÁÉÍÓÚ]{3,4}\]?/i);
+  const numMonthMatch = remaining.match(/(?<![a-z0-9.])(0[1-9]|1[0-2])(?![a-z0-9.])/);
+
   if (legacyMonthMatch) {
     month = legacyMonthMatch[1];
-    remaining = remaining.replace(legacyMonthMatch[0], '').trim();
-  } else {
-    const numMonthMatch = remaining.match(/(?<![a-z0-9.])(0[1-9]|1[0-2])(?![a-z0-9.])/);
-    if (numMonthMatch) {
-      month = numMonthMatch[1];
-      remaining = remaining.replace(numMonthMatch[0], '').trim();
-    } else if (code && /^\d{2}\./.test(code)) {
-      month = code.slice(0, 2);
-    }
+    remaining = remaining.replace(legacyMonthMatch[0], ' ').trim();
+  } else if (numMonthMatch) {
+    month = numMonthMatch[1];
+    remaining = remaining.replace(numMonthMatch[0], ' ').trim();
+  } else if (code && /^\d{2}\./.test(code)) {
+    month = code.slice(0, 2);
   }
 
   // 4. Extract Domain
   let domain = '';
-  const domainMatch = remaining.match(/\b([pd]\.[a-z0-9.-]+|(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site))\b/i);
+  const domainMatch = remaining.match(
+    /\b([pd]\.[a-z0-9.-]+|(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site))\b/i
+  );
   if (domainMatch) {
     domain = domainMatch[1];
-    remaining = remaining.replace(domainMatch[0], '').trim();
+    remaining = remaining.replace(domainMatch[0], ' ').trim();
   }
 
   // 5. Extract Tags / Suffixes
   let tags = '';
-  const tagMatches = remaining.match(/(?:#[a-z0-9_\-]+|\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|aandr|ggena|ssote|aacal|eemma|eedwin|edwin)(?:\d+)?\b)/gi);
+  const tagMatches = remaining.match(
+    /(?:#[a-z0-9_\-]+|\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|aandr|ggena|ssote|aacal|eemma|eedwin|edwin)(?:\d+)?\b)/gi
+  );
   if (tagMatches) {
     tags = tagMatches.join(' ');
     for (const tm of tagMatches) {
-      remaining = remaining.replace(tm, '');
+      remaining = remaining.replace(tm, ' ');
     }
   }
 
-  // 6. Whatever is left is the Name / Description
+  // 6. Name is the remaining content (including pipe blocks)
   let name = remaining.replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g, '').trim();
+  if (remaining.trim().startsWith('|')) {
+    name = remaining.trim();
+  }
   if (!name) name = title;
 
-  return { status, month, code, domain, name, tags };
+  return { status, month, code, domain, name, tags, statusPosition };
 }
 
 export function assembleActivityTitle(parts: ParsedActivityTitle): string {
   const list: string[] = [];
-  if (parts.status?.trim()) list.push(parts.status.trim());
-  if (parts.month?.trim()) list.push(parts.month.trim());
-  if (parts.code?.trim()) list.push(parts.code.trim());
-  if (parts.domain?.trim()) list.push(parts.domain.trim());
-  if (parts.name?.trim()) list.push(parts.name.trim());
-  if (parts.tags?.trim()) list.push(parts.tags.trim());
+  const hasMonthInCode = parts.code && /^\d{2}\./.test(parts.code);
+  const codeMonth = hasMonthInCode ? parts.code.slice(0, 2) : '';
+
+  let effectiveCode = parts.code?.trim() || '';
+  if (hasMonthInCode && parts.month && parts.month !== codeMonth) {
+    effectiveCode = parts.month + effectiveCode.slice(2);
+  }
+
+  if (parts.statusPosition === 'before_blocks') {
+    if (!hasMonthInCode && parts.month?.trim()) list.push(parts.month.trim());
+    if (effectiveCode) list.push(effectiveCode);
+    if (parts.domain?.trim()) list.push(parts.domain.trim());
+    if (parts.status?.trim()) list.push(parts.status.trim());
+    if (parts.name?.trim()) list.push(parts.name.trim());
+    if (parts.tags?.trim()) list.push(parts.tags.trim());
+  } else {
+    if (parts.status?.trim()) list.push(parts.status.trim());
+    if (!hasMonthInCode && parts.month?.trim()) list.push(parts.month.trim());
+    if (effectiveCode) list.push(effectiveCode);
+    if (parts.domain?.trim()) list.push(parts.domain.trim());
+    if (parts.name?.trim()) list.push(parts.name.trim());
+    if (parts.tags?.trim()) list.push(parts.tags.trim());
+  }
+
   return list.join(' ');
 }
 
@@ -87,6 +122,7 @@ const COMMON_STATUS_PRESETS = [
   'tuzR',
   'rtuzR',
   'sprtuz',
+  'aaprtuzS',
   'nne11',
   'ed11',
   'zCOBRAR',
@@ -170,6 +206,16 @@ export function ActivityTitleFieldEditor({
 
   const reconstructed = useMemo(() => assembleActivityTitle(parts), [parts]);
 
+  const handleMonthChange = (newMonth: string) => {
+    setParts(prev => {
+      let nextCode = prev.code;
+      if (nextCode && /^\d{2}\./.test(nextCode)) {
+        nextCode = newMonth + nextCode.slice(2);
+      }
+      return { ...prev, month: newMonth, code: nextCode };
+    });
+  };
+
   const handleSave = async () => {
     if (!reconstructed.trim()) {
       setError('El título no puede quedar vacío.');
@@ -209,8 +255,13 @@ export function ActivityTitleFieldEditor({
         } catch {}
       }
 
-      // Notify application of change
+      // Broadcast update events across all open components and tables
       try {
+        window.dispatchEvent(
+          new CustomEvent('anfeta_item_renamed', {
+            detail: { id: pageId, newName: reconstructed },
+          })
+        );
         window.dispatchEvent(
           new CustomEvent('anfeta_page_content_changed', {
             detail: { pageId: pageId.replace(/-/g, '') },
@@ -218,12 +269,13 @@ export function ActivityTitleFieldEditor({
         );
         window.dispatchEvent(new CustomEvent('anfeta_review_saved'));
         window.dispatchEvent(new CustomEvent('anfeta_calendar_refresh'));
+        window.dispatchEvent(new CustomEvent('anfeta_data_refreshed'));
       } catch {}
 
       setSavedSuccess(true);
       setTimeout(() => {
         onSaveSuccess?.(reconstructed);
-      }, 500);
+      }, 400);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar.');
     } finally {
@@ -299,7 +351,7 @@ export function ActivityTitleFieldEditor({
             disabled={saving}
             value={parts.status}
             onChange={e => setParts(prev => ({ ...prev, status: e.target.value }))}
-            placeholder="ej. tuzR, rtuzR, ed11..."
+            placeholder="ej. tuzR, rtuzR, aaprtuzS, ed11..."
             className="w-full rounded border border-purple-800/60 bg-slate-950 px-2.5 py-1 font-mono text-xs text-cyan-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
         </div>
@@ -319,7 +371,7 @@ export function ActivityTitleFieldEditor({
                 type="button"
                 key={m}
                 disabled={saving}
-                onClick={() => setParts(prev => ({ ...prev, month: m }))}
+                onClick={() => handleMonthChange(m)}
                 className={`rounded px-2 py-0.5 text-[11px] font-mono transition-colors ${
                   parts.month === m
                     ? 'border border-amber-400 bg-amber-900/60 text-amber-100 font-bold'
@@ -342,7 +394,7 @@ export function ActivityTitleFieldEditor({
             disabled={saving}
             value={parts.code}
             onChange={e => setParts(prev => ({ ...prev, code: e.target.value }))}
-            placeholder="ej. 11.a.01.00, ffase37, 01.00..."
+            placeholder="ej. 11.r.01.00, ffase37, 01.00..."
             className="w-full rounded border border-purple-800/60 bg-slate-950 px-2.5 py-1 font-mono text-xs text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
         </div>
@@ -385,17 +437,18 @@ export function ActivityTitleFieldEditor({
           )}
         </div>
 
-        {/* Renglón 5: Nombre limpio / Descripción */}
+        {/* Renglón 5: Nombre limpio / Descripción (con slots de emojis preservados) */}
         <div>
-          <label className="mb-1 block text-[11px] font-medium text-purple-300">
-            5. Nombre / Descripción de la actividad
-          </label>
+          <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-purple-300">
+            <span>5. Nombre / Descripción de la actividad</span>
+            <span className="text-[10px] text-slate-400">Slots de emojis conservados</span>
+          </div>
           <textarea
             rows={2}
             disabled={saving}
             value={parts.name}
             onChange={e => setParts(prev => ({ ...prev, name: e.target.value }))}
-            placeholder="Descripción clara de la actividad..."
+            placeholder="Descripción de la actividad o bloques de plantilla..."
             className="w-full rounded border border-purple-800/60 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
         </div>
@@ -411,7 +464,7 @@ export function ActivityTitleFieldEditor({
             disabled={saving}
             value={parts.tags}
             onChange={e => setParts(prev => ({ ...prev, tags: e.target.value }))}
-            placeholder="ej. #webs, #diseño, neft0000..."
+            placeholder="ej. #descripcion #ffase00 #nn-e11..."
             className="w-full rounded border border-purple-800/60 bg-slate-950 px-2.5 py-1 font-mono text-xs text-slate-300 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
         </div>
