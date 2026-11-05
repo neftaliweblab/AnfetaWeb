@@ -25,6 +25,24 @@ export function CalendarFtfPanel({
   const [revision, setRevision] = useState(0);
   const [expandedPeople, setExpandedPeople] = useState<Record<string, boolean>>({});
 
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('anfeta_bitacora_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('anfeta_bitacora_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const reviewStorageKey = 'anfeta_bitacora_review:' + date;
   const [supervisorReview, setSupervisorReview] = useState<{ reviewer: string; reviewedAt: string } | null>(null);
 
@@ -105,10 +123,20 @@ export function CalendarFtfPanel({
       {/* Header General */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex items-center gap-1.5 font-semibold text-cyan-200 text-xs">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="flex items-center gap-1.5 font-semibold text-cyan-200 text-xs hover:text-cyan-100 transition-colors cursor-pointer text-left"
+            title={isCollapsed ? 'Clic para desplegar bitácora' : 'Clic para plegar bitácora'}
+          >
             <ShieldCheck size={16} className="text-cyan-400" />
             <span>Bitácora del equipo (FTF) · {date}</span>
-          </div>
+            {isCollapsed ? (
+              <ChevronDown size={14} className="text-cyan-400 ml-0.5" />
+            ) : (
+              <ChevronUp size={14} className="text-cyan-400 ml-0.5" />
+            )}
+          </button>
 
           <div className="flex items-center gap-2 text-[11px] text-slate-300">
             <span className="rounded bg-slate-800/80 px-2 py-0.5 border border-slate-700 text-slate-300 font-mono">
@@ -130,7 +158,7 @@ export function CalendarFtfPanel({
           </div>
         </div>
 
-        {/* Supervisor y Botón Actualizar */}
+        {/* Supervisor, Botón Actualizar y Botón Plegar / Desplegar */}
         <div className="flex items-center gap-2">
           {supervisorReview ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
@@ -163,9 +191,20 @@ export function CalendarFtfPanel({
             disabled={loading}
             onClick={() => setRevision(v => v + 1)}
             className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-xs text-cyan-200 transition-colors hover:bg-slate-800 disabled:opacity-50"
+            title="Recargar bitácora"
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             <span>{loading ? 'Comprobando…' : 'Actualizar'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="flex items-center gap-1.5 rounded border border-cyan-800/80 bg-cyan-950/60 px-2.5 py-1 text-xs font-semibold text-cyan-200 transition-colors hover:border-cyan-600 hover:bg-cyan-900/70"
+            title={isCollapsed ? 'Desplegar bitácora' : 'Plegar / Cerrar despliegue de bitácora'}
+          >
+            {isCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+            <span>{isCollapsed ? 'Desplegar' : 'Plegar'}</span>
           </button>
         </div>
       </div>
@@ -177,7 +216,7 @@ export function CalendarFtfPanel({
       )}
 
       {/* Grid de Colaboradores: items-start evita deformación de filas al desplegar */}
-      {report && (
+      {report && !isCollapsed && (
         <div className="mt-3 grid max-h-[380px] grid-cols-1 gap-2.5 overflow-y-auto pr-1 items-start sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {report.people.map(person => {
             const isComplete = person.status === 'complete';
@@ -324,6 +363,15 @@ export function CalendarFtfPanel({
                             )}
                           </button>
                         ))}
+
+                        <button
+                          type="button"
+                          onClick={() => togglePersonExpand(person.name)}
+                          className="mt-1 flex w-full items-center justify-center gap-1 rounded py-1 text-[10.5px] font-medium text-amber-300/80 hover:bg-slate-800/80 hover:text-amber-200 border-t border-slate-800/60"
+                        >
+                          <ChevronUp size={12} />
+                          <span>Cerrar pendientes</span>
+                        </button>
                       </div>
                     )}
                   </div>
