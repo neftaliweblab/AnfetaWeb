@@ -30,7 +30,7 @@ export function RenameModal({ isOpen, item, onClose, onConfirm }: RenameModalPro
         onClick={onClose}
       >
         <div
-          className="w-full max-w-xl"
+          className="w-full max-w-2xl sm:max-w-3xl"
           onClick={(e) => e.stopPropagation()}
         >
           <ActivityTitleFieldEditor

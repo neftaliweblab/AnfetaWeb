@@ -815,7 +815,7 @@ function ActivityCardComponent({
       {/* Modal interactivo: Renombrar por campos */}
       {showRenameModal && createPortal(
         <div className="fixed inset-0 z-[450] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-xl">
+          <div className="w-full max-w-2xl sm:max-w-3xl">
             <ActivityTitleFieldEditor
               pageId={activity.pageId}
               initialTitle={activity.title || ''}
