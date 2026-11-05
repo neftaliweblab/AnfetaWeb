@@ -2,7 +2,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {SearchResultRow} from '@/types/anfeta';
-import {parseVisualParts} from '@/lib/visualTitleParser';
+import {calendarDisplayTitle,calendarDomain} from '@/services/calendarPresentation';
 import {hoverPreviewBounds,previewPageId,loadNotionPreview,invalidateNotionPreview} from '@/lib/notionPreviewResource';
 import {NotionPreviewBlock,type PreviewBlock} from './NotionPreviewBlock';
 interface Props {item:SearchResultRow|null;anchorRect:DOMRect|null;isOpen:boolean;onMouseEnter:()=>void;onMouseLeave:()=>void}
@@ -24,12 +24,12 @@ export function NotionHoverPreview({item,anchorRect,isOpen,onMouseEnter,onMouseL
  },[id,isOpen,revision]);
  if(!isOpen||!item||!anchorRect||!id||typeof document==='undefined')return null;
  const current=state.id===id?state:{id,blocks:[],content:'',loading:true,error:''};
- const parsed=parseVisualParts(item.name||'');
+ const title=calendarDisplayTitle(item.name||''),domain=calendarDomain(item.name||'',item.domainChip||item.domain||'');
  const bounds=hoverPreviewBounds(anchorRect,viewport.width,viewport.height);
  return createPortal(<section role="region" aria-label="Vista previa de Notion" onMouseEnter={onMouseEnter} onMouseLeave={()=>{if(!overlayOpen.current)onMouseLeave();}} style={{position:'fixed',left:bounds.left,top:bounds.top,width:bounds.width,maxHeight:bounds.height,zIndex:9999}} className="flex flex-col overflow-hidden rounded-xl border border-purple-500/60 bg-[#180E2B] text-slate-100 shadow-2xl">
-  <header className="shrink-0 border-b border-purple-800 bg-[#21123B] px-4 py-3"><p className="text-xs text-purple-300">Vista previa de Notion · {parsed.domain||item.domainChip||''}</p><h3 className="line-clamp-2 text-sm font-semibold">{parsed.title||item.name}</h3></header>
+  <header className="shrink-0 border-b border-purple-800 bg-[#21123B] px-4 py-3"><p className="text-xs text-purple-300">Vista previa de Notion · {domain}</p><h3 className="line-clamp-2 text-sm font-semibold">{title}</h3></header>
   <div className="min-h-0 flex-1 overflow-y-auto p-4 select-text" style={{maxHeight:Math.max(40,bounds.height-120)}}>
-   {current.loading?<p role="status" className="text-sm text-purple-200">Cargando contenido…</p>:current.error?<div role="alert"><p className="text-sm text-rose-200">{current.error}</p><button type="button" onClick={()=>{invalidateNotionPreview(id);setRevision(n=>n+1);}} className="mt-2 rounded border border-purple-500 px-3 py-1 text-sm">Reintentar</button></div>:current.blocks.length?current.blocks.map((block,index)=><NotionPreviewBlock key={id+':'+(block.id||index)} block={block} index={index} pageTitle={parsed.title||item.name} onOverlayChange={open=>{overlayOpen.current=open;onMouseEnter();}}/>):current.content?<p className="whitespace-pre-wrap text-sm">{current.content}</p>:<p className="text-sm text-purple-200">Esta página no tiene contenido disponible.</p>}
+   {current.loading?<p role="status" className="text-sm text-purple-200">Cargando contenido…</p>:current.error?<div role="alert"><p className="text-sm text-rose-200">{current.error}</p><button type="button" onClick={()=>{invalidateNotionPreview(id);setRevision(n=>n+1);}} className="mt-2 rounded border border-purple-500 px-3 py-1 text-sm">Reintentar</button></div>:current.blocks.length?current.blocks.map((block,index)=><NotionPreviewBlock key={id+':'+(block.id||index)} block={block} index={index} pageTitle={title} onOverlayChange={open=>{overlayOpen.current=open;onMouseEnter();}}/>):current.content?<p className="whitespace-pre-wrap text-sm">{current.content}</p>:<p className="text-sm text-purple-200">Esta página no tiene contenido disponible.</p>}
   </div>
   <footer className="shrink-0 border-t border-purple-900 px-4 py-2 text-xs text-purple-300">Desplázate para ver el contenido · El clic en la fila abre Detalles</footer>
  </section>,document.body);

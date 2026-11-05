@@ -1274,6 +1274,8 @@ function ResultsVirtualTableComponent({
         </div>
       </div>
 
+      <div className="min-h-0 flex-1 overflow-x-auto">
+      <div className="flex h-full min-h-0 flex-col" style={{minWidth:viewZoom==='list'?Math.max(800,500+(showPath?colWidths.path:0)+(showStatus?colWidths.status:0)+(showScheduledDate?colWidths.scheduledDate:0)+(showModifiedDate?colWidths.modifiedDate:0)+90):undefined}}>
       {/* Encabezados de Columna (Modo Lista) */}
       {viewZoom === "list" && (
         <div
@@ -1463,6 +1465,8 @@ function ResultsVirtualTableComponent({
         </div>
       )}
 
+      </div>
+      </div>
       {/* Barrita flotante indicadora de resultados abajo */}
       {moreBelowCount > 0 && (
         <button
