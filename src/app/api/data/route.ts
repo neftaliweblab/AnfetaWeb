@@ -123,7 +123,7 @@ const previewMemoryCache = new BoundedCache<{timestamp:number;payload:any}>(100,
 const PREVIEW_CACHE_TTL = 15 * 60 * 1000;
 
 const calendarMemoryUpdates = new BoundedCache<any>(2000,8*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
-const cleanPageId = (id: string) => String(id).replace(/-/g, '').toLowerCase();
+const cleanPageId = (id: string) => String(id || '').replace(/^notion:/i, '').replace(/^review-mirror-/i, '').replace(/-/g, '').toLowerCase();
 const syncedActivityLinkCache = new Map<string, number>();
 const confirmedDeletedPages=new BoundedCache<boolean>(5000,1024*1024,24*60*60*1000,()=>1);
 function recordDeletedPage(token:string,id:string){const key=token+':'+cleanPageId(id),known=confirmedDeletedPages.get(key);confirmedDeletedPages.set(key,true);liveNotionOverrides.delete(cleanPageId(id));calendarMemoryUpdates.delete(cleanPageId(id));if(!known)previewMemoryCache.clear();}
@@ -869,7 +869,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       let syncWarning:string|undefined;let syncFailed=false;let fullIds:Set<string>|undefined;
       const syncStarted=new Date().toISOString();let observedEdited:string|undefined;
-      const fullSync=previous?.syncMeta?.indexScope!=='desktop-six-bases-finance-due-v2'||!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
+      const fullSync=previous?.syncMeta?.indexScope!=='desktop-six-bases-finance-due-v4-ai-content'||!previous?.syncMeta?.lastFullSync||Date.now()-Date.parse(previous.syncMeta.lastFullSync)>86400000;
       // Cached index is shown immediately; background refresh uses an overlap for recent edits.
       if (token&&!bootstrap) {
         try {
@@ -947,7 +947,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       const seen = new Set<string>();
       for (const row of items) {
-        const pid = String(row.externalId || row.id || "").replace(/-/g, "").toLowerCase();
+        const pid = cleanPageId(String(row.externalId || row.id || ""));
         if (!pid) continue;
         seen.add(pid);
 
@@ -1095,7 +1095,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           } catch {}
         });
       }
-      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-finance-due-v2',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
+      return NextResponse.json({total:visibleItems.length,injected,items:visibleItems,warning:syncWarning,syncFailed,syncMeta:!syncFailed&&!bootstrap&&token?{indexScope:'desktop-six-bases-finance-due-v4-ai-content',dataAsOf:observedEdited||previous?.syncMeta?.dataAsOf||syncStarted,lastFullSync:fullSync?syncStarted:previous?.syncMeta?.lastFullSync}:previous?.syncMeta});
     }
 
     if (type === "project-view-url") {

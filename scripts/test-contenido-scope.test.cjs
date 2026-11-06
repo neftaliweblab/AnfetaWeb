@@ -242,4 +242,61 @@ assert.equal(isContentItem(directSearchRow), true);
 assert.equal(matchesFlexibleOrQuotedQuery(directSearchRow, 'bitacora', { contentOnly: true }), true);
 console.log('OK: directActivitySearchRow preserves AI content.');
 
+// 10. Verificación específica del caso reportado: "cliente" en la propiedad IA de múltiples páginas
+console.log('\n--- TEST 10: Multi-page "cliente" search in Contenido scope ---');
+const pageA = {
+  id: 'notion:page-a',
+  externalId: 'page-a',
+  name: '[Revisiones] tuzR 11.a.00.00 Asistente recurrente',
+  source: 'Notion',
+  aiContent: '150 cliente, prospecto, cotización',
+  'busqueda palabras por contenido pagina IA': '150 cliente, prospecto, cotización',
+};
+const pageB = {
+  id: 'notion:page-b',
+  externalId: 'page-b',
+  name: '[Revisiones] tuzR Campaña Google Ads',
+  source: 'Notion',
+  aiContent: 'análisis de métricas para el cliente final',
+  'busqueda palabras por contenido pagina IA': 'análisis de métricas para el cliente final',
+};
+const pageC = {
+  id: 'notion:page-c',
+  externalId: 'page-c',
+  name: '[Clientes] Ficha de contacto y facturación',
+  source: 'Notion',
+  aiContent: 'alta de cliente y razón social',
+  'busqueda palabras por contenido pagina IA': 'alta de cliente y razón social',
+};
+const pageDTitleOnly = {
+  id: 'notion:page-d',
+  externalId: 'page-d',
+  name: '[Revisiones] tuzR Cliente Nuevo sin contenido',
+  source: 'Notion',
+  aiContent: '',
+  'busqueda palabras por contenido pagina IA': '',
+};
+const pageEWithoutCliente = {
+  id: 'notion:page-e',
+  externalId: 'page-e',
+  name: '[Revisiones] tuzR Optimización de servidor',
+  source: 'Notion',
+  aiContent: 'servidor, base de datos, memoria, caché',
+  'busqueda palabras por contenido pagina IA': 'servidor, base de datos, memoria, caché',
+};
+
+const samplePages = [pageA, pageB, pageC, pageDTitleOnly, pageEWithoutCliente];
+const matchingClienteInContenido = samplePages.filter(it =>
+  isContentItem(it) && matchesFlexibleOrQuotedQuery(it, 'cliente', { contentOnly: true })
+);
+
+assert.equal(matchingClienteInContenido.length, 3, 'Deben coincidir las 3 páginas que tienen "cliente" en su propiedad IA');
+assert.deepEqual(
+  matchingClienteInContenido.map(p => p.id),
+  ['notion:page-a', 'notion:page-b', 'notion:page-c'],
+  'Las páginas A, B y C deben aparecer, excluyendo la que solo lo tiene en título o no lo tiene'
+);
+console.log('OK: All matching pages with "cliente" in AI content property correctly returned in Contenido scope.');
+
+
 

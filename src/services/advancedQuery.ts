@@ -445,7 +445,36 @@ const itemSearchableCache = new WeakMap<SearchResultRow, {
   rawExtId: string;
 }>();
 
+function isNotionRow(item: any): boolean {
+  if (!item) return false;
+  const s = String(item.source || "").toLowerCase();
+  const src = String(item.sourceName || item.externalSourceName || "").toLowerCase();
+  const target = String(item.target || item.path || "").toLowerCase();
+  return s === "notion" || item.source === 0 || src === "notion" || target.includes("notion.so") || target.includes("notion.site") || (src !== "dropbox" && s !== "dropbox" && !!item.externalId);
+}
+
 export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'description' | 'contentSnippet' | 'pageContent' | 'checklistProgressText'> & Record<string, any>): string {
+  const isNotion = isNotionRow(item);
+  const aiProp = (
+    (item as any).aiContent ||
+    (item as any)['busqueda palabras por contenido pagina IA'] ||
+    (item as any)['busqueda palabras por contenido pagina ia'] ||
+    (item as any)['búsqueda palabras por contenido página IA'] ||
+    (item as any)['Búsqueda palabras por contenido pagina'] ||
+    (item as any)['busqueda palabras por contenido pagina'] ||
+    (item as any)['busqueda palabras por contenido'] ||
+    (item as any)['búsqueda palabras por contenido'] ||
+    (item as any).busqueda_palabras_por_contenido_pagina_ia ||
+    ""
+  ).trim();
+
+  if (isNotion && aiProp) {
+    return aiProp;
+  }
+  if (isNotion) {
+    return (item.contentSnippet || item.pageContent || item.description || "").trim();
+  }
+
   const title = (item.name || "").trim();
   const segments = [
     item.description,
@@ -454,17 +483,7 @@ export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'descrip
     item.checklistProgressText,
     (item as any).aiContent,
     (item as any)['busqueda palabras por contenido pagina IA'],
-    (item as any)['busqueda palabras por contenido pagina ia'],
-    (item as any)['búsqueda palabras por contenido página IA'],
-    (item as any)['Búsqueda palabras por contenido pagina'],
-    (item as any)['busqueda palabras por contenido pagina'],
-    (item as any)['busqueda palabras por contenido'],
-    (item as any)['búsqueda palabras por contenido'],
-    (item as any).busqueda_palabras_por_contenido_pagina_ia,
-    (item as any).aiSummary,
     (item as any).summary,
-    (item as any).aiKeywords,
-    (item as any).keywords,
     (item as any).notes,
   ]
     .map(value => value?.trim())
