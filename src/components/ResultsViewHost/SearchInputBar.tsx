@@ -436,6 +436,21 @@ export function SearchInputBar({
             >
               .*
             </button>
+            {onOpenHelp && (
+              <button
+                type="button"
+                onClick={onOpenHelp}
+                style={{
+                  fontSize: `${(10 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
+                }}
+                className="rounded font-mono font-bold transition-all border cursor-pointer bg-cyan-950/40 border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/60 hover:border-cyan-500 shadow-[0_0_6px_rgba(6,182,212,0.2)] ml-0.5"
+                title="Ayuda y sintaxis de búsqueda (exclusión con -, AND, OR, etc.)"
+                aria-label="Ayuda de búsqueda"
+              >
+                ?
+              </button>
+            )}
           </div>
         )}
 

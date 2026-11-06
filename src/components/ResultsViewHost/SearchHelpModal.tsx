@@ -79,6 +79,14 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
           desc: "NOT explícito: incluye jjo00 pero descarta los que contengan jjo11.",
         },
         {
+          cmd: "busqueda -Reporte",
+          desc: "Exclusión directa con guion (-): busca «busqueda» y excluye cualquier resultado que contenga «Reporte» (ej. kka11 -kka-11).",
+        },
+        {
+          cmd: "busqueda !Reporte",
+          desc: "Exclusión con signo de exclamación (!): sintaxis alternativa para excluir términos.",
+        },
+        {
           cmd: "jjo00 and jjo11 and jjo22",
           desc: "Multi-términos: paleta automática de hasta 6 colores vivos diferenciados.",
         },
