@@ -7,23 +7,44 @@ import { formatSmartDate } from "@/lib/dateUtils";
 
 export function extractTaskTime(task: PendingTaskItem): { hasTime: boolean; timeMinutes: number; timeBadge: string } {
   const title = (task.title || "").trim();
-  const match = title.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  // Reconoce formatos como: 5.30, 5:30, 5.30pm, 5pm, 5 pm, 17:00, 17.30, 9 a 9:30, 12:00 PM
+  const match = title.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?/i);
   if (match) {
     let hours = parseInt(match[1], 10);
     const minutes = match[2] ? parseInt(match[2], 10) : 0;
     const meridian = match[3]?.toLowerCase();
-    if (meridian === "pm" && hours < 12) hours += 12;
-    if (meridian === "am" && hours === 12) hours = 0;
+
+    if (meridian === "pm" && hours < 12) {
+      hours += 12;
+    } else if (meridian === "am" && hours === 12) {
+      hours = 0;
+    } else if (!meridian) {
+      // Inferencia para jornada laboral de ANFETA:
+      // Si la hora es de 1 a 6 sin especificar AM, se asume tarde (13:00 a 18:00 PM)
+      // Ejemplo: "1:00" -> 13:00, "5.30" -> 17:30
+      if (hours >= 1 && hours <= 6) {
+        hours += 12;
+      }
+    }
+
     const timeMinutes = hours * 60 + minutes;
-    const timeBadge = `${match[1]}${match[2] ? `:${match[2]}` : ":00"} ${match[3] ? match[3].toUpperCase() : ""}`.trim();
+    const dispHours = hours % 12 || 12;
+    const dispMeridian = hours >= 12 ? "PM" : "AM";
+    const timeBadge = `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`;
     return { hasTime: true, timeMinutes, timeBadge };
   }
   if (task.scheduledDate) {
     const timeMatch = task.scheduledDate.match(/T(\d{2}):(\d{2})/);
     if (timeMatch) {
-      const hours = parseInt(timeMatch[1], 10);
+      let hours = parseInt(timeMatch[1], 10);
       const minutes = parseInt(timeMatch[2], 10);
-      return { hasTime: true, timeMinutes: hours * 60 + minutes, timeBadge: `${timeMatch[1]}:${timeMatch[2]}` };
+      const dispHours = hours % 12 || 12;
+      const dispMeridian = hours >= 12 ? "PM" : "AM";
+      return {
+        hasTime: true,
+        timeMinutes: hours * 60 + minutes,
+        timeBadge: `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`,
+      };
     }
   }
   return { hasTime: false, timeMinutes: 99999, timeBadge: "" };
@@ -54,17 +75,88 @@ function PendientesColumnComponent({
 }: PendientesColumnProps) {
   const [contextMenu, setContextMenu] = useState<{ task: PendingTaskItem; x: number; y: number } | null>(null);
   const contextRef = useRef<HTMLDivElement>(null);
-  const [collapsed,setCollapsed]=useState(false),[feedback,setFeedback]=useState('');
-  useEffect(()=>{try{setCollapsed(localStorage.getItem('anfeta_pendientes_collapsed')==='1');}catch{}},[]);
-  const togglePanel=()=>setCollapsed(old=>{try{localStorage.setItem('anfeta_pendientes_collapsed',old?'0':'1');}catch{}return !old;});
-  const moveTask = (index: number, direction: 'up' | 'down') => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const [columnWidth, setColumnWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_width");
+        if (saved) {
+          const num = parseInt(saved, 10);
+          if (num >= 200 && num <= 700) return num;
+        }
+      } catch {}
+    }
+    return 260;
+  });
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = columnWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(220, Math.min(650, startWidth + delta));
+      setColumnWidth(newWidth);
+    };
+
+    const onMouseUp = (upEvent: MouseEvent) => {
+      setIsResizing(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      const finalDelta = upEvent.clientX - startX;
+      const finalWidth = Math.max(220, Math.min(650, startWidth + finalDelta));
+      try {
+        localStorage.setItem("anfeta_pendientes_width", String(finalWidth));
+      } catch {}
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem('anfeta_pendientes_collapsed') === '1');
+    } catch {}
+  }, []);
+
+  const togglePanel = () =>
+    setCollapsed((old) => {
+      try {
+        localStorage.setItem('anfeta_pendientes_collapsed', old ? '0' : '1');
+      } catch {}
+      return !old;
+    });
+
+  const moveTask = (taskId: string, direction: 'up' | 'down') => {
     if (!onReorderTasks) return;
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= pendingTasks.length) return;
+    const currentList =
+      pendingSubTab === 'timed'
+        ? timedTasks
+        : pendingSubTab === 'free'
+        ? freeTasks
+        : pendingTasks;
+    const idx = currentList.findIndex((t) => t.id === taskId);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= currentList.length) return;
+
+    const targetId = currentList[targetIdx].id;
+    const pIdx = pendingTasks.findIndex((t) => t.id === taskId);
+    const pTargetIdx = pendingTasks.findIndex((t) => t.id === targetId);
+    if (pIdx === -1 || pTargetIdx === -1) return;
+
     const list = [...pendingTasks];
-    const [moved] = list.splice(index, 1);
-    list.splice(targetIndex, 0, moved);
-    onReorderTasks(list.map(t => t.id));
+    const [moved] = list.splice(pIdx, 1);
+    list.splice(pTargetIdx, 0, moved);
+    onReorderTasks(list.map((t) => t.id));
   };
 
   const pendingCount = pendingTasks.filter((t) => !t.isCompleted).length;
@@ -73,7 +165,11 @@ function PendientesColumnComponent({
   const timedTasks = useMemo(() => {
     return pendingTasks
       .filter((t) => extractTaskTime(t).hasTime)
-      .sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
+      .sort((a, b) => {
+        const diff = extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes;
+        if (diff !== 0) return diff;
+        return pendingTasks.indexOf(a) - pendingTasks.indexOf(b);
+      });
   }, [pendingTasks]);
 
   const freeTasks = useMemo(() => {
@@ -102,21 +198,67 @@ function PendientesColumnComponent({
     };
   }, []);
 
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData("text/plain", id);
+    setDraggedTaskId(id);
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    if (dragOverTaskId !== id) setDragOverTaskId(id);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = draggedTaskId || e.dataTransfer.getData("text/plain");
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+    if (!sourceId || sourceId === targetId || !onReorderTasks) return;
+
+    const sIdx = pendingTasks.findIndex((t) => t.id === sourceId);
+    const tIdx = pendingTasks.findIndex((t) => t.id === targetId);
+    if (sIdx === -1 || tIdx === -1) return;
+
+    const list = [...pendingTasks];
+    const [moved] = list.splice(sIdx, 1);
+    list.splice(tIdx, 0, moved);
+    onReorderTasks(list.map((t) => t.id));
+  };
+
   const renderTaskCard = (task: PendingTaskItem, idx: number) => {
     const timeInfo = extractTaskTime(task);
+    const currentSubList =
+      pendingSubTab === 'timed'
+        ? timedTasks
+        : pendingSubTab === 'free'
+        ? freeTasks
+        : pendingTasks;
+    const itemIndex = currentSubList.findIndex((t) => t.id === task.id);
+    const isFirst = itemIndex === 0;
+    const isLast = itemIndex === currentSubList.length - 1;
+    const isDraggedOver = dragOverTaskId === task.id;
+
     return (
       <div
         key={task.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, task.id)}
+        onDragOver={(e) => handleDragOver(e, task.id)}
+        onDrop={(e) => handleDrop(e, task.id)}
         onClick={() => {
           if (task.query || task.title) {
             onSelectTaskQuery?.(task.query || task.title);
           }
         }}
         onContextMenu={(e) => handleContextMenu(e, task)}
-        className={`p-2 rounded bg-[#141B26] border border-[#1E2836] hover:bg-[#1A2332] hover:border-[#38BDF8]/40 cursor-pointer transition-colors relative group flex items-start gap-2 ${
+        className={`p-2 rounded bg-[#141B26] border transition-colors relative group flex items-start gap-2 ${
+          isDraggedOver
+            ? "border-cyan-400 bg-cyan-950/40"
+            : "border-[#1E2836] hover:bg-[#1A2332] hover:border-[#38BDF8]/40"
+        } cursor-pointer ${
           task.isCompleted ? "opacity-60 bg-[#0F1622]" : ""
         }`}
-        title={`Clic: buscar en el explorador · Clic derecho: menú contextual`}
+        title={`Clic: buscar en el explorador · Clic derecho: menú · Arrastra para reordenar`}
       >
         {/* Checkbox circular de completado */}
         <button
@@ -179,15 +321,15 @@ function PendientesColumnComponent({
           )}
         </div>
 
-        {/* Botón rápido de eliminar en hover */}
+        {/* Botones de mover posición manual (Flechas) */}
         {onReorderTasks && (
           <div className="flex flex-col shrink-0 gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity self-center">
             <button
               type="button"
-              disabled={idx === 0}
+              disabled={isFirst}
               onClick={(e) => {
                 e.stopPropagation();
-                moveTask(idx, "up");
+                moveTask(task.id, "up");
               }}
               className="text-[9px] text-slate-400 hover:text-cyan-300 disabled:opacity-20 px-0.5 leading-none cursor-pointer"
               title="Subir posición"
@@ -196,10 +338,10 @@ function PendientesColumnComponent({
             </button>
             <button
               type="button"
-              disabled={idx === pendingTasks.length - 1}
+              disabled={isLast}
               onClick={(e) => {
                 e.stopPropagation();
-                moveTask(idx, "down");
+                moveTask(task.id, "down");
               }}
               className="text-[9px] text-slate-400 hover:text-cyan-300 disabled:opacity-20 px-0.5 leading-none cursor-pointer"
               title="Bajar posición"
@@ -258,9 +400,32 @@ function PendientesColumnComponent({
     );
   };
 
-  if(collapsed)return <div className="w-10 shrink-0 rounded border border-slate-700 flex flex-col items-center gap-3 py-3"><button type="button" onClick={togglePanel} aria-label="Expandir pendientes">›</button><button type="button" aria-label="Nuevo pendiente" onClick={onOpenNewTaskModal}>+</button>{onClose&&<button type="button" aria-label="Cerrar pendientes" onClick={onClose}>✕</button>}<span>📋</span><span className="rounded-full bg-amber-950 px-2 text-amber-300">{pendingCount}</span></div>;
+  if (collapsed)
+    return (
+      <div className="w-10 shrink-0 rounded border border-slate-700 flex flex-col items-center gap-3 py-3 bg-[#0F141C]">
+        <button type="button" onClick={togglePanel} aria-label="Expandir pendientes" className="text-cyan-300 font-bold">›</button>
+        <button type="button" aria-label="Nuevo pendiente" onClick={onOpenNewTaskModal} className="text-cyan-400 font-bold">+</button>
+        {onClose && <button type="button" aria-label="Cerrar pendientes" onClick={onClose} className="text-slate-400 hover:text-white">✕</button>}
+        <span>📋</span>
+        <span className="rounded-full bg-amber-950 px-1.5 text-[10px] text-amber-300 font-mono">{pendingCount}</span>
+      </div>
+    );
+
   return (
-    <div className="w-[260px] shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs">
+    <div
+      style={{ width: `${columnWidth}px` }}
+      className={`relative shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs transition-all ${
+        isResizing ? "select-none" : ""
+      }`}
+    >
+      {/* Resizer Handle en el borde derecho (Drag horizontal para ensanchar) */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize hover:bg-cyan-500/50 active:bg-cyan-400 z-30 transition-colors flex items-center justify-center group"
+        title="Arrastra para ajustar el ancho del panel de pendientes"
+      >
+        <div className="w-0.5 h-12 bg-slate-600 group-hover:bg-cyan-400 rounded-full transition-colors" />
+      </div>
       {/* Header Pendientes con contador y botón '+' */}
       <div className="flex items-center justify-between pb-2 border-b border-[#1E2836] mb-2 shrink-0">
         <div className="flex items-center gap-1">

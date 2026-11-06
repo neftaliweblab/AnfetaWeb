@@ -115,6 +115,8 @@ export function formatSmartSingleDate(parsed: ParsedDateResult, now: Date = new 
   if (hasTime) {
     const timeStr = formatTime12h(date);
     if (rel) {
+      // Requerimiento John / Usuario: que solo tenga la hora inicial para los de "HOY"
+      if (rel === "Hoy") return timeStr;
       return `${rel} a las ${timeStr}`;
     }
     const datePrefix = isThisYear ? `${day}/${month}` : `${day}/${month}/${year}`;
@@ -151,6 +153,10 @@ export function formatSmartDate(rawDate?: string | Date | null, now: Date = new 
         // ¿Mismo día?
         if (isSameDay(p1.date, p2.date)) {
           const rel = getRelativeDayName(p1.date, now);
+          // Requerimiento John / Usuario: que solo tenga la hora inicial para los de "HOY"
+          if (rel === "Hoy" && p1.hasTime) {
+            return formatTime12h(p1.date);
+          }
           const day = String(p1.date.getDate()).padStart(2, "0");
           const month = String(p1.date.getMonth() + 1).padStart(2, "0");
           const year = p1.date.getFullYear();

@@ -179,6 +179,39 @@ export function ResultsViewHost({
   const deferredQuery = useDeferredValue(settledQuery);
   const [resultPerson,setResultPerson]=useState("__all__");
   const [selectedScope, setSelectedScope] = useState("Notion");
+  const [liveDropboxItems, setLiveDropboxItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (selectedScope !== "Dropbox" || deferredQuery.trim().length < 2) {
+      setLiveDropboxItems([]);
+      return;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        let clientToken = "";
+        try {
+          const saved = localStorage.getItem("anfeta_settings");
+          if (saved) clientToken = JSON.parse(saved).dropboxToken || "";
+        } catch {}
+        const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
+        const res = await fetch(`/api/data?type=dropbox-live-search&q=${encodeURIComponent(deferredQuery.trim())}${tokenQuery}`);
+        const data = await res.json();
+        if (active && data.success && Array.isArray(data.items)) {
+          setLiveDropboxItems(data.items);
+        }
+      } catch (err) {
+        console.error("Live Dropbox search error:", err);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [selectedScope, deferredQuery]);
+
   const [filterFavorites, setFilterFavorites] = useState(false);
 
   // Config & views (Deterministic initial states for SSR to prevent hydration errors)
@@ -851,6 +884,7 @@ export function ResultsViewHost({
     } finally {
       setIsDeleting(false);
     }
+
   };
 
   const handleDeleteItem = async (item: any) => {
@@ -914,6 +948,61 @@ export function ResultsViewHost({
         message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
       });
       deleteErrorIds.current=[pageIdentity(item)];
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleArchiveItem = async (item: any) => {
+    if (!window.confirm(`¿Deseas archivar "${item.name}"? La página se conservará en el archivo de Notion pero dejará de mostrarse como pendiente activo.`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteFeedback({ type: 'success', message: `Archivando "${item.name.slice(0, 30)}..." en Notion...` });
+
+    try {
+      let clientToken = "";
+      if (typeof window !== "undefined") {
+        try {
+          const s = localStorage.getItem("anfeta_settings");
+          if (s) clientToken = JSON.parse(s).notionToken || "";
+        } catch {}
+      }
+
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(clientToken ? { "x-notion-token": clientToken } : {}),
+        },
+        body: JSON.stringify({
+          action: "archive-item",
+          payload: {
+            id: item.externalId || item.id,
+            source: item.source || item.sourceName,
+            token: clientToken,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "No se pudo archivar en Notion.");
+      }
+
+      playDeleteChime();
+      rememberDeletedPages(currentUser, [item.externalId || item.id]);
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      if (selectedItem?.id === item.id) setSelectedItem(null);
+      setDeleteFeedback({ type: 'success', message: `"${item.name.slice(0, 30)}..." archivada correctamente.` });
+    } catch (err: any) {
+      setDeleteFeedback({ type: 'error', message: err.message || "Error al archivar la página." });
     } finally {
       setIsDeleting(false);
     }
@@ -1535,11 +1624,20 @@ export function ResultsViewHost({
       return true;
     });
 
+    if (selectedScope === "Dropbox" && liveDropboxItems.length > 0) {
+      const existingPaths = new Set(res.map(it => (it.path || it.target || '').toLowerCase()));
+      for (const liveItem of liveDropboxItems) {
+        if (!existingPaths.has((liveItem.path || liveItem.target || '').toLowerCase())) {
+          res.unshift(liveItem);
+        }
+      }
+    }
+
     res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
     return orderSearchResults(res, groupBy);
-  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday,hideTerminated,billingFilter,paymentFilter,activeCriteria]);
+  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday,hideTerminated,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter,hideTerminated,billingFilter,paymentFilter,activeCriteria]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter,hideTerminated,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
@@ -1949,6 +2047,7 @@ export function ResultsViewHost({
           onToggleCheck={handleToggleCheck}
           onToggleBookmark={handleToggleBookmark}
           onDelete={handleDeleteItem}
+          onArchive={handleArchiveItem}
           onDoubleClick={handleOpenItem}
           onOpenLocation={handleOpenLocation}
           onCopyName={handleCopyName}

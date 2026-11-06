@@ -13,20 +13,38 @@ const phases={
  z:{state:'completed',label:'Cerrada · cobrada/pagada',financial:'settled'},
 } as const;
 export function progressiveStage(text:string){
- const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)(?![\p{L}\p{N}_@.\/-])/iu);
- if(match){const key=match[1].toLowerCase() as keyof typeof phases;const suffix=match[2]||'';return {code:key+suffix.toUpperCase(),category:'revision',...phases[key],token:match[0],index:match.index!};}
+ const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)(?:dominio|domi|[rRsSdD])?(?![\p{L}\p{N}_@.\/-])/iu);
+ if(match){
+   const key=match[1].toLowerCase() as keyof typeof phases;
+   const rawSuffix=(match[0].slice(match[1].length)||'').toLowerCase();
+   const isDominio=rawSuffix==='d'||rawSuffix.startsWith('domi');
+   const suffix=isDominio?'D':rawSuffix.toUpperCase();
+   const category=isDominio?'dominio':suffix==='S'?'software':suffix==='D'?'dominio':'revision';
+   return {code:key+suffix,category,...phases[key],token:match[0],index:match.index!};
+ }
  const wa=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(AA)(?![\p{L}\p{N}_@.\/-])/u);
  if(wa){return {code:wa[1],category:'revision',state:'suspended' as const,label:'Suspendida',financial:'unknown' as const,token:wa[0],index:wa.index!};}
- const other=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])z([scp])(?![\p{L}\p{N}_@.\/-])/iu);
+ const other=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])z([scpd])(?![\p{L}\p{N}_@.\/-])/iu);
  if(!other)return null;
- const category={s:'software',c:'cobro',p:'pago'}[other[1].toLowerCase()]!;
- return {code:'Z'+other[1].toUpperCase(),category,state:'completed' as const,label:category==='software'?'Software terminado':category==='cobro'?'Cobro terminado':'Pago terminado',financial:'unknown' as const,token:other[0],index:other.index!};
+ const catKey=other[1].toLowerCase();
+ const category=catKey==='d'?'dominio':catKey==='s'?'software':catKey==='c'?'cobro':'pago';
+ return {code:'Z'+other[1].toUpperCase(),category,state:'completed' as const,label:category==='dominio'?'Dominio terminado':category==='software'?'Software terminado':category==='cobro'?'Cobro terminado':'Pago terminado',financial:'unknown' as const,token:other[0],index:other.index!};
 }
 export function stripProgressiveStage(title:string){const stage=progressiveStage(title);return stage?title.slice(0,stage.index)+title.slice(stage.index+stage.token.length):title;}
 
 export function revisionPhaseTitle(title:string,state:'pending'|'suspended'|'review'|'completed',assign=false){
  const stage=progressiveStage(title);
- const body=(stage?.category==='revision'?stripProgressiveStage(title):title).replace(/(?<![\p{L}\p{N}_@.\/-])(?:saprtuzREVISION|sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|tuzREVISION|uzREVISION|zREVISION)(?![\p{L}\p{N}_@.\/-])/giu,' ').replace(/\s+/g,' ').trim();
- const prefix=PROGRESSIVE_WORKFLOW_PRIMARY?({pending:assign?'aprtuzR':'prtuzR',suspended:'saprtuzR',review:'rtuzR',completed:'tuzR'}[state]):({pending:'prtuzREVISION',suspended:'sprtuzREVISION',review:'rtuzREVISION',completed:'zREVISION'}[state]);
+ const isDominio=stage?.category==='dominio'||/(?<![\p{L}\p{N}_@.\/-])(?:aprtuzDominio|prtuzDominio|aprtuzD|prtuzD)(?![\p{L}\p{N}_@.\/-])/iu.test(title);
+ const body=(stage?stripProgressiveStage(title):title)
+   .replace(/(?<![\p{L}\p{N}_@.\/-])(?:saprtuzREVISION|sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|tuzREVISION|uzREVISION|zREVISION|saprtuzDominio|aprtuzDominio|prtuzDominio|rtuzDominio|tuzDominio)(?![\p{L}\p{N}_@.\/-])/giu,' ')
+   .replace(/\s+/g,' ')
+   .trim();
+ const prefix=PROGRESSIVE_WORKFLOW_PRIMARY
+   ? (isDominio
+       ? ({pending:assign?'aprtuzD':'prtuzD',suspended:'saprtuzD',review:'rtuzD',completed:'tuzD'}[state])
+       : ({pending:assign?'aprtuzR':'prtuzR',suspended:'saprtuzR',review:'rtuzR',completed:'tuzR'}[state]))
+   : (isDominio
+       ? ({pending:assign?'aprtuzD':'prtuzD',suspended:'saprtuzD',review:'rtuzD',completed:'tuzD'}[state])
+       : ({pending:'prtuzREVISION',suspended:'sprtuzREVISION',review:'rtuzREVISION',completed:'zREVISION'}[state]));
  return prefix+' '+body;
 }

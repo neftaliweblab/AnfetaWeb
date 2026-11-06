@@ -25,6 +25,7 @@ import {
   FileCode,
   Check, Calendar,
   Trash2,
+  Archive,
   Upload,
   Star,
   Clock,
@@ -120,6 +121,7 @@ interface ResultsTableProps {
   onToggleCheck: (id: string) => void;
   onToggleBookmark?: (item: any) => void;
   onDelete: (item: any) => void;
+  onArchive?: (item: any) => void;
   onDoubleClick: (item: any) => void;
   onOpenLocation?: (item: any) => void;
   onCopyName?: (item: any) => void;
@@ -166,6 +168,7 @@ function ResultsVirtualTableComponent({
   onToggleCheck,
   onToggleBookmark,
   onDelete,
+  onArchive,
   onDoubleClick,
   onOpenLocation,
   onCopyName,
@@ -852,6 +855,28 @@ function ResultsVirtualTableComponent({
               />
             )}
           </button>
+          {onArchive && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchive(item);
+              }}
+              style={{
+                width: `${Math.round(16 * scale)}px`,
+                height: `${Math.round(16 * scale)}px`,
+              }}
+              className="rounded hover:bg-amber-500/20 text-amber-400 flex items-center justify-center cursor-pointer"
+              title="Archivar"
+            >
+              <Archive
+                style={{
+                  width: `${Math.round(10 * scale)}px`,
+                  height: `${Math.round(10 * scale)}px`,
+                }}
+              />
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -1073,6 +1098,23 @@ function ResultsVirtualTableComponent({
             >
               {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
             </button>
+            {onArchive && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onArchive(item);
+                }}
+                style={{
+                  width: `${Math.round(16 * scale)}px`,
+                  height: `${Math.round(16 * scale)}px`,
+                }}
+                className="rounded hover:bg-amber-500/20 text-amber-400 flex items-center justify-center cursor-pointer"
+                title="Archivar"
+              >
+                <Archive className="w-2.5 h-2.5" />
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
