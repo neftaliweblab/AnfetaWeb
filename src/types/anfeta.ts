@@ -105,6 +105,10 @@ export interface NotionCalendarActivity {
   reviewFlow?: { OriginalPerson: string; ReviewAssignee: string; State: string; LeaveVisualCopy?: boolean; [key: string]: unknown };
   estimatedWorkMinutes: number;
   workedMinutes?: number;
+  aiContent?: string;
+  'busqueda palabras por contenido pagina IA'?: string;
+  contentSnippet?: string;
+  pageContent?: string;
 }
 
 export interface DailyProgressKPIs {

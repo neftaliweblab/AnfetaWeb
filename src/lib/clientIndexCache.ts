@@ -1,7 +1,7 @@
 import {filterDeletedPages} from './deletedPages';
 const DB_NAME = "anfeta_cache_db_v1";
 const STORE_NAME = "search_index_store";
-const CACHE_KEY = "latest_index_activity_tags_v2";
+const CACHE_KEY = "latest_index_activity_tags_v3_ai_content";
 
 export interface CachedSearchIndex {
   items: any[];

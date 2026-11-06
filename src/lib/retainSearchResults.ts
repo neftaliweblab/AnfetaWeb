@@ -14,7 +14,16 @@ export function retainSearchResults(previous:any[],data:any){
   if(!old)return item;
   if(item.isReviewMirror&&!old.isReviewMirror)return old;
   if(old.isReviewMirror&&!item.isReviewMirror)return item;
-  return Date.parse(old.serverModified||'')>Date.parse(item.serverModified||'1970-01-01')?old:item;
+  const preferOld = Date.parse(old.serverModified||'')>Date.parse(item.serverModified||'1970-01-01');
+  const base = preferOld ? { ...item, ...old } : { ...old, ...item };
+  const aiContent = item.aiContent || old.aiContent || item['busqueda palabras por contenido pagina IA'] || old['busqueda palabras por contenido pagina IA'] || item['búsqueda palabras por contenido página IA'] || old['búsqueda palabras por contenido página IA'] || '';
+  if (aiContent) {
+   base.aiContent = aiContent;
+   base['busqueda palabras por contenido pagina IA'] = aiContent;
+   if (!base.contentSnippet || base.contentSnippet === base.name) base.contentSnippet = aiContent.slice(0, 300);
+   if (!base.pageContent) base.pageContent = aiContent;
+  }
+  return base;
  };
  const deleted=new Set((data.deletedPageIds||[]).map((id:string)=>id.replace(/-/g,'').toLowerCase()));
  const keep=(item:any)=>!deleted.has(pageIdentity(item))&&!item.isReviewMirror&&!item.IsReviewMirror;

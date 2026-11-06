@@ -456,7 +456,10 @@ export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'descrip
     (item as any)['busqueda palabras por contenido pagina IA'],
     (item as any)['busqueda palabras por contenido pagina ia'],
     (item as any)['búsqueda palabras por contenido página IA'],
+    (item as any)['Búsqueda palabras por contenido pagina'],
+    (item as any)['busqueda palabras por contenido pagina'],
     (item as any)['busqueda palabras por contenido'],
+    (item as any)['búsqueda palabras por contenido'],
     (item as any).busqueda_palabras_por_contenido_pagina_ia,
     (item as any).aiSummary,
     (item as any).summary,
@@ -685,9 +688,12 @@ function checkSingleToken(
 
   // Frase exacta entre comillas
   if (token.isExact) {
+    const tokenValFolded = tokenVal.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const hasExact = matchWholeWord
-      ? new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable)
-      : searchable.includes(tokenVal);
+      ? (new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable) ||
+         new RegExp(`\\b${tokenValFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchableFolded))
+      : (searchable.includes(tokenVal) || searchableFolded.includes(tokenValFolded));
     return token.isNegated ? !hasExact : hasExact;
   }
 

@@ -176,3 +176,70 @@ assert.equal(normAccentedAi.aiContent, 'Análisis semántico e indexación profu
 assert.equal(matchesFlexibleOrQuotedQuery(normAccentedAi, 'semantico', { contentOnly: true }), true);
 console.log('OK: Notion AI field "busqueda palabras por contenido pagina IA" correctly indexed and searchable in Contenido scope.');
 
+// 7. Verificación del caso real de usuario: "bitacora" sin acento buscando en propiedad IA con "bitácora"
+console.log('\n--- TEST 7: Real User Case: "bitacora" in Notion AI Property ---');
+const userPage = {
+  Name: '[Revisiones] prtuzR | 💻 aapli | 📅 11.a.00.00 Asistente recurrente | 🛠️ ccrea bbita',
+  'busqueda palabras por contenido pagina IA': 'bitácora, FTF, conexión, horario, métricas, semana, rendimiento, IA, búsqueda, contenido, panel, pendientes, optimización, rendimiento, orden, validación, palabras, buscador.',
+  Source: 2,
+  ExternalSourceName: 'Revisiones',
+  Target: 'https://notion.so/db1abd7d91b782fcb22681b96154a310',
+};
+const normUserPage = normalizeSearchRow(userPage, 5);
+assert.equal(isContentItem(normUserPage), true);
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, 'bitacora', { contentOnly: true }), true, 'Búsqueda sin acento "bitacora" debe coincidir con "bitácora"');
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, 'bitácora', { contentOnly: true }), true, 'Búsqueda con acento "bitácora" debe coincidir');
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, '"bitacora"', { contentOnly: true }), true, 'Búsqueda exacta con comillas "bitacora" debe coincidir');
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, 'conexion', { contentOnly: true }), true);
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, 'busqueda', { contentOnly: true }), true);
+assert.equal(matchesFlexibleOrQuotedQuery(normUserPage, 'optimizacion', { contentOnly: true }), true);
+console.log('OK: User real case with bitacora / bitácora perfectly matches in Contenido scope.');
+
+// 8. Verificación de retainSearchResults: fusión de propiedades IA en caché
+console.log('\n--- TEST 8: retainSearchResults merges new AI property into old cached rows ---');
+const { retainSearchResults } = require('../src/lib/retainSearchResults.ts');
+const cachedStaleRow = {
+  id: 'notion:db1abd7d91b782fcb22681b96154a310',
+  externalId: 'db1abd7d91b782fcb22681b96154a310',
+  name: '[Revisiones] prtuzR 11.a.00.00',
+  source: 'Notion',
+  serverModified: '2026-11-06T17:46:00.000Z',
+  // Sin aiContent
+};
+const incomingEnrichedRow = {
+  id: 'notion:db1abd7d91b782fcb22681b96154a310',
+  externalId: 'db1abd7d91b782fcb22681b96154a310',
+  name: '[Revisiones] prtuzR 11.a.00.00',
+  source: 'Notion',
+  serverModified: '2026-11-06T17:46:00.000Z',
+  aiContent: 'bitácora, FTF, conexión',
+  'busqueda palabras por contenido pagina IA': 'bitácora, FTF, conexión',
+};
+const merged = retainSearchResults([cachedStaleRow], { items: [incomingEnrichedRow] });
+assert.equal(merged[0].aiContent, 'bitácora, FTF, conexión', 'Debe enriquecer la fila vieja con aiContent');
+assert.equal(merged[0]['busqueda palabras por contenido pagina IA'], 'bitácora, FTF, conexión');
+assert.equal(isContentItem(merged[0]), true);
+assert.equal(matchesFlexibleOrQuotedQuery(merged[0], 'bitacora', { contentOnly: true }), true);
+console.log('OK: retainSearchResults seamlessly merges AI content without dropping it.');
+
+// 9. Verificación de directActivitySearchRow
+console.log('\n--- TEST 9: directActivitySearchRow carries AI content ---');
+const { directActivitySearchRow } = require('../src/lib/activityDeepLink.ts');
+const directAct = {
+  pageId: 'db1abd7d91b782fcb22681b96154a310',
+  pageUrl: 'https://notion.so/db1abd7d91b782fcb22681b96154a310',
+  title: 'prtuzR 11.a.00.00',
+  person: 'Neftali',
+  status: 'prtuzREVISION',
+  start: '2026-11-06T10:00:00.000-06:00',
+  end: '2026-11-06T12:00:00.000-06:00',
+  domain: 'd.anfeta.com.aplicacion.web',
+  aiContent: 'bitácora, FTF, conexión',
+};
+const directSearchRow = directActivitySearchRow(directAct);
+assert.equal(directSearchRow.aiContent, 'bitácora, FTF, conexión');
+assert.equal(isContentItem(directSearchRow), true);
+assert.equal(matchesFlexibleOrQuotedQuery(directSearchRow, 'bitacora', { contentOnly: true }), true);
+console.log('OK: directActivitySearchRow preserves AI content.');
+
+

@@ -44,8 +44,21 @@ export function isLegacyDropboxDiskItem(item: ResultItem): boolean {
 }
 
 export function isContentItem(item: ResultItem): boolean {
-  return !item.isFolder && item.type?.toUpperCase() !== "FOLDER" &&
-    !isLegacyDropboxDiskItem(item) && !!indexedContentText(item);
+  if (!item || item.isFolder || item.type?.toUpperCase() === "FOLDER" || isLegacyDropboxDiskItem(item)) {
+    return false;
+  }
+  return Boolean(
+    indexedContentText(item) ||
+    item.aiContent ||
+    (item as any)['busqueda palabras por contenido pagina IA'] ||
+    (item as any)['busqueda palabras por contenido pagina ia'] ||
+    (item as any)['búsqueda palabras por contenido página IA'] ||
+    (item as any)['Búsqueda palabras por contenido pagina'] ||
+    (item as any)['busqueda palabras por contenido pagina'] ||
+    item.contentSnippet ||
+    item.pageContent ||
+    item.description
+  );
 }
 
 function fromBase(item:ResultItem,source:RegExp,legacy:RegExp){

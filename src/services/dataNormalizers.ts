@@ -39,6 +39,10 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     raw["busqueda palabras por contenido pagina IA"] ||
     raw["busqueda palabras por contenido pagina ia"] ||
     raw["búsqueda palabras por contenido página IA"] ||
+    raw["Búsqueda palabras por contenido pagina"] ||
+    raw["busqueda palabras por contenido pagina"] ||
+    raw["busqueda palabras por contenido"] ||
+    raw["búsqueda palabras por contenido"] ||
     raw.busqueda_palabras_por_contenido_pagina_ia ||
     raw.aiContent ||
     raw.AiContent ||
@@ -139,5 +143,9 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     ),
     workedMinutes: raw.WorkedMinutes ?? raw.workedMinutes ?? 0,
     estimatedWorkMinutes: raw.EstimatedWorkMinutes ?? raw.estimatedWorkMinutes ?? 0,
+    aiContent: (raw.aiContent || raw["busqueda palabras por contenido pagina IA"] || raw["busqueda palabras por contenido pagina ia"] || raw["búsqueda palabras por contenido página IA"] || raw["Búsqueda palabras por contenido pagina"] || "").trim(),
+    'busqueda palabras por contenido pagina IA': (raw["busqueda palabras por contenido pagina IA"] || raw["busqueda palabras por contenido pagina ia"] || raw["búsqueda palabras por contenido página IA"] || raw["Búsqueda palabras por contenido pagina"] || raw.aiContent || "").trim(),
+    contentSnippet: (raw.contentSnippet || raw.ContentSnippet || raw.aiContent || raw.Description || raw.description || "").trim().slice(0, 300),
+    pageContent: (raw.pageContent || raw.PageContent || raw.aiContent || "").trim(),
   };
 }

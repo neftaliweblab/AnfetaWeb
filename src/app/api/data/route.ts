@@ -238,13 +238,15 @@ function extractNotionPageData(page: any): LiveNotionPage {
       // Búsqueda palabras por contenido página IA
       if (
         normName === "busqueda palabras por contenido pagina ia" ||
-        normName.includes("busqueda palabras por contenido") ||
+        (normName.includes("busqueda") && normName.includes("contenido")) ||
+        (normName.includes("palabras") && normName.includes("contenido")) ||
         normName.includes("contenido pagina ia") ||
+        normName.includes("contenido pagina") ||
         normName.includes("palabras por contenido") ||
         (normName.includes("contenido") && normName.includes("ia"))
       ) {
         let extractedVal = "";
-        if (type === "rich_text" && Array.isArray(propVal.rich_text)) {
+        if (Array.isArray(propVal.rich_text)) {
           extractedVal = propVal.rich_text.map((t: any) => t?.plain_text || t?.text?.content || "").join("").trim();
         } else if (Array.isArray(propVal[type])) {
           extractedVal = propVal[type].map((t: any) => t?.plain_text || t?.text?.content || t?.name || "").join(" ").trim();
@@ -254,6 +256,8 @@ function extractNotionPageData(page: any): LiveNotionPage {
           extractedVal = String(propVal[type].name).trim();
         } else if (typeof propVal[type] === "string" || typeof propVal[type] === "number") {
           extractedVal = String(propVal[type]).trim();
+        } else if (typeof propVal.string === "string") {
+          extractedVal = propVal.string.trim();
         }
         if (extractedVal) {
           aiContent = aiContent ? `${aiContent} ${extractedVal}` : extractedVal;
@@ -598,6 +602,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           return NextResponse.json({ error: 'Esta actividad fue archivada o eliminada en Notion.', archived: true }, { status: 404 });
         }
         const live = extractNotionPageData(page);
+        if (live.id) liveNotionOverrides.set(live.id, live);
         const activity = normalizeActivity({
           pageId: page.id,
           serverModified:page.last_edited_time,
@@ -608,6 +613,10 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           start: live.dateStart || '',
           end: live.dateEnd || '',
           domain: live.domain,
+          aiContent: live.aiContent,
+          'busqueda palabras por contenido pagina IA': live.aiContent,
+          contentSnippet: (live.aiContent || '').slice(0, 300),
+          pageContent: live.aiContent || '',
           ...ftfState(page),
           isLocked: live.isLocked,
         }, 0);
@@ -993,6 +1002,13 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           if (cal.raw.Domain || cal.raw.ParsedDomain) {
             row.domainChip = cal.raw.Domain || cal.raw.ParsedDomain;
           }
+          if (cal.raw.aiContent || cal.raw['busqueda palabras por contenido pagina IA']) {
+            const calAi = cal.raw.aiContent || cal.raw['busqueda palabras por contenido pagina IA'];
+            row.aiContent = calAi;
+            row['busqueda palabras por contenido pagina IA'] = calAi;
+            row.pageContent = [row.pageContent, calAi].filter(Boolean).join(" ");
+            if (!row.contentSnippet) row.contentSnippet = calAi.slice(0, 300);
+          }
           if (!row.externalUrl && cal.raw.PageUrl) row.externalUrl = cal.raw.PageUrl;
         }
       }
@@ -1042,6 +1058,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         if (!title) continue;
         const pageId = String(a.PageId || a.pageId || "").replace(/^review-mirror-/, "");
         if (!pageId) continue;
+        const calAi = a.aiContent || a['busqueda palabras por contenido pagina IA'] || "";
         items.unshift({
           id: pageId,
           name: `[Revisiones] ${title}`,
@@ -1059,7 +1076,11 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           scheduledDate: a.Start || a.start || "",
           updateStatus: a.Status || a.status || "",
           projectUpdateStatus: a.Status || a.status || "",
-          searchText: title,
+          searchText: `${title} ${calAi}`.trim(),
+          aiContent: calAi || "",
+          ['busqueda palabras por contenido pagina IA']: calAi || "",
+          pageContent: a.pageContent || calAi || "",
+          contentSnippet: (a.contentSnippet || calAi || "").slice(0, 300),
           type: "PAGE",
           target: a.PageUrl || a.pageUrl || "",
         } as any);
@@ -1216,6 +1237,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           for (let offset=0; offset<pages.length; offset+=3) {
             const batch = await Promise.all(pages.slice(offset,offset+3).map(async (page,batchIndex) => {
               const live = extractNotionPageData(page);
+              if (live.id) liveNotionOverrides.set(live.id, live);
               if (!live.dateStart || (type === 'calendar-project' && calendarDomain(live.title,live.domain) !== (searchParams.get('domain') || '').replace(/^www\./,'')) || /^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) return null;
               const old = byId.get(live.id);
               const state = workflowState(live.status, live.title);
@@ -1228,11 +1250,16 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               catch (error) { warning = 'Las actividades están cargadas, pero no se pudieron leer algunos datos de revisión. ' + (error instanceof Error ? error.message : ''); }
               if (!basic) try { checklist = await checklistSnapshot(liveSettings, page, mexicoDate(live.dateStart)); }
               catch (error) { warning = 'Las actividades están cargadas, pero hay checklists sin acceso o con bloques no disponibles. Comparte también las páginas de origen de bloques sincronizados con la integración de Notion. ' + (error instanceof Error ? error.message : ''); }
+              const itemAi = live.aiContent || old?.aiContent || old?.['busqueda palabras por contenido pagina IA'] || '';
               return normalizeActivity({...old, financialFields:activityFinancialFields(page),pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
                 serverModified:page.last_edited_time,person:live.person, originalPerson:reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
                 reviewFlow, reviewFlowScanned, domain:calendarDomain(live.title,live.domain), status:live.status,
                 start:live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
                 end:live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
+                aiContent: itemAi,
+                'busqueda palabras por contenido pagina IA': itemAi,
+                contentSnippet: (itemAi || old?.contentSnippet || '').slice(0, 300),
+                pageContent: itemAi || old?.pageContent || '',
                 ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,isLocked:live.isLocked, isUrgent:undefined, isReviewMirror:false, ...checklist}, 0);
             }));
             activities.push(...batch.filter(Boolean));
@@ -1579,6 +1606,40 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           } catch (cacheErr) {
             console.warn("Error reading notion_content_cache:", cacheErr);
           }
+        }
+      }
+
+      // 2.5 Si los bloques están vacíos o no tienen texto, verificar si la propiedad de IA contiene palabras clave
+      if (blocks.length === 0 || !blocks.some((b) => b.text?.trim())) {
+        const live = liveNotionOverrides.get(cleanId);
+        const calEntry = Object.values(calendarSnapshot()).flat().find((a: any) => cleanPageId(a.PageId || a.pageId) === cleanId);
+        let aiText = live?.aiContent || calEntry?.aiContent || calEntry?.['busqueda palabras por contenido pagina IA'] || '';
+        if (!aiText && token && token.trim()) {
+          try {
+            const pageRes = await fetch('https://api.notion.com/v1/pages/' + cleanId, {
+              headers: { Authorization: 'Bearer ' + token.trim(), 'Notion-Version': '2022-06-28' },
+              signal: AbortSignal.timeout(6000),
+            });
+            if (pageRes.ok) {
+              const pData = await pageRes.json();
+              const extracted = extractNotionPageData(pData);
+              if (extracted.id) liveNotionOverrides.set(extracted.id, extracted);
+              aiText = extracted.aiContent || '';
+            }
+          } catch {}
+        }
+        if (aiText) {
+          source = "notion-ai-property";
+          contentText = aiText;
+          blocks = [
+            {
+              id: `ai-kw-${cleanId}`,
+              kind: "callout",
+              text: `🔍 Palabras clave / Contenido IA: ${aiText}`,
+              isChecked: false,
+              isStrikethrough: false,
+            }
+          ];
         }
       }
 
