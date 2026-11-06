@@ -100,6 +100,27 @@ export function SearchInputBar({
   onOpenResponseCleanup,
 }: SearchInputBarProps) {
   const [showMoreSuggestions, setShowMoreSuggestions] = useState(false);
+  const moreSuggestionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMoreSuggestions) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreSuggestionsRef.current && !moreSuggestionsRef.current.contains(e.target as Node)) {
+        setShowMoreSuggestions(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowMoreSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showMoreSuggestions]);
   const barContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputRowRef=useRef<HTMLDivElement>(null);
@@ -278,7 +299,7 @@ export function SearchInputBar({
 
             {/* Botón compacto +N con las sugerencias restantes */}
             {remainingSuggestions.length > 0 && (
-              <div className="relative shrink-0">
+              <div ref={moreSuggestionsRef} className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowMoreSuggestions(!showMoreSuggestions)}
@@ -288,48 +309,59 @@ export function SearchInputBar({
                   +{remainingSuggestions.length}
                 </button>
                 {showMoreSuggestions && (
-                  <div className="absolute right-0 mt-1 w-52 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1 space-y-1">
-                    {remainingSuggestions.map((sug) => (
-                      <div
-                        key={sug.id}
-                        className="w-full flex items-center justify-between px-2 py-1 rounded text-xs text-slate-300 hover:bg-[#1A2536] group"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onSelectSuggestion?.(sug);
-                            setShowMoreSuggestions(false);
-                            inputRef.current?.focus();
-                          }}
-                          className="flex-1 text-left flex items-center gap-1.5 cursor-pointer"
-                          title={`Incluir +${sug.label}`}
+                  <div className="absolute right-0 mt-1.5 w-[640px] max-w-[90vw] bg-[#0E1520]/98 border border-cyan-800/80 rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.85)] z-50 p-2.5 backdrop-blur-md animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-[#1E293B] text-[11px] text-slate-400">
+                      <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Sugerencias disponibles ({remainingSuggestions.length})</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        [+] Incluir · [-] Excluir
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 max-h-[340px] overflow-y-auto scrollbar-thin pr-1">
+                      {remainingSuggestions.map((sug) => (
+                        <div
+                          key={sug.id}
+                          className="flex items-center justify-between rounded-md bg-[#162130] hover:bg-[#1D2B3E] border border-[#26374D] text-xs text-slate-300 transition group overflow-hidden"
                         >
-                          <span className="text-cyan-400 font-bold">+</span>
-                          <span>{sug.icon || ""} {sug.label}</span>
-                          <span className="text-[10px] text-slate-400 font-mono bg-[#0D131D] px-1 rounded ml-auto mr-1">
-                            {sug.count}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onExcludeSuggestion) {
-                              onExcludeSuggestion(sug);
-                            } else {
-                              const excludeToken = `-${sug.label.toLowerCase()}`;
-                              const trimmed = (query || "").trim();
-                              onChangeQuery(trimmed ? `${trimmed} ${excludeToken}` : excludeToken);
-                            }
-                            setShowMoreSuggestions(false);
-                            inputRef.current?.focus();
-                          }}
-                          className="px-1.5 py-0.5 text-rose-400 hover:text-white hover:bg-rose-900/80 rounded font-bold cursor-pointer"
-                          title={`Excluir -${sug.label}`}
-                        >
-                          -
-                        </button>
-                      </div>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectSuggestion?.(sug);
+                              setShowMoreSuggestions(false);
+                              inputRef.current?.focus();
+                            }}
+                            className="flex-1 text-left flex items-center gap-1.5 px-2 py-1 cursor-pointer min-w-0 hover:text-cyan-200"
+                            title={`Incluir +${sug.label}`}
+                          >
+                            <span className="text-cyan-400 font-bold shrink-0">+</span>
+                            <span className="truncate">{sug.icon ? `${sug.icon} ` : ""}{sug.label}</span>
+                            <span className="text-[9.5px] text-slate-400 font-mono bg-[#0D131D] px-1 rounded ml-auto shrink-0">
+                              {sug.count}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onExcludeSuggestion) {
+                                onExcludeSuggestion(sug);
+                              } else {
+                                const excludeToken = `-${sug.label.toLowerCase()}`;
+                                const trimmed = (query || "").trim();
+                                onChangeQuery(trimmed ? `${trimmed} ${excludeToken}` : excludeToken);
+                              }
+                              setShowMoreSuggestions(false);
+                              inputRef.current?.focus();
+                            }}
+                            className="px-2 py-1 text-rose-400 hover:text-white hover:bg-rose-900/80 border-l border-[#26374D] font-bold cursor-pointer text-xs transition shrink-0"
+                            title={`Excluir -${sug.label}`}
+                          >
+                            -
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
