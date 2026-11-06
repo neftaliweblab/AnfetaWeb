@@ -6,13 +6,13 @@ const {quickRevisionTitle}=require('../src/lib/quickRevisionTitle.ts');
 const {PROGRESSIVE_WORKFLOW_PRIMARY}=require('../src/services/progressiveWorkflow.ts');
 const phase=PROGRESSIVE_WORKFLOW_PRIMARY?'prtuzR':'prtuzREVISION';
 const sample={type:'Corrección de prueba',title:'Error al mover actividad',person:'nneft',domain:'anfeta.com',description:'Revisar el horario mostrado',month:'26-[10OCT]'};
-assert.equal(quickRevisionTitle(sample),phase+' [Corrección de prueba] 26-[10OCT] Error al mover actividad nne11 [d.anfeta.com] Revisar el horario mostrado');
-assert.match(quickRevisionTitle({...sample,person:'ggena'}),/ gge11 \[d.anfeta.com\]/);
-assert.match(quickRevisionTitle({...sample,person:'aandr'}),/ aan11\s+\[d.anfeta.com\]/);
+assert.equal(quickRevisionTitle(sample),phase+' | 🌐 Corrección de prueba | 📅 26-[10OCT] Error al mover actividad | 🌐 #d.anfeta.com | 🛠️ Revisar el horario mostrado | 👤 nne11 | ✅');
+assert.match(quickRevisionTitle({...sample,person:'ggena'}),/👤 gge11/);
+assert.match(quickRevisionTitle({...sample,person:'aandr'}),/👤 aan11/);
 assert.throws(()=>quickRevisionTitle({...sample,person:'desconocido'}),/responsable válido/);
 assert.throws(()=>quickRevisionTitle({...sample,month:'26-[99OCT]'}),/mes/);
 assert.throws(()=>quickRevisionTitle({...sample,month:'26-[08OCT]'}),/mes/);
-assert.match(quickRevisionTitle({...sample,type:'   '}),/\[Actividad rápida\]/);
+assert.match(quickRevisionTitle({...sample,type:'   '}),/🌐 Actividad rápida/);
 const previous=process.env.NOTION_PERSON_IDS;process.env.NOTION_PERSON_IDS=JSON.stringify({Neftali:'user-neft',Genaro:'user-gena'});
 let writes=[],schemas=0;
 global.fetch=async(url,options={})=>{const target=String(url).split('/v1/')[1];let data={};if(target.startsWith('data_sources/')){schemas++;data={properties:{Name:{type:'title'},Estado:{type:'status',status:{options:[{name:'prtuzREVISION'}]}},'Assignee/Ejecutor Principal':{type:'people'}}};}

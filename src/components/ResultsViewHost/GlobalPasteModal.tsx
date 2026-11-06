@@ -396,8 +396,12 @@ export function GlobalPasteModal({
       setError('Selecciona o busca una tarjeta existente para vincular la grabación.');
       return;
     }
-    if (effectiveMode === 'notion' && files.reduce((n, f) => n + f.sizeBytes, 0) > 2500000) {
-      setError('Este envío supera 2.5 MB. Reduce el lote para enviarlo por la web.');
+    const totalBytes = files.reduce((n, f: any) => {
+      const sz = typeof f?.sizeBytes === 'number' && Number.isFinite(f.sizeBytes) && f.sizeBytes > 0 ? f.sizeBytes : typeof f?.size === 'number' && Number.isFinite(f.size) && f.size > 0 ? f.size : f?.blob instanceof Blob ? f.blob.size : typeof f?.base64 === 'string' && f.base64 ? Math.floor(f.base64.length * 3 / 4) : 0;
+      return n + sz;
+    }, 0);
+    if (effectiveMode === 'notion' && totalBytes > 2500000) {
+      setError(`Este envío (${(totalBytes / (1024 * 1024)).toFixed(1)} MB) supera el límite de 2.5 MB para subida directa en «Solo Notion» (evita error HTTP 413). Cambia el destino arriba a «Notion + Dropbox» para subirlo por fragmentos sin límite.`);
       return;
     }
     submitLock.current=true;setBusy(true);
@@ -455,7 +459,14 @@ export function GlobalPasteModal({
 
       const raw = await response.text();
       let data: any;
-      try { data = JSON.parse(raw); } catch { throw new Error('El servidor no pudo completar la subida (HTTP ' + response.status + ').'); }
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        if (response.status === 413) {
+          throw new Error('El archivo supera el tamaño máximo de 2.5 MB para subida directa (HTTP 413). Cambia el destino arriba a «Notion + Dropbox» o da clic abajo en «Continuar solo con Dropbox» para fragmentar la subida.');
+        }
+        throw new Error('El servidor no pudo completar la subida (HTTP ' + response.status + ').');
+      }
 
       const allReceipts = data.receipts || recovery.current.receipts || [];
       recovery.current = { ...recovery.current, receipts: allReceipts, updatedAt: Date.now() };
@@ -622,7 +633,12 @@ export function GlobalPasteModal({
           <div className="grid gap-3 sm:grid-cols-2"><label>Tipo de actividad<select aria-label="Tipo de actividad" value={customType?'Otro':quickType} onChange={e=>{const other=e.target.value==='Otro';setCustomType(other);setQuickType(other?'':e.target.value);}} className="mt-1 w-full rounded bg-slate-800 p-2">{UPLOAD_ACTIVITY_TYPES.map(value=><option key={value}>{value}</option>)}</select>{customType&&<input aria-label="Otro tipo de actividad" value={quickType} onChange={e=>setQuickType(e.target.value)} placeholder="Escribe el tipo de actividad" maxLength={100} required className="mt-2 w-full rounded bg-slate-800 p-2"/>}</label><label>Nombre de la actividad <span className="text-cyan-300">(obligatorio)</span><input value={quickTitle} onChange={e=>setQuickTitle(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Ej. Corregir horario del calendario"/><span className="mt-1 block text-slate-400">Escribe una acción breve que el equipo pueda reconocer.</span></label></div>
           <label className="block">Detalles <span className="text-slate-400">(opcional)</span><input value={quickDescription} onChange={e=>setQuickDescription(e.target.value)} className="mt-1 w-full rounded bg-slate-800 p-2" placeholder="Ej. Al mover la tarjeta, el horario cambia una hora."/></label>
           {documentation&&<label className="block rounded border border-cyan-900 p-2">Base de documentación en Notion<select aria-label="Tipo de destino de documentación" value={notionTarget==='database'?'database':'source'} onChange={e=>setNotionTarget(e.target.value)} className="ml-2 rounded bg-slate-800 p-2"><option value="source">Fuente de datos</option><option value="database">Base de datos</option></select><input aria-label="Base de documentación de Notion" value={notionTargetId} onChange={e=>{setNotionTargetId(e.target.value);}} placeholder="Enlace o ID de la fuente de datos de Correos / Contraseñas" className="mt-1 w-full rounded bg-slate-800 p-2"/><span className="mt-1 block text-slate-400">Vacío: usa Correos Contraseñas del catálogo de ANFETA (o el destino configurado en el servidor). Se valida el acceso antes de guardar; no se envía a Dropbox.</span></label>}
-          <p className="text-slate-400">{documentation?"El registro se guarda en la base de documentación, sin generar una tarea ni horario.":"El título técnico se arma automáticamente con estos datos."} {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío: 2.5 MB.'}</p>
+          <p className="text-slate-400">{documentation?"El registro se guarda en la base de documentación, sin generar una tarea ni horario.":"El título técnico se arma automáticamente con estos datos."} {mode==='both'?'Video en Dropbox y referencia en Notion.':'Video adjunto en Notion; máximo actual de envío directo: 2.5 MB (para archivos mayores, usa Notion + Dropbox).'}</p>
+          {mode==='notion' && files.some((f: any) => (f.sizeBytes || f.size || (f.blob && f.blob.size) || (typeof f?.base64 === 'string' && f.base64 ? Math.floor(f.base64.length * 3 / 4) : 0)) > 2500000) && (
+            <div className="rounded-lg bg-amber-950/70 border border-amber-600/60 p-2.5 text-amber-200 text-xs">
+              ⚠️ Se detectó un archivo mayor a 2.5 MB. En «Solo Notion» el servidor rechazará la subida por límite de payload (HTTP 413). Cambia el destino arriba a <strong>«Notion + Dropbox»</strong> para que se suba en fragmentos de 1 MB sin límite.
+            </div>
+          )}
         </fieldset>}
 
           {/* Panel de Selección y Búsqueda de Tarjeta Existente */}
@@ -964,7 +980,8 @@ export function GlobalPasteModal({
         {started && <p className="text-xs text-slate-400">El lote conserva archivos, destinos y recibos. Si un resultado quedó pendiente, puedes corregirlo y reintentar.</p>}
 
         <footer className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-800">
-          {error&&!documentation&&mode!=='dropbox'&&!recovery.current?.receipts.some(r=>r.kind==='notion'||r.kind==='notion_attachment')&&<button type="button" disabled={busy||locked||!draftReady||Boolean(pendingConflict)} onClick={e=>void submit(e,true)} className="rounded border border-cyan-700 px-3 py-2 text-sm text-cyan-200">Continuar solo con Dropbox</button>}
+          {error&&!documentation&&mode!=='dropbox'&&!recovery.current?.receipts.some(r=>r.kind==='notion'||r.kind==='notion_attachment')&&<button type="button" disabled={busy||locked||!draftReady||Boolean(pendingConflict)} onClick={e=>void submit(e,true)} className="rounded border border-cyan-700 px-3 py-2 text-sm text-cyan-200 cursor-pointer hover:bg-cyan-950">Continuar solo con Dropbox</button>}
+          {error&&!documentation&&mode==='notion'&&<button type="button" disabled={busy||locked} onClick={()=>{setMode('both');setError('');}} className="rounded bg-sky-700 hover:bg-sky-600 px-3 py-2 text-sm font-semibold text-white cursor-pointer shadow-sm">Cambiar a Notion + Dropbox</button>}
           <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800 cursor-pointer">
             {locked ? 'Cerrar' : 'Cancelar'}
           </button>
