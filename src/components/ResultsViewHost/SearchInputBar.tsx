@@ -15,6 +15,7 @@ import {
   MessageSquare,
   MessageCircle,
   Bell,
+  ClipboardList,
 } from "lucide-react";
 import { SearchQueryTools } from "./SearchQueryTools";
 import { IndexSyncStatus } from "./IndexSyncStatus";
@@ -48,6 +49,8 @@ interface SearchInputBarProps {
   activeCriteria?: ActiveSearchCriterion[];
   onRemoveCriterion?: (id: string) => void;
   onSelectSuggestion?: (sug: InlineSearchSuggestion) => void;
+  onExcludeSuggestion?: (sug: InlineSearchSuggestion) => void;
+  onSaveToPending?: () => void;
   onToggleCalendarView?: () => void;
   isCalendarActive?: boolean;
   onOpenStandaloneCalendar?: () => void;
@@ -82,6 +85,8 @@ export function SearchInputBar({
   activeCriteria = [],
   onRemoveCriterion,
   onSelectSuggestion,
+  onExcludeSuggestion,
+  onSaveToPending,
   onToggleCalendarView,
   isCalendarActive = false,
   onOpenStandaloneCalendar,
@@ -114,17 +119,32 @@ export function SearchInputBar({
   }, [query, filteredItems, searchIndex, activeCriteria]);
 
   useEffect(()=>{
-    const row=inputRowRef.current,sizing=sizingRef.current;if(!row||!sizing)return;
+    const row = inputRowRef.current;
+    const sizing = sizingRef.current;
+    if (!row || !sizing) return;
+    let rafId: number | null = null;
     const measure=()=>{
-      const fixed=Array.from(row.children).filter(el=>el!==inputRef.current&&!el.hasAttribute('data-inline-suggestions')).reduce((sum,el)=>sum+el.getBoundingClientRect().width,0);
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (!row || !sizing) return;
+        const rowWidth = row.clientWidth;
+        if (!rowWidth) return;
+        const fixed=Array.from(row.children).filter(el=>el!==inputRef.current&&!el.hasAttribute('data-inline-suggestions')).reduce((sum,el)=>sum+(el as HTMLElement).offsetWidth,0);
       const available=row.clientWidth-fixed-200-Array.from(row.children).length*8-20;
-      const widths=Array.from(sizing.children).map(el=>el.getBoundingClientRect().width+6);
+        const widths=Array.from(sizing.children).map(el=>(el as HTMLElement).offsetWidth+6);
       let count=0,used=0;
       for(let i=0;i<Math.min(3,widths.length);i++){const next=used+widths[i];if(next+(i+1<widths.length?44:0)>available)break;used=next;count++;}
-      setMaxVisible(count);
+        setMaxVisible(count);
+      });
     };
-    measure();const observer=new ResizeObserver(measure);observer.observe(row);for(const child of Array.from(row.children))observer.observe(child);return()=>observer.disconnect();
-  },[suggestions,activeCriteria,scale]);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  },[suggestions.length,activeCriteria.length,scale]);
 
   const visibleSuggestions = suggestions.slice(0, maxVisible);
   const remainingSuggestions = suggestions.slice(maxVisible);
@@ -214,23 +234,46 @@ export function SearchInputBar({
         {query.trim().length > 0 && suggestions.length > 0 && (
           <div data-inline-suggestions className="flex items-center gap-1.5 shrink-0 select-none py-0.5">
             {visibleSuggestions.map((sug) => (
-              <button
+              <div
                 key={sug.id}
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  onSelectSuggestion?.(sug);
-                  inputRef.current?.focus();
-                }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-[#1A2536] hover:bg-cyan-950 hover:text-cyan-300 hover:border-cyan-600 border border-[#2A3B52] text-slate-300 transition cursor-pointer shrink-0"
-                title={`Añadir criterio ${sug.label} (${sug.count} coincidencias)`}
+                className="inline-flex items-center rounded text-[11px] bg-[#1A2536] border border-[#2A3B52] overflow-hidden shrink-0 transition"
               >
-                <span className="text-cyan-400 font-bold">+</span>
-                <span>{sug.label}</span>
-                <span className="text-[10px] text-slate-400 font-mono bg-[#111824] px-1 rounded">
-                  {sug.count}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onSelectSuggestion?.(sug);
+                    inputRef.current?.focus();
+                  }}
+                  className="flex items-center gap-1 px-1.5 py-0.5 hover:bg-cyan-950 hover:text-cyan-300 text-slate-300 transition cursor-pointer"
+                  title={`Incluir +${sug.label} (${sug.count} coincidencias)`}
+                >
+                  <span className="text-cyan-400 font-bold">+</span>
+                  <span>{sug.label}</span>
+                  <span className="text-[10px] text-slate-400 font-mono bg-[#111824] px-1 rounded">
+                    {sug.count}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onExcludeSuggestion) {
+                      onExcludeSuggestion(sug);
+                    } else {
+                      const excludeToken = `-${sug.label.toLowerCase()}`;
+                      const trimmed = (query || "").trim();
+                      onChangeQuery(trimmed ? `${trimmed} ${excludeToken}` : excludeToken);
+                    }
+                    inputRef.current?.focus();
+                  }}
+                  className="px-1.5 py-0.5 text-rose-400 hover:text-white hover:bg-rose-900/70 border-l border-[#2A3B52] font-bold cursor-pointer transition text-xs"
+                  title={`Excluir -${sug.label} de la búsqueda`}
+                >
+                  -
+                </button>
+              </div>
             ))}
 
             {/* Botón compacto +N con las sugerencias restantes */}
@@ -245,23 +288,47 @@ export function SearchInputBar({
                   +{remainingSuggestions.length}
                 </button>
                 {showMoreSuggestions && (
-                  <div className="absolute right-0 mt-1 w-48 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1 space-y-1">
+                  <div className="absolute right-0 mt-1 w-52 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1 space-y-1">
                     {remainingSuggestions.map((sug) => (
-                      <button
+                      <div
                         key={sug.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectSuggestion?.(sug);
-                          setShowMoreSuggestions(false);
-                          inputRef.current?.focus();
-                        }}
-                        className="w-full text-left flex items-center justify-between px-2 py-1 rounded text-xs text-slate-300 hover:bg-[#1A2536] hover:text-white"
+                        className="w-full flex items-center justify-between px-2 py-1 rounded text-xs text-slate-300 hover:bg-[#1A2536] group"
                       >
-                        <span>{sug.icon || "+"} {sug.label}</span>
-                        <span className="text-[10px] text-slate-400 font-mono bg-[#0D131D] px-1 rounded">
-                          {sug.count}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSelectSuggestion?.(sug);
+                            setShowMoreSuggestions(false);
+                            inputRef.current?.focus();
+                          }}
+                          className="flex-1 text-left flex items-center gap-1.5 cursor-pointer"
+                          title={`Incluir +${sug.label}`}
+                        >
+                          <span className="text-cyan-400 font-bold">+</span>
+                          <span>{sug.icon || ""} {sug.label}</span>
+                          <span className="text-[10px] text-slate-400 font-mono bg-[#0D131D] px-1 rounded ml-auto mr-1">
+                            {sug.count}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onExcludeSuggestion) {
+                              onExcludeSuggestion(sug);
+                            } else {
+                              const excludeToken = `-${sug.label.toLowerCase()}`;
+                              const trimmed = (query || "").trim();
+                              onChangeQuery(trimmed ? `${trimmed} ${excludeToken}` : excludeToken);
+                            }
+                            setShowMoreSuggestions(false);
+                            inputRef.current?.focus();
+                          }}
+                          className="px-1.5 py-0.5 text-rose-400 hover:text-white hover:bg-rose-900/80 rounded font-bold cursor-pointer"
+                          title={`Excluir -${sug.label}`}
+                        >
+                          -
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -343,6 +410,18 @@ export function SearchInputBar({
         {/* 6. Utilidades Rápidas de Búsqueda */}
         <div style={{ gap: `${Math.round(4 * scale)}px` }} className="flex items-center shrink-0 select-none">
           {onOpenTemplates&&<button type="button" onClick={onOpenTemplates} title="Abrir catálogo de plantillas" aria-label="Crear con plantilla" className="flex items-center gap-1 rounded border border-cyan-700 bg-cyan-950/50 px-2 py-1 text-xs font-semibold text-cyan-200"><Zap className="h-3.5 w-3.5"/><span>Crear con plantilla</span></button>}
+          {onSaveToPending && (
+            <button
+              type="button"
+              onClick={onSaveToPending}
+              title="Guardar búsqueda o texto actual como Pendiente"
+              aria-label="Guardar en pendientes"
+              className="flex items-center gap-1 rounded border border-amber-600/70 bg-amber-950/40 hover:bg-amber-900/60 px-2 py-1 text-xs font-semibold text-amber-200 transition cursor-pointer"
+            >
+              <ClipboardList className="h-3.5 w-3.5 text-amber-400" />
+              <span className="hidden sm:inline">A Pendientes</span>
+            </button>
+          )}
           <SavedSearches query={query} onSelect={onChangeQuery} />
           <FavoritesBackup />
           <IndexSyncStatus owner={currentUser} />

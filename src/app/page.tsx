@@ -223,7 +223,7 @@ export default function AnfetaApp() {
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
   const calendarContextRef=useRef('');calendarContextRef.current=currentUser+':'+currentDate;
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
-  const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
+  const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks,handleReorderPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
@@ -460,6 +460,14 @@ export default function AnfetaApp() {
     const isPlaceholderDomain = (d: string) => {
       if (!d) return true;
       const clean = d.trim().toLowerCase();
+      const genericPlatforms = [
+        "facebook.com", "instagram.com", "google.com", "youtube.com", "twitter.com",
+        "tiktok.com", "notion.so", "dropbox.com", "canva.com", "whatsapp.com",
+        "linkedin.com", "pinterest.com", "github.com", "p.facebook.com", "p.facebook",
+      ];
+      if (genericPlatforms.includes(clean) || clean.endsWith(".facebook.com") || clean.endsWith(".instagram.com") || clean.includes("facebook") || clean.includes("plantilla")) {
+        return true;
+      }
       return (
         [
           "dominio.com",
@@ -558,6 +566,8 @@ export default function AnfetaApp() {
       if (act.isReviewMirror) return;
 
       const title = act?.title || (act as any)?.Title || "";
+      if (title.toLowerCase().includes("plantilla") || title.includes("#ffase00")) return;
+
       const rawDomainCandidate = act?.domain || (act as any)?.ParsedDomain || "";
       const pageUrl = act?.pageUrl || (act as any)?.PageUrl || "";
 
@@ -593,11 +603,17 @@ export default function AnfetaApp() {
     });
 
     return Object.entries(projectMap)
-      .sort((a, b) => a[0].localeCompare(b[0], "es", { sensitivity: "base" }))
+      .sort((a, b) => {
+        const aInternal = a[0].includes("anfeta") || a[0].includes("weblab") || a[0].includes("tzp");
+        const bInternal = b[0].includes("anfeta") || b[0].includes("weblab") || b[0].includes("tzp");
+        if (aInternal !== bInternal) return aInternal ? -1 : 1;
+        return a[0].localeCompare(b[0], "es", { sensitivity: "base" });
+      })
       .map(([domain, data]) => ({
         domain,
         count: data.count,
         activities: data.activities,
+        isInternal: domain.includes("anfeta") || domain.includes("weblab") || domain.includes("tzp"),
       }));
   }, [calendarActivities]);
 
@@ -679,6 +695,7 @@ export default function AnfetaApp() {
             onEditPendingTask={handleEditPendingTask}
             onDeletePendingTask={handleDeletePendingTask}
             onDeleteAllPendingTasks={handleDeleteAllPendingTasks}
+            onReorderPendingTasks={handleReorderPendingTasks}
             searchFilter={searchFilter}
             onSelectDomain={(domain) => handleSearchChange(domain)}
             searchQuery={searchQuery}

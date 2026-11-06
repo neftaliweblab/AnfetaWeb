@@ -105,6 +105,17 @@ function readLocalJson<T>(filename: string, defaultValue: T): T {
   return defaultValue;
 }
 
+function writeLocalJson<T>(filename: string, data: T): void {
+  try {
+    const projectPath = path.join(PROJECT_DATA_DIR, filename);
+    const target = fs.existsSync(projectPath) || process.env.VERCEL ? projectPath : path.join(LOCAL_STATE_DIR, filename);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn(`[writeLocalJson] No se pudo guardar ${filename}:`, err);
+  }
+}
+
 // Caché en memoria para vistas previas con TTL de 15 minutos
 export const maxDuration = 300;
 
@@ -156,6 +167,7 @@ interface LiveNotionPage {
   ftfVerified:boolean;
   ftfAvailable:boolean;
   sourceName?:string;
+  aiContent?: string;
 }
 
 const liveNotionOverrides = new BoundedCache<LiveNotionPage>(10000,16*1024*1024,60*60*1000,value=>Buffer.byteLength(JSON.stringify(value)));
@@ -174,12 +186,14 @@ function extractNotionPageData(page: any): LiveNotionPage {
   let datePriority = -1;
   let person = "";
   let domain = "";
+  let aiContent = "";
 
   if (page.properties) {
     for (const [propName, propVal] of Object.entries(page.properties as Record<string, any>)) {
       if (!propVal) continue;
       const type = propVal.type;
       const lowerName = propName.toLowerCase();
+      const normName = lowerName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       if (type === "checkbox" && /lock|bloquead/i.test(propName) && propVal.checkbox) isLocked = true;
 
       // Title
@@ -220,6 +234,31 @@ function extractNotionPageData(page: any): LiveNotionPage {
           domain = propVal.select.name;
         }
       }
+
+      // Búsqueda palabras por contenido página IA
+      if (
+        normName === "busqueda palabras por contenido pagina ia" ||
+        normName.includes("busqueda palabras por contenido") ||
+        normName.includes("contenido pagina ia") ||
+        normName.includes("palabras por contenido") ||
+        (normName.includes("contenido") && normName.includes("ia"))
+      ) {
+        let extractedVal = "";
+        if (type === "rich_text" && Array.isArray(propVal.rich_text)) {
+          extractedVal = propVal.rich_text.map((t: any) => t?.plain_text || t?.text?.content || "").join("").trim();
+        } else if (Array.isArray(propVal[type])) {
+          extractedVal = propVal[type].map((t: any) => t?.plain_text || t?.text?.content || t?.name || "").join(" ").trim();
+        } else if (type === "formula" && propVal.formula) {
+          extractedVal = String(propVal.formula.string ?? propVal.formula.number ?? "").trim();
+        } else if (propVal[type]?.name) {
+          extractedVal = String(propVal[type].name).trim();
+        } else if (typeof propVal[type] === "string" || typeof propVal[type] === "number") {
+          extractedVal = String(propVal[type]).trim();
+        }
+        if (extractedVal) {
+          aiContent = aiContent ? `${aiContent} ${extractedVal}` : extractedVal;
+        }
+      }
     }
   }
 
@@ -228,7 +267,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
   person = assignedPerson(page, person);
   const statusProp = calendarStatusField(page)?.[1];
   status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):notionStatusValue(statusProp);
-  return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, lastEdited, ...ftfState(page), isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
+  return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, aiContent, lastEdited, ...ftfState(page), isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
 }
 
 const STRUCTURAL_CONTAINERS = new Set([
@@ -492,7 +531,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       return fallback('Cobros/Pagos en caché: configura el acceso a Notion.');
     }
     if(type==='ftf-dashboard'){
-      if(!canViewFtfDashboard(actor))return NextResponse.json({error:'Este panel está disponible únicamente para John y Neftalí.'},{status:403});
+      if(!canViewFtfDashboard(actor))return NextResponse.json({error:'Inicia sesión para consultar la bitácora del equipo.'},{status:403});
       try{
         const day=searchParams.get('date')||mexicoDate();
         if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+'T12:00:00Z')))throw Error('Fecha inválida.');
@@ -918,7 +957,13 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           if (live.dateStart||live.sourceName==='Cobrar y pagar') row.scheduledDate = live.dateStart+(live.dateEnd?' - '+live.dateEnd:'');
           if (live.lastEdited) row.serverModified = live.lastEdited;
           if(live.person)row.assignedPerson=live.person;
-          row.searchText = [row.contentSnippet, row.description, row.name, live.title, live.person, live.domain].filter(Boolean).join(" ");
+          if (live.aiContent) {
+            row.aiContent = live.aiContent;
+            row['busqueda palabras por contenido pagina IA'] = live.aiContent;
+            row.pageContent = [row.pageContent, live.aiContent].filter(Boolean).join(" ");
+            if (!row.contentSnippet) row.contentSnippet = live.aiContent.slice(0, 300);
+          }
+          row.searchText = [row.contentSnippet, row.description, row.name, live.title, live.person, live.domain, live.aiContent].filter(Boolean).join(" ");
         }
 
         // 2. Prioridad 2: Actualizaciones del calendario local si no vino en vivo
@@ -974,7 +1019,11 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           scheduledDate: live.dateStart+(live.dateEnd?' - '+live.dateEnd:''),
           updateStatus: live.status || "prtuzREVISION",
           projectUpdateStatus: live.status || "prtuzREVISION",
-          searchText: `${live.title} ${live.person} ${live.domain}`,
+          searchText: `${live.title} ${live.person} ${live.domain} ${live.aiContent || ""}`.trim(),
+          aiContent: live.aiContent || "",
+          ['busqueda palabras por contenido pagina IA']: live.aiContent || "",
+          pageContent: live.aiContent || "",
+          contentSnippet: (live.aiContent || "").slice(0, 300),
           type: "PAGE",
           target: live.url,
           assignedPerson: live.person || "Sin asignar",
@@ -2807,7 +2856,13 @@ async function POSTLive(req: NextRequest) {
       const pageId = input.pageId;
       try {
         if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
-        if (action === 'get-checklist') return NextResponse.json({ success:true, items:await readChecklist(settings, pageId) });
+        if (action === 'get-checklist') {
+          if (input.fresh || input.force) {
+            invalidateChecklist(settings, pageId);
+            clearReadBlocksCache(settings);
+          }
+          return NextResponse.json({ success:true, items:await readChecklist(settings, pageId) });
+        }
         return await withActivityLease(operationKey(settings.notionToken,cleanPageId(pageId)),async()=>{
         const actor = input.currentUser || settings.currentUser;
         const currentPage=await assertChecklistAccess(settings, actor, pageId);
@@ -3039,6 +3094,32 @@ async function POSTLive(req: NextRequest) {
         } catch (error) {results.push({index,success:false,error:error instanceof Error ? error.message : 'No se pudo crear la plantilla.'});}
       }
       return NextResponse.json({success:results.every(item=>item.success),createdActivities,results,count:createdActivities.length,error:results.filter(item=>!item.success).map(item=> 'Plantilla ' + (item.index+1) + ': ' + item.error).join(' · ')});
+    }
+
+    if (action === 'save-ftf-review') {
+      const normActor = normalizePerson(actor || payload.currentUser || '');
+      if (normActor !== 'John' && normActor !== 'Neftali') {
+        throw new Error('Solo John y Neftali pueden marcar la revisión de bitácora.');
+      }
+      const date = String(payload.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Fecha de bitácora inválida.');
+      const reviews = readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {});
+      if (payload.unmark) {
+        delete reviews[date];
+      } else {
+        reviews[date] = {
+          reviewer: normActor,
+          reviewedAt: new Date().toISOString()
+        };
+      }
+      writeLocalJson('ftf_supervisor_reviews.json', reviews);
+      return NextResponse.json({ success: true, date, review: reviews[date] || null }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'get-ftf-review') {
+      const date = String(payload.date || '').slice(0, 10);
+      const reviews = readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {});
+      return NextResponse.json({ success: true, date, review: reviews[date] || null }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     return NextResponse.json({ error: "Action not supported" }, { status: 400 });

@@ -4,36 +4,39 @@ import {supabaseConfigured,supabaseIdentity,supabaseAdmin} from '@/services/supa
 import {normalizePerson,PERSON_ALIASES} from '@/services/identityNormalizer';
 
 function formatLastSeen(lastSeen: string | null, isOnline: boolean): string {
-  if (isOnline) return 'En linea';
-  if (!lastSeen) return 'Sin conexion';
-  const diffMs = Date.now() - new Date(lastSeen).getTime();
-  if (diffMs <= 0) return 'Hora de conexión sin confirmar';
+  if (!lastSeen) return 'Sin conexión';
+  const d = new Date(lastSeen);
+  const validDate = Number.isFinite(d.getTime());
+  const timeStr = validDate
+    ? d.toLocaleTimeString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/Mexico_City',
+      })
+    : '';
+
+  if (isOnline) {
+    return timeStr ? `En línea (desde ${timeStr})` : 'En línea';
+  }
+
+  if (!validDate) return 'Hora de conexión sin confirmar';
+
+  const diffMs = Date.now() - d.getTime();
+  // Tolerancia de 60 segundos para evitar falsos positivos de desfase de reloj
+  if (diffMs < -60000) return 'Hora de conexión sin confirmar';
+  if (diffMs <= 60000) return 'Hace un momento';
+
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'Hace un momento';
   if (mins < 60) return 'Hace ' + mins + ' min';
   const hours = Math.floor(mins / 60);
   if (hours < 24) {
-    const d = new Date(lastSeen);
-    const timeStr = d.toLocaleTimeString('es-MX', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'America/Mexico_City',
-    });
     return 'Hoy ' + timeStr;
   }
   const days = Math.floor(hours / 24);
   if (days === 1) {
-    const d = new Date(lastSeen);
-    const timeStr = d.toLocaleTimeString('es-MX', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'America/Mexico_City',
-    });
     return 'Ayer ' + timeStr;
   }
-  const d = new Date(lastSeen);
   return d.toLocaleDateString('es-MX', {
     day: '2-digit',
     month: '2-digit',

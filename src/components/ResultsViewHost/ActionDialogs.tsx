@@ -26,11 +26,11 @@ export function RenameModal({ isOpen, item, onClose, onConfirm }: RenameModalPro
   if (item.source === "Notion") {
     return (
       <div
-        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-10 overflow-y-auto p-4"
         onClick={onClose}
       >
         <div
-          className="w-full max-w-2xl sm:max-w-3xl"
+          className="w-full max-w-4xl max-h-[92vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <ActivityTitleFieldEditor
@@ -49,7 +49,7 @@ export function RenameModal({ isOpen, item, onClose, onConfirm }: RenameModalPro
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-10 overflow-y-auto p-4"
       onClick={onClose}
     >
       <div
@@ -133,7 +133,7 @@ export function DuplicateModal({ isOpen, item, onClose, onConfirm }: DuplicateMo
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-10 overflow-y-auto p-4"
       onClick={onClose}
     >
       <div
@@ -214,7 +214,7 @@ export function CreateFolderModal({ isOpen, targetDir = "C:\\Users\\nanoc\\Dropb
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-10 overflow-y-auto p-4"
       onClick={onClose}
     >
       <div

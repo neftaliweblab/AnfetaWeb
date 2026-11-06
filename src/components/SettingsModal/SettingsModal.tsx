@@ -356,7 +356,7 @@ export function SettingsModal({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto p-4 select-none"
         onClick={onClose}
       >
       <div

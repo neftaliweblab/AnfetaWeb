@@ -102,6 +102,7 @@ export function usePendingTasks(user:string,authenticated:boolean){
     handleEditPendingTask:useCallback((id:string,patch:Partial<PendingTaskItem>)=>send({id,patch}),[send]),
     handleTogglePendingTask:useCallback((id:string)=>{const task=current.current.find(t=>t.id===id);if(task)send({id,patch:{isCompleted:!task.isCompleted}});},[send]),
     handleDeletePendingTask:useCallback((id:string)=>send({remove:[id]}),[send]),
-    handleDeleteAllPendingTasks:useCallback(()=>send({remove:current.current.map(t=>t.id)}),[send])
+    handleDeleteAllPendingTasks:useCallback(()=>send({remove:current.current.map(t=>t.id)}),[send]),
+    handleReorderPendingTasks:useCallback((orderIds:string[])=>send({reorder:orderIds}),[send])
   };
 }

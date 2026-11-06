@@ -41,7 +41,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab, SearchTabConfig } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -87,6 +87,7 @@ interface ResultsViewHostProps {
   onEditPendingTask?: (id: string, updatedData: Partial<PendingTaskItem>) => void;
   onDeletePendingTask: (id: string) => void;
   onDeleteAllPendingTasks?: () => void;
+  onReorderPendingTasks?: (ids: string[]) => void;
   searchFilter: (item: SearchResultRow) => boolean;
   onSelectDomain?: (domain: string) => void;
   searchQuery?: string;
@@ -121,6 +122,7 @@ export function ResultsViewHost({
   onEditPendingTask,
   onDeletePendingTask,
   onDeleteAllPendingTasks,
+  onReorderPendingTasks,
   searchFilter,
   onSelectDomain,
   searchQuery: externalQuery = "",
@@ -208,6 +210,17 @@ export function ResultsViewHost({
     if (sug.type === 'person') {
       setResultPerson(sug.value);
     }
+    focusSearch();
+  };
+
+  const handleExcludeSuggestion = (sug: InlineSearchSuggestion) => {
+    const excludeToken = `-${sug.label.toLowerCase()}`;
+    setQuery(prev => {
+      const trimmed = (prev || "").trim();
+      if (!trimmed) return excludeToken;
+      if (trimmed.toLowerCase().includes(excludeToken)) return prev;
+      return `${trimmed} ${excludeToken}`;
+    });
     focusSearch();
   };
 
@@ -1676,6 +1689,8 @@ export function ResultsViewHost({
         activeCriteria={activeCriteria}
         onRemoveCriterion={handleRemoveCriterion}
         onSelectSuggestion={handleSelectSuggestion}
+        onExcludeSuggestion={handleExcludeSuggestion}
+        onSaveToPending={() => setIsNewTaskModalOpen(true)}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
@@ -1774,6 +1789,7 @@ export function ResultsViewHost({
             }}
             onDeleteTask={onDeletePendingTask}
             onDeleteAllTasks={onDeleteAllPendingTasks}
+            onReorderTasks={onReorderPendingTasks}
             onSelectTaskQuery={(q) => handleQueryChange(q)}
           />
         )}
@@ -1880,6 +1896,19 @@ export function ResultsViewHost({
                     : `Hay ${items.length} registros cargados, pero ninguno coincide con la persona ${resultPerson === "__all__" ? "Todas las personas" : normalizePerson(resultPerson)} y los filtros actuales.`}
                 </span>
                 <div className="flex items-center gap-2">
+                  {selectedScope !== "Contenido" && deferredQuery.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedScope("Contenido");
+                        focusSearch();
+                      }}
+                      className="flex items-center gap-1.5 rounded border border-cyan-600 bg-cyan-950/80 px-3 py-1 text-xs font-bold text-cyan-200 hover:bg-cyan-900 transition cursor-pointer shadow-md"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>¿Buscar en contenido y notas? →</span>
+                    </button>
+                  )}
                   {selectedScope === "Contenido" && deferredQuery.trim() && (
                     <button
                       type="button"
@@ -2012,6 +2041,7 @@ export function ResultsViewHost({
           setEditingTask(null);
         }}
         taskToEdit={editingTask}
+        initialQuery={query}
         onSave={(taskData, editId) => {
           if (editId && onEditPendingTask) {
             onEditPendingTask(editId, taskData);

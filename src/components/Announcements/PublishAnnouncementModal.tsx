@@ -257,7 +257,7 @@ export function PublishAnnouncementModal({
   const percent = Math.round((seenCount / totalCount) * 100);
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[300] flex items-start justify-center pt-6 sm:pt-8 bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
       <div
         onPaste={handlePaste}
         className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-cyan-800/80 bg-[#0C121A] text-slate-200 shadow-2xl overflow-hidden"

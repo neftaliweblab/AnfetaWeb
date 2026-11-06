@@ -1,7 +1,8 @@
 "use client";
 import { UnifiedActivityModal } from './UnifiedActivityModal';
-import {ReturnedObservations} from './ReturnedObservations';
-import {ReturnToOwnerModal} from './ReturnToOwnerModal';
+import { ReturnedObservations } from './ReturnedObservations';
+import { ReturnToOwnerModal } from './ReturnToOwnerModal';
+import { parseVisualParts } from "@/lib/visualTitleParser";
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
@@ -185,39 +186,44 @@ function ActivityCardComponent({
     }
   }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
 
-  const fetchChecklistIfNeeded = React.useCallback(async () => {
+  const fetchChecklistIfNeeded = React.useCallback(async (force = false) => {
     if(activity.isHandoffMirror||checkBusy.current)return;
     const rawId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, "") : activity.pageId;
     if (!rawId || rawId.startsWith("act-")) return;
     const key = cleanCardId(rawId);
 
-    if (checklistMemoryCache.has(key)) {
-      setChecklistData(checklistMemoryCache.get(key)!);
-      return;
-    }
+    if (!force) {
+      if (checklistMemoryCache.has(key)) {
+        setChecklistData(checklistMemoryCache.get(key)!);
+        return;
+      }
 
-    if (activity.checklistScanned && ((activity.checklistTotal ?? 0) > 0 || activity.checklistItems?.length)) {
-      const entry: ChecklistCardCacheEntry = {
-        total: activity.checklistTotal ?? 0,
-        completed: activity.checklistCompleted ?? 0,
-        today: activity.todayChecklistCompleted ?? 0,
-        items: activity.checklistItems || [],
-        completedChecks: activity.completedChecks || [],
-      };
-      setChecklistCache(key, entry);
-      setChecklistData(entry);
-      return;
+      if (activity.checklistScanned && ((activity.checklistTotal ?? 0) > 0 || activity.checklistItems?.length)) {
+        const entry: ChecklistCardCacheEntry = {
+          total: activity.checklistTotal ?? 0,
+          completed: activity.checklistCompleted ?? 0,
+          today: activity.todayChecklistCompleted ?? 0,
+          items: activity.checklistItems || [],
+          completedChecks: activity.completedChecks || [],
+        };
+        setChecklistCache(key, entry);
+        setChecklistData(entry);
+        return;
+      }
+    } else {
+      checklistMemoryCache.delete(key);
+      checklistInFlight.delete(key);
     }
 
     let promise = checklistInFlight.get(key);
-    if (!promise) {
+    if (!promise || force) {
       setLoadingChecklist(true);
       promise = (async (): Promise<ChecklistCardCacheEntry | null> => {
         try {
           const res = await fetch("/api/data", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "get-checklist", payload: { pageId: rawId } }),
+            body: JSON.stringify({ action: "get-checklist", payload: { pageId: rawId, fresh: force } }),
           });
           const data = await res.json();
           if (data.success && Array.isArray(data.items)) {
@@ -269,7 +275,7 @@ function ActivityCardComponent({
     } finally {
       setLoadingChecklist(false);
     }
-  }, [activity.isReviewMirror, activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistItems, activity.completedChecks, activity.todayChecklistCompleted, activity.start]);
+  }, [activity.isHandoffMirror, activity.isReviewMirror, activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistItems, activity.completedChecks, activity.todayChecklistCompleted, activity.start]);
 
   // Safe titles & metadata
   const title = activity?.title || (activity as any)?.Title || "";
@@ -279,6 +285,7 @@ function ActivityCardComponent({
 
   // Limpiar título de tecnicismos redundantes como prtuzREVISION, nneft, jjohn, fechas [10OCT], etc.
   const cleanTitle = calendarDisplayTitle(title, domain);
+  const visualParts = useMemo(() => parseVisualParts(title, status), [title, status]);
   const typeLabel = calendarType(title, activity.project);
   const startStr = activity.start || '';
   const endStr = activity.end || '';
@@ -595,6 +602,24 @@ function ActivityCardComponent({
               </span>
             )}
 
+            {/* Badges de mes y código/fase de la actividad */}
+            {visualParts.monthCode && (
+              <span
+                className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]"
+                title={`Mes: ${visualParts.monthCode}`}
+              >
+                {visualParts.monthCode}
+              </span>
+            )}
+            {visualParts.orderCode && (
+              <span
+                className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#3B2D6B]/60 border border-[#A78BFA]/70 text-[#C4B5FD]"
+                title={`Fase / Orden: ${visualParts.orderCode}`}
+              >
+                {visualParts.orderCode}
+              </span>
+            )}
+
             {/* Dominio en azul claro */}
             <span className="font-mono text-[11px] font-semibold text-[#38BDF8] truncate tracking-tight">
               {isActivityLocked(activity) && <span aria-label="Bloqueada" className="text-[10px]">🔒 </span>}
@@ -632,11 +657,11 @@ function ActivityCardComponent({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                void fetchChecklistIfNeeded();
+                void fetchChecklistIfNeeded(true);
                 setShowPopup(!showPopup);
               }}
-              className="p-0.5 text-slate-500 hover:text-[#38BDF8] shrink-0 opacity-40 hover:opacity-100 transition-opacity"
-              title="Ver checklist"
+              className="p-0.5 text-slate-500 hover:text-[#38BDF8] shrink-0 opacity-40 hover:opacity-100 transition-opacity cursor-pointer"
+              title="Ver checklist (actualizar pasos)"
             >
               <Eye className="w-3 h-3" />
             </button>

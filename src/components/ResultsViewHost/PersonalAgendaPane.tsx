@@ -21,6 +21,7 @@ import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {normalizePerson,PERSON_METADATA} from '@/services/identityNormalizer';
 import {calendarDomain,calendarDisplayTitle,calendarTime,mexicoDate} from '@/services/calendarPresentation';
+import {parseVisualParts} from '@/lib/visualTitleParser';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 
 const SHORT_COLLABORATORS = [
@@ -337,7 +338,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
         {conflictNotice && (<div className="rounded-xl border border-amber-500/70 bg-[#16120D] p-3 text-xs text-amber-200 space-y-2.5 shadow-xl animate-in fade-in duration-150"><div className="flex items-start gap-2"><span className="text-amber-400 font-bold text-base leading-none">⚠️</span><div className="min-w-0 flex-1 leading-snug"><p className="font-semibold text-amber-300">Conflicto de horario (Empalme)</p><p className="mt-0.5 text-[11px] text-slate-300">Se empalma con <strong className="text-white">«{conflictNotice.conflictTitle}»</strong>.</p></div></div><div className="flex flex-col gap-1.5 pt-1"><button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,allowOverlap:true});}} className="w-full rounded-lg border border-amber-500/80 bg-amber-500/20 hover:bg-amber-500/30 py-2 px-2 text-center font-semibold text-amber-200 transition-colors cursor-pointer">⚡ Aceptar que se empalme</button>{conflictNotice.suggestedSlot&&<button type="button" disabled={saving} onClick={()=>{const cn=conflictNotice;setConflictNotice(null);void updateActivity(cn.pageId,{...cn.updates,start:cn.suggestedSlot!.start,end:cn.suggestedSlot!.end,allowOverlap:false});}} className="w-full rounded-lg border border-cyan-500/80 bg-cyan-500/20 hover:bg-cyan-500/30 py-2 px-2 text-center font-semibold text-cyan-200 transition-colors cursor-pointer">🕒 Mover a hora más cercana ({conflictNotice.suggestedSlot.start.slice(11,16)} – {conflictNotice.suggestedSlot.end.slice(11,16)})</button>}<button type="button" disabled={saving} onClick={()=>setConflictNotice(null)} className="text-slate-400 hover:text-slate-200 text-center text-[11px] py-1 cursor-pointer">Descartar cambio</button></div></div>)}
         {listed.map(a => {
           const appearance = agendaAppearance(a);
-          const isItemExpanded = expandedIds.has(a.pageId);
+          const isItemExpanded = expandedIds.has(a.pageId); const vp = parseVisualParts(a.title, a.status);
           return (
             <article
               key={a.pageId}
@@ -375,7 +376,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>
+                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>{vp.monthCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]" title={'Mes: '+vp.monthCode}>{vp.monthCode}</span>}{vp.orderCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#3B2D6B]/60 border border-[#A78BFA]/70 text-[#C4B5FD]" title={'Fase / Orden: '+vp.orderCode}>{vp.orderCode}</span>}
                     <span className={'text-[10px] font-semibold ' + appearance.text}>
                       {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : <WorkflowStageBadge status={a.status} title={a.title}/>}
                       {a.isReviewMirror ? ' · Copia de revisión' : a.isHandoffMirror ? ' · Copia histórica' : ''}

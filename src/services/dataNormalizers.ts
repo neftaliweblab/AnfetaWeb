@@ -35,7 +35,16 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     resolveAssignedPerson(name, assignmentKeys);
 
   const rawSearchText = raw.SearchText || raw.searchText || "";
-  const combinedSearchText = [rawSearchText, name, assignedPerson, ...assignmentKeys]
+  const aiProp =
+    raw["busqueda palabras por contenido pagina IA"] ||
+    raw["busqueda palabras por contenido pagina ia"] ||
+    raw["búsqueda palabras por contenido página IA"] ||
+    raw.busqueda_palabras_por_contenido_pagina_ia ||
+    raw.aiContent ||
+    raw.AiContent ||
+    "";
+  const aiContent = typeof aiProp === "string" ? aiProp.trim() : "";
+  const combinedSearchText = [rawSearchText, name, assignedPerson, aiContent, ...assignmentKeys]
     .filter(Boolean)
     .join(" ");
 
@@ -58,7 +67,10 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     ftfVerified:raw.ftfVerified,ftfAvailable:raw.ftfAvailable,
     updateStatus: raw.ProjectUpdateStatus || raw.statusLabel || "",
     description: raw.Description || raw.description || "",
-    contentSnippet: (raw.ContentSnippet || raw.contentSnippet || raw.Description || raw.description || raw.pageContent || raw.PageContent || "").trim(),
+    contentSnippet: (raw.ContentSnippet || raw.contentSnippet || aiContent || raw.Description || raw.description || raw.pageContent || raw.PageContent || "").trim(),
+    pageContent: [raw.pageContent, raw.PageContent, aiContent].filter(Boolean).join(" ").trim(),
+    aiContent,
+    "busqueda palabras por contenido pagina IA": aiContent,
     searchText: combinedSearchText,
     assignmentKeys,
     isFolder,

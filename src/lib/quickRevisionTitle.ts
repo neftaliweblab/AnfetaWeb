@@ -10,7 +10,16 @@ export function quickRevisionTitle(input:{type?:string;title:string;person:strin
   const clean=(value:string)=>String(value||'').replace(/[\[\]\r\n]/g,' ').replace(/\s+/g,' ').trim();
   const title=clean(input.title),domain=clean(input.domain),type=clean(input.type||'')||'Actividad rápida';
   if(!title||!domain)throw Error('Completa el título y dominio de la actividad rápida.');
-  const month=input.month||monthToken();if(!/^\d{2}-\[(01ENE|02FEB|03MAR|04ABR|05MAY|06JUN|07JUL|08AGO|09SEP|10OCT|11NOV|12DIC)\]$/.test(month))throw Error('El mes de la actividad rápida no es válido.');
+  let rawMonth = String(input.month || monthToken()).trim();
+  if (/^(0[1-9]|1[0-2])$/.test(rawMonth)) {
+    const map: Record<string, string> = { '01':'01ENE','02':'02FEB','03':'03MAR','04':'04ABR','05':'05MAY','06':'06JUN','07':'07JUL','08':'08AGO','09':'09SEP','10':'10OCT','11':'11NOV','12':'12DIC' };
+    rawMonth = `26-[${map[rawMonth] || '11NOV'}]`;
+  } else if (/^(0[1-9]|1[0-2])[A-Z]{3}$/i.test(rawMonth)) {
+    rawMonth = `26-[${rawMonth.toUpperCase()}]`;
+  } else if (!/^\d{2}-\[(01ENE|02FEB|03MAR|04ABR|05MAY|06JUN|07JUL|08AGO|09SEP|10OCT|11NOV|12DIC)\]$/i.test(rawMonth)) {
+    rawMonth = monthToken();
+  }
+  const month = rawMonth;
   const person=activityPerson(input.person)!;
   const candidates=catalog.Items.filter(row=>/\[ttipo-actividad(?:-rrapi rapido)?\]/i.test(row.Title));
   const specific=candidates.find(row=>scanActivityTags(row.Title).some(t=>t.person===person));

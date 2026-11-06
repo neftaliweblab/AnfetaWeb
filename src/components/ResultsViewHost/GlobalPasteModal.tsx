@@ -522,7 +522,7 @@ export function GlobalPasteModal({
   const style = 'min-w-0 w-full bg-[#131E2E] border border-slate-700 rounded-lg p-2 text-sm focus:outline-none focus:border-sky-400';
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label="Subir archivo" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
+    <div role="dialog" aria-modal="true" aria-label="Subir archivo" className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto p-3">
       <form onSubmit={submit} className="w-full min-w-0 max-w-5xl max-h-[94dvh] overflow-y-auto overflow-x-hidden rounded-2xl border border-cyan-600/50 bg-[#0C131D] shadow-2xl p-5 sm:p-7 space-y-4 text-slate-200">
         {transcription&&<RecordingTranscription file={transcription.file} pageIds={transcription.pageIds} folder={transcription.folder}/>}
         <header className="flex flex-wrap items-center gap-2">
@@ -715,7 +715,33 @@ export function GlobalPasteModal({
               <label className="text-xs">Tipo<select value={root} onChange={e => { setRoot(e.target.value); setCategory(e.target.value); }} className={style}><option value="proyecto">Proyecto</option><option value="software">Software</option></select></label>
               <label className="text-xs">Categoría<select value={category} onChange={e => setCategory(e.target.value)} className={style}>{(root === 'software' ? softwareCategories : projectCategories).map(c => <option key={c}>{c}</option>)}</select></label>
             </>}
-            {!documentation&&<label className="text-xs">Mes de referencia<input value={month} onChange={e => setMonth(e.target.value)} className={style} /><span className="mt-1 block text-slate-400">Ejemplo del mes actual: {monthToken()}. No programa un horario.</span></label>}
+            {!documentation && (
+              <div className="text-xs">
+                <label className="block mb-1">Mes de referencia</label>
+                <div className="flex items-center gap-1 mb-1">
+                  {['11', '12', '01', '02', '03'].map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMonth(m)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                        month === m || month.includes(`[${m}`)
+                          ? 'bg-amber-900/60 border-amber-500 text-amber-200 font-bold'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={month}
+                  onChange={e => setMonth(e.target.value)}
+                  className={style}
+                  placeholder="Ej. 11 o 26-[11NOV]"
+                />
+              </div>
+            )}
             <label className="text-xs">{mode !== 'dropbox' && actionType === 'create' && !documentation ? 'Responsable de la actividad' : 'Persona de referencia'}<select value={person} onChange={e => setPerson(e.target.value)} className={style}>{reviewers.map(p => <option key={p.tag} value={p.tag}>{!p.tag && mode !== 'dropbox' && actionType === 'create' && !documentation ? `Yo (${currentUser})` : p.tag ? p.name : 'Sin seleccionar'}</option>)}</select></label>
           </div>
 

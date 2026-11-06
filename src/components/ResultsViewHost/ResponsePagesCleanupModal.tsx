@@ -255,7 +255,7 @@ export function ResponsePagesCleanupModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto p-3 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div

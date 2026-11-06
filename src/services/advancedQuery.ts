@@ -445,9 +445,25 @@ const itemSearchableCache = new WeakMap<SearchResultRow, {
   rawExtId: string;
 }>();
 
-export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'description' | 'contentSnippet' | 'pageContent' | 'checklistProgressText'>): string {
+export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'description' | 'contentSnippet' | 'pageContent' | 'checklistProgressText'> & Record<string, any>): string {
   const title = (item.name || "").trim();
-  const segments = [item.description, item.contentSnippet, item.pageContent, item.checklistProgressText]
+  const segments = [
+    item.description,
+    item.contentSnippet,
+    item.pageContent,
+    item.checklistProgressText,
+    (item as any).aiContent,
+    (item as any)['busqueda palabras por contenido pagina IA'],
+    (item as any)['busqueda palabras por contenido pagina ia'],
+    (item as any)['búsqueda palabras por contenido página IA'],
+    (item as any)['busqueda palabras por contenido'],
+    (item as any).busqueda_palabras_por_contenido_pagina_ia,
+    (item as any).aiSummary,
+    (item as any).summary,
+    (item as any).aiKeywords,
+    (item as any).keywords,
+    (item as any).notes,
+  ]
     .map(value => value?.trim())
     .filter(value => value && value !== title);
   return [...new Set(segments)].join(" ");
@@ -513,6 +529,11 @@ function getItemSearchable(item: SearchResultRow, matchCase: boolean, contentOnl
     item.description,
     (item as any).contentSnippet,
     (item as any).pageContent,
+    (item as any).aiContent,
+    (item as any)['busqueda palabras por contenido pagina IA'],
+    (item as any)['busqueda palabras por contenido pagina ia'],
+    (item as any)['búsqueda palabras por contenido página IA'],
+    (item as any)['busqueda palabras por contenido'],
     item.projectUpdateStatus,
     item.status,
     item.scheduledDate,
@@ -567,6 +588,11 @@ export function matchesFlexibleOrQuotedQuery(
       item.description,
       item.searchText,
       (item as any).pageContent,
+    (item as any).aiContent,
+    (item as any)['busqueda palabras por contenido pagina IA'],
+    (item as any)['busqueda palabras por contenido pagina ia'],
+    (item as any)['búsqueda palabras por contenido página IA'],
+    (item as any)['busqueda palabras por contenido'],
     ]
       .filter(Boolean)
       .join(" ");

@@ -45,7 +45,8 @@ import {
 import { formatSmartDate } from "@/lib/dateUtils";
 import { playCopyChime } from "@/services/windowsIntegration";
 import { ActivityContentPanel } from "../CalendarHost/ActivityContentPanel";
-import { resultAssignedPerson } from "@/services/activityTags";
+import { resultAssignedPerson, scanActivityTags, activityPerson } from "@/services/activityTags";
+import { normalizePerson } from "@/services/identityNormalizer";
 import type { NotionCalendarActivity } from "@/types/anfeta";
 
 function itemToActivity(item: any): NotionCalendarActivity {
@@ -457,6 +458,31 @@ function ResultsVirtualTableComponent({
     if (!groupBy || groupBy === "none") return activeResultsFirst(items);
     return items;
   }, [items, groupBy]);
+
+  const searchedPeople = React.useMemo(() => {
+    if (!searchQuery || !searchQuery.trim()) return [];
+    const scanned = scanActivityTags(searchQuery).map(t => t.person);
+    const words = searchQuery.split(/\s+/).map(w => w.replace(/^["(]+|[)"]+$/g, ""));
+    const fromWords = words.map(w => activityPerson(w)).filter(Boolean) as string[];
+    return [...new Set([...scanned, ...fromWords])].map(p => normalizePerson(p));
+  }, [searchQuery]);
+
+  const partitionedItems = React.useMemo(() => {
+    if (!searchedPeople.length || (groupBy && groupBy !== "none")) {
+      return { exact: orderedItems, secondary: [] };
+    }
+    const exact: any[] = [];
+    const secondary: any[] = [];
+    for (const item of orderedItems) {
+      const assigned = normalizePerson(resultAssignedPerson(item) || "");
+      if (searchedPeople.includes(assigned)) {
+        exact.push(item);
+      } else {
+        secondary.push(item);
+      }
+    }
+    return { exact, secondary };
+  }, [orderedItems, searchedPeople, groupBy]);
 
   const statusCounts = React.useMemo(() => {
     const counts: Record<string, number> = { all: items.length };
@@ -1429,6 +1455,18 @@ function ResultsVirtualTableComponent({
                 </div>
               </div>
             ))
+          ) : partitionedItems.secondary.length > 0 && partitionedItems.exact.length > 0 ? (
+            <>
+              {partitionedItems.exact.map(renderRow)}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#172233]/90 border-y border-amber-500/40 text-amber-200 text-xs font-semibold select-none sticky top-0 z-10 backdrop-blur-sm">
+                <span className="text-amber-400">📝</span>
+                <span>Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
+                <span className="text-[10px] text-slate-400 font-normal ml-auto">
+                  Coincidencia de etiqueta o notas (asignado a otra persona o sin asignar)
+                </span>
+              </div>
+              {partitionedItems.secondary.map(renderRow)}
+            </>
           ) : (
             orderedItems.map(renderRow)
           )}
@@ -1459,6 +1497,15 @@ function ResultsVirtualTableComponent({
                 {group.items.map(renderCard)}
               </React.Fragment>
             ))
+          ) : partitionedItems.secondary.length > 0 && partitionedItems.exact.length > 0 ? (
+            <>
+              {partitionedItems.exact.map(renderCard)}
+              <div className="col-span-full flex items-center bg-[#172233]/90 border border-amber-500/40 rounded px-3 py-1 font-semibold text-amber-200 justify-between">
+                <span>📝 Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
+                <span className="text-amber-400 font-mono text-xs">Coincidencia de etiqueta</span>
+              </div>
+              {partitionedItems.secondary.map(renderCard)}
+            </>
           ) : (
             orderedItems.map(renderCard)
           )}

@@ -4,7 +4,10 @@ import {normalizePerson} from './identityNormalizer';
 import {isFtfReminder} from './progressKpis';
 import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
 
-export function canViewFtfDashboard(user:string){return ['John','Neftali'].includes(normalizePerson(user));}
+export function canViewFtfDashboard(user:string){
+  const norm = normalizePerson(user);
+  return Boolean(norm && norm !== 'Sin asignar');
+}
 
 function activityHours(a: NotionCalendarActivity): number {
   if (!a.start) return 0.5;
@@ -16,9 +19,15 @@ function activityHours(a: NotionCalendarActivity): number {
 }
 
 export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date()) {
-  if(!canViewFtfDashboard(actor))throw Error('Este panel está disponible únicamente para John y Neftalí.');
+  if(!canViewFtfDashboard(actor))throw Error('Inicia sesión para consultar la bitácora del equipo.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
+
+  // Cálculo de días hábiles transcurridos en la semana (Lunes a Viernes) y meta de 6.5h diarias efectivas
+  const dayDate = new Date(day + 'T12:00:00-06:00');
+  const rawDayOfWeek = Number.isFinite(dayDate.getTime()) ? dayDate.getDay() : 1;
+  const workDaysElapsed = rawDayOfWeek === 0 ? 5 : Math.min(5, Math.max(1, rawDayOfWeek));
+  const weeklyTargetPerPerson = Number((workDaysElapsed * 6.5).toFixed(1));
   
   const rows=team.filter(p=>normalizePerson(p.name)!=='Emmanuel'&&normalizePerson(p.name)!=='Sin asignar').map(person=>{
     const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>();
@@ -37,6 +46,12 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       .filter(v => v && Number.isFinite(Date.parse(v)))
       .sort()
       .at(-1) || null;
+
+    const firstActivityStart = all
+      .map(a => a.start)
+      .filter(Boolean)
+      .sort()
+      .at(0) || null;
 
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
     const validRecord=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime();
@@ -75,6 +90,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       assignedHours,
       completedHours,
       lastActivityEdited,
+      firstActivityStart,
     };
   });
   
@@ -100,5 +116,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     initialTime,
     finalTime,
     jornadaHours,
+    workDaysElapsed,
+    weeklyTargetPerPerson,
   };
 }

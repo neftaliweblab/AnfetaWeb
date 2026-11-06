@@ -159,7 +159,7 @@ export function SearchHelpModal({ isOpen, onClose, onInsertCommand }: SearchHelp
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div

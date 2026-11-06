@@ -8,9 +8,10 @@ interface PendingTaskModalProps {
   onClose: () => void;
   onSave: (task: Omit<PendingTaskItem, "id">, editId?: string) => void;
   taskToEdit?: PendingTaskItem | null;
+  initialQuery?: string;
 }
 
-export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit }: PendingTaskModalProps) {
+export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "" }: PendingTaskModalProps) {
   const [title, setTitle] = useState("");
   const [scheduledDate, setScheduledDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
@@ -24,12 +25,16 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit }: Pendin
         setScheduledDate(taskToEdit.scheduledDate || "");
         setQuery(taskToEdit.query || "");
       } else {
-        setTitle("");
+        const domInput = typeof document !== "undefined"
+          ? (document.querySelector('input[placeholder*="Buscar"], input[type="search"], input[data-search-input]') as HTMLInputElement)?.value
+          : "";
+        const defaultText = (initialQuery || domInput || "").trim();
+        setTitle(defaultText);
         setScheduledDate(new Date().toISOString().split("T")[0]);
-        setQuery("");
+        setQuery(defaultText);
       }
     }
-  }, [isOpen, taskToEdit]);
+  }, [isOpen, taskToEdit, initialQuery]);
 
   if (!isOpen) return null;
 
@@ -65,7 +70,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit }: Pendin
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 select-none">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-6 sm:pt-10 overflow-y-auto bg-black/70 backdrop-blur-sm p-4 select-none">
       <div className="w-[440px] bg-[#111822] border border-[#253549] rounded-xl shadow-2xl p-4 space-y-3">
         {/* Header Card Ámbar */}
         <div className="flex items-center gap-3 p-3 bg-[#28F59E0B] border border-[#78F59E0B] rounded-lg">

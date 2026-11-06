@@ -151,7 +151,7 @@ export function WhatsNewModal({
   if (!isOpen || !announcement) return null;
 
   return (
-    <div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[350] flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-[#0F1726] to-[#0A0E17] text-slate-200 shadow-2xl shadow-cyan-950/40 overflow-hidden">
         {/* Header Ribbon */}
         <div className="flex items-center justify-between border-b border-cyan-900/50 bg-gradient-to-r from-cyan-950/40 via-sky-950/20 to-transparent px-5 py-3.5">

@@ -269,9 +269,14 @@ export function SearchSidebar({
                 <div
                   key={p.domain}
                   onClick={() => onSelectSearch(p.domain)}
-                  className="px-1.5 py-0.5 hover:bg-[#1E293B] rounded text-[10px] font-mono text-[#7DD3FC] cursor-pointer truncate"
+                  className="px-1.5 py-0.5 hover:bg-[#1E293B] rounded text-[10px] font-mono text-[#7DD3FC] cursor-pointer truncate flex items-center justify-between gap-1"
                 >
-                  {p.domain}
+                  <span className="truncate">{p.domain}</span>
+                  {p.isInternal && (
+                    <span className="text-[8.5px] px-1 py-0.2 rounded bg-purple-950/70 border border-purple-600/50 text-purple-300 font-sans shrink-0">
+                      Propio
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

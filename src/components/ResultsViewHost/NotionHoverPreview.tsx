@@ -130,33 +130,48 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
         <h3 className="line-clamp-2 text-sm font-semibold">{title}</h3>
       </header>
 
-      {isEditingTitle && (
-        <div className="shrink-0 border-b border-purple-800/80 bg-[#140a24] p-3 max-h-[360px] overflow-y-auto">
-          <ActivityTitleFieldEditor
-            pageId={id}
-            initialTitle={rawName}
-            compact
-            onSaveSuccess={newTitle => {
-              item.name = newTitle;
-              setOverrideTitle(newTitle);
-              setIsEditingTitle(false);
-              overlayOpen.current = false;
-              setRevision(n => n + 1);
-              try {
-                window.dispatchEvent(
-                  new CustomEvent('anfeta_item_renamed', {
-                    detail: { id, newName: newTitle },
-                  })
-                );
-              } catch {}
-            }}
-            onCancel={() => {
+      {isEditingTitle &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto"
+            onClick={() => {
               setIsEditingTitle(false);
               overlayOpen.current = false;
             }}
-          />
-        </div>
-      )}
+          >
+            <div
+              className="w-full max-w-4xl max-h-[92vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <ActivityTitleFieldEditor
+                pageId={id}
+                initialTitle={rawName}
+                onSaveSuccess={newTitle => {
+                  item.name = newTitle;
+                  setOverrideTitle(newTitle);
+                  setIsEditingTitle(false);
+                  overlayOpen.current = false;
+                  setRevision(n => n + 1);
+                  try {
+                    window.dispatchEvent(
+                      new CustomEvent('anfeta_item_renamed', {
+                        detail: { id, newName: newTitle },
+                      })
+                    );
+                  } catch {}
+                }}
+                onCancel={() => {
+                  setIsEditingTitle(false);
+                  overlayOpen.current = false;
+                }}
+              />
+            </div>
+          </div>,
+          document.body
+        )}
 
       <div
         className="min-h-0 flex-1 overflow-y-auto p-4 select-text"

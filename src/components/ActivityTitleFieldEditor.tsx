@@ -95,8 +95,20 @@ export function parseActivityTitleParts(rawTitle: string): ParsedActivityTitle {
 
   // 6. Name is the remaining content (including pipe blocks)
   let name = remaining.replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g, '').trim();
-  if (remaining.trim().startsWith('|')) {
-    name = remaining.trim();
+
+  // Si el nombre contiene un token de estatus (ej. aaprtuzS antes de las pipes), extraerlo y limpiarlo
+  const innerStatusMatch = name.match(
+    /(?<![\w@.\/-])(?:(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)|(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|zCOBRAR|zPAGAR|eed11|ed11|nne11|bbria))(?![\w@.\/-])/i
+  );
+  if (innerStatusMatch) {
+    if (!status || name.indexOf('|') > (innerStatusMatch.index || 0)) {
+      status = innerStatusMatch[0];
+    }
+    name = name.replace(innerStatusMatch[0], ' ').trim();
+  }
+
+  if (remaining.trim().startsWith('|') || name.startsWith('|')) {
+    name = '| ' + name.replace(/^\|\s*/, '');
   }
   if (!name) name = title;
 
@@ -220,6 +232,22 @@ export function ActivityTitleFieldEditor({
   }, []);
 
   const reconstructed = useMemo(() => assembleActivityTitle(parts), [parts]);
+
+  const handleStatusChange = (newStatus: string) => {
+    setParts(prev => {
+      let cleanName = prev.name
+        .replace(
+          /(?<![\w@.\/-])(?:(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)|(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|zCOBRAR|zPAGAR|eed11|ed11|nne11|bbria))(?![\w@.\/-])/gi,
+          ''
+        )
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (prev.name.trim().startsWith('|') || cleanName.startsWith('|')) {
+        cleanName = '| ' + cleanName.replace(/^\|\s*/, '');
+      }
+      return { ...prev, status: newStatus, name: cleanName };
+    });
+  };
 
   const handleMonthChange = (newMonth: string) => {
     setParts(prev => {
@@ -407,7 +435,7 @@ export function ActivityTitleFieldEditor({
                 type="button"
                 key={preset}
                 disabled={saving}
-                onClick={() => setParts(prev => ({ ...prev, status: preset }))}
+                onClick={() => handleStatusChange(preset)}
                 className={`rounded-lg px-2.5 py-1 text-xs font-mono transition-colors ${
                   parts.status.toLowerCase() === preset.toLowerCase()
                     ? 'border border-cyan-400 bg-cyan-900/60 text-cyan-100 font-bold shadow-[0_0_8px_rgba(6,182,212,0.25)]'
@@ -422,7 +450,7 @@ export function ActivityTitleFieldEditor({
             type="text"
             disabled={saving}
             value={parts.status}
-            onChange={e => setParts(prev => ({ ...prev, status: e.target.value }))}
+            onChange={e => handleStatusChange(e.target.value)}
             placeholder="ej. tuzR, rtuzR, aaprtuzS, ed11..."
             className="w-full rounded-lg border border-purple-800/60 bg-slate-950 px-3 py-2 font-mono text-xs text-cyan-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />

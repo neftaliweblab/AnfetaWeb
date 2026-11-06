@@ -292,7 +292,7 @@ export function NotionTemplatesModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 select-none animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto p-2 sm:p-4 select-none animate-in fade-in duration-150"
       onClick={() => { if (!isSubmitting) onClose(); }}
     >
       <div

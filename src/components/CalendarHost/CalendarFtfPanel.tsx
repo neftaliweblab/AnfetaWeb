@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { calendarDisplayTitle, calendarDomain, calendarTime, mexicoDate } from '@/services/calendarPresentation';
 import { buildFtfDashboard, canViewFtfDashboard } from '@/services/ftfDashboard';
+import { normalizePerson } from '@/services/identityNormalizer';
 import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User } from 'lucide-react';
 
 type Report = ReturnType<typeof buildFtfDashboard> & {
@@ -24,6 +25,30 @@ export function CalendarFtfPanel({
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const [expandedPeople, setExpandedPeople] = useState<Record<string, boolean>>({});
+  const [presenceMap, setPresenceMap] = useState<Record<string, { isOnline: boolean; lastSeenLabel?: string }>>({});
+
+  useEffect(() => {
+    let stopped = false;
+    const fetchPresence = async () => {
+      try {
+        const res = await fetch('/api/presence', { cache: 'no-store' });
+        const data = await res.json();
+        if (data?.people && Array.isArray(data.people) && !stopped) {
+          const map: Record<string, { isOnline: boolean; lastSeenLabel?: string }> = {};
+          for (const p of data.people) {
+            if (p.name) map[p.name] = { isOnline: Boolean(p.isOnline), lastSeenLabel: p.lastSeenLabel };
+          }
+          setPresenceMap(map);
+        }
+      } catch {}
+    };
+    void fetchPresence();
+    const interval = setInterval(fetchPresence, 45000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
@@ -43,30 +68,62 @@ export function CalendarFtfPanel({
     });
   };
 
+  const normUser = normalizePerson(currentUser);
+  const canMarkReview = normUser === 'John' || normUser === 'Neftali';
   const reviewStorageKey = 'anfeta_bitacora_review:' + date;
   const [supervisorReview, setSupervisorReview] = useState<{ reviewer: string; reviewedAt: string } | null>(null);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(reviewStorageKey);
-      setSupervisorReview(saved ? JSON.parse(saved) : null);
-    } catch {
-      setSupervisorReview(null);
-    }
-  }, [reviewStorageKey]);
+      if (saved) setSupervisorReview(JSON.parse(saved));
+    } catch {}
 
-  const toggleSupervisorReview = () => {
+    let active = true;
+    fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get-ftf-review', payload: { date } })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!active) return;
+        if (data.success) {
+          setSupervisorReview(data.review || null);
+          try {
+            if (data.review) localStorage.setItem(reviewStorageKey, JSON.stringify(data.review));
+            else localStorage.removeItem(reviewStorageKey);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+
+    return () => { active = false; };
+  }, [date, reviewStorageKey]);
+
+  const toggleSupervisorReview = async () => {
+    if (!canMarkReview) return;
     if (supervisorReview) {
       try {
         localStorage.removeItem(reviewStorageKey);
       } catch {}
       setSupervisorReview(null);
+      await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-ftf-review', payload: { date, unmark: true, currentUser } })
+      }).catch(() => {});
     } else {
-      const reviewData = { reviewer: currentUser, reviewedAt: new Date().toISOString() };
+      const reviewData = { reviewer: normUser, reviewedAt: new Date().toISOString() };
       try {
         localStorage.setItem(reviewStorageKey, JSON.stringify(reviewData));
       } catch {}
       setSupervisorReview(reviewData);
+      await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-ftf-review', payload: { date, unmark: false, currentUser } })
+      }).catch(() => {});
     }
   };
 
@@ -148,6 +205,14 @@ export function CalendarFtfPanel({
                 <span className="rounded bg-cyan-950/60 px-2 py-0.5 border border-cyan-800/60 text-cyan-200 font-mono">
                   {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h terminadas
                 </span>
+                {(report as any).weeklyTargetPerPerson > 0 && (
+                  <span
+                    className="rounded bg-indigo-950/60 px-2 py-0.5 border border-indigo-800/60 text-indigo-200 font-mono"
+                    title="Meta acumulada de 6.5h efectivas diarias (Lunes a Viernes)"
+                  >
+                    🎯 Meta semana: {(report as any).weeklyTargetPerPerson}h ({(report as any).workDaysElapsed}d × 6.5h)
+                  </span>
+                )}
                 <span className="text-slate-400">
                   <strong className="text-emerald-400">{report.completed}</strong> al día ·{' '}
                   <strong className="text-amber-400">{report.pending}</strong> pendientes
@@ -165,25 +230,37 @@ export function CalendarFtfPanel({
               <CheckCircle2 size={13} className="text-emerald-400" />
               <span>
                 Bitácora revisada por <strong>{supervisorReview.reviewer}</strong>
+                {supervisorReview.reviewedAt && (
+                  <span className="text-[10.5px] text-emerald-300/80 ml-1 font-mono">
+                    ({new Date(supervisorReview.reviewedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Mexico_City' })})
+                  </span>
+                )}
               </span>
-              <button
-                type="button"
-                onClick={toggleSupervisorReview}
-                className="ml-1 text-[10px] text-slate-400 underline hover:text-white"
-              >
-                Desmarcar
-              </button>
+              {canMarkReview && (
+                <button
+                  type="button"
+                  onClick={toggleSupervisorReview}
+                  className="ml-1 text-[10px] text-slate-400 underline hover:text-white cursor-pointer"
+                >
+                  Desmarcar
+                </button>
+              )}
             </div>
-          ) : (
+          ) : canMarkReview ? (
             <button
               type="button"
               onClick={toggleSupervisorReview}
-              className="flex items-center gap-1.5 rounded-lg border border-emerald-600/70 bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/60"
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-600/70 bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/60 cursor-pointer"
               title="Marcar que el supervisor ya revisó y cuadró la bitácora del día"
             >
               <CheckCircle2 size={13} />
               <span>✓ Ya revisé bitácora</span>
             </button>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-700/60 bg-slate-900/40 px-2.5 py-1 text-xs text-slate-400">
+              <Clock size={12} className="text-slate-500" />
+              <span>Bitácora pendiente de revisión</span>
+            </div>
           )}
 
           <button
@@ -250,7 +327,7 @@ export function CalendarFtfPanel({
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px] ${
+                      className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px] ${
                         isComplete
                           ? 'bg-emerald-900 text-emerald-200 border border-emerald-500'
                           : isPending
@@ -259,10 +336,25 @@ export function CalendarFtfPanel({
                       }`}
                     >
                       {person.name.slice(0, 2).toUpperCase()}
+                      {presenceMap[person.name]?.isOnline && (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-[#0B101B]" title="En línea" />
+                      )}
                     </div>
                     <div className="truncate">
                       <div className="flex items-center gap-1.5 truncate">
                         <span className="font-semibold text-xs text-slate-100">{person.name}</span>
+                        {presenceMap[person.name] && (
+                          <span
+                            className={`text-[9.5px] px-1 py-0.2 rounded font-mono ${
+                              presenceMap[person.name].isOnline
+                                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
+                                : 'text-slate-400'
+                            }`}
+                            title={presenceMap[person.name].isOnline ? 'En línea en ANFETA' : `Última conexión: ${presenceMap[person.name].lastSeenLabel || 'Desconectado'}`}
+                          >
+                            {presenceMap[person.name].isOnline ? `🟢 ${presenceMap[person.name].lastSeenLabel || 'En línea'}` : presenceMap[person.name].lastSeenLabel || 'Desconectado'}
+                          </span>
+                        )}
                         {person.role && (
                           <span className="text-[10px] text-slate-400 truncate">({person.role})</span>
                         )}
@@ -312,14 +404,17 @@ export function CalendarFtfPanel({
                   </div>
                 </div>
 
-                {/* Información de último registro / modificación */}
+                {/* Información de primera actividad y último registro */}
                 <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
+                  <span title={(person as any).firstActivityStart ? `Primera actividad programada: ${(person as any).firstActivityStart}` : undefined}>
+                    1ª act: <strong className="text-slate-300 font-mono">{(person as any).firstActivityStart ? calendarTime((person as any).firstActivityStart) : '--:--'}</strong>
+                  </span>
                   <span title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : undefined}>
                     {isComplete
-                      ? `Finalizado ${hasValidCompletionTime ? `a las ${completionTime}` : hasValidLastEditTime ? `a las ${lastEditTime}` : 'hoy'}`
+                      ? `Fin: ${hasValidCompletionTime ? completionTime : hasValidLastEditTime ? lastEditTime : 'hoy'}`
                       : hasValidLastEditTime
-                      ? `Último cambio: ${lastEditTime}`
-                      : 'Sin cambios registrados'}
+                      ? `Último: ${lastEditTime}`
+                      : 'Sin cambios'}
                   </span>
                   {person.late && <span className="font-semibold text-rose-400">Tarde (&gt;18:00)</span>}
                 </div>

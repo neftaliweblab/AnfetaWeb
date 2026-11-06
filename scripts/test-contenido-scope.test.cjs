@@ -147,3 +147,32 @@ assert.equal(hasIndexedContentMatch(enrichedPage,'anticipo'),true);
 assert.equal(hasIndexedContentMatch(cloud,'acceso'),false);
 assert.equal(hasIndexedContentMatch(enrichedPage,'source:notion'),false);
 console.log('OK rutas de Dropbox, consultas regex y evidencia del badge.');
+
+// 6. Verificación del campo de Notion IA: "busqueda palabras por contenido pagina IA"
+console.log('\n--- TEST 6: Notion AI Property "busqueda palabras por contenido pagina IA" ---');
+const rawNotionWithAiField = {
+  Name: '[Revisiones] tuzR Campaña Google Ads',
+  'busqueda palabras por contenido pagina IA': 'Estrategia de palabras clave de alto rendimiento para landing de fontanería',
+  Source: 2,
+  ExternalSourceName: 'Revisiones',
+  Target: 'https://notion.so/ads123',
+};
+const normAi = normalizeSearchRow(rawNotionWithAiField, 3);
+assert.equal(normAi.aiContent, 'Estrategia de palabras clave de alto rendimiento para landing de fontanería');
+assert.equal(normAi['busqueda palabras por contenido pagina IA'], 'Estrategia de palabras clave de alto rendimiento para landing de fontanería');
+assert.equal(isContentItem(normAi), true, 'Debe ser reconocido como ContentItem por el campo de IA');
+assert.equal(matchesFlexibleOrQuotedQuery(normAi, 'fontaneria', { contentOnly: true }), true, 'Búsqueda por contenido debe encontrar palabras en el campo de IA');
+assert.equal(matchesFlexibleOrQuotedQuery(normAi, 'fontanería', { contentOnly: true }), true, 'Búsqueda con acentos debe coincidir');
+assert.equal(matchesFlexibleOrQuotedQuery(normAi, 'rendimiento', { contentOnly: true }), true);
+assert.equal(matchesFlexibleOrQuotedQuery(normAi, 'palabras clave'), true);
+
+const rawNotionWithAccentedAiField = {
+  Name: '[Revisiones] tuzR Optimización SEO',
+  'búsqueda palabras por contenido página IA': 'Análisis semántico e indexación profunda con Inteligencia Artificial',
+  Source: 2,
+};
+const normAccentedAi = normalizeSearchRow(rawNotionWithAccentedAiField, 4);
+assert.equal(normAccentedAi.aiContent, 'Análisis semántico e indexación profunda con Inteligencia Artificial');
+assert.equal(matchesFlexibleOrQuotedQuery(normAccentedAi, 'semantico', { contentOnly: true }), true);
+console.log('OK: Notion AI field "busqueda palabras por contenido pagina IA" correctly indexed and searchable in Contenido scope.');
+

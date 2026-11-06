@@ -1,7 +1,10 @@
 /** Response pages remain searchable but are not calendar work entries. */
-export function isTemporaryCalendarResponse(entry:string|{title?:string;shortTitle?:string}) {
-  const title=typeof entry==='string'?entry:[entry.title,entry.shortTitle].filter(Boolean).join(' ');
-  return /\[\s*RESPUESTA\s*\]/iu.test(title||'');
+export function isTemporaryCalendarResponse(entry: string | { title?: string; shortTitle?: string; name?: string; Name?: string; rawTitle?: string } | any) {
+  if (!entry) return false;
+  const title = typeof entry === 'string'
+    ? entry
+    : [entry.title, entry.shortTitle, entry.name, entry.Name, entry.rawTitle].filter(Boolean).join(' ');
+  return /\[\s*RESPUESTA\s*\]/iu.test(title || '') || /de:\s*\[\s*RESPUESTA\s*\]/iu.test(title || '');
 }
 /** Temporary replies and recording references may share a time slot with actual work. */
 export function calendarEntryAllowsOverlap(title:string=''){

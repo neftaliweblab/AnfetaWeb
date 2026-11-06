@@ -20,6 +20,8 @@ export interface SearchResultRow {
   assignmentKeys?: string[];
   notionEditedUtc?: string;
   pageContent?: string;
+  aiContent?: string;
+  'busqueda palabras por contenido pagina IA'?: string;
   description?: string;
   checklistProgressText?: string;
   hasChecklistProgress?: boolean;
@@ -144,6 +146,7 @@ export interface ActiveProjectItem {
   count: number;
   color?: string;
   activities?: ActiveProjectSubActivity[];
+  isInternal?: boolean;
 }
 
 export interface MessageItem {

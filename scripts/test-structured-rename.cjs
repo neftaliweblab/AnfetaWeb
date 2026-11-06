@@ -62,8 +62,20 @@ function parseActivityTitleParts(rawTitle) {
 
   // 6. Name is the remaining content (including pipe blocks)
   let name = remaining.replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g, '').trim();
-  if (remaining.trim().startsWith('|')) {
-    name = remaining.trim();
+
+  // Si el nombre contiene un token de estatus (ej. aaprtuzS antes de las pipes), extraerlo y limpiarlo
+  const innerStatusMatch = name.match(
+    /(?<![\w@.\/-])(?:(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)([rRsS]?)|(sprtuzREVISION|aprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|zCOBRAR|zPAGAR|eed11|ed11|nne11|bbria))(?![\w@.\/-])/i
+  );
+  if (innerStatusMatch) {
+    if (!status || name.indexOf('|') > (innerStatusMatch.index || 0)) {
+      status = innerStatusMatch[0];
+    }
+    name = name.replace(innerStatusMatch[0], ' ').trim();
+  }
+
+  if (remaining.trim().startsWith('|') || name.startsWith('|')) {
+    name = '| ' + name.replace(/^\|\s*/, '');
   }
   if (!name) name = title;
 
@@ -105,7 +117,8 @@ const tests = [
   'prtuzREVISION 26-[10OCT] anfeta.com Planeación web neft0000',
   'ed11 11.a.01.00 p.agape Instalación certificado SSL',
   'zCOBRAR 11 p.aldalupe Facturación y cobro mensual',
-  'rtuzR 11 ffase37 p.davela.mx Ajuste de formularios'
+  'rtuzR 11 ffase37 p.davela.mx Ajuste de formularios',
+  'rtuzR 11 11.r.01.00 p.dominio.com.cliente aaprtuzS | 💻 rrust | 🗓 Rustdesk | 🌐 #| 🛠 | 💬 | 👥 | ✅ jj-o000 gg-e000 #descripcion #ffase00 #nn-e11'
 ];
 
 tests.forEach((t, i) => {

@@ -1,9 +1,33 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { Plus, Check, Trash2, Edit2, Calendar } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Plus, Check, Trash2, Edit2, Calendar, Clock } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
+
+export function extractTaskTime(task: PendingTaskItem): { hasTime: boolean; timeMinutes: number; timeBadge: string } {
+  const title = (task.title || "").trim();
+  const match = title.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2] ? parseInt(match[2], 10) : 0;
+    const meridian = match[3]?.toLowerCase();
+    if (meridian === "pm" && hours < 12) hours += 12;
+    if (meridian === "am" && hours === 12) hours = 0;
+    const timeMinutes = hours * 60 + minutes;
+    const timeBadge = `${match[1]}${match[2] ? `:${match[2]}` : ":00"} ${match[3] ? match[3].toUpperCase() : ""}`.trim();
+    return { hasTime: true, timeMinutes, timeBadge };
+  }
+  if (task.scheduledDate) {
+    const timeMatch = task.scheduledDate.match(/T(\d{2}):(\d{2})/);
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      return { hasTime: true, timeMinutes: hours * 60 + minutes, timeBadge: `${timeMatch[1]}:${timeMatch[2]}` };
+    }
+  }
+  return { hasTime: false, timeMinutes: 99999, timeBadge: "" };
+}
 
 interface PendientesColumnProps {
   onClose?:()=>void;
@@ -14,6 +38,7 @@ interface PendientesColumnProps {
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks?: () => void;
   onSelectTaskQuery?: (query: string) => void;
+  onReorderTasks?: (ids: string[]) => void;
 }
 
 function PendientesColumnComponent({
@@ -25,14 +50,35 @@ function PendientesColumnComponent({
   onDeleteTask,
   onDeleteAllTasks,
   onSelectTaskQuery,
+  onReorderTasks,
 }: PendientesColumnProps) {
   const [contextMenu, setContextMenu] = useState<{ task: PendingTaskItem; x: number; y: number } | null>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   const [collapsed,setCollapsed]=useState(false),[feedback,setFeedback]=useState('');
   useEffect(()=>{try{setCollapsed(localStorage.getItem('anfeta_pendientes_collapsed')==='1');}catch{}},[]);
   const togglePanel=()=>setCollapsed(old=>{try{localStorage.setItem('anfeta_pendientes_collapsed',old?'0':'1');}catch{}return !old;});
+  const moveTask = (index: number, direction: 'up' | 'down') => {
+    if (!onReorderTasks) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= pendingTasks.length) return;
+    const list = [...pendingTasks];
+    const [moved] = list.splice(index, 1);
+    list.splice(targetIndex, 0, moved);
+    onReorderTasks(list.map(t => t.id));
+  };
 
   const pendingCount = pendingTasks.filter((t) => !t.isCompleted).length;
+  const [pendingSubTab, setPendingSubTab] = useState<'all' | 'timed' | 'free'>('all');
+
+  const timedTasks = useMemo(() => {
+    return pendingTasks
+      .filter((t) => extractTaskTime(t).hasTime)
+      .sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
+  }, [pendingTasks]);
+
+  const freeTasks = useMemo(() => {
+    return pendingTasks.filter((t) => !extractTaskTime(t).hasTime);
+  }, [pendingTasks]);
 
   const handleContextMenu = (e: React.MouseEvent, task: PendingTaskItem) => {
     e.preventDefault();
@@ -55,6 +101,162 @@ function PendientesColumnComponent({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  const renderTaskCard = (task: PendingTaskItem, idx: number) => {
+    const timeInfo = extractTaskTime(task);
+    return (
+      <div
+        key={task.id}
+        onClick={() => {
+          if (task.query || task.title) {
+            onSelectTaskQuery?.(task.query || task.title);
+          }
+        }}
+        onContextMenu={(e) => handleContextMenu(e, task)}
+        className={`p-2 rounded bg-[#141B26] border border-[#1E2836] hover:bg-[#1A2332] hover:border-[#38BDF8]/40 cursor-pointer transition-colors relative group flex items-start gap-2 ${
+          task.isCompleted ? "opacity-60 bg-[#0F1622]" : ""
+        }`}
+        title={`Clic: buscar en el explorador · Clic derecho: menú contextual`}
+      >
+        {/* Checkbox circular de completado */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleTask(task.id);
+          }}
+          className={`w-3.5 h-3.5 rounded-full border shrink-0 mt-0.5 flex items-center justify-center transition-colors cursor-pointer ${
+            task.isCompleted
+              ? "bg-[#10B981] border-[#10B981] text-black scale-110 transition-transform"
+              : "border-[#475569] hover:border-[#38BDF8] bg-transparent"
+          }`}
+          title={task.isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
+          role="checkbox"
+          aria-checked={!!task.isCompleted}
+        >
+          {task.isCompleted && (
+            <Check
+              style={{ animation: "pending-check 160ms ease-out" }}
+              className="w-2.5 h-2.5 stroke-[3]"
+            />
+          )}
+        </button>
+
+        {/* Contenido de la tarea */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-1 mb-0.5">
+            <span
+              className={`text-[11px] font-semibold text-[#F1F5F9] truncate block ${
+                task.isCompleted ? "line-through !text-emerald-400" : ""
+              }`}
+            >
+              {task.title}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              {timeInfo.hasTime && (
+                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-bold bg-amber-950/70 text-amber-300 border border-amber-600/50 font-mono">
+                  ⏱️ {timeInfo.timeBadge}
+                </span>
+              )}
+              {task.scheduledDate && (
+                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-bold bg-[#26D97706] text-[#FDE68A] border border-[#F59E0B]/40 font-mono">
+                  {formatSmartDate(task.scheduledDate)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {task.query && (
+            <span className="text-[9.5px] text-[#64748B] block truncate group-hover:text-[#94A3B8]">
+              🔍 {task.query}
+            </span>
+          )}
+          {(task.person || task.priority) && (
+            <p className="text-[10px] text-amber-300">
+              {task.person ? "#" + task.person + " " : ""}
+              {task.priority ? "p" + task.priority : ""}
+            </p>
+          )}
+        </div>
+
+        {/* Botón rápido de eliminar en hover */}
+        {onReorderTasks && (
+          <div className="flex flex-col shrink-0 gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity self-center">
+            <button
+              type="button"
+              disabled={idx === 0}
+              onClick={(e) => {
+                e.stopPropagation();
+                moveTask(idx, "up");
+              }}
+              className="text-[9px] text-slate-400 hover:text-cyan-300 disabled:opacity-20 px-0.5 leading-none cursor-pointer"
+              title="Subir posición"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              disabled={idx === pendingTasks.length - 1}
+              onClick={(e) => {
+                e.stopPropagation();
+                moveTask(idx, "down");
+              }}
+              className="text-[9px] text-slate-400 hover:text-cyan-300 disabled:opacity-20 px-0.5 leading-none cursor-pointer"
+              title="Bajar posición"
+            >
+              ▼
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          aria-label="Copiar pendiente"
+          className="p-1 text-cyan-300 cursor-pointer"
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(task.title);
+              setFeedback("Texto copiado");
+            } catch {
+              setFeedback("No se pudo copiar");
+            }
+          }}
+        >
+          📋
+        </button>
+        {(task.url || task.pageId || /https?:\/\//.test(task.query || "")) && (
+          <button
+            type="button"
+            aria-label="Abrir pendiente"
+            className="p-1 text-cyan-300 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              const url =
+                task.url ||
+                (task.pageId
+                  ? "https://www.notion.so/" + task.pageId.replace(/-/g, "")
+                  : task.query.match(/https?:\/\/\S+/)?.[0] || "");
+              if (/^https?:\/\//i.test(url))
+                window.open(url, "_blank", "noopener,noreferrer");
+            }}
+          >
+            ↗
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteTask(task.id);
+          }}
+          className="p-0.5 rounded hover:bg-[#EF4444]/20 text-[#EF4444] transition-opacity shrink-0 cursor-pointer"
+          title="Eliminar pendiente"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  };
 
   if(collapsed)return <div className="w-10 shrink-0 rounded border border-slate-700 flex flex-col items-center gap-3 py-3"><button type="button" onClick={togglePanel} aria-label="Expandir pendientes">›</button><button type="button" aria-label="Nuevo pendiente" onClick={onOpenNewTaskModal}>+</button>{onClose&&<button type="button" aria-label="Cerrar pendientes" onClick={onClose}>✕</button>}<span>📋</span><span className="rounded-full bg-amber-950 px-2 text-amber-300">{pendingCount}</span></div>;
   return (
@@ -81,83 +283,79 @@ function PendientesColumnComponent({
         {onClose&&<button type="button" aria-label="Cerrar columna de pendientes" title="Cerrar pendientes" onClick={onClose} className="rounded px-1 text-slate-400 hover:text-white">✕</button>}
       </div>
 
+      {/* Selector de Pestañas: Todos, Por Horario, Libres */}
+      <div className="flex items-center gap-1 bg-[#141B24] p-0.5 rounded border border-[#1E2836] mb-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => setPendingSubTab('all')}
+          className={`flex-1 py-0.5 rounded text-[10px] font-medium transition cursor-pointer text-center ${
+            pendingSubTab === 'all'
+              ? 'bg-[#1E293B] text-cyan-300 font-bold border border-cyan-700/60'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Todos ({pendingTasks.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setPendingSubTab('timed')}
+          className={`flex-1 py-0.5 rounded text-[10px] font-medium transition cursor-pointer text-center flex items-center justify-center gap-0.5 ${
+            pendingSubTab === 'timed'
+              ? 'bg-[#1E293B] text-amber-300 font-bold border border-amber-600/60'
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Pendientes con horario / bloque (ej. 5:00 AM FTF)"
+        >
+          <span>⏱️</span>
+          <span>Horario ({timedTasks.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPendingSubTab('free')}
+          className={`flex-1 py-0.5 rounded text-[10px] font-medium transition cursor-pointer text-center ${
+            pendingSubTab === 'free'
+              ? 'bg-[#1E293B] text-slate-200 font-bold border border-slate-600'
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Pendientes sin hora fija"
+        >
+          Libres ({freeTasks.length})
+        </button>
+      </div>
+
       {/* Lista de Tareas Manuales o Mensaje Vacío */}
       <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin pr-0.5 min-h-0">
-        {feedback&&<p role="status" className="text-emerald-300">{feedback}</p>}
-        {pendingTasks.map((task) => (
-          <div
-            key={task.id}
-            onClick={() => {
-              if (task.query || task.title) {
-                onSelectTaskQuery?.(task.query || task.title);
-              }
-            }}
-            onContextMenu={(e) => handleContextMenu(e, task)}
-            className={`p-2 rounded bg-[#141B26] border border-[#1E2836] hover:bg-[#1A2332] hover:border-[#38BDF8]/40 cursor-pointer transition-colors relative group flex items-start gap-2 ${
-              task.isCompleted ? "opacity-60 bg-[#0F1622]" : ""
-            }`}
-            title={`Clic: buscar en el explorador · Clic derecho: menú contextual`}
-          >
-            {/* Checkbox circular de completado */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleTask(task.id);
-              }}
-              className={`w-3.5 h-3.5 rounded-full border shrink-0 mt-0.5 flex items-center justify-center transition-colors cursor-pointer ${
-                task.isCompleted
-                  ? "bg-[#10B981] border-[#10B981] text-black scale-110 transition-transform"
-                  : "border-[#475569] hover:border-[#38BDF8] bg-transparent"
-              }`}
-              title={task.isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
-              role="checkbox" aria-checked={!!task.isCompleted}
-            >
-              {task.isCompleted && <Check style={{animation:'pending-check 160ms ease-out'}} className="w-2.5 h-2.5 stroke-[3]" />}
-            </button>
-
-            {/* Contenido de la tarea */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-1 mb-0.5">
-                <span
-                  className={`text-[11px] font-semibold text-[#F1F5F9] truncate block ${
-                    task.isCompleted ? "line-through !text-emerald-400" : ""
-                  }`}
-                >
-                  {task.title}
-                </span>
-                {task.scheduledDate && (
-                  <span className="shrink-0 px-1.5 py-0.2 rounded text-[8.5px] font-bold bg-[#26D97706] text-[#FDE68A] border border-[#F59E0B]/40 font-mono">
-                    {formatSmartDate(task.scheduledDate)}
-                  </span>
-                )}
+        {feedback && <p role="status" className="text-emerald-300">{feedback}</p>}
+        {pendingSubTab === 'timed' && timedTasks.map((t, idx) => renderTaskCard(t, idx))}
+        {pendingSubTab === 'free' && freeTasks.map((t, idx) => renderTaskCard(t, idx))}
+        {pendingSubTab === 'all' && (
+          <>
+            {timedTasks.length > 0 && (
+              <div className="pt-0.5 pb-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300 mb-1 px-1">
+                  <span>⏱️ BLOQUES POR HORARIO</span>
+                  <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
+                </div>
+                <div className="space-y-1.5">
+                  {timedTasks.map((t, idx) => renderTaskCard(t, idx))}
+                </div>
               </div>
-
-              {task.query && (
-
-                <span className="text-[9.5px] text-[#64748B] block truncate group-hover:text-[#94A3B8]">
-                  🔍 {task.query}
-                </span>
-              )}
-              {(task.person||task.priority)&&<p className="text-[10px] text-amber-300">{task.person?'#'+task.person+' ':''}{task.priority?'p'+task.priority:''}</p>}
-            </div>
-
-            {/* Botón rápido de eliminar en hover */}
-            <button type="button" aria-label="Copiar pendiente" className="p-1 text-cyan-300" onClick={async e=>{e.stopPropagation();try{await navigator.clipboard.writeText(task.title);setFeedback('Texto copiado');}catch{setFeedback('No se pudo copiar');}}}>📋</button>
-            {(task.url||task.pageId||/https?:\/\//.test(task.query||''))&&<button type="button" aria-label="Abrir pendiente" className="p-1 text-cyan-300" onClick={e=>{e.stopPropagation();const url=task.url||(task.pageId?'https://www.notion.so/'+task.pageId.replace(/-/g,''):(task.query.match(/https?:\/\/\S+/)?.[0]||''));if(/^https?:\/\//i.test(url))window.open(url,'_blank','noopener,noreferrer');}}>↗</button>}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteTask(task.id);
-              }}
-              className="p-0.5 rounded hover:bg-[#EF4444]/20 text-[#EF4444] transition-opacity shrink-0 cursor-pointer"
-              title="Eliminar pendiente"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
+            )}
+            {freeTasks.length > 0 && (
+              <div className="pt-1 pb-1">
+                {timedTasks.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-300 mb-1 px-1 border-t border-[#1E2836] pt-1.5">
+                    <span>📋 PENDIENTES LIBRES</span>
+                    <span className="text-[9px] text-slate-400 font-normal">({freeTasks.length})</span>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  {freeTasks.map((t, idx) => renderTaskCard(t, idx))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {pendingTasks.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center p-4 text-center text-[#64748B] text-[10.5px]">
