@@ -514,7 +514,11 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
   const scope = searchParams.get("scope") || "day";
 
   try {
-    const actor=verifiedActor||await requireActor(req);
+    // Permitir previsualización de archivos (videos WebM en Notion) e imágenes sin cookie de sesión
+    const isPublicPreview = (type === "file-preview" && Boolean(searchParams.get("token") || searchParams.get("path") || searchParams.get("filePath"))) || type === "image-proxy";
+    const actor = isPublicPreview
+      ? (verifiedActor || "preview-guest")
+      : (verifiedActor || await requireActor(req));
     if(type==='activity-status-options'){
       const pageId=searchParams.get('pageId')||'';const settings={...getSettings(),notionToken:resolveNotionToken(req)};
       const page=await assertChecklistAccess(settings,actor,pageId);const field=calendarStatusField(page);

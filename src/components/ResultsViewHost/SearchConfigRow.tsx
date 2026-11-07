@@ -38,9 +38,11 @@ interface SearchConfigRowProps {
   // Agrupar
   groupBy: string;
   onChangeGroupBy: (group: string) => void;
-  // Ocultar terminadas
+  // Ocultar terminadas (3 Estados: none, finished, all)
   hideTerminated?: boolean;
   onToggleHideTerminated?: () => void;
+  hideTerminatedMode?: "none" | "finished" | "all";
+  onChangeHideTerminatedMode?: (mode: "none" | "finished" | "all") => void;
   // Cobros y Pagos
   billingFilter?: "include" | "exclude" | "only";
   onChangeBillingFilter?: (val: "include" | "exclude" | "only") => void;
@@ -132,6 +134,8 @@ function SearchConfigRowComponent({
   onChangeGroupBy,
   hideTerminated = false,
   onToggleHideTerminated,
+  hideTerminatedMode = "none",
+  onChangeHideTerminatedMode,
   billingFilter = "include",
   onChangeBillingFilter,
   paymentFilter = "include",
@@ -406,25 +410,51 @@ function SearchConfigRowComponent({
 
         <div className="h-4 w-px bg-[#26354A] mx-0.5 shrink-0" />
 
-        {/* 5. Control "Ocultar Terminadas" */}
-        {onToggleHideTerminated && (
+        {/* 5. Control "Ocultar Terminadas / Finalizadas" (3 Estados) */}
+        {(onChangeHideTerminatedMode || onToggleHideTerminated) && (
           <button
             type="button"
-            onClick={onToggleHideTerminated}
+            onClick={() => {
+              if (onChangeHideTerminatedMode) {
+                const next =
+                  hideTerminatedMode === "none"
+                    ? "finished"
+                    : hideTerminatedMode === "finished"
+                    ? "all"
+                    : "none";
+                onChangeHideTerminatedMode(next);
+              } else if (onToggleHideTerminated) {
+                onToggleHideTerminated();
+              }
+            }}
             style={{
               fontSize: `${(10.5 * scale).toFixed(1)}px`,
               minHeight: `${Math.round(25 * scale)}px`,
               padding: `0 ${Math.round(8 * scale)}px`,
             }}
             className={`flex items-center gap-1 rounded font-medium border transition cursor-pointer ${
-              hideTerminated
+              hideTerminatedMode === "all" || (!hideTerminatedMode && hideTerminated)
+                ? "bg-rose-950/80 text-rose-200 border-rose-600 shadow-sm"
+                : hideTerminatedMode === "finished"
                 ? "bg-amber-950/80 text-amber-200 border-amber-600 shadow-sm"
                 : "bg-[#141B26] text-slate-300 hover:text-white border-[#24344A] hover:bg-[#1A2536]"
             }`}
-            title="Ocultar o mostrar actividades terminadas (zREVISION / tuzR)"
+            title="Alternar filtro: Mostrar todas -> Ocultar solo finalizadas (z / FIN) -> Ocultar todas las concluidas (TER + FIN)"
           >
-            <span>{hideTerminated ? "🚫" : "👁️"}</span>
-            <span>{hideTerminated ? "Terminadas ocultas" : "Ocultar terminadas"}</span>
+            <span>
+              {hideTerminatedMode === "all" || (!hideTerminatedMode && hideTerminated)
+                ? "🚫"
+                : hideTerminatedMode === "finished"
+                ? "🔒"
+                : "👁️"}
+            </span>
+            <span>
+              {hideTerminatedMode === "all" || (!hideTerminatedMode && hideTerminated)
+                ? "Ocultar todas (TER+FIN)"
+                : hideTerminatedMode === "finished"
+                ? "Ocultar finalizadas (z)"
+                : "Mostrar todas"}
+            </span>
           </button>
         )}
 

@@ -1,37 +1,39 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Plus, Check, Trash2, Edit2, Calendar, Clock } from "lucide-react";
+import { Plus, Check, Trash2, Edit2, Calendar, Clock, Archive } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 
 export function extractTaskTime(task: PendingTaskItem): { hasTime: boolean; timeMinutes: number; timeBadge: string } {
   const title = (task.title || "").trim();
-  // Reconoce formatos como: 5.30, 5:30, 5.30pm, 5pm, 5 pm, 17:00, 17.30, 9 a 9:30, 12:00 PM
-  const match = title.match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?/i);
+  // Reconoce formatos como: 5.30, 5:30, 5.30pm, 5pm, 5 pm, 17:00, 17.30, 9 a 9:30, 12:00 PM, 11:05
+  const match = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i);
   if (match) {
     let hours = parseInt(match[1], 10);
     const minutes = match[2] ? parseInt(match[2], 10) : 0;
     const meridian = match[3]?.toLowerCase();
 
-    if (meridian === "pm" && hours < 12) {
-      hours += 12;
-    } else if (meridian === "am" && hours === 12) {
-      hours = 0;
-    } else if (!meridian) {
-      // Inferencia para jornada laboral de ANFETA:
-      // Si la hora es de 1 a 6 sin especificar AM, se asume tarde (13:00 a 18:00 PM)
-      // Ejemplo: "1:00" -> 13:00, "5.30" -> 17:30
-      if (hours >= 1 && hours <= 6) {
+    if (hours >= 0 && hours <= 24 && minutes >= 0 && minutes < 60) {
+      if (meridian === "pm" && hours < 12) {
         hours += 12;
+      } else if (meridian === "am" && hours === 12) {
+        hours = 0;
+      } else if (!meridian) {
+        // Inferencia para jornada laboral de ANFETA:
+        // Si la hora es de 1 a 6 sin especificar AM, se asume tarde (13:00 a 18:00 PM)
+        // Ejemplo: "1:00" -> 13:00, "5.30" -> 17:30
+        if (hours >= 1 && hours <= 6) {
+          hours += 12;
+        }
       }
-    }
 
-    const timeMinutes = hours * 60 + minutes;
-    const dispHours = hours % 12 || 12;
-    const dispMeridian = hours >= 12 ? "PM" : "AM";
-    const timeBadge = `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`;
-    return { hasTime: true, timeMinutes, timeBadge };
+      const timeMinutes = hours * 60 + minutes;
+      const dispHours = hours % 12 || 12;
+      const dispMeridian = hours >= 12 ? "PM" : "AM";
+      const timeBadge = `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`;
+      return { hasTime: true, timeMinutes, timeBadge };
+    }
   }
   if (task.scheduledDate) {
     const timeMatch = task.scheduledDate.match(/T(\d{2}):(\d{2})/);
@@ -135,6 +137,20 @@ function PendientesColumnComponent({
       return !old;
     });
 
+  const activeTasks = useMemo(() => pendingTasks.filter((t) => !t.isArchived), [pendingTasks]);
+  const archivedTasks = useMemo(() => pendingTasks.filter((t) => Boolean(t.isArchived)), [pendingTasks]);
+
+  // Timed tasks conservan estrictamente el orden relativo del usuario en pendingTasks
+  const timedTasks = useMemo(() => {
+    return pendingTasks.filter((t) => extractTaskTime(t).hasTime && !t.isArchived);
+  }, [pendingTasks]);
+
+  const freeTasks = useMemo(() => {
+    return pendingTasks.filter((t) => !extractTaskTime(t).hasTime && !t.isArchived);
+  }, [pendingTasks]);
+
+  const [pendingSubTab, setPendingSubTab] = useState<'all' | 'timed' | 'free' | 'archived'>('all');
+
   const moveTask = (taskId: string, direction: 'up' | 'down') => {
     if (!onReorderTasks) return;
     const currentList =
@@ -142,7 +158,9 @@ function PendientesColumnComponent({
         ? timedTasks
         : pendingSubTab === 'free'
         ? freeTasks
-        : pendingTasks;
+        : pendingSubTab === 'archived'
+        ? archivedTasks
+        : activeTasks;
     const idx = currentList.findIndex((t) => t.id === taskId);
     if (idx === -1) return;
     const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -159,22 +177,15 @@ function PendientesColumnComponent({
     onReorderTasks(list.map((t) => t.id));
   };
 
-  const pendingCount = pendingTasks.filter((t) => !t.isCompleted).length;
-  const [pendingSubTab, setPendingSubTab] = useState<'all' | 'timed' | 'free'>('all');
+  const handleSortTimedByHour = () => {
+    if (!onReorderTasks) return;
+    const timed = [...timedTasks].sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
+    const others = pendingTasks.filter((t) => !extractTaskTime(t).hasTime || t.isArchived);
+    onReorderTasks([...timed, ...others].map((t) => t.id));
+    setFeedback("Horario ordenado");
+  };
 
-  const timedTasks = useMemo(() => {
-    return pendingTasks
-      .filter((t) => extractTaskTime(t).hasTime)
-      .sort((a, b) => {
-        const diff = extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes;
-        if (diff !== 0) return diff;
-        return pendingTasks.indexOf(a) - pendingTasks.indexOf(b);
-      });
-  }, [pendingTasks]);
-
-  const freeTasks = useMemo(() => {
-    return pendingTasks.filter((t) => !extractTaskTime(t).hasTime);
-  }, [pendingTasks]);
+  const pendingCount = activeTasks.filter((t) => !t.isCompleted).length;
 
   const handleContextMenu = (e: React.MouseEvent, task: PendingTaskItem) => {
     e.preventDefault();
@@ -232,7 +243,9 @@ function PendientesColumnComponent({
         ? timedTasks
         : pendingSubTab === 'free'
         ? freeTasks
-        : pendingTasks;
+        : pendingSubTab === 'archived'
+        ? archivedTasks
+        : activeTasks;
     const itemIndex = currentSubList.findIndex((t) => t.id === task.id);
     const isFirst = itemIndex === 0;
     const isLast = itemIndex === currentSubList.length - 1;
@@ -300,7 +313,7 @@ function PendientesColumnComponent({
                   ⏱️ {timeInfo.timeBadge}
                 </span>
               )}
-              {task.scheduledDate && (
+              {task.scheduledDate && (!timeInfo.hasTime || formatSmartDate(task.scheduledDate) !== "Hoy") && (
                 <span className="px-1.5 py-0.2 rounded text-[8.5px] font-bold bg-[#26D97706] text-[#FDE68A] border border-[#F59E0B]/40 font-mono">
                   {formatSmartDate(task.scheduledDate)}
                 </span>
@@ -385,6 +398,20 @@ function PendientesColumnComponent({
             ↗
           </button>
         )}
+        {onEditTask && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditTask({ ...task, isArchived: !task.isArchived });
+              setFeedback(task.isArchived ? "Pendiente restaurado" : "Pendiente archivado");
+            }}
+            className="p-0.5 rounded hover:bg-cyan-500/20 text-cyan-400 transition-opacity shrink-0 cursor-pointer"
+            title={task.isArchived ? "Restaurar de archivados" : "Archivar pendiente"}
+          >
+            <Archive className="w-3 h-3" />
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
@@ -448,7 +475,7 @@ function PendientesColumnComponent({
         {onClose&&<button type="button" aria-label="Cerrar columna de pendientes" title="Cerrar pendientes" onClick={onClose} className="rounded px-1 text-slate-400 hover:text-white">✕</button>}
       </div>
 
-      {/* Selector de Pestañas: Todos, Por Horario, Libres */}
+      {/* Selector de Pestañas: Todos, Por Horario, Libres, Archivados */}
       <div className="flex items-center gap-1 bg-[#141B24] p-0.5 rounded border border-[#1E2836] mb-2 shrink-0">
         <button
           type="button"
@@ -459,7 +486,7 @@ function PendientesColumnComponent({
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          Todos ({pendingTasks.length})
+          Todos ({activeTasks.length})
         </button>
         <button
           type="button"
@@ -486,6 +513,21 @@ function PendientesColumnComponent({
         >
           Libres ({freeTasks.length})
         </button>
+        {archivedTasks.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setPendingSubTab('archived')}
+            className={`py-0.5 px-1.5 rounded text-[10px] font-medium transition cursor-pointer text-center flex items-center gap-0.5 ${
+              pendingSubTab === 'archived'
+                ? 'bg-[#1E293B] text-cyan-300 font-bold border border-cyan-700/60'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Pendientes archivados"
+          >
+            <span>📦</span>
+            <span>({archivedTasks.length})</span>
+          </button>
+        )}
       </div>
 
       {/* Lista de Tareas Manuales o Mensaje Vacío */}
@@ -493,13 +535,34 @@ function PendientesColumnComponent({
         {feedback && <p role="status" className="text-emerald-300">{feedback}</p>}
         {pendingSubTab === 'timed' && timedTasks.map((t, idx) => renderTaskCard(t, idx))}
         {pendingSubTab === 'free' && freeTasks.map((t, idx) => renderTaskCard(t, idx))}
+        {pendingSubTab === 'archived' && (
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-semibold text-slate-400 px-1 py-0.5 flex items-center justify-between">
+              <span>📦 PENDIENTES ARCHIVADOS</span>
+              <span className="text-[9px] text-slate-500">Pulsa 📦 para restaurar</span>
+            </div>
+            {archivedTasks.map((t, idx) => renderTaskCard(t, idx))}
+          </div>
+        )}
         {pendingSubTab === 'all' && (
           <>
             {timedTasks.length > 0 && (
               <div className="pt-0.5 pb-1">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300 mb-1 px-1">
-                  <span>⏱️ BLOQUES POR HORARIO</span>
-                  <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
+                <div className="flex items-center justify-between text-[10px] font-bold text-amber-300 mb-1 px-1">
+                  <div className="flex items-center gap-1.5">
+                    <span>⏱️ BLOQUES POR HORARIO</span>
+                    <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
+                  </div>
+                  {onReorderTasks && timedTasks.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleSortTimedByHour}
+                      className="text-[9px] font-normal text-amber-400/80 hover:text-amber-200 cursor-pointer underline flex items-center gap-0.5"
+                      title="Ordenar cronológicamente por hora"
+                    >
+                      <span>Ordenar hora</span>
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   {timedTasks.map((t, idx) => renderTaskCard(t, idx))}

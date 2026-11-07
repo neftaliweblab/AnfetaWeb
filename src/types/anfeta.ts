@@ -134,6 +134,7 @@ export interface PendingTaskItem {
   scheduledDate: string;
   query: string;
   isCompleted?: boolean;
+  isArchived?: boolean;
   createdAt?: string;
 }
 

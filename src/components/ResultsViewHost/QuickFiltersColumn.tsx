@@ -105,6 +105,46 @@ function QuickFiltersColumnComponent({
   onGenerateDailyAiSummary,
 }: QuickFiltersColumnProps) {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [columnWidth, setColumnWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_quickfilters_width");
+        if (saved) {
+          const num = parseInt(saved, 10);
+          if (num >= 200 && num <= 650) return num;
+        }
+      } catch {}
+    }
+    return 235;
+  });
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = columnWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(200, Math.min(650, startWidth + delta));
+      setColumnWidth(newWidth);
+    };
+
+    const onMouseUp = (upEvent: MouseEvent) => {
+      setIsResizing(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      const finalDelta = upEvent.clientX - startX;
+      const finalWidth = Math.max(200, Math.min(650, startWidth + finalDelta));
+      try {
+        localStorage.setItem("anfeta_quickfilters_width", String(finalWidth));
+      } catch {}
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
   const [isAllExpanded, setIsAllExpanded] = useState(false);
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -151,7 +191,21 @@ function QuickFiltersColumnComponent({
   };
 
   return (
-    <div id="quick-search-panel" className="w-[235px] max-w-full shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden">
+    <div
+      id="quick-search-panel"
+      style={{ width: `${columnWidth}px` }}
+      className={`relative max-w-full shrink-0 h-full bg-[#0F141C] border border-[#1E2836] rounded-lg p-2.5 flex flex-col select-none text-xs overflow-hidden ${
+        isResizing ? "select-none" : ""
+      }`}
+    >
+      {/* Resizer Handle en el borde derecho (Drag horizontal para ensanchar) */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize hover:bg-cyan-500/50 active:bg-cyan-400 z-30 transition-colors flex items-center justify-center group"
+        title="Arrastra para ajustar el ancho de Búsquedas Rápidas"
+      >
+        <div className="w-0.5 h-12 bg-slate-600 group-hover:bg-cyan-400 rounded-full transition-colors" />
+      </div>
       {/* 1. Header BÚSQUEDAS RÁPIDAS & Accesos rápidos (Paridad 1:1 ANFETA) */}
       <div className="shrink-0 mb-2 relative" ref={containerRef}>
         <div className="relative px-1 mb-2 pr-7">

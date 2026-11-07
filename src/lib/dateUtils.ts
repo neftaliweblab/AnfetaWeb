@@ -155,6 +155,9 @@ export function formatSmartDate(rawDate?: string | Date | null, now: Date = new 
           const rel = getRelativeDayName(p1.date, now);
           // Requerimiento John / Usuario: que solo tenga la hora inicial para los de "HOY"
           if (rel === "Hoy" && p1.hasTime) {
+            if (p2.hasTime) {
+              return `${formatTime12h(p1.date)} - ${formatTime12h(p2.date)}`;
+            }
             return formatTime12h(p1.date);
           }
           const day = String(p1.date.getDate()).padStart(2, "0");

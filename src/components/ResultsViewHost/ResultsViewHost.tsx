@@ -31,7 +31,7 @@ import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {sortSearchRows,lastSearchTerm,searchMexicoDay,itemMatchesScheduledDay} from '@/lib/searchPresentation';
-import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isCompletedResult} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isCompletedResult, isFinalizedResult} from '@/lib/activeResultsFirst';
 import {type ActiveSearchCriterion, type InlineSearchSuggestion, itemMatchesStructuredType} from '@/lib/inlinePredictiveEngine';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -223,6 +223,16 @@ export function ResultsViewHost({
   const [classification,setClassification]=useState('all');
   const [groupBy, setGroupBy] = useState("none");
   const [hideTerminated, setHideTerminated] = useState(false);
+  const [hideTerminatedMode, setHideTerminatedMode] = useState<"none" | "finished" | "all">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_hide_terminated_mode");
+        if (saved === "none" || saved === "finished" || saved === "all") return saved;
+        if (localStorage.getItem("anfeta_hide_terminated") === "1") return "all";
+      } catch {}
+    }
+    return "none";
+  });
   const [billingFilter, setBillingFilter] = useState<'include' | 'exclude' | 'only'>('include');
   const [paymentFilter, setPaymentFilter] = useState<'include' | 'exclude' | 'only'>('include');
   const [activeCriteria, setActiveCriteria] = useState<ActiveSearchCriterion[]>([]);
@@ -1581,8 +1591,10 @@ export function ResultsViewHost({
     }
 
     res=res.filter(item=>matchesResultStatus(item,statusFilter));
-    if (hideTerminated) {
+    if (hideTerminatedMode === "all" || (hideTerminatedMode === "none" && hideTerminated)) {
       res = res.filter(it => !isCompletedResult(it));
+    } else if (hideTerminatedMode === "finished") {
+      res = res.filter(it => !isFinalizedResult(it));
     }
     if (billingFilter === 'only' && paymentFilter === 'only') {
       res = res.filter(it => isCobroItem(it) || isPagoItem(it));
@@ -1832,8 +1844,25 @@ export function ResultsViewHost({
         }}
         groupBy={groupBy}
         onChangeGroupBy={handleGroupByChange}
-        hideTerminated={hideTerminated}
-        onToggleHideTerminated={() => setHideTerminated(!hideTerminated)}
+        hideTerminated={hideTerminatedMode !== "none" || hideTerminated}
+        hideTerminatedMode={hideTerminatedMode}
+        onChangeHideTerminatedMode={(mode) => {
+          setHideTerminatedMode(mode);
+          setHideTerminated(mode !== "none");
+          try {
+            localStorage.setItem("anfeta_hide_terminated_mode", mode);
+            localStorage.setItem("anfeta_hide_terminated", mode !== "none" ? "1" : "0");
+          } catch {}
+        }}
+        onToggleHideTerminated={() => {
+          const next = hideTerminatedMode === "none" ? "finished" : hideTerminatedMode === "finished" ? "all" : "none";
+          setHideTerminatedMode(next);
+          setHideTerminated(next !== "none");
+          try {
+            localStorage.setItem("anfeta_hide_terminated_mode", next);
+            localStorage.setItem("anfeta_hide_terminated", next !== "none" ? "1" : "0");
+          } catch {}
+        }}
         billingFilter={billingFilter}
         onChangeBillingFilter={(b) => setBillingFilter(b)}
         paymentFilter={paymentFilter}

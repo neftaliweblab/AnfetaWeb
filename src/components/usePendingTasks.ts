@@ -9,6 +9,7 @@ const sanitizeTask = (t: any): PendingTaskItem => ({
   query: typeof t?.query === 'string' ? t.query : (typeof t?.title === 'string' ? t.title : ''),
   scheduledDate: typeof t?.scheduledDate === 'string' ? t.scheduledDate : '',
   isCompleted: Boolean(t?.isCompleted),
+  isArchived: Boolean(t?.isArchived),
   createdAt: typeof t?.createdAt === 'string' && t.createdAt ? t.createdAt : new Date().toISOString(),
   ...(t?.updatedAt && typeof t.updatedAt === 'string' ? { updatedAt: t.updatedAt } : {}),
 });
