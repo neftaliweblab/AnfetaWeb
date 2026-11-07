@@ -657,7 +657,7 @@ function checkSingleToken(
   const valLow = token.value.toLowerCase();
   const itemStatus = String(item.updateStatus || item.statusLabel || item.status || '');
   if (!contentOnly) {
-    const tagMatch = matchesActivityTagQuery(item.name || '', token.value, matchCase, itemStatus);
+    const tagMatch = matchesActivityTagQuery(item.name || '', token.value, matchCase, itemStatus, item);
     if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
   }
 
