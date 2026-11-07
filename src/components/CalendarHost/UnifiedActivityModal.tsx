@@ -39,6 +39,10 @@ import { requestActivityRecording, recordingTarget } from "@/lib/activityRecordi
 import { canonicalActivityUrl } from "@/lib/activityCanonicalLink";
 import { offlineAwareFetch } from "@/services/offlineQueue";
 import {
+  getModalPositionConfig,
+  MODAL_POSITION_EVENT,
+} from "@/lib/modalPosition";
+import {
   calendarDisplayTitle,
   calendarType,
   calendarUrgent,
@@ -122,17 +126,26 @@ export function UnifiedActivityModal({
   };
 
   // Dragging state in pinned mode
+  const hasManuallyMoved = useRef(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
     if (typeof window !== "undefined") {
+      const posConfig = getModalPositionConfig();
+      const defaultY =
+        posConfig.mode === "center"
+          ? Math.max(20, Math.round((window.innerHeight - 620) / 2))
+          : Math.max(0, posConfig.topOffset);
+
       if (hoverPos) {
         return {
           x: Math.max(16, Math.min(window.innerWidth - 500, hoverPos.x)),
-          y: Math.max(16, Math.min(window.innerHeight - 600, hoverPos.y)),
+          y: posConfig.mode === "center"
+            ? Math.max(16, Math.min(window.innerHeight - 600, hoverPos.y))
+            : defaultY,
         };
       }
       return {
         x: Math.max(20, Math.round((window.innerWidth - 560) / 2)),
-        y: Math.max(20, Math.round((window.innerHeight - 620) / 2)),
+        y: defaultY,
       };
     }
     return { x: 100, y: 100 };
@@ -141,6 +154,38 @@ export function UnifiedActivityModal({
   const isDragging = useRef(false);
   const dragStartOffset = useRef({ x: 0, y: 0 });
   const modalRef = useRef<HTMLDivElement | null>(null);
+
+  // Escuchar cambios de posición de modales en tiempo real desde Configuración
+  useEffect(() => {
+    const handlePosChange = (e: any) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      if (!hasManuallyMoved.current) {
+        const newY =
+          detail.mode === "center"
+            ? Math.max(20, Math.round((window.innerHeight - 620) / 2))
+            : Math.max(0, detail.topOffset ?? 8);
+        setPosition((prev) => ({ ...prev, y: newY }));
+      }
+    };
+    window.addEventListener(MODAL_POSITION_EVENT, handlePosChange);
+    return () => window.removeEventListener(MODAL_POSITION_EVENT, handlePosChange);
+  }, []);
+
+  // Al abrir otra actividad, posicionar según la configuración activa si no se arrastró manualmente
+  useEffect(() => {
+    if (!hasManuallyMoved.current) {
+      const posConfig = getModalPositionConfig();
+      const defaultY =
+        posConfig.mode === "center"
+          ? Math.max(20, Math.round((window.innerHeight - 620) / 2))
+          : Math.max(0, posConfig.topOffset);
+      setPosition((prev) => ({
+        ...prev,
+        y: hoverPos && posConfig.mode === "center" ? Math.max(16, Math.min(window.innerHeight - 600, hoverPos.y)) : defaultY,
+      }));
+    }
+  }, [activity.pageId, hoverPos]);
 
   // Clamp position to viewport bounds
   const clampPosition = useCallback((x: number, y: number) => {
@@ -170,6 +215,7 @@ export function UnifiedActivityModal({
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging.current) return;
+    hasManuallyMoved.current = true;
     const newX = e.clientX - dragStartOffset.current.x;
     const newY = e.clientY - dragStartOffset.current.y;
     setPosition(clampPosition(newX, newY));
@@ -431,11 +477,13 @@ export function UnifiedActivityModal({
       : "w-[490px] max-w-[92vw]";
 
   // Style positioning
+  const currentPosConfig = getModalPositionConfig();
+  const fallbackTop = currentPosConfig.mode === "center" ? 80 : currentPosConfig.topOffset;
   const stylePos: React.CSSProperties = isPinned
     ? { top: `${position.y}px`, left: `${position.x}px` }
     : hoverPos
     ? { top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }
-    : { top: "80px", left: "20px" };
+    : { top: `${fallbackTop}px`, left: "20px" };
 
   return (
     <>

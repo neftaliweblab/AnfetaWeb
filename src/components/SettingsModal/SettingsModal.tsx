@@ -25,7 +25,12 @@ import {
   openWindowsSoundSettings,
 } from "@/services/windowsIntegration";
 import { normalizePerson } from "@/services/identityNormalizer";
-import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
+import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxConnectModal";
+import {
+  ModalPositionMode,
+  getModalPositionConfig,
+  saveModalPositionConfig,
+} from "@/lib/modalPosition";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -66,7 +71,8 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [saveError,setSaveError]=useState(''),[saving,setSaving]=useState(false);
   const [modalSize, setModalSize] = useState<"small" | "medium" | "large">("medium");
-  const [modalPosition, setModalPosition] = useState<"top_high" | "top" | "center">("top");
+  const [modalPosition, setModalPosition] = useState<ModalPositionMode>("top_high");
+  const [modalTopOffset, setModalTopOffset] = useState<number>(8);
   const [userTag, setUserTag] = useState(() => toUserTag(currentUser));
   const [devices, setDevices] = useState<WindowsAudioDevice[]>([]);
   const [volume, setVolume] = useState(80);
@@ -104,8 +110,9 @@ export function SettingsModal({
       try {
         const stored = localStorage.getItem("anfeta_settings");
         setNotionOpenMode(localStorage.getItem('anfeta_notion_open_mode')==='desktop'?'desktop':'web');
-        const pos = localStorage.getItem('anfeta_modal_position');
-        if (pos === 'top_high' || pos === 'top' || pos === 'center') setModalPosition(pos as any);
+        const posConfig = getModalPositionConfig();
+        setModalPosition(posConfig.mode);
+        setModalTopOffset(posConfig.topOffset);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.notionToken) setNotionToken(parsed.notionToken);
@@ -316,6 +323,14 @@ export function SettingsModal({
     }
   };
 
+  const updateModalPosition = (mode: ModalPositionMode, offset?: number) => {
+    let newOffset = offset !== undefined ? offset : (mode === "top_high" ? 8 : mode === "top" ? 20 : modalTopOffset);
+    newOffset = Math.max(0, Math.min(250, newOffset));
+    setModalPosition(mode);
+    setModalTopOffset(newOffset);
+    saveModalPositionConfig({ mode, topOffset: newOffset });
+  };
+
   const handleSave = async () => {
     if(saving)return;setSaving(true);setSaveError('');
     try{if(normalizePerson(userTag)!==normalizePerson(currentUser))await onSaveCurrentUser(userTag);}catch(e){setSaveError(e instanceof Error?e.message:'No se pudo cambiar la persona.');setSaving(false);return;}
@@ -331,7 +346,7 @@ export function SettingsModal({
     // 1. Guardar en localStorage inmediatamente (persistencia cliente)
     try {
       localStorage.setItem("anfeta_settings", JSON.stringify(savedConfig));
-      localStorage.setItem("anfeta_modal_position", modalPosition);
+      saveModalPositionConfig({ mode: modalPosition, topOffset: modalTopOffset });
     } catch (err) {
       console.warn("Error guardando anfeta_settings en localStorage:", err);
     }
@@ -427,54 +442,100 @@ export function SettingsModal({
             </select>
           </div>
 
-          {/* Posición de apertura de modales y hover preview (Prioridad John) */}
-          <div className="bg-[#131B26] border border-[#253549] rounded-lg p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-cyan-300">
-                Posición de Modales y Hover Preview
-              </label>
-              <span className="text-[10px] text-slate-400 font-mono">Prioridad Monitores Dobles</span>
-            </div>
-            <p className="text-[10.5px] text-slate-400">
-              Alinea los modales y el popover del hover hacia el borde superior para no tapar la tabla ni cortarse abajo en monitores secundarios.
-            </p>
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setModalPosition("top_high")}
-                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
-                  modalPosition === "top_high"
-                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold"
-                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
-                }`}
-              >
-                ⬆️ Muy arriba (8px)
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalPosition("top")}
-                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
-                  modalPosition === "top"
-                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold"
-                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
-                }`}
-              >
-                ↗️ Arriba (20px)
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalPosition("center")}
-                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
-                  modalPosition === "center"
-                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold"
-                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
-                }`}
-              >
-                ⏹️ Normal / Centro
-              </button>
-            </div>
-          </div>
-
+          {/* Posición de apertura de modales y hover preview (Prioridad John) */}
+          <div className="bg-[#131B26] border border-[#253549] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-cyan-300">
+                Posición de Modales y Hover Preview
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">Prioridad Monitores Dobles</span>
+            </div>
+            <p className="text-[10.5px] text-slate-400 leading-relaxed">
+              Alinea los modales de actividades (calendario y tablas) y el popover de hover hacia el borde superior para no tapar el nombre del evento ni cortarse abajo en monitores secundarios.
+            </p>
+            <div className="grid grid-cols-4 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => updateModalPosition("top_high", 8)}
+                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
+                  modalPosition === "top_high"
+                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
+                }`}
+              >
+                ⬆️ Muy arriba (8px)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateModalPosition("top", 20)}
+                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
+                  modalPosition === "top"
+                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
+                }`}
+              >
+                ↗️ Arriba (20px)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateModalPosition("custom", modalTopOffset)}
+                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
+                  modalPosition === "custom"
+                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
+                }`}
+              >
+                ↕️ Barra ({modalTopOffset}px)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateModalPosition("center")}
+                className={`px-2 py-1.5 rounded text-xs font-medium border text-center transition cursor-pointer ${
+                  modalPosition === "center"
+                    ? "bg-cyan-950 border-cyan-400 text-cyan-200 font-bold shadow-[0_0_8px_rgba(34,211,238,0.25)]"
+                    : "bg-[#182332] border-[#253549] text-slate-400 hover:text-white"
+                }`}
+              >
+                ⏹️ Normal / Centro
+              </button>
+            </div>
+
+            {/* Barra selectora para ajuste fino de altura (0px a 250px) */}
+            <div className="bg-[#0B111A] border border-[#1E293B] rounded p-2.5 space-y-2 mt-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-medium flex items-center gap-1.5">
+                  <span>🎚️ Ajuste personalizado de altura:</span>
+                  <span className="text-cyan-400 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800">
+                    {modalTopOffset} px
+                  </span>
+                  {modalPosition === "custom" && (
+                    <span className="text-[10px] text-emerald-400 font-semibold">(Activo)</span>
+                  )}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">0px (tope superior) — 250px</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-slate-400">0px</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="250"
+                  step="2"
+                  value={modalTopOffset}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10) || 0;
+                    updateModalPosition("custom", val);
+                  }}
+                  className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
+                />
+                <span className="text-[11px] text-slate-400">250px</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Mueve la barra para que el modal y el hover suban o bajen exactamente donde no tapen el nombre del evento en tu pantalla.
+              </p>
+            </div>
+          </div>
+
           {/* Dropbox & Notion Config */}
           <section className="rounded border border-cyan-900 bg-slate-900 p-3 space-y-2" aria-label="Atajo global de ANFETA Web">
             <h3 className="font-semibold text-cyan-200">Atajo global para Web/PWA</h3>

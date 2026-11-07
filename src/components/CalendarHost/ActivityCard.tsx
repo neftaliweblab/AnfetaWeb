@@ -1,5 +1,6 @@
 "use client";
 import { UnifiedActivityModal } from './UnifiedActivityModal';
+import { getModalPositionConfig } from '@/lib/modalPosition';
 import { ReturnedObservations } from './ReturnedObservations';
 import { ReturnToOwnerModal } from './ReturnToOwnerModal';
 import { parseVisualParts } from "@/lib/visualTitleParser";
@@ -465,8 +466,11 @@ function ActivityCardComponent({
         const left = fitsRight
           ? Math.min(window.innerWidth - expectedWidth - 14, rect.right + 12)
           : Math.max(12, rect.left - expectedWidth - 12);
-        const top = Math.min(Math.max(12, window.innerHeight - 560), Math.max(12, rect.top - 20));
-        setHoverPos({ x: Math.max(12, left), y: Math.max(12, top) });
+        const posConfig = getModalPositionConfig();
+        const top = posConfig.mode === "center"
+          ? Math.min(Math.max(12, window.innerHeight - 560), Math.max(12, rect.top - 20))
+          : Math.max(0, posConfig.topOffset);
+        setHoverPos({ x: Math.max(12, left), y: Math.max(0, top) });
         setShowHover(true);
       }
       void fetchChecklistIfNeeded();
