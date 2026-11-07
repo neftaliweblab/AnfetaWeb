@@ -3,22 +3,24 @@ import {matchesSearchDatabase} from './searchDatabase';
 import { ResultItem } from "@/components/ResultsViewHost/ResultsVirtualTable";
 
 export function isNotionItem(x: ResultItem): boolean {
+  if (!x) return false;
   const s = String(x.source || "").toLowerCase();
   const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
+  const t = String(x.type || "").toUpperCase();
   const p = (x.path || x.target || "").toLowerCase();
 
-  // Si es Dropbox o ruta de disco de dropbox, NO es Notion
-  if (s === "dropbox" || src === "dropbox" || p.includes("dropbox") || p.includes("c:\\")) {
+  // Si es explícitamente Dropbox o es archivo/carpeta pura de Dropbox, NO es Notion
+  if (s === "dropbox" || src === "dropbox" || (x as any).source === 1 || t === "FILE" || t === "FOLDER" || isLegacyDropboxDiskItem(x)) {
     return false;
   }
 
   return (
     s === "notion" ||
     (x as any).source === 2 ||
+    t === "PAGE" ||
+    t === "NOTION_PAGE" ||
     p.includes("notion.so") ||
     p.includes("notion.com") ||
-    (x.type || "").toUpperCase() === "PAGE" ||
-    (x.type || "").toUpperCase() === "NOTION_PAGE" ||
     src.includes("revision") ||
     src.includes("cliente") ||
     src.includes("dominio") ||
@@ -31,10 +33,23 @@ export function isNotionItem(x: ResultItem): boolean {
 }
 
 export function isDropboxItem(x: ResultItem): boolean {
+  if (!x) return false;
+  // Una página de Notion jamás debe ser clasificada como Dropbox por tener "dropbox" en el título
+  if (isNotionItem(x)) return false;
+
   const s = String(x.source || "").toLowerCase();
   const src = (x.sourceName || (x as any).externalSourceName || "").toLowerCase();
+  const t = String(x.type || "").toUpperCase();
   const p = (x.path || x.target || "").toLowerCase();
-  return s === "dropbox" || (x as any).source === 1 || src === "dropbox" || p.includes("dropbox");
+
+  return (
+    s === "dropbox" ||
+    (x as any).source === 1 ||
+    src === "dropbox" ||
+    t === "FILE" ||
+    t === "FOLDER" ||
+    ((p.startsWith("/") || p.includes("\\drx\\") || p.includes("/drx/")) && !p.includes("notion.so"))
+  );
 }
 
 export function isLegacyDropboxDiskItem(item: ResultItem): boolean {

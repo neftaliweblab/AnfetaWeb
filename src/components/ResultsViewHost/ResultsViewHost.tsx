@@ -61,7 +61,7 @@ import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus';
 import {matchesContentClassification} from '@/lib/contentClassification';
 import {searchDatabaseOptions} from '@/lib/searchDatabase';
-import { filterByNotionBase, isNotionItem, isLegacyDropboxDiskItem } from "@/lib/notionFilters";
+import { filterByNotionBase, isNotionItem, isDropboxItem, isLegacyDropboxDiskItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
@@ -182,7 +182,7 @@ export function ResultsViewHost({
   const [liveDropboxItems, setLiveDropboxItems] = useState<any[]>([]);
 
   useEffect(() => {
-    if (selectedScope !== "Dropbox" || deferredQuery.trim().length < 2) {
+    if (selectedScope !== "Dropbox") {
       setLiveDropboxItems([]);
       return;
     }
@@ -196,7 +196,8 @@ export function ResultsViewHost({
           if (saved) clientToken = JSON.parse(saved).dropboxToken || "";
         } catch {}
         const tokenQuery = clientToken ? `&token=${encodeURIComponent(clientToken)}` : "";
-        const res = await fetch(`/api/data?type=dropbox-live-search&q=${encodeURIComponent(deferredQuery.trim())}${tokenQuery}`);
+        const qParam = deferredQuery.trim() ? `&q=${encodeURIComponent(deferredQuery.trim())}` : "";
+        const res = await fetch(`/api/data?type=dropbox-live-search${qParam}${tokenQuery}`);
         const data = await res.json();
         if (active && data.success && Array.isArray(data.items)) {
           setLiveDropboxItems(data.items);
@@ -204,7 +205,7 @@ export function ResultsViewHost({
       } catch (err) {
         console.error("Live Dropbox search error:", err);
       }
-    }, 300);
+    }, 200);
 
     return () => {
       active = false;
@@ -1624,13 +1625,11 @@ export function ResultsViewHost({
       return true;
     });
 
-    if (selectedScope === "Dropbox" && liveDropboxItems.length > 0) {
-      const existingPaths = new Set(res.map(it => (it.path || it.target || '').toLowerCase()));
-      for (const liveItem of liveDropboxItems) {
-        if (!existingPaths.has((liveItem.path || liveItem.target || '').toLowerCase())) {
-          res.unshift(liveItem);
-        }
+    if (selectedScope === "Dropbox") {
+      if (liveDropboxItems.length > 0) {
+        return liveDropboxItems;
       }
+      return res.filter(it => isDropboxItem(it) && !isNotionItem(it));
     }
 
     res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
