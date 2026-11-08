@@ -295,8 +295,27 @@ export async function getRecentPageEvents(
  * Helper to fetch all confirmed deleted page IDs for a source key.
  */
 export async function getConfirmedDeletedPageIds(sourceKey: string): Promise<string[]> {
-  const events = await getRecentPageEvents(sourceKey, null, 1000);
-  return events.filter(e => e.state === 'deleted').map(e => e.pageId);
+  // Filtering GET responses needs tombstone IDs, never complete activity/checklist payloads.
+  // Read all tombstones; a 1,000-event history window can miss later deletions.
+  if (supabaseConfigured()) {
+    const ids: string[] = [];
+    const admin = supabaseAdmin();
+    for (let offset = 0; ; offset += 1000) {
+      const {data, error} = await admin.from('notion_page_events')
+        .select('page_id').eq('source_key', sourceKey).eq('state', 'deleted')
+        .order('page_id', {ascending: true}).range(offset, offset + 999);
+      if (error || !Array.isArray(data)) throw new Error('No se pudieron consultar las páginas eliminadas.');
+      for (const row of data) {
+        const id = cleanPageId(row.page_id);
+        if (/^[a-f0-9]{32}$/.test(id)) ids.push(id);
+      }
+      if (data.length < 1000) return [...new Set(ids)];
+    }
+  }
+  // Memory is authoritative only in local mode. A warm instance must not re-hide
+  // a page restored by another instance after its last locally recorded event.
+  return [...memoryEvents].filter(([key, event]) => key.startsWith(sourceKey + ':') && event.state === 'deleted')
+    .map(([, event]) => event.pageId);
 }
 
 /**
