@@ -28,6 +28,7 @@ export function TeamPresence(){
         const data=await readApiJson(await fetch('/api/presence',{method:'POST',signal:controller.signal,cache:'no-store'}));
         if(!controller.signal.aborted){
           setPeople(data.people || []);
+          window.dispatchEvent(new CustomEvent('anfeta_team_presence',{detail:data}));
           setConfigured(Boolean(data.configured));
           setError('');
         }

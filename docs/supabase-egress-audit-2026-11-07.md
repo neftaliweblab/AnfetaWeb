@@ -37,3 +37,25 @@ histórico de la organización anterior.
 No se ha reducido indiscriminadamente la frecuencia. Conviene observar Egress y
 Log Ingestion del proyecto nuevo durante un día comparable antes de cuantificar
 el ahorro global. No se cambiaron datos, RLS ni credenciales con esta corrección.
+
+## Segunda revisión: preferencias, presencia y push
+
+- Preferencias: /api/workspace valida la sesión y el perfil antes de comparar un
+  ETag ligado al UUID y la revisión. Si no cambió, lee solo revision y responde 304.
+  Al cambiar, vuelve a leer values. No se omiten validaciones de identidad ni RLS.
+- Navegador: favoritos y búsquedas comparten lecturas simultáneas; conservan una
+  copia en memoria únicamente con ETag confirmado. Cada lectura posterior consulta
+  al servidor. Guardar, cambiar sesión o recibir aviso de preferencias descarta la
+  copia y cancela lecturas anteriores. Los consumidores reciben copias independientes.
+- Presencia: el panel FTF usa los latidos del encabezado. Conserva una lectura
+  inicial, cancelable, pero elimina su segundo temporizador de 45 segundos.
+- Push con recibo de entrega: solicita solo values->pushSubscriptions, en lugar de
+  todas las preferencias. Se conservan recibos, deduplicación y manejo de fallos.
+
+Medición de solo lectura del destino: 8 registros de preferencias, máximo 16,045
+bytes por values y 32,641 bytes acumulados; en esa muestra pushSubscriptions estaba
+vacío. Son tamaños de datos, no una estimación del ahorro total mensual.
+
+Pruebas nuevas: lecturas condicionales del servicio y API, autenticación antes de
+304, separación de usuarios, invalidación al guardar/cambiar sesión, peticiones
+simultáneas y errores. Pruebas de preferencias, push, FTF y políticas PostgreSQL.

@@ -28,27 +28,20 @@ export function CalendarFtfPanel({
   const [presenceMap, setPresenceMap] = useState<Record<string, { isOnline: boolean; lastSeenLabel?: string }>>({});
 
   useEffect(() => {
-    let stopped = false;
-    const fetchPresence = async () => {
-      try {
-        const res = await fetch('/api/presence', { cache: 'no-store' });
-        const data = await res.json();
-        if (data?.people && Array.isArray(data.people) && !stopped) {
-          const map: Record<string, { isOnline: boolean; lastSeenLabel?: string }> = {};
-          for (const p of data.people) {
-            if (p.name) map[p.name] = { isOnline: Boolean(p.isOnline), lastSeenLabel: p.lastSeenLabel };
-          }
-          setPresenceMap(map);
-        }
-      } catch {}
+    const controller=new AbortController();
+    const apply=(data:any)=>{
+      if(!Array.isArray(data?.people))return;
+      const map:Record<string,{isOnline:boolean;lastSeenLabel?:string}>={};
+      for(const p of data.people)if(p.name)map[p.name]={isOnline:Boolean(p.isOnline),lastSeenLabel:p.lastSeenLabel};
+      setPresenceMap(map);
     };
-    void fetchPresence();
-    const interval = setInterval(fetchPresence, 45000);
-    return () => {
-      stopped = true;
-      clearInterval(interval);
-    };
-  }, []);
+    const updated=(event:Event)=>{controller.abort();apply((event as CustomEvent).detail);};
+    window.addEventListener('anfeta_team_presence',updated);
+    // One bootstrap read; subsequent heartbeats come from the header, not a second timer.
+    if(!document.hidden)void fetch('/api/presence',{cache:'no-store',signal:controller.signal})
+      .then(res=>res.ok?res.json():null).then(data=>{if(!controller.signal.aborted)apply(data);}).catch(()=>{});
+    return()=>{controller.abort();window.removeEventListener('anfeta_team_presence',updated);};
+  }, [currentUser]);
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
