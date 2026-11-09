@@ -109,9 +109,14 @@ export function NotionTemplatesModal({
   const [preProjectPlan, setPreProjectPlan] = useState<any | null>(null);
   const [preProjectCopiedMsg, setPreProjectCopiedMsg] = useState(false);
 
-  const loadTemplates = () => {
+  const loadTemplates = (refresh = false) => {
     setLoading(true);
-    fetch("/api/data?type=templates")
+    let token = "";
+    try {
+      token = JSON.parse(localStorage.getItem("anfeta_settings") || "{}").notionToken || "";
+    } catch {}
+    const headers: Record<string, string> = token ? { "x-notion-token": token } : {};
+    fetch("/api/data?type=templates" + (refresh ? "&refresh=true" : ""), { headers })
       .then((res) => res.json())
       .then((data) => {
         if (data.items) setTemplates(data.items);
@@ -344,10 +349,10 @@ export function NotionTemplatesModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={loadTemplates}
+                  onClick={() => loadTemplates(true)}
                   disabled={loading}
                   className="p-1.5 text-[#94A3B8] hover:text-[#38BDF8] rounded transition-colors cursor-pointer"
-                  title="Recargar catálogo"
+                  title="Sincronizar catálogo con Notion en vivo"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#38BDF8]" : ""}`} />
                 </button>

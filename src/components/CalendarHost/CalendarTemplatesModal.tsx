@@ -108,9 +108,14 @@ export function CalendarTemplatesModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Carga inicial de plantillas desde /api/data?type=templates
-  const loadTemplates = () => {
+  const loadTemplates = (refresh = false) => {
     setLoading(true);
-    fetch("/api/data?type=templates")
+    let token = "";
+    try {
+      token = JSON.parse(localStorage.getItem("anfeta_settings") || "{}").notionToken || "";
+    } catch {}
+    const headers: Record<string, string> = token ? { "x-notion-token": token } : {};
+    fetch("/api/data?type=templates" + (refresh ? "&refresh=true" : ""), { headers })
       .then((res) => res.json())
       .then((data) => {
         if (data.items) {
@@ -342,7 +347,7 @@ export function CalendarTemplatesModal({
               ))}
             </div>
             <button
-              onClick={loadTemplates}
+              onClick={() => loadTemplates(true)}
               disabled={loading}
               className="p-1.5 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#131A22] rounded transition-colors cursor-pointer"
               title="Recargar catálogo desde Notion"

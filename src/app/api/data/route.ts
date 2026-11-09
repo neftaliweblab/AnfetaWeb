@@ -796,7 +796,29 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     if(type==='notion-base-links')return NextResponse.json(await notionBaseLinks({...getSettings(),notionToken:resolveNotionToken(req,searchParams),notionSignal:AbortSignal.timeout(55000)}),{headers:{'Cache-Control':'no-store'}});
 
     if (type === "templates") {
-      const items = phaseOneCatalog.Items;
+      const refresh = searchParams.get('refresh') === 'true';
+      const catalogPath = path.join(process.cwd(), 'data', 'notion_template_phase1_catalog_v2.json');
+      let catalog: any = phaseOneCatalog;
+      try { catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8')); } catch {}
+      if (refresh) {
+        const token = resolveNotionToken(req, searchParams);
+        if (token) {
+          try {
+            const updatedItems = await Promise.all(catalog.Items.map(async (item: any) => {
+              try {
+                const pid = item.PageId.replace(/-/g, '');
+                const page = await notionRequest({...getSettings(), notionToken: token, notionSignal: AbortSignal.timeout(8000)}, 'pages/' + pid);
+                const titleProp = Object.values(page.properties || {}).find((p: any) => p.type === 'title') as any;
+                const liveTitle = titleProp?.title?.map((t: any) => t.plain_text).join('') || '';
+                return { ...item, Title: liveTitle || item.Title, PageUrl: page.url || item.PageUrl };
+              } catch { return item; }
+            }));
+            catalog = { ...catalog, UpdatedAtUtc: new Date().toISOString(), Items: updatedItems };
+            fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2), 'utf8');
+          } catch (err: any) { console.warn('[templates refresh] Error:', err); }
+        }
+      }
+      const items = catalog.Items;
       return NextResponse.json({ total: items.length, items });
     }
 

@@ -185,13 +185,14 @@ export function cleanCalendarQuickTemplateActivityTitle(
   projectToken = ""
 ): string {
   const structured = structuredTemplate(rawTitle || "");
-  if (structured) return structured.name;
+  // Use structured.name if present, but continue through cleaning to remove leftover technical tokens
+  const baseTitle = structured ? structured.name : stripActivityTags(rawTitle || "");
 
-  let value = stripActivityTags(rawTitle || "").trim().replace(/\s+/g, " ");
+  let value = baseTitle.trim().replace(/\s+/g, " ");
   if (!value) return "Actividad desde plantilla";
 
   // Quitar estados técnicos
-  value = value.replace(/\b(?:a?prtuzrevision|sprtuzrevision|rtuzrevision|zrevision|zzz)\b/gi, " ");
+  value = value.replace(/\b(?:a?prtuz(?:revision|r)?|sprtuz(?:revision|r)?|rtuz(?:revision|r)?|zrevision|zzz)\b/gi, " ");
 
   // Quitar token del proyecto si aplica
   if (projectToken) {
@@ -217,7 +218,7 @@ export function cleanCalendarQuickTemplateActivityTitle(
   value = value.replace(/\b(?:nneft|kkarl|bbria|ggena|jjohn|iisaia|iisai|eedua|aacal|mmata|neft|karl|bria|gena|john|isai|edua|acal|andr|emma)\b/gi, " ");
 
   // Quitar dominios en corchetes de plantilla: [webs.dominio.com], [dominio.com]
-  value = value.replace(/\[\s*(?:[a-z0-9_.-]+\.)*(?:dominio|midominio|ejemplo|[a-z0-9-]+)\.(?:com|com\.mx|mx|org|net)\s*\]/gi, " ");
+  value = value.replace(/\[\s*(?:[a-z0-9_.-]*\.?)*(?:dominio|midominio|ejemplo|[a-z0-9-]+)*\.(?:com|com\.mx|mx|org|net)(?:\.[a-z0-9-]+)*\s*\]/gi, " ");
   value = value.replace(/\b(?:dominio|midominio|ejemplo)\s+(?:com|com\.mx|mx|org|net)\b/gi, " ");
 
   // Limpiar corchetes vacíos y espacios
@@ -341,11 +342,11 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     const activityField = dateField.replace(/\d{2}(?=\.[a-z]\.)/i, month)
       .replace(structured.name, () => description);
     const resolvedDomain = cleanDom && !/^(?:[pd]\.)?dominio\.com(?:\.|$)/i.test(cleanDom)
-      ? domainField.replace(/dominio\.com/i, () => cleanDom.replace(/^[pd]\./i, "")).replace(/#(?=[pd]\.)/i, "")
+      ? domainField.replace(/dominio\.com/i, () => cleanDom.replace(/^[pd]\./i, ""))
       : domainField;
     const descriptiveFields = metadata.filter(field => /^\S*\s*#(?:descripcion|ffase)/i.test(field));
     return revisionPhaseTitle(
-      [typeField, activityField, resolvedDomain, ...descriptiveFields, personTag, reviewerTag]
+      [typeField, activityField, resolvedDomain, ...descriptiveFields, personTag ? (personTag.includes('👤') ? personTag : `👤 ${personTag}`) : '', reviewerTag ? (reviewerTag.includes('👥') || reviewerTag.includes('✅') ? reviewerTag : `👥 ${reviewerTag}`) : '', ...(!personTag && !reviewerTag ? metadata.filter(field => /👥|✅|\b[a-z]{1,2}-[a-z0-9]+/i.test(field)) : [])]
         .filter(Boolean).join(" | "),
       "pending",
     ).replace(" ", " | ");
