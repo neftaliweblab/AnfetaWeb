@@ -54,6 +54,7 @@ import { canEditActivity, scheduleAtDrop, isDirection, isReviewer } from '@/serv
 import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { UnifiedActivityModal } from './UnifiedActivityModal';
+import { PlanBContingencyModal } from './PlanBContingencyModal';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
 interface CalendarHostProps {
   active?: boolean;
@@ -212,6 +213,7 @@ export function CalendarHost({
   useEffect(()=>{if(!expandedCalendar)return;const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!event.defaultPrevented&&!document.querySelector('dialog[open],[role="dialog"]'))setExpandedCalendar(false);};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);},[expandedCalendar]);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showPlanBModal, setShowPlanBModal] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [phaseFilter,setPhaseFilter]=useState('');
   const [calendarPalette, setCalendarPalette] = useState<"web" | "desktop">(() => {
@@ -953,6 +955,15 @@ export function CalendarHost({
           activities={activitiesByPerson[selectedPersonPreview] || []}
           currentDate={currentDate}
           onClose={() => setSelectedPersonPreview(null)}
+        />
+      )}
+
+      {showPlanBModal && (
+        <PlanBContingencyModal
+          currentUser={currentUser}
+          onClose={() => setShowPlanBModal(false)}
+          lastSyncTime={typeof window !== 'undefined' ? localStorage.getItem('anfeta_last_sync_time') || Date.now() : null}
+          cachedActivitiesCount={activitiesList.length}
         />
       )}
 

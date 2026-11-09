@@ -16,7 +16,7 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, Banknote, CreditCard, MessageCircle,
+  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
@@ -53,6 +53,7 @@ interface CalendarTopControlsProps {
   onOpenDailyProgress?: () => void;
   onRefresh?: () => void;
   onOpenStandaloneWindow?: () => void;
+  onOpenPlanB?: () => void;
   calendarPalette?: "web" | "desktop";
   onTogglePalette?: () => void;
   onOpenWhatsappGroups?: () => void;
@@ -88,6 +89,7 @@ export function CalendarTopControls({
   onOpenDailyProgress,
   onRefresh,
   onOpenStandaloneWindow,
+  onOpenPlanB,
   calendarPalette = "web",
   onTogglePalette,
 }: CalendarTopControlsProps) {
@@ -270,6 +272,19 @@ export function CalendarTopControls({
         </button>
 
         <button type="button" onClick={()=>window.dispatchEvent(new CustomEvent('anfeta_open_daily_workspace',{detail:{day:currentDate}}))} className="rounded border border-cyan-700 bg-cyan-950/30 px-2 py-1 text-xs text-cyan-200">Jornada</button>
+        {/* Botón Plan B Contingencia y Notion */}
+        {onOpenPlanB && (
+          <button
+            type="button"
+            onClick={onOpenPlanB}
+            className="px-2 py-1 rounded bg-[#131A22] hover:bg-[#1a2533] text-amber-400 border border-amber-600/40 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+            title="Plan B · Contingencia y accesos directos a Notion"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden xl:inline">Plan B</span>
+          </button>
+        )}
+
         {/* Botón Reporte 05:00 */}
         <button
           onClick={onOpenReport}

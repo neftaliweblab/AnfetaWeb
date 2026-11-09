@@ -51,10 +51,9 @@ assert.equal(neftali.total, 1);
 assert.equal(neftali.verified, 1);
 assert.equal(neftali.pending.length, 0);
 
-// Crucial: completedAt must NOT be midnight 00:00! It must resolve to the real 15:27 Notion timestamp!
-assert.equal(neftali.completedAt, act1.serverModified);
-assert.equal(calendarTime(neftali.completedAt), '15:27');
-assert.notEqual(calendarTime(neftali.completedAt), '00:00');
+// A legacy midnight placeholder must not turn an unrelated Notion edit into confirmation.
+assert.equal(neftali.completedAt, null);
+assert.equal(neftali.lastActivityEdited, act1.serverModified);
 assert.equal(neftali.late, false);
 
 // Case 2: Activity edited AFTER 18:00 (e.g. 18:15)
@@ -65,10 +64,10 @@ const actLate = {
 const reportLate = buildFtfDashboard('John', day, people, [actLate], { ['ftf:' + day + ':Neftali']: midnightReceipt }, now);
 const neftaliLate = reportLate.people.find(p => p.name === 'Neftali');
 assert.equal(neftaliLate.status, 'complete');
-assert.equal(calendarTime(neftaliLate.completedAt), '18:15');
-assert.equal(neftaliLate.late, true);
+assert.equal(neftaliLate.completedAt, null);
+assert.equal(neftaliLate.late, false);
 
-// Case 3: Both record and activity have valid times; picks latest
+// Case 3: Later Notion edits do not replace a stored FTF time
 const afternoonReceipt = {
   person: 'Neftali',
   date: day,
@@ -76,7 +75,7 @@ const afternoonReceipt = {
 };
 const reportBoth = buildFtfDashboard('John', day, people, [act1], { ['ftf:' + day + ':Neftali']: afternoonReceipt }, now);
 const neftaliBoth = reportBoth.people.find(p => p.name === 'Neftali');
-assert.equal(calendarTime(neftaliBoth.completedAt), '15:27'); // 15:27 > 14:00
+assert.equal(calendarTime(neftaliBoth.completedAt), '14:00');
 
 // Case 4: [RESPUESTA] notification cards must NEVER be counted as work activities in FTF
 const respAct = {

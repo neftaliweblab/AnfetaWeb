@@ -468,26 +468,18 @@ export function indexedContentText(item: Pick<SearchResultRow, 'name' | 'descrip
     ""
   ).trim();
 
-  if (isNotion && aiProp) {
-    return aiProp;
-  }
-  if (isNotion) {
-    return (item.contentSnippet || item.pageContent || item.description || "").trim();
-  }
-
   const title = (item.name || "").trim();
   const segments = [
+    aiProp,
     item.description,
     item.contentSnippet,
     item.pageContent,
     item.checklistProgressText,
-    (item as any).aiContent,
-    (item as any)['busqueda palabras por contenido pagina IA'],
     (item as any).summary,
     (item as any).notes,
   ]
     .map(value => value?.trim())
-    .filter(value => value && value !== title);
+    .filter((value): value is string => Boolean(value && value !== title));
   return [...new Set(segments)].join(" ");
 }
 

@@ -32,23 +32,120 @@ export function isOperativeTerminatedResult(item: any): boolean {
 }
 
 export function isBillingItem(item: any): boolean {
+  if (!item) return false;
+  const src = String(item?.sourceName || item?.externalSourceName || item?.path || item?.databaseName || '').toLowerCase();
+  if (src.includes('cobrar') || src.includes('pagar') || src.includes('cobro') || src.includes('pago')) return true;
   return isCobroItem(item) || isPagoItem(item);
 }
 
 export function isCobroItem(item: any): boolean {
   if (!item) return false;
-  const src = String(item?.sourceName || '').toLowerCase();
+  const src = String(item?.sourceName || item?.externalSourceName || item?.path || item?.databaseName || '').toLowerCase();
   const name = String(item?.name || item?.title || item?.Name || item?.Title || '').toLowerCase();
-  const category = PROGRESSIVE_WORKFLOW_PRIMARY ? progressiveStage(name)?.category : null;
-  return category === 'cobro' || /^(?:cobros?|por cobrar)$/.test(src) || /\b(?:zcobrar|ccobro|ccobr)\b/i.test(name) || /^cobrar\s/i.test(name);
+
+  // 1. Si explícitamente tiene prefijo o token de pago, NO es cobro
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)p\b/i.test(name) ||
+    /\b(?:zpagar|ppago|ppaga|ppag|prtuzpagar|aprtuzpagar)\b/i.test(name) ||
+    /^pagar\s/i.test(name) ||
+    /\[pagar\]/i.test(name) ||
+    /\[pagos\]/i.test(name)
+  ) {
+    return false;
+  }
+
+  // 2. Si explícitamente tiene prefijo de revisión (R) y no está en base de cobros, no es cobro
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)r\b/i.test(name) &&
+    !src.includes('cobrar') && !src.includes('cobro')
+  ) {
+    return false;
+  }
+
+  // 3. Categoría del workflow progresivo
+  const stage = progressiveStage(name);
+  if (stage?.category === 'cobro') return true;
+  if (stage?.category === 'pago') return false;
+
+  // 4. Tokens explícitos de cobro en título
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)c\b/i.test(name) ||
+    /\b(?:zcobrar|ccobro|ccobr|ccob|prtuzcobrar|aprtuzcobrar|cobranza)\b/i.test(name) ||
+    /^cobrar\s/i.test(name) ||
+    /\[cobrar\]/i.test(name) ||
+    /\[cobros\]/i.test(name)
+  ) {
+    return true;
+  }
+
+  // 5. Base exclusiva de cobros
+  if (/^(?:cobros?|por cobrar|zcobrar|cobranza|cuentas por cobrar)$/i.test(src)) {
+    return true;
+  }
+
+  // 6. Base combinada "Cobrar y pagar"
+  if (src.includes('cobrar y pagar') || src.includes('cobros y pagos') || (src.includes('cobrar') && src.includes('pagar'))) {
+    if (/\b(?:pago|pagar|proveedor|gasto|egreso|nomina|nómina)\b/i.test(name)) return false;
+    if (/\b(?:mensualidad|hosting|cliente|factura|ingreso|anticipo|cuota|anual|cobro|cobrar)\b/i.test(name)) return true;
+    return true;
+  }
+
+  return false;
 }
 
 export function isPagoItem(item: any): boolean {
   if (!item) return false;
-  const src = String(item?.sourceName || '').toLowerCase();
+  const src = String(item?.sourceName || item?.externalSourceName || item?.path || item?.databaseName || '').toLowerCase();
   const name = String(item?.name || item?.title || item?.Name || item?.Title || '').toLowerCase();
-  const category = PROGRESSIVE_WORKFLOW_PRIMARY ? progressiveStage(name)?.category : null;
-  return category === 'pago' || /^(?:pagos?|por pagar)$/.test(src) || /\b(?:zpagar|ppago|ppaga)\b/i.test(name) || /^pagar\s/i.test(name);
+
+  // 1. Si explícitamente tiene prefijo o token de cobro, NO es pago
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)c\b/i.test(name) ||
+    /\b(?:zcobrar|ccobro|ccobr|ccob|prtuzcobrar|aprtuzcobrar|cobranza)\b/i.test(name) ||
+    /^cobrar\s/i.test(name) ||
+    /\[cobrar\]/i.test(name) ||
+    /\[cobros\]/i.test(name)
+  ) {
+    return false;
+  }
+
+  // 2. Si explícitamente tiene prefijo de revisión (R) y no está en base de pagos, no es pago
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)r\b/i.test(name) &&
+    !src.includes('pagar') && !src.includes('pago')
+  ) {
+    return false;
+  }
+
+  // 3. Categoría del workflow progresivo
+  const stage = progressiveStage(name);
+  if (stage?.category === 'pago') return true;
+  if (stage?.category === 'cobro') return false;
+
+  // 4. Tokens explícitos de pago en título
+  if (
+    /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)p\b/i.test(name) ||
+    /\b(?:zpagar|ppago|ppaga|ppag|prtuzpagar|aprtuzpagar)\b/i.test(name) ||
+    /^pagar\s/i.test(name) ||
+    /\[pagar\]/i.test(name) ||
+    /\[pagos\]/i.test(name)
+  ) {
+    return true;
+  }
+
+  // 5. Base exclusiva de pagos
+  if (/^(?:pagos?|por pagar|zpagar|cuentas por pagar)$/i.test(src)) {
+    return true;
+  }
+
+  // 6. Base combinada "Cobrar y pagar"
+  if (src.includes('cobrar y pagar') || src.includes('cobros y pagos') || (src.includes('cobrar') && src.includes('pagar'))) {
+    if (/\b(?:pago|pagar|proveedor|gasto|egreso|nomina|nómina)\b/i.test(name)) return true;
+    if (/\b(?:mensualidad|hosting|cliente|factura|ingreso|anticipo|cuota|anual|cobro|cobrar)\b/i.test(name)) return false;
+    return false;
+  }
+
+  return false;
 }
 
 export function getItemGroupKey(item: any, groupBy: string): string {

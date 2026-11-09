@@ -133,7 +133,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
     if(!['pending','suspended'].includes(currentWorkflowState) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
-    if(!isDirection(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable o Dirección puede pasar esta actividad.');
+    if(!isDirection(actor)&&!isReviewer(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable, Dirección o un revisor puede pasar esta actividad.');
     const target=normalizePerson(updates.person);
     if(target===normalizePerson(activity.person))throw Error('Selecciona a otro compañero.');
     if(!(await activeTeam()).some(p=>p.name===target))throw Error('El nuevo responsable no tiene un perfil activo.');

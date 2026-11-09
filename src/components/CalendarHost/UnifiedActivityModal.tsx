@@ -194,12 +194,23 @@ export function UnifiedActivityModal({
     const width = modalEl ? modalEl.offsetWidth : 480;
     const height = modalEl ? modalEl.offsetHeight : 500;
     const maxX = Math.max(10, window.innerWidth - width - 10);
-    const maxY = Math.max(10, window.innerHeight - 80);
+    const maxY = Math.max(10, window.innerHeight - height - 10);
     return {
       x: Math.max(10, Math.min(maxX, x)),
       y: Math.max(10, Math.min(maxY, y)),
     };
   }, []);
+
+  // Ajustar posición al redimensionar ventana o zoom
+  useEffect(() => {
+    const handleResize = () => {
+      if (isPinned) {
+        setPosition((prev) => clampPosition(prev.x, prev.y));
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isPinned, clampPosition]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!isPinned) return;
@@ -287,6 +298,18 @@ export function UnifiedActivityModal({
     }
     onClose();
   };
+
+  // Escuchar tecla Escape global para cerrar modal tanto fijado como en hover
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        handleRequestClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [handleRequestClose]);
 
   // Direct Link Copy & Notion Save
   const [copiedLink, setCopiedLink] = useState(false);
@@ -476,13 +499,20 @@ export function UnifiedActivityModal({
       ? "w-[820px] max-w-[96vw]"
       : "w-[490px] max-w-[92vw]";
 
-  // Style positioning
+  // Style positioning con clamp seguro a la pantalla
   const currentPosConfig = getModalPositionConfig();
-  const fallbackTop = currentPosConfig.mode === "center" ? 80 : currentPosConfig.topOffset;
+  const fallbackTop = currentPosConfig.mode === "center" ? 80 : Math.max(12, currentPosConfig.topOffset);
+  const clampedHoverY = hoverPos
+    ? Math.min(Math.max(12, hoverPos.y), typeof window !== "undefined" ? Math.max(12, window.innerHeight - 120) : hoverPos.y)
+    : fallbackTop;
+  const clampedHoverX = hoverPos
+    ? Math.min(Math.max(12, hoverPos.x), typeof window !== "undefined" ? Math.max(12, window.innerWidth - 350) : hoverPos.x)
+    : 20;
+
   const stylePos: React.CSSProperties = isPinned
     ? { top: `${position.y}px`, left: `${position.x}px` }
     : hoverPos
-    ? { top: `${hoverPos.y}px`, left: `${hoverPos.x}px` }
+    ? { top: `${clampedHoverY}px`, left: `${clampedHoverX}px` }
     : { top: `${fallbackTop}px`, left: "20px" };
 
   return (
@@ -495,7 +525,7 @@ export function UnifiedActivityModal({
         data-activity-card="true"
         data-activity-modal={isPinned ? "pinned" : "hover"}
         style={stylePos}
-        className={`fixed z-[120] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md shadow-2xl text-xs text-[#E2E8F0] pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[88vh] flex flex-col overflow-hidden ${widthClass}`}
+        className={`fixed z-[120] rounded-xl border border-[#2B3B4E] bg-[#0E1520]/95 backdrop-blur-md shadow-2xl text-xs text-[#E2E8F0] pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95 max-h-[calc(100vh-24px)] flex flex-col overflow-hidden ${widthClass}`}
       >
         {/* ================= HEADER BAR (DRAGGABLE) ================= */}
         <div
@@ -566,18 +596,16 @@ export function UnifiedActivityModal({
               </button>
             )}
 
-            {/* In pinned mode: Close [X] */}
-            {isPinned && (
-              <button
-                type="button"
-                aria-label="Cerrar ventana"
-                onClick={handleRequestClose}
-                title="Cerrar (Esc)"
-                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+            {/* Botón de cierre accesible en ambos modos (fijado y hover) */}
+            <button
+              type="button"
+              aria-label="Cerrar ventana"
+              onClick={handleRequestClose}
+              title="Cerrar (Esc)"
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

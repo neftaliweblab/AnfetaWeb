@@ -14,7 +14,56 @@ export function TeamAssignmentDialog({activity,mode,onClose,onConfirm}:{activity
  const handoff=mode==='handoff',selected=people.find(p=>p.name===person);
  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');fetch('/api/team',{signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'No se pudo leer el equipo.');const list=(d.people||[]).filter((p:Person)=>p.name!=='Emmanuel');setPeople(list);setPerson(previous=>list.some((p:Person)=>p.name===previous)?previous:'');}).catch(e=>{if(!controller.signal.aborted)setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[retry,handoff,activity.person]);
  useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);
- async function save(){if(submitting.current||!selected)return;submitting.current=true;setBusy(true);setError('');try{if(await onConfirm(person,copy,note,files)===false)throw Error('No se confirmó el cambio. Revisa el aviso del calendario e intenta de nuevo.');onClose();}catch(e){setError(e instanceof Error?e.message:'No se pudo guardar.');}finally{submitting.current=false;setBusy(false);}}
+ async function save() {
+    if (submitting.current || !selected || busy) return;
+    submitting.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await onConfirm(person, copy, note, files);
+      if (res === false) {
+        // Reconciliación: verificar si Notion aplicó el cambio antes de arrojar error
+        try {
+          const snapRes = await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'activity-edit-snapshot', payload: { pageId: activity.pageId } }),
+          });
+          const snapData = await snapRes.json();
+          if (snapRes.ok && snapData?.activity) {
+            const livePerson = normalizePerson(snapData.activity.person);
+            if (livePerson === normalizePerson(person)) {
+              onClose();
+              return;
+            }
+          }
+        } catch {}
+        throw Error('No se confirmó el cambio en el plazo esperado. Los datos se conservan; verifica el calendario o intenta de nuevo.');
+      }
+      onClose();
+    } catch (e) {
+      // Reconciliación si la petición falló por red o timeout pero se aplicó en Notion
+      try {
+        const snapRes = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'activity-edit-snapshot', payload: { pageId: activity.pageId } }),
+        });
+        const snapData = await snapRes.json();
+        if (snapRes.ok && snapData?.activity) {
+          const livePerson = normalizePerson(snapData.activity.person);
+          if (livePerson === normalizePerson(person)) {
+            onClose();
+            return;
+          }
+        }
+      } catch {}
+      setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
  const clean=(s:string)=>s.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
  const visible=people.filter(p=>clean(p.name+' '+p.alias+' '+p.role).includes(clean(query)));
  if(typeof document==='undefined')return null;

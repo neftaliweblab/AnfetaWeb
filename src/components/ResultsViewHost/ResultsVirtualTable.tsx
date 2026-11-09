@@ -154,6 +154,8 @@ interface ResultsTableProps {
   groupBy?: string;
   headerActions?: React.ReactNode;
   onOpenDetailModal?: (item: any) => void;
+  resultSort?: string;
+  onChangeResultSort?: (sort: string) => void;
 }
 
 function ResultsVirtualTableComponent({
@@ -186,6 +188,8 @@ function ResultsVirtualTableComponent({
   onClearSelection,
   onDeleteSelected,
   onOpenDetailModal,
+  resultSort,
+  onChangeResultSort,
   onOpenUploadDropbox,
   onDropFiles,
   showPath = true,
@@ -1417,7 +1421,28 @@ function ResultsVirtualTableComponent({
               style={{ width: `${colWidths.scheduledDate}px` }}
               className="shrink-0 px-1 relative flex items-center justify-between group/col"
             >
-              <span className="truncate">Fecha por hacer</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = resultSort === 'scheduled-desc' ? 'scheduled-asc' : 'scheduled-desc';
+                  onChangeResultSort?.(next);
+                }}
+                className={`truncate flex items-center gap-1 cursor-pointer transition-colors hover:text-[#38BDF8] ${
+                  resultSort?.startsWith('scheduled') ? 'text-[#38BDF8] font-bold' : 'text-slate-400'
+                }`}
+                title={`Fecha por hacer · ${
+                  resultSort === 'scheduled-desc'
+                    ? 'Más reciente / posterior primero (▼). Clic para ordenar más antigua primero.'
+                    : resultSort === 'scheduled-asc'
+                    ? 'Más antigua / anterior primero (▲). Clic para ordenar más reciente primero.'
+                    : 'Clic para ordenar por fecha de calendario'
+                }`}
+              >
+                <span className="truncate">Fecha por hacer</span>
+                {resultSort === 'scheduled-desc' && <span className="text-[10px] text-cyan-400">▼</span>}
+                {resultSort === 'scheduled-asc' && <span className="text-[10px] text-cyan-400">▲</span>}
+                {!resultSort?.startsWith('scheduled') && <span className="text-[9px] text-slate-500 opacity-60">⇅</span>}
+              </button>
               <div
                 onMouseDown={(e) => handleStartColResize("scheduledDate", e)}
                 className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
@@ -1433,7 +1458,28 @@ function ResultsVirtualTableComponent({
               style={{ width: `${colWidths.modifiedDate}px` }}
               className="shrink-0 px-1 relative flex items-center justify-between group/col"
             >
-              <span className="truncate">Fecha modificada</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = resultSort === 'modified-desc' ? 'modified-asc' : 'modified-desc';
+                  onChangeResultSort?.(next);
+                }}
+                className={`truncate flex items-center gap-1 cursor-pointer transition-colors hover:text-[#38BDF8] ${
+                  resultSort?.startsWith('modified') ? 'text-[#38BDF8] font-bold' : 'text-slate-400'
+                }`}
+                title={`Fecha modificada · ${
+                  resultSort === 'modified-desc'
+                    ? 'Más reciente primero (▼). Clic para ordenar más antigua primero.'
+                    : resultSort === 'modified-asc'
+                    ? 'Más antigua primero (▲). Clic para ordenar más reciente primero.'
+                    : 'Clic para ordenar por última edición'
+                }`}
+              >
+                <span className="truncate">Fecha modificada</span>
+                {resultSort === 'modified-desc' && <span className="text-[10px] text-cyan-400">▼</span>}
+                {resultSort === 'modified-asc' && <span className="text-[10px] text-cyan-400">▲</span>}
+                {!resultSort?.startsWith('modified') && <span className="text-[9px] text-slate-500 opacity-60">⇅</span>}
+              </button>
               <div
                 onMouseDown={(e) => handleStartColResize("modifiedDate", e)}
                 className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
@@ -1444,12 +1490,13 @@ function ResultsVirtualTableComponent({
             </div>
           )}
 
-          <div className="w-[62px] shrink-0 text-center flex items-center justify-center gap-1">
+          {/* Acciones y selección: ancho 110px alineado exactamente con las filas */}
+          <div className="w-[110px] shrink-0 flex items-center justify-end gap-2 px-1">
             <span className="text-[10px] text-[#F59E0B]" title="Favoritos">★</span>
             <button
               type="button"
               onClick={onToggleSelectAll}
-              className="hover:text-[#38BDF8] cursor-pointer transition-colors"
+              className="hover:text-[#38BDF8] cursor-pointer transition-colors text-[10px] font-mono"
               title="Seleccionar todas / Deseleccionar todas"
             >
               ✓ / ✕

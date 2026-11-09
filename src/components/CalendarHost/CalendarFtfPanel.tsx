@@ -1,8 +1,9 @@
 "use client";
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { calendarDisplayTitle, calendarDomain, calendarTime, mexicoDate } from '@/services/calendarPresentation';
 import { buildFtfDashboard, canViewFtfDashboard } from '@/services/ftfDashboard';
+import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
 import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User } from 'lucide-react';
 
@@ -20,6 +21,7 @@ export function CalendarFtfPanel({
   date: string;
   onOpenActivity: (activity: NotionCalendarActivity) => void;
 }) {
+  const [showWeek, setShowWeek] = useState(false);
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -196,7 +198,7 @@ export function CalendarFtfPanel({
             {report && (
               <>
                 <span className="rounded bg-cyan-950/60 px-2 py-0.5 border border-cyan-800/60 text-cyan-200 font-mono">
-                  {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h terminadas
+                  {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h con FTF verificado
                 </span>
                 {(report as any).weeklyTargetPerPerson > 0 && (
                   <span
@@ -218,6 +220,9 @@ export function CalendarFtfPanel({
 
         {/* Supervisor, Botón Actualizar y Botón Plegar / Desplegar */}
         <div className="flex items-center gap-2">
+          <button type="button" aria-expanded={showWeek} onClick={() => setShowWeek(value => !value)} className="rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-200">
+            {showWeek ? 'Ocultar historial' : 'Historial semanal'}
+          </button>
           {supervisorReview ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
               <CheckCircle2 size={13} className="text-emerald-400" />
@@ -279,6 +284,8 @@ export function CalendarFtfPanel({
         </div>
       </div>
 
+      {showWeek && <CalendarFtfWeek date={date} />}
+
       {error && (
         <div role="alert" className="mt-2 rounded border border-rose-800/60 bg-rose-950/40 p-2 text-xs text-rose-300">
           {error}
@@ -295,15 +302,8 @@ export function CalendarFtfPanel({
             const isExpanded = !!expandedPeople[person.name];
 
             const percent = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
-            let completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
+            const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
             const lastEditTime = person.lastActivityEdited ? calendarTime(person.lastActivityEdited) : null;
-
-            // Evitar mostrar 00:00 cuando existe una hora real de edición en Notion
-            if ((!completionTime || completionTime === '00:00') && lastEditTime && lastEditTime !== '00:00') {
-              completionTime = lastEditTime;
-            }
-            const hasValidCompletionTime = completionTime && completionTime !== '00:00';
-            const hasValidLastEditTime = lastEditTime && lastEditTime !== '00:00';
 
             return (
               <div
@@ -363,10 +363,10 @@ export function CalendarFtfPanel({
                     {isComplete ? (
                       <span
                         className="inline-flex items-center gap-1 rounded bg-emerald-900/60 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-300 border border-emerald-500/50"
-                        title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : (person.completedAt ? `Registrado: ${person.completedAt}` : undefined)}
+                        title={person.timeKind === 'confirmed' ? 'Confirmación FTF' : 'FTF observado'}
                       >
                         <CheckCircle2 size={11} />
-                        <span>{hasValidCompletionTime ? completionTime : 'Completó'}</span>
+                        <span>{completionTime || 'Completó'}</span>
                       </span>
                     ) : isPending ? (
                       <span className="inline-flex items-center gap-1 rounded bg-amber-900/60 px-1.5 py-0.5 text-[10.5px] font-medium text-amber-300 border border-amber-500/50">
@@ -403,14 +403,12 @@ export function CalendarFtfPanel({
                     1ª act: <strong className="text-slate-300 font-mono">{(person as any).firstActivityStart ? calendarTime((person as any).firstActivityStart) : '--:--'}</strong>
                   </span>
                   <span title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : undefined}>
-                    {isComplete
-                      ? `Fin: ${hasValidCompletionTime ? completionTime : hasValidLastEditTime ? lastEditTime : 'hoy'}`
-                      : hasValidLastEditTime
-                      ? `Último: ${lastEditTime}`
-                      : 'Sin cambios'}
+                    {lastEditTime ? `Última edición: ${lastEditTime}` : 'Sin cambios'}
                   </span>
                   {person.late && <span className="font-semibold text-rose-400">Tarde (&gt;18:00)</span>}
                 </div>
+
+                <div className="mt-1 text-[10px] text-cyan-200">Por asignar en la jornada · {ftfHours(person.pendingAssignmentMinutes)}</div>
 
                 {/* Desplegable de Actividades Pendientes (con scroll interno de max-h-40) */}
                 {person.pending.length > 0 && (

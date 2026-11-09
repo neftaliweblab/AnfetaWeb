@@ -31,7 +31,7 @@ import {PersonalAgendaPane} from './PersonalAgendaPane';
 import {ExportResults} from './ExportResults';
 import {NotionConnectionCheck} from './NotionConnectionCheck';
 import {sortSearchRows,lastSearchTerm,searchMexicoDay,itemMatchesScheduledDay} from '@/lib/searchPresentation';
-import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isCompletedResult, isFinalizedResult} from '@/lib/activeResultsFirst';
+import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isBillingItem, isCompletedResult, isFinalizedResult} from '@/lib/activeResultsFirst';
 import {type ActiveSearchCriterion, type InlineSearchSuggestion, itemMatchesStructuredType} from '@/lib/inlinePredictiveEngine';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
@@ -1598,6 +1598,8 @@ export function ResultsViewHost({
     }
     if (billingFilter === 'only' && paymentFilter === 'only') {
       res = res.filter(it => isCobroItem(it) || isPagoItem(it));
+    } else if (billingFilter === 'exclude' && paymentFilter === 'exclude') {
+      res = res.filter(it => !isCobroItem(it) && !isPagoItem(it) && !isBillingItem(it));
     } else {
       if (billingFilter === 'only') {
         res = res.filter(it => isCobroItem(it));
@@ -2064,6 +2066,8 @@ export function ResultsViewHost({
 <ResultsVirtualTable
           headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}
           currentUser={currentUser}
+          resultSort={resultSort}
+          onChangeResultSort={setResultSort}
           items={pagedItems}
           selectedId={selectedItem?.id || null}
           selectedIds={selectedIds}

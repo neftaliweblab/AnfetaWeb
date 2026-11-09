@@ -75,37 +75,55 @@ function rememberPeople(settings: CalendarSettings, pages: any[]) {
 }
 export async function resolveTeamPersonId(settings: CalendarSettings, person: string) {
   let ids = teamIds.get(settings.notionToken)?.get(person);
-  if (!ids?.size) {
-    // Workspace /users excludes guests. Resolve the actual People ids used by Revisiones.
-    const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
-    const databaseId = NOTION_BASE_DATABASE_IDS[source] || source;
-    const cleanDbId = databaseId.replace(/-/g, '');
+  if (ids?.size) {
+    if (ids.size > 1) throw new Error('Hay varias cuentas de Notion para ' + person + '; configura NOTION_PERSON_IDS para elegir la correcta.');
+    return ids.values().next().value;
+  }
+  // Consultar primero el directorio de usuarios de Notion (/users), rápido y ligero
+  try {
+    const found = new Set<string>();
     let cursor: string | undefined;
     do {
-      try {
-        const data = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', {
-          page_size: 100,
-          ...(cursor ? { start_cursor: cursor } : {})
-        });
-        rememberPeople(settings, data.results || []);
-        if (data.has_more && (!data.next_cursor || data.next_cursor === cursor)) break;
-        cursor = data.has_more ? data.next_cursor : undefined;
-      } catch {
-        break;
+      const users = await notionRequest(settings, 'users?page_size=100' + (cursor ? '&start_cursor=' + encodeURIComponent(cursor) : ''));
+      for (const user of users.results || []) {
+        if (user.type === 'person' && (normalizePerson(user.name) === person || normalizePerson(user.person?.email) === person)) {
+          found.add(user.id);
+        }
       }
+      cursor = users.has_more ? users.next_cursor : undefined;
     } while (cursor);
-    ids = teamIds.get(settings.notionToken)?.get(person);
+    if (found.size > 0) {
+      if (!teamIds.has(settings.notionToken)) teamIds.set(settings.notionToken, new Map());
+      teamIds.get(settings.notionToken)!.set(person, found);
+      if (found.size > 1) throw new Error('Hay varias cuentas de Notion para ' + person + '; configura NOTION_PERSON_IDS para elegir la correcta.');
+      return found.values().next().value;
+    }
+  } catch (err: any) {
+    if (err?.message?.includes('varias cuentas')) throw err;
   }
-  if (!ids?.size) {
-    const found=new Set<string>();let cursor:string|undefined;
-    do {
-      const users=await notionRequest(settings,'users?page_size=100'+(cursor?'&start_cursor='+encodeURIComponent(cursor):''));
-      for(const user of users.results || []) if(user.type==='person'&&(normalizePerson(user.name)===person||normalizePerson(user.person?.email)===person))found.add(user.id);
-      if(users.has_more&&(!users.next_cursor||users.next_cursor===cursor))throw new Error('Directorio de usuarios incompleto.');
-      cursor=users.has_more?users.next_cursor:undefined;
-    }while(cursor);
-    ids=found;teamIds.get(settings.notionToken)?.set(person,found);
-  }
+  // Si no se encontró en /users (ej. usuarios invitados), escanear la base de Revisiones con límite seguro (hasta 500 páginas)
+  const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
+  const databaseId = NOTION_BASE_DATABASE_IDS[source] || source;
+  const cleanDbId = databaseId.replace(/-/g, '');
+  let cursor: string | undefined;
+  let pagesChecked = 0;
+  do {
+    try {
+      const data = await notionRequest(settings, `databases/${cleanDbId}/query`, 'POST', {
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {})
+      });
+      rememberPeople(settings, data.results || []);
+      pagesChecked++;
+      ids = teamIds.get(settings.notionToken)?.get(person);
+      if (ids?.size) break;
+      if (pagesChecked >= 5 || (data.has_more && (!data.next_cursor || data.next_cursor === cursor))) break;
+      cursor = data.has_more ? data.next_cursor : undefined;
+    } catch {
+      break;
+    }
+  } while (cursor);
+  ids = teamIds.get(settings.notionToken)?.get(person);
   if (ids && ids.size > 1) throw new Error('Hay varias cuentas de Notion para ' + person + '; configura NOTION_PERSON_IDS para elegir la correcta.');
   return ids?.values().next().value;
 }

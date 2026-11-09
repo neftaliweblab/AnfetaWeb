@@ -22,7 +22,7 @@ import {archiveNotionPage} from '@/services/notionDeletion';
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
-import {buildFtfDashboard,canViewFtfDashboard} from '@/services/ftfDashboard';
+import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,shiftFtfDate} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
@@ -247,7 +247,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
       ) {
         let extractedVal = "";
         if (Array.isArray(propVal.rich_text)) {
-          extractedVal = propVal.rich_text.map((t: any) => t?.plain_text || t?.text?.content || "").join("").trim();
+          extractedVal = propVal.rich_text.map((t: any) => t?.plain_text || t?.text?.content || "").join(" ").trim();
         } else if (Array.isArray(propVal[type])) {
           extractedVal = propVal[type].map((t: any) => t?.plain_text || t?.text?.content || t?.name || "").join(" ").trim();
         } else if (type === "formula" && propVal.formula) {
@@ -543,11 +543,23 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       try{
         const day=searchParams.get('date')||mexicoDate();
         if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+'T12:00:00Z')))throw Error('Fecha inválida.');
-        const settings=getSettings(),tomorrow=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
-        const {activeTeam}=await import('@/services/teamDirectory');
-        const [pages,people]=await Promise.all([queryCalendarPages(settings,day,tomorrow,true),activeTeam()]);
-        const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page)},0);});
-        let warning='';
+        const weekly=searchParams.get('scope')==='week';
+        if(weekly && day>mexicoDate())return NextResponse.json({error:'La semana solicitada aún no comienza.'},{status:400});
+        const start=weekly?ftfWeekStart(day):day;
+        const end=shiftFtfDate(start,weekly?7:1);
+        const settings=getSettings();
+        const {activeTeam}=await import('@/services/teamDirectory');
+        const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,!weekly),activeTeam()]);
+        const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page)},0);});
+        let warning='';
+        if(weekly){
+          const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
+          const [state,presence]=await Promise.all([
+            readUserState(settings,'John'),
+            readFtfPresenceHistory(start,end).catch(()=>{warning='Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';return [];}),
+          ]);
+          return NextResponse.json({...buildFtfWeek(actor,start,people,activities,state.values?.receipts?.ftfCompletions||{},presence),warning},{headers:{'Cache-Control':'no-store'}});
+        }
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const state=await readUserState(settings,'John');
         return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{}),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
@@ -3283,7 +3295,7 @@ async function GETRaw(req:NextRequest){
 }
 export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
 export async function GET(req:NextRequest){
- const response=await GETRaw(req);if(!response.ok||!response.headers.get('content-type')?.includes('application/json')||new URL(req.url).searchParams.get('type')==='file-preview')return response;
+ const response=await GETRaw(req);if(!response.ok||!response.headers.get('content-type')?.includes('application/json')||['file-preview','ftf-dashboard'].includes(new URL(req.url).searchParams.get('type')||''))return response;
  const token=resolveNotionToken(req);
  const settings={...getSettings(),notionToken:token};
  const sourceKey=notionSourceKey(settings);

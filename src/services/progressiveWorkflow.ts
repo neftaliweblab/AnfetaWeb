@@ -13,13 +13,15 @@ const phases={
  z:{state:'completed',label:'Cerrada · cobrada/pagada',financial:'settled'},
 } as const;
 export function progressiveStage(text:string){
- const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)(?:dominio|domi|[rRsSdD])?(?![\p{L}\p{N}_@.\/-])/iu);
+ const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)(?:dominio|domi|[rRsSdDcCbBpP])?(?![\p{L}\p{N}_@.\/-])/iu);
  if(match){
    const key=match[1].toLowerCase() as keyof typeof phases;
    const rawSuffix=(match[0].slice(match[1].length)||'').toLowerCase();
    const isDominio=rawSuffix==='d'||rawSuffix.startsWith('domi');
-   const suffix=isDominio?'D':rawSuffix.toUpperCase();
-   const category=isDominio?'dominio':suffix==='S'?'software':suffix==='D'?'dominio':'revision';
+   const isCobro=rawSuffix==='c'||rawSuffix.startsWith('cob');
+   const isPago=rawSuffix==='p'||rawSuffix.startsWith('pag');
+   const suffix=isDominio?'D':isCobro?'C':isPago?'P':rawSuffix.toUpperCase();
+   const category=isDominio?'dominio':isCobro?'cobro':isPago?'pago':suffix==='S'?'software':'revision';
    return {code:key+suffix,category,...phases[key],token:match[0],index:match.index!};
  }
  const wa=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(AA)(?![\p{L}\p{N}_@.\/-])/u);

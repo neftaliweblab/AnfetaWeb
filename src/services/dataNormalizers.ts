@@ -9,6 +9,38 @@ function resolveAssignedPerson(text:string,keys:string[]=[]):string {
   return explicit||inferActivityPerson(text)||'Sin asignar';
 }
 
+export function extractAiContent(raw: any): string {
+  if (!raw || typeof raw !== "object") return "";
+  if (typeof raw.aiContent === "string" && raw.aiContent.trim()) return raw.aiContent.trim();
+  if (typeof raw.AiContent === "string" && raw.AiContent.trim()) return raw.AiContent.trim();
+
+  const direct =
+    raw["busqueda palabras por contenido pagina IA"] ||
+    raw["busqueda palabras por contenido pagina ia"] ||
+    raw["búsqueda palabras por contenido página IA"] ||
+    raw["Búsqueda palabras por contenido página IA"] ||
+    raw["Búsqueda palabras por contenido pagina"] ||
+    raw["busqueda palabras por contenido pagina"] ||
+    raw["búsqueda palabras por contenido"] ||
+    raw["busqueda palabras por contenido"] ||
+    raw.busqueda_palabras_por_contenido_pagina_ia;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  for (const [key, val] of Object.entries(raw)) {
+    if (typeof val !== "string" || !val.trim()) continue;
+    const norm = key.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    if (
+      norm === "busqueda palabras por contenido pagina ia" ||
+      (norm.includes("busqueda") && norm.includes("contenido")) ||
+      (norm.includes("palabras") && norm.includes("contenido")) ||
+      (norm.includes("contenido") && norm.includes("ia"))
+    ) {
+      return val.trim();
+    }
+  }
+  return "";
+}
+
 export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
   const filePath = raw.FullPath || raw.Target || raw.path || "";
   const name = raw.Name || raw.name || path.basename(filePath) || `Item-${idx}`;
@@ -35,19 +67,7 @@ export function normalizeSearchRow(raw: any, idx: number): SearchResultRow {
     resolveAssignedPerson(name, assignmentKeys);
 
   const rawSearchText = raw.SearchText || raw.searchText || "";
-  const aiProp =
-    raw["busqueda palabras por contenido pagina IA"] ||
-    raw["busqueda palabras por contenido pagina ia"] ||
-    raw["búsqueda palabras por contenido página IA"] ||
-    raw["Búsqueda palabras por contenido pagina"] ||
-    raw["busqueda palabras por contenido pagina"] ||
-    raw["busqueda palabras por contenido"] ||
-    raw["búsqueda palabras por contenido"] ||
-    raw.busqueda_palabras_por_contenido_pagina_ia ||
-    raw.aiContent ||
-    raw.AiContent ||
-    "";
-  const aiContent = typeof aiProp === "string" ? aiProp.trim() : "";
+  const aiContent = extractAiContent(raw);
   const combinedSearchText = [rawSearchText, name, assignedPerson, aiContent, ...assignmentKeys]
     .filter(Boolean)
     .join(" ");
@@ -143,9 +163,9 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     ),
     workedMinutes: raw.WorkedMinutes ?? raw.workedMinutes ?? 0,
     estimatedWorkMinutes: raw.EstimatedWorkMinutes ?? raw.estimatedWorkMinutes ?? 0,
-    aiContent: (raw.aiContent || raw["busqueda palabras por contenido pagina IA"] || raw["busqueda palabras por contenido pagina ia"] || raw["búsqueda palabras por contenido página IA"] || raw["Búsqueda palabras por contenido pagina"] || "").trim(),
-    'busqueda palabras por contenido pagina IA': (raw["busqueda palabras por contenido pagina IA"] || raw["busqueda palabras por contenido pagina ia"] || raw["búsqueda palabras por contenido página IA"] || raw["Búsqueda palabras por contenido pagina"] || raw.aiContent || "").trim(),
-    contentSnippet: (raw.contentSnippet || raw.ContentSnippet || raw.aiContent || raw.Description || raw.description || "").trim().slice(0, 300),
-    pageContent: (raw.pageContent || raw.PageContent || raw.aiContent || "").trim(),
+    aiContent: extractAiContent(raw),
+    'busqueda palabras por contenido pagina IA': extractAiContent(raw),
+    contentSnippet: (raw.contentSnippet || raw.ContentSnippet || extractAiContent(raw) || raw.Description || raw.description || "").trim().slice(0, 300),
+    pageContent: (raw.pageContent || raw.PageContent || extractAiContent(raw) || "").trim(),
   };
 }

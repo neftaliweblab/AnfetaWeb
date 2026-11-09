@@ -2,7 +2,7 @@ const fs=require('fs'),path=require('path'),Module=require('module'),assert=requ
 const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
 Module._resolveFilename=function(name,parent,...rest){if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return resolve.call(this,name,parent,...rest);};
 Module._extensions['.ts']=(m,p)=>m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,p);
-const {buildFtfDashboard,canViewFtfDashboard}=require(root+'/src/services/ftfDashboard.ts');
+const {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart}=require(root+'/src/services/ftfDashboard.ts');
 for(const actor of ['John','jjohn','Neftali','Neftalí','nneft','nnetf'])assert.equal(canViewFtfDashboard(actor),true);
 for(const actor of ['Genaro','Karla','Andrade'])assert.equal(canViewFtfDashboard(actor),true);
 for(const actor of ['','Sin asignar'])assert.equal(canViewFtfDashboard(actor),false);
@@ -19,6 +19,28 @@ for(const stamp of ['2026-10-15T10:00:00-06:00','invalid']){report=buildFtfDashb
 for(const [time,late] of [['18:00:00',false],['18:00:01',true]]){const r=buildFtfDashboard('John',day,people,[base],{['ftf:'+day+':Neftali']:{...receipt,updated:day+'T'+time+'-06:00',timeKind:'confirmed'}},now);assert.equal(r.people[0].status,'complete');assert.equal(r.people[0].late,late);assert.equal(r.late,late?1:0);}
 report=buildFtfDashboard('John',day,people,[{...base,ftfAvailable:false}],records,now);assert.equal(report.people[0].pending.length,1);
 report=buildFtfDashboard('John',day,people,[base,base],records,now);assert.equal(report.people[0].total,1);
+// Merge overlaps, clip the workday and omit suspended, temporary and mirrored work.
+const schedule=(id,start,end,extra={})=>({...base,pageId:id,start:day+'T'+start+':00-06:00',end:day+'T'+end+':00-06:00',...extra});
+const coverage=buildFtfDashboard('John',day,people,[
+  schedule('morning','08:00','12:00'),
+  schedule('overlap','11:00','14:00'),
+  schedule('afternoon','16:00','19:00'),
+  schedule('suspended','14:00','16:00',{isSuspended:true}),
+  schedule('mirror','14:00','16:00',{isReviewMirror:true}),
+  schedule('response','14:00','16:00',{title:'[RESPUESTA] Revisión aprobada'}),
+],records,now);
+assert.equal(coverage.people.find(row=>row.name==='Neftali').pendingAssignmentMinutes,120);
+assert.equal(coverage.people.find(row=>row.name==='John').pendingAssignmentMinutes,480);
+assert.equal(ftfWeekStart('2026-11-01'),'2026-10-26');
+const signal={day,person:'Neftali',firstSeen:day+'T10:12:00-06:00',lastSeen:day+'T17:04:00-06:00'};
+const week=buildFtfWeek('John','2026-10-12',people,[base],records,[signal],now);
+assert.equal(week.days.length,5);
+assert.equal(week.days[0].people[0].firstSeen,null);
+assert.equal(week.days[4].people[0].firstSeen,signal.firstSeen);
+assert.equal(week.days[4].people[0].lastSeen,signal.lastSeen);
+assert.equal(week.days[4].people[0].recordedAt,receipt.updated);
+assert.equal(week.days[4].people[0].timeKind,'observed');
+
 // API authorization uses the authenticated actor, ignoring a forged person query.
 const NativeDate=Date;
 global.Date=class extends NativeDate{constructor(...args){if(!args.length)super(now.getTime());else super(...args);}static now(){return now.getTime();}};
@@ -28,9 +50,12 @@ Module._load=function(name,parent,...rest){
   if(name==='@/services/serverAuth')return {requireActor:req=>{const actor=req.headers.get('x-test-user');if(!actor)throw Error('Inicia sesión para continuar.');return actor;},assertSameOrigin:()=>{}};
   if(name==='@/services/supabaseServer')return {supabaseConfigured:()=>false};
   if(name==='@/services/serverSettings')return {getSettings:()=>({notionToken:'TEST_ONLY',currentUser:'John'})};
+  if(name==='@/services/ftfPresenceHistory')return {readFtfPresenceHistory:async()=>[signal]};
   if(name==='@/services/teamDirectory')return {activeTeam:async()=>{reads++;return people;}};
   if(name==='@/services/notionCalendar')return {...load.call(this,name,parent,...rest),queryCalendarPages:async(_,start,end,fresh)=>{
-    reads++;assert.equal(start,day);assert.equal(end,'2026-10-17');assert.equal(fresh,true);if(failQuery)throw Error('Lectura no disponible');
+    reads++;
+    if(start==='2026-10-12'){assert.equal(end,'2026-10-19');assert.equal(fresh,false);}
+    else{assert.equal(start,day);assert.equal(end,'2026-10-17');assert.equal(fresh,true);}if(failQuery)throw Error('Lectura no disponible');
     return [{id:'a',properties:{Name:{type:'title',title:[{plain_text:'prtuzREVISION nneft Trabajo'}]},Responsable:{type:'select',select:{name:'Neftali'}},'Fecha POR Hacer':{type:'date',date:{start:base.start}},'Check FTF Pasos Verificados Hoy':{type:'checkbox',checkbox:true}}}];
   }};
   if(name==='@/services/ftfNotifications')return {recordFtfCompletions:async()=>{}};
@@ -43,8 +68,15 @@ global.fetch=async()=>{reads++;throw Error('No live calls in tests');};
  const {GET}=require(root+'/src/app/api/data/route.ts');
  const anonymous=await GET(new Request('http://localhost/api/data?type=ftf-dashboard'));assert.equal(anonymous.status,401);assert.equal(reads,0);
  for(const actor of ['Genaro','Karla','Andrade']){const response=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&person=John&date='+day,{headers:{'x-test-user':actor}}));assert.equal(response.status,200);}
+
  const authorized=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':'jjohn'}}));assert.equal(authorized.status,200);const data=await authorized.json();assert.equal(data.completed,1);assert.equal(data.people.length,3);assert.equal(data.people[0].total,1);
  for(const actor of ['Neftali','Neftalí','nneft','nnetf']){const response=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':actor}}));assert.equal(response.status,200);const preview=await response.json();assert.deepEqual(preview.people,data.people);assert.equal(preview.completed,data.completed);}
+ const weekly=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&scope=week&date='+day,{headers:{'x-test-user':'John'}}));
+ assert.equal(weekly.status,200);
+ const history=await weekly.json();
+ assert.equal(history.start,'2026-10-12');
+ assert.equal(history.days.at(-1).people[0].lastSeen,signal.lastSeen);
+ assert.equal(Object.hasOwn(history.days.at(-1).people[0],'pending'),false,'weekly response only sends summaries');
  failQuery=true;const unavailable=await GET(new Request('http://localhost/api/data?type=ftf-dashboard&date='+day,{headers:{'x-test-user':'John'}}));assert.equal(unavailable.status,502);assert.match((await unavailable.json()).error,/Lectura no disponible/);
- console.log('OK: panel FTF John y Neftalí (incluidos aliases), mismo historial del equipo, otros usuarios 403, sesión obligatoria, corte 18:00 y pendientes independientes del checklist. Servicios simulados.');
+ console.log('OK: panel FTF John y Neftalí (incluidos aliases), mismo historial del equipo, equipo autenticado, semana acotada, señales históricas, empalmes y horas por asignar. Servicios simulados.');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{global.Date=NativeDate;});
