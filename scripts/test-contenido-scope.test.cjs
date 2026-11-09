@@ -300,3 +300,39 @@ console.log('OK: All matching pages with "cliente" in AI content property correc
 
 
 
+const {readNotionContentProperty, notionContentLookupTerm} = require('../src/lib/notionContentProperty.ts');
+const {applyNotionStates} = require('../src/lib/applyNotionStates.ts');
+const keywordProperty = 'Busqueda palabras por contenido pagina';
+const content = readNotionContentProperty({
+  [keywordProperty]: {type: 'rich_text', rich_text: [{plain_text: 'bitá'}, {text: {content: 'cora, jornada'}}]},
+});
+assert.equal(content, 'bitácora, jornada');
+assert.equal(readNotionContentProperty({[keywordProperty]: {type:'rich_text',rich_text:[]}}), '');
+assert.equal(readNotionContentProperty({Name:{type:'title',title:[]}}), undefined);
+assert.equal(notionContentLookupTerm('bitacora semanal'), 'bitacora');
+assert.equal(notionContentLookupTerm('bitacora OR jornada'), '');
+const keywordRow = {
+  id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  source: 'Notion',
+  name: 'Agenda de equipo',
+  aiContent: 'obsoleto',
+  contentSnippet: 'obsoleto',
+  pageContent: 'Texto real obsoleto obsoleto',
+  searchText: 'Agenda de equipo obsoleto',
+  serverModified: '2026-11-09T16:00:00Z',
+};
+const updated = applyNotionStates([keywordRow], [{id:keywordRow.id,aiContent:content,serverModified:'2026-11-09T16:01:00Z'}])[0];
+assert.equal(updated.pageContent, 'Texto real');
+for (const q of ['bitácora','bitacora']) assert.equal(matchesFlexibleOrQuotedQuery(updated,q,{contentOnly:true}), true);
+assert.equal(matchesFlexibleOrQuotedQuery(updated,'obsoleto',{contentOnly:true}), false);
+const cleared = applyNotionStates([updated], [{id:keywordRow.id,aiContent:'',serverModified:'2026-11-09T16:02:00Z'}])[0];
+assert.equal(matchesFlexibleOrQuotedQuery(cleared,'bitácora',{contentOnly:true}), false);
+assert.equal(matchesFlexibleOrQuotedQuery(cleared,'texto real',{contentOnly:true}), true);
+assert.equal(applyNotionStates([cleared], [{id:keywordRow.id,aiContent:content,serverModified:'2026-11-09T16:01:00Z'}])[0],cleared);
+console.log('OK propiedad real de contenido, fragmentos, tildes y deltas de edición o borrado.');
+const staleSnapshot = retainSearchResults([cleared], {items:[{...keywordRow, aiContent:'obsoleto'}],loadingIndex:true})[0];
+assert.equal(staleSnapshot.aiContent, '');
+assert.equal(matchesFlexibleOrQuotedQuery(staleSnapshot,'obsoleto',{contentOnly:true}),false);
+const realBody = applyNotionStates([{...updated,pageContent:content,pageContentFromBlocks:true}], [{id:keywordRow.id,aiContent:'',serverModified:'2026-11-09T16:02:00Z'}])[0];
+assert.equal(realBody.pageContent, content);
+console.log('OK el índice atrasado respeta el vaciado confirmado y el cuerpo leído se conserva.');

@@ -1,3 +1,4 @@
+import {readNotionContentProperty} from '../lib/notionContentProperty';
 import {notionStatusValue} from './notionStatusValue';
 import {activityFinancialFields} from './activityFinancialFields';
 import {assignedPerson,calendarStatusField} from './notionCalendar';
@@ -402,7 +403,8 @@ export async function processNotionWebhook(
           name: parsed.title,
           assignedPerson: parsed.person,
           updateStatus: parsed.status,
-          scheduledDate: parsed.dateStart,scheduledEnd:calendarActivityFromPage(pageData,options.calendarSourceId)?.end,...ftfState(pageData),calendarActivity:calendarActivityFromPage(pageData,options.calendarSourceId)
+          aiContent: readNotionContentProperty(pageData.properties),
+            scheduledDate: parsed.dateStart,scheduledEnd:calendarActivityFromPage(pageData,options.calendarSourceId)?.end,...ftfState(pageData),calendarActivity:calendarActivityFromPage(pageData,options.calendarSourceId)
         } : null
       });
       results.push({ pageId: cleanId, state: 'active', applied: recorded.applied });
@@ -463,6 +465,7 @@ export async function processNotionWebhook(
             name: parsed.title,
             assignedPerson: parsed.person,
             updateStatus: parsed.status,
+            aiContent: readNotionContentProperty(pageData.properties),
             scheduledDate: parsed.dateStart,scheduledEnd:calendarActivityFromPage(pageData,options.calendarSourceId)?.end,...ftfState(pageData),calendarActivity:calendarActivityFromPage(pageData,options.calendarSourceId)
           }
         });

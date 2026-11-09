@@ -22,6 +22,8 @@ import {archiveNotionPage} from '@/services/notionDeletion';
 import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
+import {notionContentLookupTerm, readNotionContentProperty, replaceNotionContentProperty} from '@/lib/notionContentProperty';
+import {lookupNotionContent} from '@/services/notionContentLookup';
 import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,shiftFtfDate} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
@@ -186,14 +188,13 @@ function extractNotionPageData(page: any): LiveNotionPage {
   let datePriority = -1;
   let person = "";
   let domain = "";
-  let aiContent = "";
+  const aiContent = readNotionContentProperty(page.properties) ?? "";
 
   if (page.properties) {
     for (const [propName, propVal] of Object.entries(page.properties as Record<string, any>)) {
       if (!propVal) continue;
       const type = propVal.type;
       const lowerName = propName.toLowerCase();
-      const normName = lowerName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       if (type === "checkbox" && /lock|bloquead/i.test(propName) && propVal.checkbox) isLocked = true;
 
       // Title
@@ -235,34 +236,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
         }
       }
 
-      // Búsqueda palabras por contenido página IA
-      if (
-        normName === "busqueda palabras por contenido pagina ia" ||
-        (normName.includes("busqueda") && normName.includes("contenido")) ||
-        (normName.includes("palabras") && normName.includes("contenido")) ||
-        normName.includes("contenido pagina ia") ||
-        normName.includes("contenido pagina") ||
-        normName.includes("palabras por contenido") ||
-        (normName.includes("contenido") && normName.includes("ia"))
-      ) {
-        let extractedVal = "";
-        if (Array.isArray(propVal.rich_text)) {
-          extractedVal = propVal.rich_text.map((t: any) => t?.plain_text || t?.text?.content || "").join(" ").trim();
-        } else if (Array.isArray(propVal[type])) {
-          extractedVal = propVal[type].map((t: any) => t?.plain_text || t?.text?.content || t?.name || "").join(" ").trim();
-        } else if (type === "formula" && propVal.formula) {
-          extractedVal = String(propVal.formula.string ?? propVal.formula.number ?? "").trim();
-        } else if (propVal[type]?.name) {
-          extractedVal = String(propVal[type].name).trim();
-        } else if (typeof propVal[type] === "string" || typeof propVal[type] === "number") {
-          extractedVal = String(propVal[type]).trim();
-        } else if (typeof propVal.string === "string") {
-          extractedVal = propVal.string.trim();
-        }
-        if (extractedVal) {
-          aiContent = aiContent ? `${aiContent} ${extractedVal}` : extractedVal;
-        }
-      }
+
     }
   }
 
@@ -887,6 +861,27 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       const result = await scanResponsePages(settings, snapshot);
       return NextResponse.json(result);
     }
+    if (type === 'notion-content-lookup') {
+      const term = notionContentLookupTerm(searchParams.get('q') || '');
+      if (!term) return NextResponse.json({items: [], partial: false});
+      const token = resolveNotionToken(req, searchParams);
+      if (!token) return NextResponse.json({error: 'Configura el acceso a Notion para consultar contenido.'}, {status: 503});
+      const result = await lookupNotionContent({...getSettings(), notionToken: token}, term);
+      const items = result.pages.flatMap(page => {
+        const live = extractNotionPageData(page);
+        if (!live.id || !live.aiContent || /^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(live.title) ||
+          isExpiredResponsePage({name: live.title, serverModified: live.lastEdited})) return [];
+        return [{
+          id: live.id, externalId: live.id, externalUrl: live.url, path: live.url, target: live.url,
+          name: live.title, source: 'Notion', sourceName: live.sourceName, type: 'PAGE',
+          folder: '', extension: '', sizeBytes: 0, serverModified: live.lastEdited,
+          modifiedLocalDate: live.lastEdited?.slice(0, 10) || '', assignedPerson: live.person,
+          scheduledDate: live.dateStart, scheduledEnd: live.dateEnd, updateStatus: live.status,
+          aiContent: live.aiContent, contentPropertyObserved: true, domainChip: live.domain, ftfVerified: live.ftfVerified, ftfAvailable: live.ftfAvailable,
+        }];
+      });
+      return NextResponse.json({items: uniqueIndex(items), partial: result.partial}, {headers: {'Cache-Control': 'no-store'}});
+    }
     if (type === "search-index") {
       // The foreground serves pages from snapshots; full reads run after the response.
       const token = resolveNotionToken(req, searchParams);
@@ -990,12 +985,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           if (live.dateStart||live.sourceName==='Cobrar y pagar') row.scheduledDate = live.dateStart+(live.dateEnd?' - '+live.dateEnd:'');
           if (live.lastEdited) row.serverModified = live.lastEdited;
           if(live.person)row.assignedPerson=live.person;
-          if (live.aiContent) {
-            row.aiContent = live.aiContent;
-            row['busqueda palabras por contenido pagina IA'] = live.aiContent;
-            row.pageContent = [row.pageContent, live.aiContent].filter(Boolean).join(" ");
-            if (!row.contentSnippet) row.contentSnippet = live.aiContent.slice(0, 300);
-          }
+          if (typeof live.aiContent === 'string') {
+            Object.assign(row, replaceNotionContentProperty(row, live.aiContent));
+          }
           row.searchText = [row.contentSnippet, row.description, row.name, live.title, live.person, live.domain, live.aiContent].filter(Boolean).join(" ");
         }
 
@@ -1740,8 +1732,8 @@ async function POSTLive(req: NextRequest) {
             confirmedDeletedPages.delete(settings.notionToken+':'+id);
             const live=extractNotionPageData(page);
             liveNotionOverrides.set(live.id,live);
-            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)}});}catch{}
-            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)});
+            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)}});}catch{}
+            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)});
           }
         }catch(err:any){
           const is404=err?.status===404||/404|no se puede verificar|faltar acceso/i.test(err?.message||'');

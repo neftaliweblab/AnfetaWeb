@@ -9,6 +9,8 @@ import {SearchShortcutSettings} from "./SearchShortcutSettings";
 import {useSearchTabShortcuts} from "./useSearchTabShortcuts";
 import {matchesResultStatus} from '@/lib/resultIndicators';
 import {findSearchTab} from '@/lib/searchTabsStorage';
+import {readApiJson} from '@/lib/readApiJson';
+import {notionContentLookupTerm} from '@/lib/notionContentProperty';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {filterDeletedPages,isDeletedPagesEvent,rememberDeletedPages,pageIdentity,DELETED_PAGES_EVENT,deletedPages} from '@/lib/deletedPages';
@@ -601,6 +603,62 @@ export function ResultsViewHost({
   const [activityAction,setActivityAction]=useState<{item:any;mode:SearchActivityAction;position:{x:number;y:number}}|null>(null);
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
+  const [contentLookup, setContentLookup] = useState<{key: string; message: string} | null>(null);
+  const liveContentQuery = isActive && tabsOwner === tabsKey && selectedScope === 'Contenido' &&
+    query === deferredQuery && !searchOptions.matchRegex && notionContentLookupTerm(deferredQuery)
+    ? deferredQuery.trim()
+    : '';
+  const liveContentKey = currentUser + ':' + liveContentQuery;
+
+  useEffect(() => {
+    if (!liveContentQuery) return;
+    const controller = new AbortController();
+    let started = false;
+    const lookup = async () => {
+      if (started || controller.signal.aborted || document.hidden) return;
+      started = true;
+      setContentLookup({key: liveContentKey, message: 'Consultando palabras en Notion…'});
+      try {
+        let token = '';
+        try {token = JSON.parse(localStorage.getItem('anfeta_settings') || '{}').notionToken || '';} catch {}
+        const response = await fetch('/api/data?type=notion-content-lookup&q=' + encodeURIComponent(liveContentQuery), {
+          cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(14000)]),
+          headers: token ? {'x-notion-token': token} : {},
+        });
+        const data = await readApiJson(response);
+        if (controller.signal.aborted) return;
+        const incoming: SearchResultRow[] = Array.isArray(data.items) ? data.items : [];
+        if (incoming.length) {
+          const updates = incoming.map(row => ({
+            id: row.externalId || row.id,
+            name: row.name,
+            aiContent: row.aiContent,
+            assignedPerson: row.assignedPerson,
+            scheduledDate: row.scheduledDate,
+            scheduledEnd: row.scheduledEnd,
+            updateStatus: row.updateStatus,
+            serverModified: row.serverModified,
+          }));
+          setItems(previous => {
+            const updated = applyNotionStates(previous, updates);
+            const known = new Set(updated.filter(isNotionItem).map(row => cleanPageId(row.externalId || row.id)));
+            return filterDeletedPages([...updated, ...incoming.filter(row => !known.has(cleanPageId(row.externalId || row.id)))], currentUser);
+          });
+        }
+        setContentLookup(data.partial ? {key: liveContentKey, message: 'Consulta parcial de Notion. Los resultados del índice siguen disponibles.'} : null);
+      } catch {
+        if (!controller.signal.aborted) setContentLookup({key: liveContentKey, message: 'Notion no respondió. Se muestran los resultados del índice.'});
+      }
+    };
+    const timer = setTimeout(lookup, 450);
+    document.addEventListener('visibilitychange', lookup);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', lookup);
+    };
+  }, [currentUser, liveContentQuery, liveContentKey]);
   useEffect(()=>{const receive=(event:Event)=>{const detail=(event as CustomEvent).detail;if(detail?.owner!==currentUser||!detail.row?.id)return;setItems(previous=>[detail.row,...previous.filter(row=>row.id!==detail.row.id)]);};window.addEventListener('anfeta_note_created',receive);return()=>window.removeEventListener('anfeta_note_created',receive);},[currentUser]);
   useEffect(() => {
     const handleRenamed = (event: Event) => {
@@ -635,6 +693,7 @@ export function ResultsViewHost({
             return {
               ...it,
               pageContent: content,
+              pageContentFromBlocks: Array.isArray(detail.blocks) && detail.blocks.length > 0,
               contentSnippet: content.slice(0, 300),
             };
           }
@@ -1986,6 +2045,9 @@ export function ResultsViewHost({
                       ? `Búsqueda en cuerpo interno: buscando "${deferredQuery}" en notas, descripciones y texto indexado.`
                       : "Mostrando páginas y archivos que tienen texto indexado."}
                   </span>
+                  {liveContentQuery && contentLookup?.key === liveContentKey && (
+                    <span role="status" className="text-slate-300">{contentLookup.message}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {deferredQuery.trim() && (

@@ -20,6 +20,8 @@ export interface SearchResultRow {
   assignmentKeys?: string[];
   notionEditedUtc?: string;
   pageContent?: string;
+  pageContentFromBlocks?: boolean;
+  contentPropertyObserved?: boolean;
   aiContent?: string;
   'busqueda palabras por contenido pagina IA'?: string;
   description?: string;

@@ -1,3 +1,4 @@
+import {replaceNotionContentProperty} from './notionContentProperty';
 import {pageIdentity} from './deletedPages';
 
 // Only a completed, healthy index can remove existing results.
@@ -16,12 +17,22 @@ export function retainSearchResults(previous:any[],data:any){
   if(old.isReviewMirror&&!item.isReviewMirror)return item;
   const preferOld = Date.parse(old.serverModified||'')>Date.parse(item.serverModified||'1970-01-01');
   const base = preferOld ? { ...item, ...old } : { ...old, ...item };
-  const aiContent = item.aiContent || old.aiContent || item['busqueda palabras por contenido pagina IA'] || old['busqueda palabras por contenido pagina IA'] || item['búsqueda palabras por contenido página IA'] || old['búsqueda palabras por contenido página IA'] || '';
-  if (aiContent) {
-   base.aiContent = aiContent;
-   base['busqueda palabras por contenido pagina IA'] = aiContent;
-   if (!base.contentSnippet || base.contentSnippet === base.name) base.contentSnippet = aiContent.slice(0, 300);
-   if (!base.pageContent) base.pageContent = aiContent;
+  const sameRevision = old.serverModified && old.serverModified === item.serverModified;
+  const preferred = preferOld || (sameRevision && old.contentPropertyObserved && !item.contentPropertyObserved) ? old : item;
+  const fallback = preferred === old ? item : old;
+  const legacyContent = (row: any) => row.aiContent || row['busqueda palabras por contenido pagina IA'] || row['búsqueda palabras por contenido página IA'];
+  const aiContent = preferred.contentPropertyObserved && typeof preferred.aiContent === 'string'
+    ? preferred.aiContent
+    : legacyContent(preferred) || legacyContent(fallback);
+  if (typeof aiContent === 'string') {
+    if (preferred.contentPropertyObserved) {
+      const original = preferOld ? old : item;
+      Object.assign(base, replaceNotionContentProperty({...base, aiContent: original.aiContent}, aiContent));
+    } else {
+      base.aiContent = aiContent;
+      base['busqueda palabras por contenido pagina IA'] = aiContent;
+    }
+    if (aiContent && (!base.contentSnippet || base.contentSnippet === base.name)) base.contentSnippet = aiContent.slice(0, 300);
   }
   return base;
  };
