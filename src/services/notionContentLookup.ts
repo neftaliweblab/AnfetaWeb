@@ -46,13 +46,14 @@ function getFields(settings: CalendarSettings, key: string, id: string) {
   return request;
 }
 
-export function lookupNotionContent(settings: CalendarSettings, term: string): Promise<LookupResult> {
+export function lookupNotionContent(settings: CalendarSettings, term: string, force = false): Promise<LookupResult> {
   const scope = createHash('sha256').update(settings.notionToken.trim()).digest('hex') + ':' + (process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '');
   const key = scope + ':' + term.toLowerCase();
+  if (force) lookups.delete(key);
   const existing = lookups.get(key);
   if (existing) return existing;
   const request = (async () => {
-    const querySettings = {...settings, notionSignal: AbortSignal.timeout(10000)};
+    const querySettings = {...settings, notionSignal: AbortSignal.timeout(12000)};
     const sources = await Promise.allSettled(ANFETA_BASES.map(async ([name, defaultId]) => {
       const id = name === 'Revisiones' ? process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || defaultId : defaultId;
       const {fields, propertyIds} = await getFields(querySettings, scope + ':' + id, id);
@@ -63,15 +64,29 @@ export function lookupNotionContent(settings: CalendarSettings, term: string): P
           : {property: field.id, rich_text: {contains}},
       ));
       const params = new URLSearchParams(propertyIds.map(property => ['filter_properties', property]));
-      const result = await notionRequest(querySettings, 'data_sources/' + id + '/query?' + params, 'POST', {
-        page_size: 25,
-        filter: filters.length === 1 ? filters[0] : {or: filters},
-        sorts: [{timestamp: 'last_edited_time', direction: 'descending'}],
-      });
-      return {
-        pages: (result.results ?? []).filter((page: any) => !page.archived && !page.is_archived && !page.in_trash).map((page: any) => ({...page, _anfetaBase: name})),
-        partial: Boolean(result.has_more || result.request_status?.type === 'incomplete'),
-      };
+      let cursor: string | undefined;
+      const pages: any[] = [];
+      let partial = false;
+      let loops = 0;
+      do {
+        const body: Record<string, any> = {
+          page_size: 100,
+          filter: filters.length === 1 ? filters[0] : {or: filters},
+          sorts: [{timestamp: 'last_edited_time', direction: 'descending'}],
+          ...(cursor ? {start_cursor: cursor} : {}),
+        };
+        const result = await notionRequest(querySettings, 'data_sources/' + id + '/query?' + params, 'POST', body);
+        const batch = (result.results ?? []).filter((page: any) => !page.archived && !page.is_archived && !page.in_trash).map((page: any) => ({...page, _anfetaBase: name}));
+        pages.push(...batch);
+        loops++;
+        if (result.has_more && result.next_cursor && pages.length < 200 && loops < 4) {
+          cursor = result.next_cursor;
+        } else {
+          partial = Boolean(result.has_more || result.request_status?.type === 'incomplete');
+          cursor = undefined;
+        }
+      } while (cursor);
+      return {pages, partial};
     }));
     const available = sources.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
     if (!available.length) throw new Error('No se pudo consultar la propiedad de contenido en Notion.');
@@ -79,4 +94,53 @@ export function lookupNotionContent(settings: CalendarSettings, term: string): P
   })().catch(error => {lookups.delete(key);throw error;});
   lookups.set(key, request);
   return request;
+}
+
+export type RecentEditsResult = {
+  pages: any[];
+  scanTimestamp: string;
+  partial: boolean;
+};
+
+export async function fetchRecentNotionEdits(
+  settings: CalendarSettings,
+  since?: string,
+  limit = 50
+): Promise<RecentEditsResult> {
+  const scope = createHash('sha256').update(settings.notionToken.trim()).digest('hex') + ':' + (process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '');
+  const querySettings = {...settings, notionSignal: AbortSignal.timeout(14000)};
+  const scanTimestamp = new Date().toISOString();
+  const boundaryIso = since && Number.isFinite(Date.parse(since))
+    ? new Date(Date.parse(since) - 120000).toISOString()
+    : undefined;
+
+  const sources = await Promise.allSettled(ANFETA_BASES.map(async ([name, defaultId]) => {
+    const id = name === 'Revisiones' ? process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || defaultId : defaultId;
+    const {propertyIds} = await getFields(querySettings, scope + ':' + id, id);
+    const params = propertyIds.length ? '?' + new URLSearchParams(propertyIds.map(property => ['filter_properties', property])) : '';
+    const body: Record<string, any> = {
+      page_size: Math.min(limit, 100),
+      sorts: [{timestamp: 'last_edited_time', direction: 'descending'}],
+    };
+    if (boundaryIso) {
+      body.filter = {
+        timestamp: 'last_edited_time',
+        last_edited_time: {on_or_after: boundaryIso},
+      };
+    }
+    const result = await notionRequest(querySettings, 'data_sources/' + id + '/query' + params, 'POST', body);
+    const pages = (result.results ?? []).filter((page: any) => !page.archived && !page.is_archived && !page.in_trash).map((page: any) => ({...page, _anfetaBase: name}));
+    return {
+      pages,
+      partial: Boolean(result.has_more || result.request_status?.type === 'incomplete'),
+    };
+  }));
+
+  const available = sources.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+  if (!available.length) throw new Error('No se pudo consultar cambios recientes en Notion.');
+  return {
+    pages: available.flatMap(result => result.pages),
+    scanTimestamp,
+    partial: available.length < sources.length || available.some(result => result.partial),
+  };
 }

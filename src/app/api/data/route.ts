@@ -23,7 +23,7 @@ import {recordingPlaybackUrl} from '@/services/recordingPlayback';
 import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
 import {notionContentLookupTerm, readNotionContentProperty, replaceNotionContentProperty} from '@/lib/notionContentProperty';
-import {lookupNotionContent} from '@/services/notionContentLookup';
+import {lookupNotionContent, fetchRecentNotionEdits} from '@/services/notionContentLookup';
 import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,shiftFtfDate} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
@@ -866,14 +866,15 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       if (!term) return NextResponse.json({items: [], partial: false});
       const token = resolveNotionToken(req, searchParams);
       if (!token) return NextResponse.json({error: 'Configura el acceso a Notion para consultar contenido.'}, {status: 503});
-      const result = await lookupNotionContent({...getSettings(), notionToken: token}, term);
+      const force = searchParams.get('force') === 'true';
+      const result = await lookupNotionContent({...getSettings(), notionToken: token}, term, force);
       const items = result.pages.flatMap(page => {
         const live = extractNotionPageData(page);
         if (!live.id || !live.aiContent || /^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(live.title) ||
           isExpiredResponsePage({name: live.title, serverModified: live.lastEdited})) return [];
         return [{
           id: live.id, externalId: live.id, externalUrl: live.url, path: live.url, target: live.url,
-          name: live.title, source: 'Notion', sourceName: live.sourceName, type: 'PAGE',
+          name: live.title, source: 'Notion', sourceName: page._anfetaBase || live.sourceName || 'Notion', type: 'PAGE',
           folder: '', extension: '', sizeBytes: 0, serverModified: live.lastEdited,
           modifiedLocalDate: live.lastEdited?.slice(0, 10) || '', assignedPerson: live.person,
           scheduledDate: live.dateStart, scheduledEnd: live.dateEnd, updateStatus: live.status,
@@ -881,6 +882,33 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }];
       });
       return NextResponse.json({items: uniqueIndex(items), partial: result.partial}, {headers: {'Cache-Control': 'no-store'}});
+    }
+    if (type === 'notion-recent-changes') {
+      const token = resolveNotionToken(req, searchParams);
+      if (!token) return NextResponse.json({error: 'Configura el acceso a Notion para sincronizar cambios.'}, {status: 503});
+      const since = searchParams.get('since') || undefined;
+      const limit = Math.min(100, Math.max(10, Number(searchParams.get('limit')) || 50));
+      const result = await fetchRecentNotionEdits({...getSettings(), notionToken: token}, since, limit);
+      const items = result.pages.flatMap(page => {
+        const live = extractNotionPageData(page);
+        if (!live.id || /^\[ANFETA_(?:USER_STATE|JOB|PRESENCE)/i.test(live.title) ||
+          isExpiredResponsePage({name: live.title, serverModified: live.lastEdited})) return [];
+        return [{
+          id: live.id, externalId: live.id, externalUrl: live.url, path: live.url, target: live.url,
+          name: live.title, source: 'Notion', sourceName: page._anfetaBase || live.sourceName || 'Notion', type: 'PAGE',
+          folder: '', extension: '', sizeBytes: 0, serverModified: live.lastEdited,
+          modifiedLocalDate: live.lastEdited?.slice(0, 10) || '', assignedPerson: live.person,
+          scheduledDate: live.dateStart, scheduledEnd: live.dateEnd, updateStatus: live.status,
+          aiContent: live.aiContent, contentPropertyObserved: typeof live.aiContent === 'string' && live.aiContent.length > 0,
+          domainChip: live.domain, ftfVerified: live.ftfVerified, ftfAvailable: live.ftfAvailable,
+        }];
+      });
+      return NextResponse.json({
+        items: uniqueIndex(items),
+        scanTimestamp: result.scanTimestamp,
+        partial: result.partial,
+        count: items.length,
+      }, {headers: {'Cache-Control': 'no-store'}});
     }
     if (type === "search-index") {
       // The foreground serves pages from snapshots; full reads run after the response.

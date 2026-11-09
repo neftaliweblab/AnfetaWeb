@@ -43,7 +43,7 @@ import {normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab, SearchTabConfig } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles, RefreshCw, CheckCircle2, AlertTriangle, Zap } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -604,11 +604,124 @@ export function ResultsViewHost({
   // Table selections
   const [items, setItems] = useState<SearchResultRow[]>(() => filterDeletedPages(initialItems,currentUser).filter((it) => !isExpiredResponsePage(it)));
   const [contentLookup, setContentLookup] = useState<{key: string; message: string} | null>(null);
+  const [isContentSyncing, setIsContentSyncing] = useState(false);
+  const [contentSyncStatus, setContentSyncStatus] = useState<'idle' | 'scanning' | 'syncing' | 'synced' | 'error'>('idle');
+  const [contentSyncMessage, setContentSyncMessage] = useState<string>('');
+  const lastContentSyncRef = useRef<string>(new Date(Date.now() - 300000).toISOString());
+  const [lastContentSyncDisplay, setLastContentSyncDisplay] = useState<string>('');
+
   const liveContentQuery = isActive && tabsOwner === tabsKey && selectedScope === 'Contenido' &&
     query === deferredQuery && !searchOptions.matchRegex && notionContentLookupTerm(deferredQuery)
     ? deferredQuery.trim()
     : '';
   const liveContentKey = currentUser + ':' + liveContentQuery;
+
+  const triggerIncrementalContentSync = useCallback(async (manual = false) => {
+    if (isContentSyncing || document.hidden) return;
+    setIsContentSyncing(true);
+    setContentSyncStatus('scanning');
+    setContentSyncMessage(manual ? 'Buscando cambios en Notion…' : 'Escaneando cambios recientes…');
+
+    try {
+      let token = '';
+      try { token = JSON.parse(localStorage.getItem('anfeta_settings') || '{}').notionToken || ''; } catch {}
+      const sinceParam = lastContentSyncRef.current ? '&since=' + encodeURIComponent(lastContentSyncRef.current) : '';
+
+      const recentPromise = fetch('/api/data?type=notion-recent-changes' + sinceParam, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
+        headers: token ? { 'x-notion-token': token } : {},
+      }).then(r => readApiJson(r)).catch(() => ({ items: [] }));
+
+      const contentPromise = liveContentQuery
+        ? fetch('/api/data?type=notion-content-lookup&q=' + encodeURIComponent(liveContentQuery) + (manual ? '&force=true' : ''), {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(15000),
+            headers: token ? { 'x-notion-token': token } : {},
+          }).then(r => readApiJson(r)).catch(() => ({ items: [] }))
+        : Promise.resolve({ items: [] });
+
+      const [recentData, contentData] = await Promise.all([recentPromise, contentPromise]);
+
+      const incomingRecent: SearchResultRow[] = Array.isArray(recentData?.items) ? recentData.items : [];
+      const incomingContent: SearchResultRow[] = Array.isArray(contentData?.items) ? contentData.items : [];
+      const allIncoming = [...incomingRecent, ...incomingContent];
+
+      if (allIncoming.length > 0) {
+        setContentSyncStatus('syncing');
+        setContentSyncMessage(`⚡ ${allIncoming.length} página(s) modificada(s), actualizando…`);
+
+        const updates = allIncoming.map(row => ({
+          id: row.externalId || row.id,
+          name: row.name,
+          aiContent: row.aiContent,
+          assignedPerson: row.assignedPerson,
+          scheduledDate: row.scheduledDate,
+          scheduledEnd: row.scheduledEnd,
+          updateStatus: row.updateStatus,
+          serverModified: row.serverModified,
+        }));
+
+        setItems(previous => {
+          const updated = applyNotionStates(previous, updates);
+          const known = new Set(updated.filter(isNotionItem).map(row => cleanPageId(row.externalId || row.id)));
+          return filterDeletedPages([...updated, ...allIncoming.filter(row => !known.has(cleanPageId(row.externalId || row.id)))], currentUser);
+        });
+      }
+
+      if (recentData?.scanTimestamp) {
+        lastContentSyncRef.current = recentData.scanTimestamp;
+      } else {
+        lastContentSyncRef.current = new Date().toISOString();
+      }
+
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+      setLastContentSyncDisplay(timeStr);
+
+      setContentSyncStatus('synced');
+      if (allIncoming.length > 0) {
+        setContentSyncMessage(`✓ Sincronizado: ${allIncoming.length} cambio(s) aplicado(s) • ${timeStr}`);
+      } else {
+        setContentSyncMessage(`✓ Al día (sin cambios nuevos) • ${timeStr}`);
+      }
+
+      setTimeout(() => {
+        setContentSyncStatus(prev => prev === 'synced' ? 'idle' : prev);
+      }, 4500);
+
+    } catch (err) {
+      console.warn('[ANFETA ContentSync] Error en escaneo incremental:', err);
+      setContentSyncStatus('error');
+      setContentSyncMessage('⚠️ Notion no respondió al escanear cambios.');
+      setTimeout(() => {
+        setContentSyncStatus(prev => prev === 'error' ? 'idle' : prev);
+      }, 5000);
+    } finally {
+      setIsContentSyncing(false);
+    }
+  }, [currentUser, liveContentQuery, isContentSyncing]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      if (!document.hidden && !isContentSyncing) {
+        void triggerIncrementalContentSync(false);
+      }
+    }, 45000);
+
+    const onVisibility = () => {
+      if (!document.hidden && !isContentSyncing) {
+        void triggerIncrementalContentSync(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isActive, isContentSyncing, triggerIncrementalContentSync]);
 
   useEffect(() => {
     if (!liveContentQuery) return;
@@ -2034,22 +2147,88 @@ export function ResultsViewHost({
                 <span>Limpiar [RESPUESTA]</span>
               </button>
               <NotionConnectionCheck/>
+              <button
+                type="button"
+                onClick={() => void triggerIncrementalContentSync(true)}
+                disabled={isContentSyncing}
+                className="rounded border border-sky-800/60 bg-sky-950/40 text-sky-300 px-2 py-1 text-xs hover:bg-sky-900/60 transition-colors font-medium cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                title="Escanear y sincronizar únicamente páginas con cambios recientes en Notion sin recargar todo el índice"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-sky-400 ${isContentSyncing ? 'animate-spin' : ''}`} />
+                <span>Sincronizar cambios</span>
+              </button>
+              {contentSyncStatus !== 'idle' && (
+                <span
+                  role="status"
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${
+                    contentSyncStatus === 'scanning' || contentSyncStatus === 'syncing'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                      : contentSyncStatus === 'synced'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  }`}
+                >
+                  {contentSyncStatus === 'scanning' || contentSyncStatus === 'syncing' ? (
+                    <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+                  ) : contentSyncStatus === 'synced' ? (
+                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3 text-rose-400" />
+                  )}
+                  <span>{contentSyncMessage}</span>
+                </span>
+              )}
               <ExportResults rows={filteredItems}/>
             </div>
             {selectedScope === "Contenido" && (
               <div className="mx-2 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-800/60 bg-[#0B1E33]/70 px-3 py-2 text-xs text-cyan-200">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <FileText className="h-4 w-4 text-cyan-400 shrink-0" />
                   <span>
                     {deferredQuery.trim()
                       ? `Búsqueda en cuerpo interno: buscando "${deferredQuery}" en notas, descripciones y texto indexado.`
                       : "Mostrando páginas y archivos que tienen texto indexado."}
                   </span>
-                  {liveContentQuery && contentLookup?.key === liveContentKey && (
+                  {contentSyncStatus !== 'idle' ? (
+                    <span
+                      role="status"
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${
+                        contentSyncStatus === 'scanning' || contentSyncStatus === 'syncing'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                          : contentSyncStatus === 'synced'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {contentSyncStatus === 'scanning' || contentSyncStatus === 'syncing' ? (
+                        <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+                      ) : contentSyncStatus === 'synced' ? (
+                        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="h-3 w-3 text-rose-400" />
+                      )}
+                      <span>{contentSyncMessage}</span>
+                    </span>
+                  ) : lastContentSyncDisplay ? (
+                    <span className="text-[11px] text-cyan-400/80 font-mono">
+                      ✓ Al día ({lastContentSyncDisplay})
+                    </span>
+                  ) : null}
+                  {liveContentQuery && contentLookup?.key === liveContentKey && !contentSyncMessage && (
                     <span role="status" className="text-slate-300">{contentLookup.message}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void triggerIncrementalContentSync(true)}
+                    disabled={isContentSyncing}
+                    className="flex items-center gap-1.5 rounded border border-cyan-500/70 bg-cyan-900/80 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-cyan-700 transition cursor-pointer disabled:opacity-50 shadow-sm"
+                    title="Escanear Notion en busca de cambios recientes y actualizar la lista de resultados"
+                  >
+                    <RefreshCw className={`h-3 w-3 text-cyan-200 ${isContentSyncing ? 'animate-spin' : ''}`} />
+                    <span>↻ Sincronizar cambios recientes</span>
+                  </button>
                   {deferredQuery.trim() && (
                     <button
                       type="button"
