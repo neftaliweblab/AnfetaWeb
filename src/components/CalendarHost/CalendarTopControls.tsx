@@ -16,7 +16,7 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle,
+  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
@@ -30,6 +30,7 @@ interface CalendarTopControlsProps {
   extraHours?:boolean;
   onExtraHours?:()=>void;
   onOpenBatch?: () => void;
+  onOpenReorder?: () => void;
   reviewNotifications?: React.ReactNode;
   onCreateActivity: () => void;
   currentDate: string;
@@ -64,7 +65,7 @@ interface CalendarTopControlsProps {
 
 export function CalendarTopControls({
   displayControls,gridInterval=30,onGridInterval,
-  currentDate, onCreateActivity, reviewNotifications, onOpenBatch, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
+  currentDate, onCreateActivity, reviewNotifications, onOpenBatch, onOpenReorder, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
   onSelectDate,
   availableDates,
   onOpenPeoplePicker,
@@ -210,6 +211,17 @@ export function CalendarTopControls({
       </div>
 
       {onOpenBatch && <button onClick={onOpenBatch} title="Reprogramar / planificar" aria-label="Reprogramar / planificar" className="flex items-center gap-1 shrink-0 rounded border border-cyan-900 px-2 py-1 text-cyan-200"><CalendarRange className="w-3.5 h-3.5"/><span className="hidden xl:inline">Planificar</span></button>}
+      {onOpenReorder && (
+        <button
+          onClick={onOpenReorder}
+          title="⚡ Ordenar y desempalmar actividades amontonadas en la jornada con reglas de prioridad y congruencia temporal"
+          aria-label="Ordenar actividades"
+          className="flex items-center gap-1 shrink-0 rounded border border-cyan-700/60 bg-cyan-950/40 hover:bg-cyan-900/50 hover:border-cyan-400 px-2 py-1 text-cyan-300 font-semibold cursor-pointer transition-colors shadow-sm"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="hidden xl:inline">Ordenar acts</span>
+        </button>
+      )}
       {reviewNotifications}
       {/* 3. Action Toggles and Buttons */}
       <div className="flex items-center gap-1.5 flex-shrink-0">

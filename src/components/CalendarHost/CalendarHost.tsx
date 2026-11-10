@@ -47,6 +47,7 @@ import { ActivityCard } from "./ActivityCard";
 import { CalendarPeoplePickerModal } from "./CalendarPeoplePickerModal";
 import { CalendarPersonPreviewPanel } from "./CalendarPersonPreviewPanel";
 import { CalendarTemplatesModal } from "./CalendarTemplatesModal";
+import { CalendarReorderModal } from "./CalendarReorderModal";
 import { AutomationReportModal } from "../DailyProgressPanel/AutomationReportModal";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import { normalizePerson } from "@/services/identityNormalizer";
@@ -126,6 +127,8 @@ export function CalendarHost({
     return () => clearTimeout(timer);
   }, [error]);
   const [headerSummary,setHeaderSummary]=useState<{person:string|null}|null>(null),[previewTab,setPreviewTab]=useState<'checks'|'activities'>('checks'),[batchDefaults,setBatchDefaults]=useState<{person:string;day:string}|null>(null);const [showBatch,setShowBatch]=useState(false);
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [reorderPerson, setReorderPerson] = useState('');
   const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [durationProposal,setDurationProposal]=useState<any[]|undefined>();
@@ -747,6 +750,10 @@ export function CalendarHost({
         onToggleCobros={() => setFilterCobros(!filterCobros)}
         filterPagos={filterPagos}
         onTogglePagos={() => setFilterPagos(!filterPagos)}
+        onOpenReorder={() => {
+          setReorderPerson(displayedPeople[0] || 'Neftali');
+          setShowReorderModal(true);
+        }}
         onOpenTemplates={() => setShowTemplates(true)}
         onOpenReport={() => setShowReport(true)}
         onBackToSearch={() => onBackToSearch?.()}
@@ -899,7 +906,7 @@ export function CalendarHost({
                   >
                     <CalendarColHeader
                       personName={person}
-                      onAction={action=>{if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
+                      onAction={action=>{if(action==='organize'){setReorderPerson(person);setShowReorderModal(true);}else if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
                       activityCount={countedActivities.length}
                       checklistPercent={checklistPercent}
                       totalChecklistItems={totalChecks}
@@ -1020,6 +1027,24 @@ export function CalendarHost({
           isOpen={showWhatsappModal}
           currentUser={currentUser}
           onClose={() => setShowWhatsappModal(false)}
+        />
+      )}
+
+      {showReorderModal && (
+        <CalendarReorderModal
+          activities={activitiesList}
+          date={currentDate}
+          currentUser={currentUser}
+          initialPerson={reorderPerson}
+          availablePeople={displayedPeople}
+          onClose={() => setShowReorderModal(false)}
+          onSaved={(updated) => {
+            setActivitiesList((prev) => {
+              const map = new Map(prev.map((a) => [a.pageId, a]));
+              updated.forEach((u) => map.set(u.pageId, { ...map.get(u.pageId), ...u }));
+              return Array.from(map.values());
+            });
+          }}
         />
       )}
     </div>
