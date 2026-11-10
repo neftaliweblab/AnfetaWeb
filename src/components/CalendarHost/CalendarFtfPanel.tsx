@@ -6,7 +6,7 @@ import { buildFtfDashboard, canViewFtfDashboard, shiftFtfDate } from '@/services
 import { ExternalLink } from 'lucide-react';
 import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
-import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity } from 'lucide-react';
 
 type Report = ReturnType<typeof buildFtfDashboard> & {
   warning?: string;
@@ -361,14 +361,15 @@ export function CalendarFtfPanel({
                         <span className="font-semibold text-xs text-slate-100">{person.name}</span>
                         {presenceMap[person.name] && (
                           <span
-                            className={`text-[9.5px] px-1 py-0.2 rounded font-mono ${
+                            className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono flex items-center gap-1 ${
                               presenceMap[person.name].isOnline
-                                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/50'
-                                : 'text-slate-400'
+                                ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-600/60'
+                                : 'bg-slate-900/60 text-slate-400 border border-slate-700/50'
                             }`}
                             title={presenceMap[person.name].isOnline ? 'En línea en ANFETA' : `Última conexión: ${presenceMap[person.name].lastSeenLabel || 'Desconectado'}`}
                           >
-                            {presenceMap[person.name].isOnline ? `🟢 ${presenceMap[person.name].lastSeenLabel || 'En línea'}` : presenceMap[person.name].lastSeenLabel || 'Desconectado'}
+                            <span className={`w-1.5 h-1.5 rounded-full ${presenceMap[person.name].isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                            <span>{presenceMap[person.name].isOnline ? 'En línea' : 'Desconectado'}</span>
                           </span>
                         )}
                         {person.role && (
@@ -431,15 +432,30 @@ export function CalendarFtfPanel({
                   </div>
                 </div>
 
-                {/* Información de primera actividad y último registro */}
-                <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span title={(person as any).firstActivityStart ? `Primera actividad programada: ${(person as any).firstActivityStart}` : undefined}>
-                    1ª act: <strong className="text-slate-300 font-mono">{(person as any).firstActivityStart ? calendarTime((person as any).firstActivityStart) : '--:--'}</strong>
-                  </span>
-                  <span title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : undefined}>
-                    {lastEditTime ? `Última edición: ${lastEditTime}` : 'Sin cambios'}
-                  </span>
-                  {person.late && <span className="font-semibold text-rose-400">Tarde (&gt;18:00)</span>}
+                {/* Conexiones & Horarios: 1ª señal y Última señal juntas con iconos */}
+                <div className="mt-2 rounded-lg bg-slate-950/70 border border-slate-800/90 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono shadow-inner">
+                  <div className="flex items-center gap-1.5" title={(person as any).firstActivityStart ? `Primera actividad programada: ${(person as any).firstActivityStart}` : 'Primera señal del día'}>
+                    <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                      <LogIn size={11} className="text-emerald-400" />
+                      <span>1ª señal:</span>
+                    </span>
+                    <span className="text-slate-200 font-bold">
+                      {(person as any).firstActivityStart ? calendarTime((person as any).firstActivityStart) : '--:--'}
+                    </span>
+                  </div>
+
+                  <span className="text-slate-700">|</span>
+
+                  <div className="flex items-center gap-1.5" title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : 'Última señal registrada'}>
+                    <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+                      <Activity size={11} className="text-cyan-400" />
+                      <span>Última señal:</span>
+                    </span>
+                    <span className="text-slate-200 font-bold truncate max-w-[110px]">
+                      {presenceMap[person.name]?.lastSeenLabel || lastEditTime || (presenceMap[person.name]?.isOnline ? 'En línea' : 'Sin cambios')}
+                    </span>
+                  </div>
+                  {person.late && <span className="font-semibold text-rose-400 ml-1">⚠ Tarde</span>}
                 </div>
 
                 <div className="mt-1 text-[10px] text-cyan-200">Por asignar en la jornada · {ftfHours(person.pendingAssignmentMinutes)}</div>

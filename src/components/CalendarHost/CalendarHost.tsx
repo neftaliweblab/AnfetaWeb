@@ -821,11 +821,12 @@ export function CalendarHost({
                   top: `${Math.max(56, currentTimeTop + 56 - (2 * pixelsPerHour))}px`,
                   height: `${Math.min(currentTimeTop, 2 * pixelsPerHour)}px`,
                 }}
-                className="absolute left-0 right-0 bg-rose-500/[0.04] border-t border-dashed border-rose-500/30 z-20 pointer-events-none flex items-start px-2 py-1 select-none"
+                className="absolute left-0 right-0 bg-gradient-to-b from-rose-500/[0.14] to-rose-500/[0.06] border-t-2 border-dashed border-rose-500/60 z-20 pointer-events-none flex items-start px-2.5 py-1.5 select-none shadow-[inset_0_2px_10px_rgba(244,63,94,0.12)]"
                 title="Zona de revisión reciente (últimas 2 horas de actividades)"
               >
-                <span className="text-[9.5px] font-mono font-semibold text-rose-400/80 bg-rose-950/70 px-1.5 py-0.5 rounded border border-rose-800/40">
-                  ⏱ Zona de revisión reciente (últimas 2 hrs)
+                <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950/90 px-2 py-0.5 rounded-md border border-rose-500/60 shadow-sm flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                  <span>⏱ Zona de revisión reciente (últimas 2 hrs)</span>
                 </span>
               </div>
             )}
