@@ -34,6 +34,60 @@ interface ColaboratorBreakdownProps {
 type StatusFilter = "all" | "lagging" | "inProgress" | "completed";
 type ViewMode = "byPerson" | "flatList";
 
+
+// Helper robusto para cálculo de checks y progreso por actividad
+function getActivityChecklistStats(act: NotionCalendarActivity, liveItems?: any[]) {
+  const wf = workflowState(act.status, act.title);
+  const isFinalized = act.isFinalized || wf === "completed";
+  const isReview = wf === "review";
+
+  // 1. Items en vivo o dentro de act
+  const items = liveItems || (Array.isArray(act.checklistItems) && act.checklistItems.length > 0 ? act.checklistItems : null);
+
+  let hasChecklist = false;
+  let total = 0;
+  let done = 0;
+
+  if (items && items.length > 0) {
+    hasChecklist = true;
+    total = items.length;
+    done = items.filter((i: any) => i.isChecked).length;
+  } else if ((act.checklistTotal && act.checklistTotal > 0) || (act.checklistScanned && act.checklistTotal > 0)) {
+    hasChecklist = true;
+    total = act.checklistTotal;
+    done = Math.max(
+      act.todayChecklistCompleted || 0,
+      act.checklistCompleted || 0,
+      (act.dailyChecklistCompleted as number) || 0
+    );
+  }
+
+  // Si la actividad fue cerrada como Finalizada en Notion, se consideran sus checks cumplidos
+  if (isFinalized) {
+    if (hasChecklist && done < total) {
+      done = total;
+    }
+  }
+
+  let percent = 0;
+  if (hasChecklist && total > 0) {
+    percent = Math.round((done / total) * 100);
+  } else if (isFinalized) {
+    percent = 100;
+  } else if (isReview) {
+    percent = 80;
+  }
+
+  return {
+    hasChecklist,
+    total,
+    done,
+    percent,
+    isFinalized,
+    isReview,
+  };
+}
+
 export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("byPerson");
@@ -174,23 +228,14 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
 
   // Renderizador individual de tarjeta de actividad
   const renderActivityCard = (act: NotionCalendarActivity) => {
-    const daily = dailyActivityChecks(act);
     const lagStatus = evaluateLagStatus(act);
     const forecast = getForecastStatus(act);
     const person = normalizePerson(act.person);
     const color = getPersonColor(person);
     const isExpanded = expandedActIds.has(act.pageId);
-    const wf = workflowState(act.status, act.title);
-    const isCompleted = wf === "completed" || act.isFinalized;
-    const isReview = wf === "review";
     const cleanName = calendarDisplayTitle(act.title, act.domain) || act.shortTitle || act.title;
-
-    const pct =
-      daily.total > 0
-        ? Math.round((daily.done / daily.total) * 100)
-        : act.isFinalized
-        ? 100
-        : 0;
+    const stats = getActivityChecklistStats(act, liveChecks[act.pageId]);
+    const { hasChecklist, total: checkTotal, done: checkDone, percent: pct, isFinalized: isCompleted, isReview } = stats;
 
     const hasCheckDetails = act.completedChecks && act.completedChecks.length > 0;
 
@@ -283,10 +328,26 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
             {/* Barra y porcentaje */}
             <div className="flex-1 min-w-[160px] max-w-sm space-y-1">
               <div className="flex items-center justify-between text-[10.5px] font-mono">
-                <span className="text-slate-300 flex items-center gap-1 font-medium">
-                  <CheckSquare className="w-3 h-3 text-emerald-400" />
-                  <span>{daily.done}/{daily.total} checks</span>
-                </span>
+                {hasChecklist ? (
+                  <span className="text-slate-300 flex items-center gap-1 font-medium">
+                    <CheckSquare className="w-3 h-3 text-emerald-400" />
+                    <span>{checkDone}/{checkTotal} checks</span>
+                  </span>
+                ) : isCompleted ? (
+                  <span className="text-emerald-300 flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Entregable completado</span>
+                  </span>
+                ) : isReview ? (
+                  <span className="text-cyan-300 flex items-center gap-1 font-medium">
+                    <Clock className="w-3 h-3 text-cyan-400" />
+                    <span>Entregable en revisión</span>
+                  </span>
+                ) : (
+                  <span className="text-slate-400 flex items-center gap-1">
+                    <span>Sin checklist interno</span>
+                  </span>
+                )}
                 <span className={`font-bold ${isCompleted ? "text-emerald-400" : pct > 50 ? "text-cyan-300" : "text-amber-300"}`}>
                   {pct}%
                 </span>
@@ -300,26 +361,35 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                       ? "bg-gradient-to-r from-cyan-500 to-emerald-400"
                       : "bg-gradient-to-r from-amber-500 to-rose-400"
                   }`}
-                  style={{ width: `${pct}%` }}
+                  style={{ width: `${Math.max(isCompleted ? 100 : 4, pct)}%` }}
                 />
               </div>
             </div>
 
             {/* Acciones */}
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => toggleExpand(act.pageId)}
-                className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer ${
-                  isExpanded
-                    ? "bg-cyan-950/80 text-cyan-300 border-cyan-700/80"
-                    : "bg-slate-900 text-slate-300 hover:text-white border-slate-700 hover:bg-slate-800"
-                }`}
-                title="Ver lista de verificación detallada de Notion"
-              >
-                <span>Checks ({daily.total})</span>
-                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
+              {hasChecklist && checkTotal > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(act.pageId)}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer ${
+                    isExpanded
+                      ? "bg-cyan-950/80 text-cyan-300 border-cyan-700/80"
+                      : "bg-slate-900 text-slate-300 hover:text-white border-slate-700 hover:bg-slate-800"
+                  }`}
+                  title="Ver lista de verificación detallada de Notion"
+                >
+                  <span>Checks ({checkTotal})</span>
+                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              ) : (
+                <span
+                  className="px-2 py-1 rounded-md border border-slate-800 bg-slate-950 text-slate-500 text-[10.5px] font-mono select-none"
+                  title="Esta actividad no contiene lista de tareas o checklist en su contenido de Notion"
+                >
+                  Sin checklist
+                </span>
+              )}
 
               <button
                 type="button"
@@ -339,7 +409,7 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
           <div className="border-t border-slate-800 bg-[#090D13] p-3 space-y-2 animate-in fade-in duration-150">
             <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
               <span className="font-semibold text-slate-300">ITEMS DE CHECKLIST DE NOTION</span>
-              <span>{daily.done} de {daily.total} completados hoy</span>
+              <span>{checkDone} de {checkTotal} completados</span>
             </div>
 
             {loadingChecks[act.pageId] ? (
@@ -380,8 +450,8 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
               </div>
             ) : (
               <div className="p-3 text-center text-xs text-slate-400 bg-slate-900/60 rounded-lg border border-slate-800">
-                {daily.total > 0
-                  ? `Esta actividad tiene ${daily.total} checks en Notion (${daily.done} marcados hoy). Haz clic en Notion ↗ para verlos directamente.`
+                {hasChecklist && checkTotal > 0
+                  ? `Esta actividad tiene ${checkTotal} checks en Notion (${checkDone} completados). Haz clic en Notion ↗ para verlos directamente.`
                   : "Esta actividad no tiene lista de tareas o checklist registrada en su contenido."}
               </div>
             )}
@@ -541,11 +611,16 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
           peopleGroups.map(([personName, personActivities]) => {
             const isCollapsed = collapsedPeople.has(personName);
             const color = getPersonColor(personName);
+            const totalActs = personActivities.length;
             const personLagCount = personActivities.filter((a) => evaluateLagStatus(a).isLagging).length;
             const personCompletedCount = personActivities.filter((a) => workflowState(a.status, a.title) === "completed" || a.isFinalized).length;
-            const totalChecks = personActivities.reduce((sum, a) => sum + dailyActivityChecks(a).total, 0);
-            const doneChecks = personActivities.reduce((sum, a) => sum + dailyActivityChecks(a).done, 0);
-            const personPct = totalChecks > 0 ? Math.round((doneChecks / totalChecks) * 100) : 0;
+            const personPct = totalActs > 0 ? Math.round((personCompletedCount / totalActs) * 100) : 0;
+            const internalTotalChecks = personActivities.reduce((sum, a) => sum + (a.checklistTotal || 0), 0);
+            const internalDoneChecks = personActivities.reduce((sum, a) => {
+              const isComp = a.isFinalized || workflowState(a.status, a.title) === "completed";
+              const c = Math.max(a.todayChecklistCompleted || 0, a.checklistCompleted || 0);
+              return sum + (isComp ? (a.checklistTotal || c) : c);
+            }, 0);
 
             return (
               <div
@@ -584,7 +659,12 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                         )}
                       </div>
                       <p className="text-[11px] text-slate-400 mt-0.5">
-                        {doneChecks}/{totalChecks} checks del día completados ({personPct}%)
+                        <span className="text-slate-200 font-semibold">{personCompletedCount} de {totalActs}</span> actividades finalizadas ({personPct}%)
+                        {internalTotalChecks > 0 && (
+                          <span className="text-slate-500 font-mono text-[10px] ml-1.5">
+                            · {internalDoneChecks}/{internalTotalChecks} sub-checks de Notion
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>

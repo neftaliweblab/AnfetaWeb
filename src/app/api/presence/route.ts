@@ -28,13 +28,16 @@ function formatLastSeen(lastSeen: string | null, isOnline: boolean): string {
   if (diffMs <= 60000) return 'Hace un momento';
 
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 60) return 'Hace ' + mins + ' min';
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) {
+  const now = new Date();
+  const dDay = d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+  if (mins < 60 && dDay === today) return 'Hace ' + mins + ' min';
+  if (dDay === today) {
     return 'Hoy ' + timeStr;
   }
-  const days = Math.floor(hours / 24);
-  if (days === 1) {
+  if (dDay === yesterday) {
     return 'Ayer ' + timeStr;
   }
   return d.toLocaleDateString('es-MX', {

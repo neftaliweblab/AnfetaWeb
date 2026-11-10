@@ -8,6 +8,17 @@ import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
 import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity } from 'lucide-react';
 
+
+function formatSignalTime(isoString: string | null | undefined, selectedDay: string): string {
+  if (!isoString || !Number.isFinite(Date.parse(isoString))) return '--:--';
+  const time = calendarTime(isoString);
+  const day = mexicoDate(isoString);
+  if (day === selectedDay) return time;
+  const prevDay = shiftFtfDate(selectedDay, -1);
+  if (day === prevDay) return `Ayer ${time}`;
+  return `${day.slice(8, 10)}/${day.slice(5, 7)} ${time}`;
+}
+
 type Report = ReturnType<typeof buildFtfDashboard> & {
   warning?: string;
   automation?: { state: string; secretConfigured: boolean; actorConfigured: boolean; jobs: any[] };
@@ -32,7 +43,7 @@ export function CalendarFtfPanel({
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const [expandedPeople, setExpandedPeople] = useState<Record<string, boolean>>({});
-  const [presenceMap, setPresenceMap] = useState<Record<string, { isOnline: boolean; lastSeenLabel?: string }>>({});
+  const [presenceMap, setPresenceMap] = useState<Record<string, { isOnline: boolean; lastSeenLabel?: string; lastSeen?: string }>>({});
 
   useEffect(() => {
     const controller=new AbortController();
@@ -433,30 +444,66 @@ export function CalendarFtfPanel({
                 </div>
 
                 {/* Conexiones & Horarios: 1ª señal y Última señal juntas con iconos */}
-                <div className="mt-2 rounded-lg bg-slate-950/70 border border-slate-800/90 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono shadow-inner">
-                  <div className="flex items-center gap-1.5" title={(person as any).firstActivityStart ? `Primera actividad programada: ${(person as any).firstActivityStart}` : 'Primera señal del día'}>
-                    <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-                      <LogIn size={11} className="text-emerald-400" />
-                      <span>1ª señal:</span>
-                    </span>
-                    <span className="text-slate-200 font-bold">
-                      {(person as any).firstActivityStart ? calendarTime((person as any).firstActivityStart) : '--:--'}
-                    </span>
-                  </div>
+                {(() => {
+                  const isOnlineNow = !!presenceMap[person.name]?.isOnline;
+                  const firstSignalIso = (person as any).firstSeen || (person as any).firstActivityStart;
+                  const firstDisplay = formatSignalTime(firstSignalIso, report.day);
+                  const firstTitle = (person as any).firstSeen
+                    ? `1ª conexión en ANFETA: ${(person as any).firstSeen}`
+                    : (person as any).firstActivityStart
+                    ? `1ª actividad programada: ${(person as any).firstActivityStart}`
+                    : 'Sin registro de primera señal';
 
-                  <span className="text-slate-700">|</span>
+                  const personLastActivity = person.lastActivityEdited;
+                  const presenceLastSeen = presenceMap[person.name]?.lastSeen || (person as any).presenceLastSeen;
+                  const lastCandidates = [presenceLastSeen, personLastActivity].filter(
+                    (v): v is string => Boolean(v && Number.isFinite(Date.parse(v)))
+                  );
+                  lastCandidates.sort();
+                  const effectiveLast = lastCandidates.at(-1) || null;
 
-                  <div className="flex items-center gap-1.5" title={person.lastActivityEdited ? `Última edición en Notion: ${person.lastActivityEdited}` : 'Última señal registrada'}>
-                    <span className="flex items-center gap-1 text-cyan-400 font-semibold">
-                      <Activity size={11} className="text-cyan-400" />
-                      <span>Última señal:</span>
-                    </span>
-                    <span className="text-slate-200 font-bold truncate max-w-[110px]">
-                      {presenceMap[person.name]?.lastSeenLabel || lastEditTime || (presenceMap[person.name]?.isOnline ? 'En línea' : 'Sin cambios')}
-                    </span>
-                  </div>
-                  {person.late && <span className="font-semibold text-rose-400 ml-1">⚠ Tarde</span>}
-                </div>
+                  const lastDisplay = isOnlineNow
+                    ? 'En línea'
+                    : effectiveLast
+                    ? formatSignalTime(effectiveLast, report.day)
+                    : (lastEditTime || 'Sin cambios');
+
+                  const lastTitle = isOnlineNow
+                    ? 'En línea en este momento en ANFETA'
+                    : effectiveLast === personLastActivity
+                    ? `Última edición en Notion: ${personLastActivity}`
+                    : presenceLastSeen
+                    ? `Última conexión ANFETA: ${presenceLastSeen}`
+                    : 'Sin registro de última señal';
+
+                  return (
+                    <div className="mt-2 rounded-lg bg-slate-950/70 border border-slate-800/90 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono shadow-inner">
+                      <div className="flex items-center gap-1.5" title={firstTitle}>
+                        <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                          <LogIn size={11} className="text-emerald-400" />
+                          <span>1ª señal:</span>
+                        </span>
+                        <span className="text-slate-200 font-bold">
+                          {firstDisplay}
+                        </span>
+                      </div>
+
+                      <span className="text-slate-700">|</span>
+
+                      <div className="flex items-center gap-1.5" title={lastTitle}>
+                        <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+                          <Activity size={11} className="text-cyan-400" />
+                          <span>Última señal:</span>
+                        </span>
+                        <span className="text-slate-200 font-bold truncate max-w-[120px] flex items-center gap-1">
+                          {isOnlineNow && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                          <span>{lastDisplay}</span>
+                        </span>
+                      </div>
+                      {person.late && <span className="font-semibold text-rose-400 ml-1">⚠ Tarde</span>}
+                    </div>
+                  );
+                })()}
 
                 <div className="mt-1 text-[10px] text-cyan-200">Por asignar en la jornada · {ftfHours(person.pendingAssignmentMinutes)}</div>
 

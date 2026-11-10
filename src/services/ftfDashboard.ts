@@ -127,10 +127,11 @@ export function buildFtfWeek(
   return {start, end: shiftFtfDate(start, 6), days};
 }
 
-export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date()) {
+export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date(),presence: FtfPresenceDay[] = []) {
   if(!canViewFtfDashboard(actor))throw Error('Inicia sesión para consultar la bitácora del equipo.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
+  const signals = new Map(presence.map(row => [row.day + ':' + row.person, row]));
 
   // Cálculo de días hábiles transcurridos en la semana (Lunes a Viernes) y meta de 6.5h diarias efectivas
   const dayDate = new Date(day + 'T12:00:00-06:00');
@@ -163,6 +164,20 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       .sort()
       .at(0) || null;
 
+    const signal = signals.get(day + ':' + name);
+    const firstSeen = signal?.firstSeen || null;
+    const presenceLastSeen = signal?.lastSeen || null;
+
+    // Primer señal: Presencia real en ANFETA si existe; si no, primera actividad programada
+    const firstSignal = firstSeen || firstActivityStart || null;
+
+    // Última señal: La más reciente entre última presencia ANFETA y última edición en Notion
+    const lastCandidates = [presenceLastSeen, lastActivityEdited].filter(
+      (v): v is string => Boolean(v && Number.isFinite(Date.parse(v)))
+    );
+    lastCandidates.sort();
+    const lastSignal = lastCandidates.at(-1) || null;
+
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
     const validRecord=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime();
     
@@ -189,6 +204,10 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       completedHours,
       lastActivityEdited,
       firstActivityStart,
+      firstSeen,
+      presenceLastSeen,
+      firstSignal,
+      lastSignal,
     };
   });
   
