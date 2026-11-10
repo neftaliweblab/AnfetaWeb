@@ -1,10 +1,25 @@
 import {workflowState} from '../services/activityWorkflow';
 import {hasActivityConflict} from '../services/activityConflict';
-export const RESULT_STATUS_FILTERS=[['all','Todos los estados'],['pending','PH · Por hacer'],['review','REV · En revisión'],['completed','TER · Terminadas'],['suspended','SUS · Suspendidas'],['conflict','⚠️ En conflicto'],['unknown','Sin clasificar']] as const;
-export function matchesResultStatus(row:any,filter:string){
- if(filter==='all')return true;
- if(filter==='conflict')return hasActivityConflict(row);
- return workflowState(row.updateStatus||row.statusLabel||row.status||'',row.name||'')===filter;
+import {isFinalizedResult, isOperativeTerminatedResult} from './activeResultsFirst';
+
+export const RESULT_STATUS_FILTERS = [
+  ['all', 'Todos los estados'],
+  ['pending', 'PH · Por hacer'],
+  ['review', 'REV · En revisión'],
+  ['terminated', 'TER · Terminadas'],
+  ['finalized', 'FIN · Finalizadas'],
+  ['suspended', 'SUS · Suspendidas'],
+  ['conflict', '⚠️ En conflicto'],
+  ['unknown', 'Sin clasificar'],
+] as const;
+
+export function matchesResultStatus(row: any, filter: string) {
+  if (filter === 'all') return true;
+  if (filter === 'conflict') return hasActivityConflict(row);
+  if (filter === 'finalized') return isFinalizedResult(row);
+  if (filter === 'terminated') return isOperativeTerminatedResult(row);
+  if (filter === 'completed') return workflowState(row.updateStatus || row.statusLabel || row.status || '', row.name || row.title || '') === 'completed';
+  return workflowState(row.updateStatus || row.statusLabel || row.status || '', row.name || row.title || '') === filter;
 }
 /** Visual only: never change scheduledDate or the sort key. */
 export function resultDuration(row:any){

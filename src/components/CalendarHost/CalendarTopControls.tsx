@@ -329,7 +329,7 @@ export function CalendarTopControls({
           </button>
         )}
 
-        <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="min-w-0 max-w-[112px] rounded border border-slate-700 bg-slate-900 p-1 text-[10px] text-slate-300"><option value="">Todas las fases</option><option value="pending">Por hacer</option><option value="review">En revisión</option><option value="completed">Terminadas</option><option value="suspended">Suspendidas</option></select>
+        <select aria-label="Filtrar fase" value={phaseFilter || ''} onChange={e=>onPhaseFilter?.(e.target.value)} className="min-w-0 max-w-[124px] rounded border border-slate-700 bg-slate-900 p-1 text-[10px] text-slate-300"><option value="">Todas las fases</option><option value="pending">PH · Por hacer</option><option value="review">REV · En revisión</option><option value="terminated">TER · Terminadas</option><option value="finalized">FIN · Finalizadas</option><option value="suspended">SUS · Suspendidas</option></select>
         <span className="shrink-0 rounded border border-slate-700 p-1 text-[11px] text-cyan-300" title="Horario disponible de 08:00 a 22:00">08–22h</span>
 
         {/* Quick Collaborator Switcher: Todos, J, K, A, N, G, I, S */}

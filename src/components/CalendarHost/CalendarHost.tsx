@@ -31,6 +31,7 @@ import {CalendarFinanceColumn} from './CalendarFinanceColumn';
 import {readApiJson} from '@/lib/readApiJson';
 import {mexicoDate} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
+import {isFinalizedResult, isOperativeTerminatedResult} from '@/lib/activeResultsFirst';
 import {CalendarBatchModal} from './CalendarBatchModal';
 import {CalendarReviewNotifications} from './CalendarReviewNotifications';
 import {CalendarFtfPanel} from './CalendarFtfPanel';
@@ -526,7 +527,12 @@ export function CalendarHost({
     return filterDeletedPages(activitiesList,currentUser).filter((act) => {
       if(isTemporaryCalendarResponse(act)||!calendarCopyVisible(act,showCopies))return false;
       if(!act.start||mexicoDate(act.start)!==currentDate)return false;
-      if(phaseFilter && workflowState(act.status,act.title)!==phaseFilter)return false;
+      if (phaseFilter) {
+        if (phaseFilter === 'terminated' && !isOperativeTerminatedResult(act)) return false;
+        else if (phaseFilter === 'finalized' && !isFinalizedResult(act)) return false;
+        else if (phaseFilter === 'completed' && workflowState(act.status, act.title) !== 'completed') return false;
+        else if (phaseFilter !== 'terminated' && phaseFilter !== 'finalized' && phaseFilter !== 'completed' && workflowState(act.status, act.title) !== phaseFilter) return false;
+      }
       const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
       if (searchFilterQuery && searchFilterQuery.trim()) {
         const terms = searchFilterQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);

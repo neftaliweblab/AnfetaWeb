@@ -30,6 +30,8 @@ for (const ext of ['.ts', '.tsx']) {
 
 const { progressiveStage, revisionPhaseTitle } = require('../src/services/progressiveWorkflow.ts');
 const { workflowBadgePresentation, activityDetailedState } = require('../src/services/activityWorkflow.ts');
+const { RESULT_STATUS_FILTERS, matchesResultStatus } = require('../src/lib/resultIndicators.ts');
+const { isFinalizedResult, isOperativeTerminatedResult } = require('../src/lib/activeResultsFirst.ts');
 
 console.log('=== TEST: Diferenciación de Estados TERMINADOS vs FIN (Reunión Nov 9) ===\n');
 
@@ -87,6 +89,27 @@ assert.equal(activityDetailedState('TERMINADO REV COBRO/DOCUMENTACION', 'zR act'
 assert.equal(activityDetailedState('REVISAR REVISIONES rrevi', 'rtuzR act'), 'review');
 assert.equal(activityDetailedState('PRTUZ POR HACER', 'prtuzR act'), 'pending');
 console.log('✓ activityDetailedState clasifica terminated, finalized, review y pending con precisión');
+
+// 5. Filtros de tipo y estado (RESULT_STATUS_FILTERS y matchesResultStatus)
+const filterKeys = RESULT_STATUS_FILTERS.map(([val]) => val);
+assert.ok(filterKeys.includes('terminated'), 'RESULT_STATUS_FILTERS debe incluir TER · Terminadas');
+assert.ok(filterKeys.includes('finalized'), 'RESULT_STATUS_FILTERS debe incluir FIN · Finalizadas');
+console.log('✓ RESULT_STATUS_FILTERS incluye opciones separadas para "terminated" (TER) y "finalized" (FIN)');
+
+const actTuz = {
+  name: 'tuzR aapli Mejoras web rrecu ne11',
+  updateStatus: 'TUZ - TERMINADO REVISION',
+};
+const actFin = {
+  name: 'zR aapli Cobro y cierre fase-36 rrecu ne11',
+  updateStatus: 'TERMINADO REV COBRO/DOCUMENTACION',
+};
+
+assert.equal(matchesResultStatus(actTuz, 'terminated'), true, 'actTuz debe coincidir con filtro terminated');
+assert.equal(matchesResultStatus(actTuz, 'finalized'), false, 'actTuz NO debe coincidir con filtro finalized');
+assert.equal(matchesResultStatus(actFin, 'finalized'), true, 'actFin debe coincidir con filtro finalized');
+assert.equal(matchesResultStatus(actFin, 'terminated'), false, 'actFin NO debe coincidir con filtro terminated');
+console.log('✓ matchesResultStatus filtra con precisión quirúrgica entre TER y FIN');
 
 console.log('\n=============================================');
 console.log('TODAS LAS PRUEBAS DE DIFERENCIACIÓN PASARON!');

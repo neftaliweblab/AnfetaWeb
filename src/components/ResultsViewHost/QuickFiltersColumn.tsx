@@ -75,9 +75,10 @@ const NOTION_ITEMS = [
 
 // 5. Opciones de Estados / Flujo
 const ESTADOS_ITEMS = [
-  { label: "⏳ Pendientes (prtuzREVISION)", tag: "prtuzREVISION" },
-  { label: "🔍 En Revisión (rtuzREVISION)", tag: "rtuzREVISION" },
-  { label: "✅ Terminados (zREVISION)", tag: "zREVISION" },
+  { label: "⏳ Pendientes (prtuzR)", tag: "prtuzR OR prtuzREVISION" },
+  { label: "🔍 En Revisión (rtuzR)", tag: "rtuzR OR rtuzREVISION" },
+  { label: "✅ Terminadas · por aprobar (tuzR)", tag: "tuzR OR tuzREVISION" },
+  { label: "🏁 Finalizadas · Fin (zR)", tag: "zR OR zREVISION" },
   { label: "💬 Con Respuesta ([RESPUESTA])", tag: "[RESPUESTA]" },
 ];
 

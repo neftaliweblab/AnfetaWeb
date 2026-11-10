@@ -19,7 +19,7 @@ export function isFinalizedResult(item: any): boolean {
   if (!item) return false;
   const status = String(item.updateStatus || item.status || item.UpdateStatus || item.Status || '').trim().toLowerCase();
   const title = String(item.name || item.title || item.Name || item.Title || '').trim().toLowerCase();
-  if (status.includes('finaliz') || status === 'fin' || status === 'cerrada' || /^z\b/.test(status)) return true;
+  if (status.includes('finaliz') || status === 'fin' || status === 'cerrada' || /^z\b/.test(status) || status.includes('cobro/documentacion') || status.includes('cobrado')) return true;
   const stage = progressiveStage(title);
   if (stage && (stage.code.toLowerCase().startsWith('z') || stage.financial === 'settled')) return true;
   return /(?<![\p{L}\p{N}_@.\/-])(?:z[rsdcp]?|zz)(?![\p{L}\p{N}_@.\/-])/iu.test(title);

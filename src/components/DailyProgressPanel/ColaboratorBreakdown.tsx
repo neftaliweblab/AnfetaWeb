@@ -6,6 +6,7 @@ import { calendarDisplayTitle } from "@/services/calendarPresentation";
 import { evaluateLagStatus, getForecastStatus } from "@/services/progressKpis";
 import { normalizePerson, getPersonColor } from "@/services/identityNormalizer";
 import { workflowState } from "@/services/activityWorkflow";
+import { isFinalizedResult, isOperativeTerminatedResult } from "@/lib/activeResultsFirst";
 import {
   CheckSquare,
   AlertTriangle,
@@ -31,7 +32,7 @@ interface ColaboratorBreakdownProps {
   activities: NotionCalendarActivity[];
 }
 
-type StatusFilter = "all" | "lagging" | "inProgress" | "completed";
+type StatusFilter = "all" | "lagging" | "inProgress" | "terminated" | "finalized" | "completed";
 type ViewMode = "byPerson" | "flatList";
 
 
@@ -150,27 +151,37 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
   const counts = useMemo(() => {
     let lagging = 0;
     let completed = 0;
+    let terminated = 0;
+    let finalized = 0;
     let inProgress = 0;
 
     for (const act of activities) {
       const lag = evaluateLagStatus(act);
-      const wf = workflowState(act.status, act.title);
+      const isFin = isFinalizedResult(act);
+      const isTer = isOperativeTerminatedResult(act);
+      const isComp = isFin || isTer || workflowState(act.status, act.title) === "completed";
+
       if (lag.isLagging) lagging++;
-      if (wf === "completed" || act.isFinalized) completed++;
+      if (isFin) finalized++;
+      if (isTer) terminated++;
+      if (isComp) completed++;
       else inProgress++;
     }
 
-    return { all: activities.length, lagging, inProgress, completed };
+    return { all: activities.length, lagging, inProgress, terminated, finalized, completed };
   }, [activities]);
 
   // Filtrado por estado y búsqueda de texto
   const filteredActivities = useMemo(() => {
     return activities.filter((act) => {
       const lag = evaluateLagStatus(act);
-      const wf = workflowState(act.status, act.title);
-      const isComp = wf === "completed" || act.isFinalized;
+      const isFin = isFinalizedResult(act);
+      const isTer = isOperativeTerminatedResult(act);
+      const isComp = isFin || isTer || workflowState(act.status, act.title) === "completed";
 
       if (statusFilter === "lagging" && !lag.isLagging) return false;
+      if (statusFilter === "terminated" && !isTer) return false;
+      if (statusFilter === "finalized" && !isFin) return false;
       if (statusFilter === "completed" && !isComp) return false;
       if (statusFilter === "inProgress" && (isComp || lag.isLagging)) return false;
 
@@ -530,17 +541,32 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
 
           <button
             type="button"
-            onClick={() => setStatusFilter("completed")}
+            onClick={() => setStatusFilter("terminated")}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === "completed"
+              statusFilter === "terminated"
+                ? "bg-teal-500 text-slate-950 shadow-[0_0_10px_rgba(20,184,166,0.3)]"
+                : "bg-slate-900 text-teal-300 hover:bg-teal-950/40 border border-teal-900/50"
+            }`}
+          >
+            <span>✅ Terminadas</span>
+            <span className="font-mono text-[11px] bg-teal-950/80 px-1 rounded border border-teal-700/60">
+              {counts.terminated}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter("finalized")}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === "finalized"
                 ? "bg-emerald-500 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                 : "bg-slate-900 text-emerald-300 hover:bg-emerald-950/40 border border-emerald-900/50"
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Finalizadas</span>
+            <span>🏁 Finalizadas</span>
             <span className="font-mono text-[11px] bg-emerald-950/80 px-1 rounded border border-emerald-700/60">
-              {counts.completed}
+              {counts.finalized}
             </span>
           </button>
         </div>
