@@ -44,9 +44,9 @@ const ARCHIVOS_ITEMS = [
 
 // 2. Opciones de Personas
 const PERSONAS_ITEMS = Object.entries(ACTIVITY_TAGS).flatMap(([name,entry])=>[
-  {label:'👤 '+name+' · trabajo',tag:['00','11','22','33'].map(priority=>entry.active+priority).join(' OR ')},
-  {label:'🔍 '+name+' · revisión ('+entry.review+' / '+entry.active+'000)',tag:entry.active+'000'},
-  {label:'👤 '+name+' · trabajo y revisiones',tag:[...['00','11','22','33'].map(priority=>entry.active+priority),entry.active+'000'].join(' OR ')},
+  {label:'👤 '+name+' · trabajo',tag:name+'  '+['00','11','22','33'].map(priority=>entry.active+priority).join(' OR ')},
+  {label:'🔍 '+name+' · revisión ('+entry.review+' / '+entry.active+'000)',tag:name+'  '+entry.active+'000'},
+  {label:'👤 '+name+' · trabajo y revisiones',tag:name+'  '+[...['00','11','22','33'].map(priority=>entry.active+priority),entry.active+'000'].join(' OR ')},
 ]);
 
 // 3. Opciones de Proyectos (Tipos de Proyecto)
