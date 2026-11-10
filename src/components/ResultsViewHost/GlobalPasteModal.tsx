@@ -70,10 +70,12 @@ export function GlobalPasteModal({
   const attachment=attachmentOnly?activityAttachmentPlan(suggestedTarget,files[0]?.filename||'Grabacion.webm'):null;
   const videoBlob=files.find(f=>/^video\//.test(f.contentType||f.blob?.type||''))?.blob;
   useEffect(()=>{if(!videoBlob){setVideoPreview('');return;}const url=URL.createObjectURL(videoBlob);setVideoPreview(url);return()=>URL.revokeObjectURL(url);},[videoBlob]);
-  const [mode, setMode] = useState<'both' | 'dropbox' | 'notion'>('both');
+  const [mode, setMode] = useState<'both' | 'dropbox' | 'notion'>('notion');
   const [actionType, setActionType] = useState<'create' | 'attach'>('create');
   const [quickType,setQuickType]=useState('Actividad rápida'),[quickTitle,setQuickTitle]=useState(''),[quickDescription,setQuickDescription]=useState('');
   const [customType,setCustomType]=useState(false),[domainRows,setDomainRows]=useState<any[]>([]);
+  const [customEditedTitle, setCustomEditedTitle] = useState('');
+  const [isTitleManuallyEdited, setIsTitleManuallyEdited] = useState(false);
   const [cachedDomains,setCachedDomains]=useState<string[]>([]);
   const domains=useMemo(()=>[...new Set([...catalogDomains(domainRows),...cachedDomains])],[domainRows,cachedDomains]);
   useEffect(()=>{
@@ -175,9 +177,9 @@ export function GlobalPasteModal({
     const detected = detectUpload([initialDomain, initialText, ...filesToUse.map(f => f.filename)].join(' '));
     const d = initialDomain || detected.domain;
     const m = monthToken();
-    let saved: any = 'both';
-    try { saved = localStorage.getItem('anfeta_upload_destination') || 'both'; } catch {}
-    setMode(initialDestination || (['both', 'dropbox', 'notion'].includes(saved) ? saved : 'both'));
+    let saved: any = 'notion';
+    try { saved = localStorage.getItem('anfeta_upload_destination') || 'notion'; } catch {}
+    setMode(initialDestination || (['both', 'dropbox', 'notion'].includes(saved) ? saved : 'notion'));
     setFiles(filesToUse);
     setDomain(d || '');
     setRoot(detected.root);
@@ -414,7 +416,7 @@ export function GlobalPasteModal({
         category,
         month,
         personTag: person,
-        title: documentation ? `${quickType}: ${quickTitle.trim()}` : effectiveMode === 'notion' && actionType === 'create' ? quickPreview : title.trim(),
+        title: documentation ? `${quickType}: ${quickTitle.trim()}` : effectiveMode === 'notion' && actionType === 'create' ? (isTitleManuallyEdited && customEditedTitle.trim() ? customEditedTitle.trim() : quickPreview) : title.trim(),
         body: actionType==='create'?[quickDescription,body,(!files.length?quickTitle:'')].filter(Boolean).join('\n'):body,
         files,
         separatePages: separate,
@@ -510,7 +512,9 @@ export function GlobalPasteModal({
 
       const warnings = [...(data.warnings || []), data.warning].filter(Boolean);
       setLocked(true);
-      showCreationResult(true, frozen.mode === 'dropbox' ? 'Archivo guardado' : frozen.actionType === 'attach' ? 'Adjunto guardado' : 'Página creada', warnings.length ? 'Consulta los avisos del lote.' : undefined);
+      const createdReceipt = allReceipts.find((r:any) => r.kind === 'notion' || r.kind === 'notion_attachment');
+      const pageUrl = createdReceipt?.pageUrl || (createdReceipt?.pageId ? `https://www.notion.so/${createdReceipt.pageId.replace(/-/g, '')}` : undefined);
+      showCreationResult(true, frozen.mode === 'dropbox' ? 'Archivo guardado en Dropbox' : frozen.actionType === 'attach' ? 'Adjunto guardado en Notion' : 'Página creada en Notion', warnings.length ? 'Consulta los avisos del lote.' : frozen.title, pageUrl, createdReceipt?.pageId);
       setStatus('Guardado correctamente.' + (warnings.length ? ' Advertencias: ' + warnings.join(' ') : ''));
       try {
         localStorage.setItem('anfeta_upload_destination', mode);
@@ -941,11 +945,45 @@ export function GlobalPasteModal({
           <section aria-label="Vista previa de Notion" className="space-y-2 rounded-xl border border-cyan-800 bg-cyan-950/25 p-3 text-xs">
             <h3 className="text-sm font-semibold text-cyan-200">Vista previa de la página en Notion</h3>
             {!documentation && <p className="text-slate-300">Destino: Revisiones · Responsable: {chosen?.person || currentUser} · Sin horario</p>}
-            <p role="status" className="break-words rounded-lg bg-slate-950 p-2.5 text-cyan-100">
-              {documentation
-                ? (quickTitle.trim() ? `${quickType}: ${quickTitle.trim()}` : 'Escribe el nombre del registro para ver el título final.')
-                : quickPreview || quickError}
-            </p>
+            {!documentation ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                    <span>Título final para Notion</span>
+                    <span className="text-[10px] text-cyan-300 font-normal">(editable para corregir antes de guardar)</span>
+                  </span>
+                  {isTitleManuallyEdited && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTitleManuallyEdited(false);
+                        setCustomEditedTitle(quickPreview);
+                      }}
+                      className="text-cyan-400 hover:underline cursor-pointer text-[10.5px]"
+                    >
+                      ↺ Restablecer automático
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={isTitleManuallyEdited ? customEditedTitle : (quickPreview || '')}
+                  onChange={(e) => {
+                    setIsTitleManuallyEdited(true);
+                    setCustomEditedTitle(e.target.value);
+                  }}
+                  placeholder={quickError || 'Completa los campos para armar el título...'}
+                  className="w-full rounded-lg bg-slate-950 border border-cyan-700/60 p-2.5 text-xs text-cyan-100 font-mono focus:border-cyan-400 focus:outline-none"
+                />
+                {quickError && !isTitleManuallyEdited && (
+                  <p className="text-rose-400 text-[11px]">{quickError}</p>
+                )}
+              </div>
+            ) : (
+              <p role="status" className="break-words rounded-lg bg-slate-950 p-2.5 text-cyan-100">
+                {quickTitle.trim() ? `${quickType}: ${quickTitle.trim()}` : 'Escribe el nombre del registro para ver el título final.'}
+              </p>
+            )}
             {!documentation && !quickPreview && <p className="text-slate-400">Ejemplo de captura: nombre «Corregir horario del calendario», dominio «anfeta.com» y responsable «Yo».</p>}
           </section>
         )}

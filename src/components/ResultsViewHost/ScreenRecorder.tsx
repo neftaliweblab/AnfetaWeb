@@ -10,8 +10,9 @@ import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
 import {playCheckChime,sendWindowsNotification} from '@/services/windowsIntegration';
 import {blobToBase64} from '@/lib/blobBase64';
-import {ACTIVITY_TAGS} from '@/services/activityTags';
+import {ACTIVITY_TAGS, activePersonTag, pendingReviewTag, type ActivityPerson, type ActivityPriority} from '@/services/activityTags';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
+import {showCreationResult} from '@/components/CreationFeedback';
 
 function getMexicoToday(): string {
   try {
@@ -28,7 +29,59 @@ function getMexicoToday(): string {
   }
 }
 
-const QUICK_NOTION_DESTINATIONS = Object.entries(ACTIVITY_TAGS).map(([person, entry]) => ({
+export const TEAM_MEMBERS: ActivityPerson[] = [
+  'Neftali',
+  'John',
+  'Genaro',
+  'Karla',
+  'Edwin',
+  'Acalli',
+  'Isaias',
+  'Brian',
+  'Andrade',
+  'Sotelo',
+];
+
+export const PRIORITIES: { value: ActivityPriority; label: string; tagSuffix: string }[] = [
+  { value: '00', label: '00 · Urgente', tagSuffix: '00' },
+  { value: '11', label: '11 · Primaria', tagSuffix: '11' },
+  { value: '22', label: '22 · Secundaria', tagSuffix: '22' },
+  { value: '33', label: '33 · Usar/practicar', tagSuffix: '33' },
+];
+
+export const REVIEWERS = [
+  { person: '', label: 'Sin revisor técnico' },
+  ...TEAM_MEMBERS.map(m => ({
+    person: m,
+    label: `${m} (${ACTIVITY_TAGS[m].active}000)`
+  }))
+];
+
+export function buildQuickTitle(
+  desc: string,
+  domain: string,
+  person: ActivityPerson,
+  priority: ActivityPriority,
+  reviewer: string
+): string {
+  const cleanDom = (domain || '').trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  const domPart = cleanDom ? (cleanDom.startsWith('d.') || cleanDom.startsWith('p.') ? cleanDom : `d.${cleanDom}`) : '';
+  const taskPart = (desc || '').trim() || 'Actividad rápida';
+  const personTag = activePersonTag(person, priority);
+  const reviewerTag = reviewer ? pendingReviewTag(reviewer) : '';
+
+  const parts = [
+    domPart,
+    taskPart,
+    personTag,
+    reviewerTag
+  ].filter(Boolean);
+
+  const rawTitle = parts.join(' ');
+  return revisionPhaseTitle(rawTitle, 'pending').replace(/\s{2,}/g, ' ').trim();
+}
+
+export const QUICK_NOTION_DESTINATIONS = Object.entries(ACTIVITY_TAGS).map(([person, entry]) => ({
   person, code: entry.active + '00', label: entry.active + '00 notion',
 }));
 export type RecordingUploadOptions = {person?: string; domain?: string; attach?: boolean};
@@ -50,6 +103,18 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const [clipboardImage,setClipboardImage]=useState<{base64:string;preview:string;name:string}|null>(null);
   const [clipboardDomain,setClipboardDomain]=useState('');
   const [clipboardSavingCode,setClipboardSavingCode]=useState<string|null>(null);
+
+  // Controles modulares (John Nov 10): Responsable, Prioridad, Revisor y Vista previa editable
+  const [targetPerson, setTargetPerson] = useState<ActivityPerson>('Neftali');
+  const [targetPriority, setTargetPriority] = useState<ActivityPriority>('11');
+  const [targetReviewer, setTargetReviewer] = useState<string>('');
+
+  const [clipboardCustomTitle, setClipboardCustomTitle] = useState('');
+  const [isClipboardTitleEdited, setIsClipboardTitleEdited] = useState(false);
+
+  const [recordingCustomTitle, setRecordingCustomTitle] = useState('');
+  const [isRecordingTitleEdited, setIsRecordingTitleEdited] = useState(false);
+
   const session=useRef<Awaited<ReturnType<typeof startScreenRecording>>|null>(null),mounted=useRef(true),starting=useRef(false);
 
   useEffect(()=>{mounted.current=true;setClient(true);return()=>{mounted.current=false;session.current?.dispose();};},[]);
@@ -82,21 +147,24 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
     finally{setSending(false);}
   }
 
-  async function quickUploadDirectNotion(dest: typeof QUICK_NOTION_DESTINATIONS[number]) {
+  async function quickUploadDirectNotion() {
     if (!video || sending || quickSavingCode || recordingSubmission.current) return;
     if (video.size > RECORDING_MAX_BYTES) {
       setNotice('El video supera 128 MB. Descárgalo para reducirlo antes de subir.');
       return;
     }
+    const destCode = activePersonTag(targetPerson, targetPriority);
     recordingSubmission.current=true;
-    setQuickSavingCode(dest.code);
-    setNotice(`Subiendo directo a Notion para ${dest.person} (${dest.code})...`);
+    setQuickSavingCode(destCode);
+    setNotice(`Subiendo directo a Notion para ${targetPerson} (${destCode})...`);
     try {
+      const cleanDom = customDomain.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
       if (video.size > DIRECT_NOTION_MAX_BYTES) {
         // Large base64 bodies exceed Vercel's request limit. Hand off before reading the blob.
-        const file={filename:'Grabacion_'+dest.code+(video.type.includes('mp4')?'.mp4':'.webm'),contentType:video.type,sizeBytes:video.size,blob:video,base64:'',dataUrl:''};
-        if (await onReady(file,targetRef.current,{person:dest.person,domain:customDomain})) {
+        const file={filename:'Grabacion_'+destCode+(video.type.includes('mp4')?'.mp4':'.webm'),contentType:video.type,sizeBytes:video.size,blob:video,base64:'',dataUrl:''};
+        if (await onReady(file,targetRef.current,{person:targetPerson,domain:customDomain})) {
           setVideo(null);setPhase('idle');setNotice('');setCustomDomain('');
+          setRecordingCustomTitle('');setIsRecordingTitleEdited(false);
         }
         return;
       }
@@ -104,9 +172,9 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       const today = getMexicoToday();
       const start = `${today}T09:00:00-06:00`;
       const end = `${today}T10:00:00-06:00`;
-      const cleanDom = customDomain.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-      const domainTitlePart = cleanDom ? ` ${cleanDom}` : '';
-      const title = `prtuzREVISION ${dest.code}${domainTitlePart} Grabación ${today} 09:00`;
+      
+      const autoTitle = buildQuickTitle(`Grabación ${today} 09:00`, customDomain, targetPerson, targetPriority, targetReviewer);
+      const title = isRecordingTitleEdited && recordingCustomTitle.trim() ? recordingCustomTitle.trim() : autoTitle;
 
       const response = await fetchWithScheduleChoice('/api/data', {
         method: 'POST',
@@ -116,12 +184,12 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
           payload: {
             title:revisionPhaseTitle(title,'pending'),
             domain: cleanDom || undefined,
-            person: dest.person,
+            person: targetPerson,
             start,
             end,
             calendarEntryKind:'recording',
             files: [{
-              filename: `Grabacion_${dest.code}_${today}_${Date.now()}${video.type.includes('mp4')?'.mp4':'.webm'}`,
+              filename: `Grabacion_${destCode}_${today}_${Date.now()}${video.type.includes('mp4')?'.mp4':'.webm'}`,
               contentType: video.type || 'video/webm',
               base64
             }]
@@ -133,12 +201,17 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se confirmó el guardado. Tu grabación se conserva; verifica Notion antes de repetir.');
       }
       playCheckChime();
-      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) en el horario confirmado`);
+      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${targetPerson} (${destCode}) en el horario confirmado`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
-      setNotice(`✅ Actividad creada en Notion con éxito para ${dest.person} (${dest.code}) en el horario confirmado`);
+      
+      showCreationResult(true, `Grabación asignada a ${targetPerson}`, title, data.activity?.pageUrl, data.pageId);
+      setNotice(`✅ Actividad creada en Notion con éxito para ${targetPerson} (${destCode})`);
       setVideo(null);setPhase('idle');setCustomDomain('');
+      setRecordingCustomTitle('');setIsRecordingTitleEdited(false);
     } catch (err: any) {
-      setNotice(err instanceof Error ? err.message : 'Error al subir a Notion');
+      const msg = err instanceof Error ? err.message : 'Error al subir a Notion';
+      setNotice(msg);
+      showCreationResult(false, 'Error al subir grabación', msg);
     } finally {
       recordingSubmission.current=false;
       if (mounted.current) setQuickSavingCode(null);
@@ -184,19 +257,19 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
     }
   }
 
-  async function quickUploadClipboard(dest: typeof QUICK_NOTION_DESTINATIONS[number]) {
+  async function quickUploadClipboard() {
     if (sending || clipboardSavingCode || clipboardSubmission.current) return;
     clipboardSubmission.current=true;
-    setClipboardSavingCode(dest.code);
-    setNotice(`Subiendo directo a Notion para ${dest.person} (${dest.code})...`);
+    const destCode = activePersonTag(targetPerson, targetPriority);
+    setClipboardSavingCode(destCode);
+    setNotice(`Subiendo directo a Notion para ${targetPerson} (${destCode})...`);
     try {
       const today = getMexicoToday();
       const start = `${today}T09:00:00-06:00`;
       const end = `${today}T10:00:00-06:00`;
       const cleanDom = clipboardDomain.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-      const domainTitlePart = cleanDom ? ` ${cleanDom}` : '';
-      const taskText = clipboardText.trim() || 'Actividad rápida';
-      const title = `prtuzREVISION ${dest.code}${domainTitlePart} ${taskText}`;
+      const autoTitle = buildQuickTitle(clipboardText, clipboardDomain, targetPerson, targetPriority, targetReviewer);
+      const title = isClipboardTitleEdited && clipboardCustomTitle.trim() ? clipboardCustomTitle.trim() : autoTitle;
 
       const files = clipboardImage ? [{
         filename: clipboardImage.name,
@@ -212,7 +285,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
           payload: {
             title:revisionPhaseTitle(title,'pending'),
             domain: cleanDom || undefined,
-            person: dest.person,
+            person: targetPerson,
             start,
             end,
             files
@@ -224,20 +297,26 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
       }
       playCheckChime();
-      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${dest.person} (${dest.code}) en el horario confirmado`);
+      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${targetPerson} (${destCode}) en el horario confirmado`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
-      setNotice(`✅ Creada en Notion para ${dest.person} (${dest.code}) en el horario confirmado`);
+      
+      showCreationResult(true, `Actividad creada para ${targetPerson}`, title, data.activity?.pageUrl, data.pageId);
+      setNotice(`✅ Creada en Notion para ${targetPerson} (${destCode}) en el horario confirmado`);
       setTimeout(() => {
         if (mounted.current) {
           setClipboardOpen(false);
           setClipboardText('');
           setClipboardImage(null);
           setClipboardDomain('');
+          setClipboardCustomTitle('');
+          setIsClipboardTitleEdited(false);
           setNotice('');
         }
-      }, 1500);
+      }, 1200);
     } catch (err: any) {
-      setNotice(err instanceof Error ? err.message : 'Error al subir a Notion');
+      const msg = err instanceof Error ? err.message : 'Error al subir a Notion';
+      setNotice(msg);
+      showCreationResult(false, 'Error al subir a Notion', msg);
     } finally {
       clipboardSubmission.current=false;
       if (mounted.current) setClipboardSavingCode(null);
@@ -245,7 +324,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   }
 
   const preferred=client&&typeof MediaRecorder!=='undefined'?recordingMime(MediaRecorder,microphone):'';
-  const overlay=phase!=='idle'&&panelOpen?<div id="anfeta-recording-controls" className="fixed bottom-28 right-5 z-[400] w-[min(440px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-cyan-800 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl" role="region" aria-label="Grabación de pantalla">
+  const overlay=phase!=='idle'&&panelOpen?<div id="anfeta-recording-controls" className="fixed bottom-28 right-5 z-[400] w-[min(460px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-cyan-800 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl" role="region" aria-label="Grabación de pantalla">
     <button type="button" aria-label="Ocultar controles; la grabación continúa" title="Ocultar controles" onClick={()=>setPanelOpen(false)} className="float-right ml-2 p-1 text-slate-300"><X size={16}/></button>
     <h2 className="font-bold text-cyan-200">{phase==='configure'?'Preparar grabación':phase==='preview'?'Vista previa de la grabación':phase==='starting'?'Selecciona qué compartir':'● Grabando pantalla'+(microphone?' y micrófono':'')}</h2>
     {phase==='configure'&&<div className="my-3 space-y-3"><p>El navegador te permitirá elegir pantalla, ventana o pestaña según su compatibilidad. Máximo 10 minutos / 128 MB.</p><label className="flex gap-2"><input type="checkbox" checked={microphone} onChange={e=>setMicrophone(e.target.checked)}/>Incluir micrófono</label><p className="text-xs text-slate-400">Grabación WebM fluida con audio. En Notion se incrustará el reproductor interactivo y se conservará el archivo descargable.</p><button type="button" disabled={disabled} onClick={()=>void start(targetRef.current)} className="rounded bg-cyan-800 p-2">Elegir pantalla e iniciar</button><button type="button" onClick={()=>setPhase('idle')} className="ml-3">Cancelar</button></div>}
@@ -285,30 +364,145 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         />
       </div>
 
-      {/* Botones rápidos: Guardado directo en Notion 9am */}
-      {!target&&<div className="mt-2.5 space-y-1.5">
-        <span className="block text-[10.5px] font-semibold text-cyan-300">
-          {video&&video.size>DIRECT_NOTION_MAX_BYTES?'Preparar subida por fragmentos (confirma destino y datos):':'Guardar en Notion (9am hoy · prioridad 00):'}
-        </span>
-        <div className="grid grid-cols-3 gap-1.5">
-          {QUICK_NOTION_DESTINATIONS.map((dest) => (
-            <button
-              key={dest.code}
-              type="button"
-              disabled={sending || !!quickSavingCode || !video || video.size > RECORDING_MAX_BYTES}
-              onClick={() => void quickUploadDirectNotion(dest)}
-              className={`rounded-lg border px-2 py-2 text-center font-mono text-[11px] font-semibold transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 ${
-                quickSavingCode === dest.code
-                  ? 'bg-cyan-700 border-cyan-400 text-white animate-pulse'
-                  : 'bg-[#131F2E] border-[#263A50] hover:bg-[#1A2C42] hover:border-[#38BDF8] text-[#93C5FD] hover:text-white'
-              }`}
-              title={`Crear actividad en Notion con video adjunto para ${dest.person} a las 9am (${dest.code})`}
-            >
-              {quickSavingCode === dest.code ? 'Preparando...' : video&&video.size>DIRECT_NOTION_MAX_BYTES?dest.person:dest.label}
-            </button>
-          ))}
+      {/* Asignación rápida modular en Notion (John Nov 10) */}
+      {!target && (
+        <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2.5">
+          <span className="block text-[11px] font-semibold text-cyan-300">
+            {video && video.size > DIRECT_NOTION_MAX_BYTES
+              ? 'Preparar subida por fragmentos (confirma datos):'
+              : 'Asignación rápida en Notion (9am hoy):'}
+          </span>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10.5px] font-medium text-cyan-300 mb-1">
+                Responsable:
+              </label>
+              <select
+                value={targetPerson}
+                onChange={(e) => setTargetPerson(e.target.value as ActivityPerson)}
+                disabled={sending || !!quickSavingCode}
+                className="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+              >
+                {TEAM_MEMBERS.map((p) => (
+                  <option key={p} value={p}>
+                    {p} ({ACTIVITY_TAGS[p].active})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10.5px] font-medium text-cyan-300 mb-1">
+                Revisor técnico:
+              </label>
+              <select
+                value={targetReviewer}
+                onChange={(e) => setTargetReviewer(e.target.value)}
+                disabled={sending || !!quickSavingCode}
+                className="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+              >
+                {REVIEWERS.map((r) => (
+                  <option key={r.label} value={r.person}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10.5px] font-medium text-cyan-300 mb-1">
+              Prioridad:
+            </label>
+            <div className="grid grid-cols-4 gap-1">
+              {PRIORITIES.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  disabled={sending || !!quickSavingCode}
+                  onClick={() => setTargetPriority(p.value)}
+                  className={`rounded px-1.5 py-1 text-center font-mono text-[10.5px] font-semibold transition-all cursor-pointer ${
+                    targetPriority === p.value
+                      ? 'bg-cyan-500 text-slate-950 shadow'
+                      : 'bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-cyan-500/50'
+                  }`}
+                  title={p.label}
+                >
+                  {p.value}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10.5px] font-medium text-cyan-300">
+                Título técnico final en Notion:
+              </label>
+              {isRecordingTitleEdited && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRecordingTitleEdited(false);
+                    setRecordingCustomTitle('');
+                  }}
+                  className="text-[10px] text-cyan-400 hover:underline cursor-pointer"
+                >
+                  ↺ Restablecer
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={
+                isRecordingTitleEdited
+                  ? recordingCustomTitle
+                  : buildQuickTitle(
+                      `Grabación ${getMexicoToday()} 09:00`,
+                      customDomain,
+                      targetPerson,
+                      targetPriority,
+                      targetReviewer
+                    )
+              }
+              onChange={(e) => {
+                setIsRecordingTitleEdited(true);
+                setRecordingCustomTitle(e.target.value);
+              }}
+              disabled={sending || !!quickSavingCode}
+              className="w-full rounded bg-slate-950 border border-cyan-600/60 p-2 text-xs text-cyan-100 font-mono focus:border-cyan-400 focus:outline-none"
+              placeholder="Título estructurado..."
+            />
+          </div>
+
+          <button
+            type="button"
+            disabled={sending || !!quickSavingCode || !video || video.size > RECORDING_MAX_BYTES}
+            onClick={() => void quickUploadDirectNotion()}
+            className={`w-full rounded-lg px-3 py-2 text-center font-semibold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-2 ${
+              quickSavingCode
+                ? 'bg-cyan-700 text-cyan-100 cursor-wait'
+                : 'bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 text-white active:scale-[0.99]'
+            }`}
+          >
+            {quickSavingCode ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>
+                  {video && video.size > DIRECT_NOTION_MAX_BYTES ? 'Preparando fragmentos...' : 'Guardando en Notion...'}
+                </span>
+              </>
+            ) : (
+              <span>
+                {video && video.size > DIRECT_NOTION_MAX_BYTES
+                  ? `⚡ Preparar subida por fragmentos para ${targetPerson}`
+                  : `⚡ Guardar en Notion (${targetPerson} · ${activePersonTag(targetPerson, targetPriority)})`}
+              </span>
+            )}
+          </button>
         </div>
-      </div>}
+      )}
 
       <p className="mt-2 text-[10px] text-amber-200/80 leading-snug">
         {video?.type.includes('mp4')?'Se guardará el video MP4 en Notion.':'WebM se conservará como archivo descargable en Notion; puedes revisar el video aquí.'}
@@ -320,7 +514,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const clipboardOverlay = clipboardOpen ? (
     <div
       id="anfeta-clipboard-controls"
-      className="fixed bottom-28 right-5 z-[400] w-[min(440px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-amber-500/70 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl"
+      className="fixed bottom-28 right-5 z-[400] w-[min(460px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-amber-500/70 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl"
       role="region"
       aria-label="Asignación rápida desde portapapeles"
       onPaste={handleClipboardPaste}
@@ -384,29 +578,129 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         />
       </div>
 
-      {/* Botones de destino en 1 clic */}
-      <div className="space-y-1.5">
-        <span className="block text-[10.5px] font-semibold text-amber-300">
-          Asignar en 1 clic a Notion:
-        </span>
-        <div className="grid grid-cols-3 gap-1.5">
-          {QUICK_NOTION_DESTINATIONS.map((dest) => (
-            <button
-              key={dest.code}
-              type="button"
+      {/* Selectores modulares (John Nov 10): Responsable, Revisor, Prioridad y Título Técnico Editable */}
+      <div className="space-y-2.5 pt-2 border-t border-slate-800">
+        <div className="grid grid-cols-2 gap-2">
+          {/* Selector de Responsable */}
+          <div>
+            <label className="block text-[10.5px] font-medium text-amber-300 mb-1">
+              Responsable:
+            </label>
+            <select
+              value={targetPerson}
+              onChange={(e) => setTargetPerson(e.target.value as ActivityPerson)}
               disabled={!!clipboardSavingCode}
-              onClick={() => void quickUploadClipboard(dest)}
-              className={`rounded-lg border px-2 py-1.5 text-center font-mono text-[11px] font-semibold transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 ${
-                clipboardSavingCode === dest.code
-                  ? 'bg-amber-600 border-amber-300 text-white animate-pulse'
-                  : 'bg-[#1C1811] border-[#3E311B] hover:bg-[#2A2113] hover:border-[#F59E0B] text-[#FCD34D] hover:text-white'
-              }`}
-              title={`Asignar tarea en Notion para ${dest.person} a las 9am (${dest.code})`}
+              className="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none"
             >
-              {clipboardSavingCode === dest.code ? 'Guardando...' : dest.label}
-            </button>
-          ))}
+              {TEAM_MEMBERS.map((p) => (
+                <option key={p} value={p}>
+                  {p} ({ACTIVITY_TAGS[p].active})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Selector de Revisor Técnico */}
+          <div>
+            <label className="block text-[10.5px] font-medium text-amber-300 mb-1">
+              Revisor técnico:
+            </label>
+            <select
+              value={targetReviewer}
+              onChange={(e) => setTargetReviewer(e.target.value)}
+              disabled={!!clipboardSavingCode}
+              className="w-full rounded bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none"
+            >
+              {REVIEWERS.map((r) => (
+                <option key={r.label} value={r.person}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+
+        {/* Prioridad en píldoras / botones */}
+        <div>
+          <label className="block text-[10.5px] font-medium text-amber-300 mb-1">
+            Prioridad (nivel de asignación):
+          </label>
+          <div className="grid grid-cols-4 gap-1">
+            {PRIORITIES.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                disabled={!!clipboardSavingCode}
+                onClick={() => setTargetPriority(p.value)}
+                className={`rounded px-1.5 py-1 text-center font-mono text-[10.5px] font-semibold transition-all cursor-pointer ${
+                  targetPriority === p.value
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-amber-500/50'
+                }`}
+                title={p.label}
+              >
+                {p.value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Título técnico final en Notion (editable para corregir antes de guardar) */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10.5px] font-medium text-amber-300">
+              Título técnico final en Notion:
+            </label>
+            {isClipboardTitleEdited && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsClipboardTitleEdited(false);
+                  setClipboardCustomTitle('');
+                }}
+                className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+              >
+                ↺ Restablecer
+              </button>
+            )}
+          </div>
+          <input
+            type="text"
+            value={
+              isClipboardTitleEdited
+                ? clipboardCustomTitle
+                : buildQuickTitle(clipboardText, clipboardDomain, targetPerson, targetPriority, targetReviewer)
+            }
+            onChange={(e) => {
+              setIsClipboardTitleEdited(true);
+              setClipboardCustomTitle(e.target.value);
+            }}
+            disabled={!!clipboardSavingCode}
+            className="w-full rounded bg-slate-950 border border-amber-600/60 p-2 text-xs text-amber-100 font-mono focus:border-amber-400 focus:outline-none"
+            placeholder="Título estructurado..."
+          />
+        </div>
+
+        {/* Botón Guardar en Notion */}
+        <button
+          type="button"
+          disabled={!!clipboardSavingCode}
+          onClick={() => void quickUploadClipboard()}
+          className={`w-full rounded-lg px-3 py-2 text-center font-semibold text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-2 ${
+            clipboardSavingCode
+              ? 'bg-amber-700 text-amber-100 cursor-wait'
+              : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 active:scale-[0.99]'
+          }`}
+        >
+          {clipboardSavingCode ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              <span>Guardando en Notion...</span>
+            </>
+          ) : (
+            <span>⚡ Guardar en Notion (9am hoy · ${activePersonTag(targetPerson, targetPriority)})</span>
+          )}
+        </button>
       </div>
 
       {notice && <p role="status" className="mt-2 text-amber-200 font-medium">{notice}</p>}

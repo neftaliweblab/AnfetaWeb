@@ -1,6 +1,6 @@
 import {revisionPhaseTitle} from '../services/progressiveWorkflow';
 import {getCalendarPersonTag} from './templateCatalog';
-import {activityPerson} from '../services/activityTags';
+import {activityPerson, activePersonTag, pendingReviewTag, ActivityPriority} from '../services/activityTags';
 import {normalizePerson} from '@/services/identityNormalizer';
 import {monthToken} from './drxUploadPlan';
 
@@ -24,8 +24,19 @@ export function typeWithEmoji(type: string): string {
   return `🌐 ${t}`;
 }
 
-export function quickRevisionTitle(input:{type?:string;title:string;person:string;domain:string;description?:string;month?:string}){
-  const tag=getCalendarPersonTag(normalizePerson(input.person));
+export function quickRevisionTitle(input:{
+  type?:string;
+  title:string;
+  person:string;
+  priority?:ActivityPriority;
+  reviewer?:string;
+  domain:string;
+  description?:string;
+  month?:string;
+}){
+  const personKey = normalizePerson(input.person);
+  const tag = input.priority ? activePersonTag(personKey, input.priority) : (getCalendarPersonTag(personKey) || activePersonTag(personKey, '11'));
+  const revTag = input.reviewer ? pendingReviewTag(input.reviewer) : '';
   if(!tag)throw Error('Selecciona un responsable válido para la actividad rápida.');
   const clean=(value:string)=>String(value||'').replace(/[\[\]\r\n|]/g,' ').replace(/\s+/g,' ').trim();
   const title=clean(input.title);
@@ -63,7 +74,7 @@ export function quickRevisionTitle(input:{type?:string;title:string;person:strin
   if (cleanDesc) {
     segments.push(`🛠️ ${cleanDesc}`);
   }
-  segments.push(`👤 ${tag}`);
+  segments.push(`👤 ${tag}${revTag ? ' ' + revTag : ''}`);
   segments.push(`✅`);
 
   const structuredBody = `| ${segments.join(' | ')}`;

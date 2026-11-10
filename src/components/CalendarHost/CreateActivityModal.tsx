@@ -279,7 +279,8 @@ export function CreateActivityModal({
               if (!response.ok || !data.success) {
                 throw new Error(data.error || 'No se pudo crear la actividad');
               }
-              showCreationResult(true, "Actividad creada");
+              const url = data.activity?.pageUrl || (data.activity?.pageId ? `https://www.notion.so/${data.activity.pageId.replace(/-/g, '')}` : undefined);
+              showCreationResult(true, `Actividad creada para ${person}`, title, url, data.activity?.pageId);
               onCreated(data.activity);
             } catch (err) {
               showCreationResult(false, 'No se confirmó la creación', 'Revisa el detalle en el formulario.');

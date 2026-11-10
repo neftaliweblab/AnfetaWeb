@@ -29,6 +29,7 @@ import {calendarLayoutPreference} from '@/lib/calendarLayoutPreferences';
 import {CalendarRemindersColumn} from './CalendarRemindersColumn';
 import {CalendarFinanceColumn} from './CalendarFinanceColumn';
 import {readApiJson} from '@/lib/readApiJson';
+import {showCreationResult} from '@/components/CreationFeedback';
 import {mexicoDate} from '@/services/calendarPresentation';
 import {workflowState} from '@/services/activityWorkflow';
 import {isFinalizedResult, isOperativeTerminatedResult} from '@/lib/activeResultsFirst';
@@ -453,6 +454,7 @@ export function CalendarHost({
       const data = await response.json();
       if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
       if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
+      showCreationResult(true, 'Actividad guardada en Notion', original.title, data.activity?.pageUrl, pageId);
       const saved: NotionCalendarActivity = updates.ftfVerified!==undefined?{...data.activity,checklistTotal:original.checklistTotal,checklistCompleted:original.checklistCompleted,checklistScanned:original.checklistScanned,checklistItems:original.checklistItems,completedChecks:original.completedChecks,todayChecklistCompleted:original.todayChecklistCompleted}:data.activity;
       if(updates.handoff){setVisiblePeople(prev=>prev.includes(saved.person)?prev:[...prev,saved.person]);if(Array.isArray(data.handoffCopies))for(const copy of data.handoffCopies)recentHandoffs.current.set(copy.pageId,{activity:copy,until:Date.now()+120000});}
       recentSaves.current.set(pageId,{activity:saved,until:Date.now()+60000});
@@ -483,6 +485,7 @@ export function CalendarHost({
       }
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
+      showCreationResult(false, 'Error al guardar en Notion', error instanceof Error ? error.message : 'No se pudo guardar la actividad.');
       if(updates.reviewer)rememberReviewFailure(pageId,error);
       return false;
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
