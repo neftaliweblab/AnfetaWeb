@@ -2310,6 +2310,12 @@ export function ResultsViewHost({
           resultSort={resultSort}
           onChangeResultSort={setResultSort}
           items={pagedItems}
+          currentPage={currentPage}
+          totalFilteredCount={filteredItems.length}
+          onNextPage={() => {
+            const totalPages = Math.ceil(filteredItems.length / pageSize);
+            if (currentPage < totalPages) setCurrentPage(p => p + 1);
+          }}
           selectedId={selectedItem?.id || null}
           selectedIds={selectedIds}
           searchQuery={deferredQuery}
@@ -2382,6 +2388,8 @@ export function ResultsViewHost({
         currentPage={currentPage}
         pageSize={pageSize}
         onChangePageSize={setPageSize}
+        totalItems={filteredItems.length}
+        onPageChange={setCurrentPage}
         statusText={`Índice: ${items.length} · Notion: ${filterByNotionBase(items as any, 'Notion').length} · Visibles: ${filteredItems.length}`} 
         selectedItem={selectedItem}
         selectedCount={selectedIds.size}

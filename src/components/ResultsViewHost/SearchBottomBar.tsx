@@ -9,6 +9,8 @@ interface SearchBottomBarProps {
   pageSize: number;
   onChangePageSize: (size: number) => void;
   statusText: string;
+  totalItems?: number;
+  onPageChange?: (page: number) => void;
   selectedItem: any | null;
   selectedCount?: number;
   onOpenItem: (item: any) => void;
@@ -21,13 +23,15 @@ interface SearchBottomBarProps {
   textScale?: string;
 }
 
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 500];
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 500, 1000];
 
 export function SearchBottomBar({
   currentPage,
   pageSize,
   onChangePageSize,
   statusText,
+  totalItems,
+  onPageChange,
   selectedItem,
   selectedCount = 0,
   onOpenItem,
@@ -74,10 +78,39 @@ export function SearchBottomBar({
         >
           i
         </div>
-        <span style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">Página</span>
-        <span style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }} className="font-semibold text-[#F1F5F9] mr-2">
-          {currentPage}
-        </span>
+        {(() => {
+          const totalPages = Math.max(1, Math.ceil((totalItems ?? 0) / (pageSize || 100)));
+          return (
+            <>
+              <span style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">Página</span>
+              <span style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }} className="font-semibold text-[#F1F5F9]">
+                {currentPage}{totalItems !== undefined && totalPages > 1 ? ` de ${totalPages}` : ''}
+              </span>
+              {totalItems !== undefined && totalPages > 1 && onPageChange && (
+                <div className="flex items-center gap-0.5 ml-1 mr-2">
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                    className="px-1.5 py-0.5 rounded bg-[#162235] border border-[#253549] text-[#94A3B8] hover:text-[#38BDF8] disabled:opacity-30 disabled:hover:text-[#94A3B8] cursor-pointer"
+                    title="Página anterior"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                    className="px-1.5 py-0.5 rounded bg-[#162235] border border-[#253549] text-[#94A3B8] hover:text-[#38BDF8] disabled:opacity-30 disabled:hover:text-[#94A3B8] cursor-pointer"
+                    title="Página siguiente"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <span style={{ fontSize: `${(10.5 * scale).toFixed(1)}px` }} className="text-[#94A3B8]">Tamaño</span>
         <select

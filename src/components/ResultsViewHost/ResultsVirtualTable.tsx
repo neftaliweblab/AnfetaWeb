@@ -156,6 +156,9 @@ interface ResultsTableProps {
   onOpenDetailModal?: (item: any) => void;
   resultSort?: string;
   onChangeResultSort?: (sort: string) => void;
+  currentPage?: number;
+  totalFilteredCount?: number;
+  onNextPage?: () => void;
 }
 
 function ResultsVirtualTableComponent({
@@ -163,6 +166,9 @@ function ResultsVirtualTableComponent({
   selectedId,
   selectedIds,
   searchQuery = "",
+  currentPage = 1,
+  totalFilteredCount,
+  onNextPage,
   searchOptions,
   favorites = new Set(),
   selectedScope = "Todo",
@@ -435,13 +441,35 @@ function ResultsVirtualTableComponent({
     setNextBelowId(belowNodes.length > 0 ? (belowNodes[0].getAttribute('data-search-result') || null) : null);
   };
 
+  const lastSearchQueryRef = useRef(searchQuery);
+  const lastScopeRef = useRef(selectedScope);
+  const lastStatusFilterRef = useRef(statusFilter);
+  const lastResultSortRef = useRef(resultSort);
+  const lastGroupByRef = useRef(groupBy);
+  const lastPageRef = useRef(currentPage);
+
   useEffect(() => {
-    if (listScrollRef.current) {
-      listScrollRef.current.scrollTop = 0;
+    const queryChanged = lastSearchQueryRef.current !== searchQuery;
+    const scopeChanged = lastScopeRef.current !== selectedScope;
+    const statusChanged = lastStatusFilterRef.current !== statusFilter;
+    const sortChanged = lastResultSortRef.current !== resultSort;
+    const groupByChanged = lastGroupByRef.current !== groupBy;
+    const pageChanged = lastPageRef.current !== currentPage;
+
+    if (queryChanged || scopeChanged || statusChanged || sortChanged || groupByChanged || pageChanged) {
+      lastSearchQueryRef.current = searchQuery;
+      lastScopeRef.current = selectedScope;
+      lastStatusFilterRef.current = statusFilter;
+      lastResultSortRef.current = resultSort;
+      lastGroupByRef.current = groupBy;
+      lastPageRef.current = currentPage;
+      if (listScrollRef.current) {
+        listScrollRef.current.scrollTop = 0;
+      }
     }
     const t = setTimeout(checkMoreBelow, 80);
     return () => clearTimeout(t);
-  }, [items, searchQuery]);
+  }, [items, searchQuery, selectedScope, statusFilter, resultSort, groupBy, currentPage]);
 
   const scrollToNextMatchBelow = () => {
     if (!nextBelowId || !listScrollRef.current) return;
@@ -1559,9 +1587,30 @@ function ResultsVirtualTableComponent({
           ) : (
             orderedItems.map(renderRow)
           )}
+          {totalFilteredCount !== undefined && onNextPage && currentPage !== undefined && (
+            (() => {
+              const totalPages = Math.max(1, Math.ceil(totalFilteredCount / (items.length || 100)));
+              if (currentPage < totalPages) {
+                return (
+                  <div className="flex items-center justify-center p-3 bg-[#111823]/80 border-t border-[#1E2836]">
+                    <button
+                      type="button"
+                      onClick={onNextPage}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-800 bg-cyan-950/60 text-xs font-semibold text-cyan-300 hover:bg-cyan-900 transition cursor-pointer shadow-md"
+                    >
+                      <span>Ver página siguiente ({currentPage + 1} de {totalPages}) →</span>
+                    </button>
+                  </div>
+                );
+              }
+              return null;
+            })()
+          )}
         </div>
       ) : (
         <div
+          ref={listScrollRef}
+          onScroll={checkMoreBelow}
           className={`flex-1 overflow-y-auto p-3 grid gap-2.5 scrollbar-thin ${
             viewZoom === "small"
               ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 auto-rows-max"
@@ -1597,6 +1646,25 @@ function ResultsVirtualTableComponent({
             </>
           ) : (
             orderedItems.map(renderCard)
+          )}
+          {totalFilteredCount !== undefined && onNextPage && currentPage !== undefined && (
+            (() => {
+              const totalPages = Math.max(1, Math.ceil(totalFilteredCount / (items.length || 100)));
+              if (currentPage < totalPages) {
+                return (
+                  <div className="col-span-full flex items-center justify-center p-3 bg-[#111823]/80 border-t border-[#1E2836]">
+                    <button
+                      type="button"
+                      onClick={onNextPage}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-800 bg-cyan-950/60 text-xs font-semibold text-cyan-300 hover:bg-cyan-900 transition cursor-pointer shadow-md"
+                    >
+                      <span>Ver página siguiente ({currentPage + 1} de {totalPages}) →</span>
+                    </button>
+                  </div>
+                );
+              }
+              return null;
+            })()
           )}
         </div>
       )}
