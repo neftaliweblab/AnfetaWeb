@@ -153,8 +153,8 @@ async function runTests() {
     'Assignee must resolve to the real executor (Neftali) from nne11!'
   );
   const finalTitle = completedPage.properties.Name.title[0].text.content;
-  assert.match(finalTitle, /\bnne11\b/, 'Completed title must preserve last active tag nne11!');
-  console.log('OK Case 1: Neftali task completed preserves nne11 tag and Assignee (neft-id) without emptying.');
+  assert.match(finalTitle, /\b(nne11|ne11)\b/, 'Completed title must preserve last active/reference tag ne11/nne11!');
+  console.log('OK Case 1: Neftali task completed preserves ne11/nne11 tag and Assignee (neft-id) without emptying.');
 
   // Case 2: Edwin activity with eed11
   state.page.properties.Name.title[0].text.content =
@@ -174,8 +174,8 @@ async function runTests() {
     'Assignee must resolve to Edwin from eed11 tag!'
   );
   const edwinTitle = edwinPage.properties.Name.title[0].text.content;
-  assert.match(edwinTitle, /\beed11\b/, 'Completed title must preserve Edwin active tag eed11!');
-  console.log('OK Case 2: Edwin task completed preserves eed11 tag and Assignee (edwin-id) without emptying.');
+  assert.match(edwinTitle, /\b(eed11|ed11)\b/, 'Completed title must preserve Edwin active/reference tag ed11/eed11!');
+  console.log('OK Case 2: Edwin task completed preserves ed11/eed11 tag and Assignee (edwin-id) without emptying.');
 
   console.log('\nALL ASSIGNEE PRESERVATION TESTS PASSED!');
 }

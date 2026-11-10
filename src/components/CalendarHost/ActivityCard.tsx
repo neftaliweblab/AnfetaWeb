@@ -311,6 +311,8 @@ function ActivityCardComponent({
   const isReview = wf === "review";
   const isSuspended = wf === "suspended";
 
+  const isFin = isCompleted && (/^(?:z|fin|finaliz)/i.test(activity.status || '') || /(?<![a-z])z[rdscp]?\b/i.test(activity.title || '') || /cobro\/documentacion|cobrado/i.test(activity.status || '') || Boolean(activity.isFinalized));
+
   // Badges y colores más tenues, profesionales y oscuros (WPF Parity)
   let badgeLetter = "P";
   let badgeBg = "#261A10";
@@ -326,12 +328,19 @@ function ActivityCardComponent({
     badgeText = "#FDA4AF";
     cardBorder = "border-[#9F1239]/70 shadow-[0_0_10px_rgba(225,29,72,0.18)]";
     cardBg = "bg-[#181114]";
+  } else if (isFin) {
+    badgeLetter = "F";
+    badgeBg = "#041B12";
+    badgeBorder = "#059669";
+    badgeText = "#10B981";
+    cardBorder = "border-emerald-950/40";
+    cardBg = "bg-[#060D0A]/60";
   } else if (isCompleted) {
     badgeLetter = "T";
     badgeBg = "#061A14";
     badgeBorder = "#064E3B";
     badgeText = "#34D399";
-    cardBorder = "border-emerald-950/30";
+    cardBorder = "border-teal-950/30";
     cardBg = "bg-[#09110D]/50";
   } else if (isReview) {
     badgeLetter = "R";
@@ -576,7 +585,7 @@ function ActivityCardComponent({
             <span
               style={{ backgroundColor: badgeBg, borderColor: badgeBorder, color: badgeText }}
               className="shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-black font-mono shadow-sm"
-              title={isCompleted ? "Terminada" : isReview ? "En Revisión" : isSuspended ? "Suspendida" : "Pendiente"}
+              title={isFin ? "Finalizada (FIN definitivo · Sin vuelta atrás)" : isCompleted ? "Terminada (En espera de revisión · Aún se puede regresar con correcciones)" : isReview ? "En Revisión" : isSuspended ? "Suspendida" : "Pendiente"}
             >
               {badgeLetter}
             </span>

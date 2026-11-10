@@ -10,7 +10,13 @@ const WORKFLOW_COLORS: Record<string, string> = {
 
 export function WorkflowStageBadge({status,title,scale=1}:{status:string;title:string;scale?:number}){
  const info=workflowBadgePresentation(status,title);
- const color = info.inconsistent ? '#F59E0B' : (WORKFLOW_COLORS[info.state] || '#38BDF8');
+ const color = info.inconsistent
+   ? '#F59E0B'
+   : (info as any).isFin
+   ? '#10B981'
+   : (info as any).isTer
+   ? '#6EE7B7'
+   : (WORKFLOW_COLORS[info.state] || '#38BDF8');
  const label = (info.inconsistent?'⚠ ':'')+info.shortLabel;
 
  return (

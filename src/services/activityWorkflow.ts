@@ -19,11 +19,30 @@ export function workflowPresentation(status:string,title=''){
 }
 
 /** Display only: never use these abbreviations as Notion properties or title tokens. */
+/**
+ * Diferenciador explícito de estados de opción múltiple / ciclo de vida:
+ * Distingue entre 'pending', 'review', 'suspended', 'terminated' (tuz / terminada por aprobar) y 'finalized' (z / FIN definitiva).
+ */
+export function activityDetailedState(status: string, title = ''): 'pending' | 'review' | 'suspended' | 'terminated' | 'finalized' | 'unknown' {
+  const isFin = /finaliz|fin\b|cobro\/documentacion|cobrado/i.test(status) || /(?<![a-z])z[rdscp]?\b/i.test(title) || /(?<![a-z])z\b/i.test(status);
+  if (isFin) return 'finalized';
+
+  const isTer = (/terminad/i.test(status) && !/no\s+terminad/i.test(status)) || /(?<![a-z])tuz[rdscp]?\b/i.test(title) || /^tuz\b/i.test(status);
+  if (isTer) return 'terminated';
+
+  const base = workflowState(status, title);
+  if (base === 'completed') return 'finalized';
+  return base;
+}
+
+/** Display only: never use these abbreviations as Notion properties or title tokens. */
 export function workflowBadgePresentation(status:string,title=''){
  const info=workflowPresentation(status,title);
  const basic={pending:'PH',review:'REV',completed:'TER',suspended:'SUS',unknown:'SC'};
- const stages:Record<string,string>={aprtuzR:'PA',prtuzR:'PH',rtuzR:'REV',saprtuzR:'SUS',tuzR:'APR',uzR:'CP',zR:'FIN',ZS:'ST',ZC:'CT',ZP:'PT'};
- const shortLabel=info.stage&&!info.inconsistent?(stages[info.stage.code]||basic[info.state]):basic[info.state];
- const description=[info.label,info.stage?'Etapa: '+info.stage.code:'',status?'Estado en Notion: '+status:'',info.warning].filter(Boolean).join(' · ');
- return {...info,shortLabel,description};
+ const stages:Record<string,string>={aprtuzR:'PA',aprtuz:'PA',prtuzR:'PH',prtuz:'PH',rtuzR:'REV',rtuz:'REV',saprtuzR:'SUS',saprtuz:'SUS',tuzR:'TER',tuz:'TER',uzR:'CP',uz:'CP',zR:'FIN',z:'FIN',ZS:'ST',ZC:'CT',ZP:'PT'};
+ const isFin = info.stage?.code?.toLowerCase().startsWith('z') || /finaliz|fin\b|cobro\/documentacion|cobrado/i.test(status) || /(?<![a-z])z[rdscp]?\b/i.test(title);
+ const isTer = !isFin && (info.stage?.code?.toLowerCase().startsWith('tuz') || (/terminad/i.test(status) && !/no\s+terminad/i.test(status)) || /(?<![a-z])tuz[rdscp]?\b/i.test(title));
+ const shortLabel = isFin ? 'FIN' : isTer ? 'TER' : info.stage && !info.inconsistent ? (stages[info.stage.code] || basic[info.state]) : basic[info.state];
+ const description=[isFin ? 'Finalizada (Fin)' : isTer ? 'Terminada · por aprobar' : info.label,info.stage?'Etapa: '+info.stage.code:'',status?'Estado en Notion: '+status:'',info.warning].filter(Boolean).join(' · ');
+ return {...info,shortLabel,description,isFin,isTer};
 }

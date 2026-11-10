@@ -289,10 +289,26 @@ export function ColaboratorBreakdown({ activities }: ColaboratorBreakdownProps) 
                 </span>
               )}
               {isCompleted ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 font-semibold">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>Finalizada</span>
-                </span>
+                (() => {
+                  const isFin = /^(?:z|fin|finaliz)/i.test(act.status || '') || /(?<![a-z])z[rdscp]?\b/i.test(act.title || '') || /cobro\/documentacion|cobrado/i.test(act.status || '');
+                  return isFin ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/70 font-bold shadow-sm"
+                      title="Finalizada (Fin definitivo · Ya no hay vuelta atrás)"
+                    >
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      <span>FIN</span>
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-teal-950/80 text-teal-300 border border-teal-500/60 font-semibold shadow-sm"
+                      title="Terminada (En espera de revisión · Aún se puede regresar con correcciones)"
+                    >
+                      <CheckSquare className="w-3 h-3 text-teal-400" />
+                      <span>Terminada</span>
+                    </span>
+                  );
+                })()
               ) : isReview ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-600/60 font-semibold">
                   <Clock className="w-3 h-3 text-cyan-400" />
