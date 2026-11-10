@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-console.log('=== TEST: Asignación Rápida, Detallada y Notificación con Enlace a Notion ===\n');
+console.log('=== TEST: Asignación Rápida, Detallada y Selectores de Prioridad (00..33) ===\n');
 
 // 1. Verificar ScreenRecorder.tsx
 const screenRecorderSrc = fs.readFileSync(
@@ -26,9 +26,14 @@ const globalPasteSrc = fs.readFileSync(
 );
 
 assert(globalPasteSrc.includes("useState<'both' | 'dropbox' | 'notion'>('notion')"), 'Debe tener "Solo Notion" como destino por defecto');
+assert(globalPasteSrc.includes('PRIORITIES'), 'Debe definir selector de prioridades 00, 11, 22, 33 en asignación detallada');
+assert(globalPasteSrc.includes('TECHNICAL_REVIEWERS'), 'Debe definir selector de revisores técnicos en asignación detallada');
+assert(globalPasteSrc.includes('setPriority'), 'Debe permitir alternar prioridad');
+assert(globalPasteSrc.includes('setReviewer'), 'Debe permitir alternar revisor');
+assert(globalPasteSrc.includes('priority,reviewer,domain'), 'Debe pasar priority y reviewer a quickRevisionTitle');
 assert(globalPasteSrc.includes('customEditedTitle'), 'Debe permitir editar el título antes de guardar en asignación detallada');
 assert(globalPasteSrc.includes('showCreationResult'), 'Debe emitir notificación con enlace al crear');
-console.log('✓ GlobalPasteModal: modo predeterminado "Solo Notion", título final editable y enlace a Notion verificados');
+console.log('✓ GlobalPasteModal: modo predeterminado "Solo Notion", selectores de prioridad 00/11/22/33, revisor técnico y título final editable verificados');
 
 // 3. Verificar CreationFeedback.tsx
 const creationFeedbackSrc = fs.readFileSync(

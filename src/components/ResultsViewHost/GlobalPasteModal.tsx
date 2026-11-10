@@ -2,7 +2,7 @@
 import { showCreationResult } from "@/components/CreationFeedback";
 import {UPLOAD_ACTIVITY_TYPES,documentationKind,catalogDomains,suggestDomains,assertDocumentationMode} from '@/lib/uploadActivityTypes';
 import {loadCachedIndex} from '@/lib/clientIndexCache';
-import {ACTIVITY_TAGS, activityPerson} from '@/services/activityTags';
+import {ACTIVITY_TAGS, activityPerson, activePersonTag, pendingReviewTag, type ActivityPriority} from '@/services/activityTags';
 import {normalizePerson} from '@/services/identityNormalizer';
 import {activityAttachmentPlan} from '@/lib/activityAttachmentPlan';
 import {RecordingTranscription} from './RecordingTranscription';
@@ -50,6 +50,21 @@ const reviewers = [
  ...Object.entries(ACTIVITY_TAGS).map(([name,value])=>({name:'👤 '+name+' · '+value.active+'11',tag:name==='Edwin'?'eed11':value.review,person:name}))
 ];
 
+const PRIORITIES: { value: ActivityPriority; label: string; shortLabel: string }[] = [
+  { value: '00', label: '00 · Urgente', shortLabel: 'Urgente' },
+  { value: '11', label: '11 · Primaria', shortLabel: 'Primaria' },
+  { value: '22', label: '22 · Secundaria', shortLabel: 'Secundaria' },
+  { value: '33', label: '33 · Usar/practicar', shortLabel: 'Usar/prac' },
+];
+
+const TECHNICAL_REVIEWERS = [
+  { person: '', label: 'Sin revisor técnico' },
+  ...Object.keys(ACTIVITY_TAGS).map(m => ({
+    person: m,
+    label: `${m} (${ACTIVITY_TAGS[m as keyof typeof ACTIVITY_TAGS].active}000)`
+  }))
+];
+
 export function GlobalPasteModal({
   isOpen,
   currentUser,
@@ -76,6 +91,8 @@ export function GlobalPasteModal({
   const [customType,setCustomType]=useState(false),[domainRows,setDomainRows]=useState<any[]>([]);
   const [customEditedTitle, setCustomEditedTitle] = useState('');
   const [isTitleManuallyEdited, setIsTitleManuallyEdited] = useState(false);
+  const [priority, setPriority] = useState<ActivityPriority>('11');
+  const [reviewer, setReviewer] = useState<string>('');
   const [cachedDomains,setCachedDomains]=useState<string[]>([]);
   const domains=useMemo(()=>[...new Set([...catalogDomains(domainRows),...cachedDomains])],[domainRows,cachedDomains]);
   useEffect(()=>{
@@ -173,6 +190,7 @@ export function GlobalPasteModal({
 
   const initFormFromFiles = useCallback((filesToUse: GlobalPasteImagePayload[]) => {
     setCustomType(false);setQuickType('Actividad rápida');setQuickTitle(filesToUse.length===1?filesToUse[0].filename.replace(/\.[^.]+$/,''):'Nueva actividad');setQuickDescription('');
+    setPriority('11');setReviewer('');setCustomEditedTitle('');setIsTitleManuallyEdited(false);
     setNotionTarget('configured');setNotionTargetId('');
     const detected = detectUpload([initialDomain, initialText, ...filesToUse.map(f => f.filename)].join(' '));
     const d = initialDomain || detected.domain;
@@ -210,6 +228,8 @@ export function GlobalPasteModal({
     setActionType(p.actionType|| (p.targetPageId?'attach':'create'));
     setSelectedCard(p.targetCard|| (p.targetPageId?{id:p.targetPageId,title:'Tarjeta de la subida pendiente',typeLabel:'Notion',type:'PAGE'}:null));
     setQuickType(p.quickType||'Actividad rápida');setCustomType(!!p.quickType&&!UPLOAD_ACTIVITY_TYPES.includes(p.quickType as any));setQuickTitle(p.quickTitle||p.title||'');setQuickDescription(p.quickDescription||'');
+    if ((p as any).priority) setPriority((p as any).priority);
+    if ((p as any).reviewer) setReviewer((p as any).reviewer);
     setNotionTarget(p.notionTarget||'configured');setNotionTargetId(p.notionTargetId||'');
     setFiles(p.files || []);
     setDomain(p.domain || '');
@@ -374,7 +394,7 @@ export function GlobalPasteModal({
   const count = files.length;
   const directAttachment=!!attachment&&actionType==='attach'&&String(selectedCard?.id||'').replace(/-/g,'')===attachment.pageId;
   const chosen = reviewers.find(p => p.tag === person);
-  let quickPreview='',quickError='';try{quickPreview=quickRevisionTitle({type:quickType,title:quickTitle,person:chosen?.person||currentUser,domain,description:quickDescription,month});}catch(e){quickError=e instanceof Error?e.message:'';}
+  let quickPreview='',quickError='';try{quickPreview=quickRevisionTitle({type:quickType,title:quickTitle,person:chosen?.person||currentUser,priority,reviewer,domain,description:quickDescription,month});}catch(e){quickError=e instanceof Error?e.message:'';}
 
   async function submit(e: React.FormEvent,dropboxOnly=false) {
     e.preventDefault();
@@ -416,6 +436,8 @@ export function GlobalPasteModal({
         category,
         month,
         personTag: person,
+        priority,
+        reviewer,
         title: documentation ? `${quickType}: ${quickTitle.trim()}` : effectiveMode === 'notion' && actionType === 'create' ? (isTitleManuallyEdited && customEditedTitle.trim() ? customEditedTitle.trim() : quickPreview) : title.trim(),
         body: actionType==='create'?[quickDescription,body,(!files.length?quickTitle:'')].filter(Boolean).join('\n'):body,
         files,
@@ -765,6 +787,63 @@ export function GlobalPasteModal({
             <label className="text-xs">{mode !== 'dropbox' && actionType === 'create' && !documentation ? 'Responsable de la actividad' : 'Persona de referencia'}<select value={person} onChange={e => setPerson(e.target.value)} className={style}>{reviewers.map(p => <option key={p.tag} value={p.tag}>{!p.tag && mode !== 'dropbox' && actionType === 'create' && !documentation ? `Yo (${currentUser})` : p.tag ? p.name : 'Sin seleccionar'}</option>)}</select></label>
           </div>
 
+          {/* Controles de Prioridad y Revisor Técnico en Asignación Detallada */}
+          {!documentation && mode !== 'dropbox' && actionType === 'create' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2.5 border-t border-slate-800/80">
+              {/* Selector de Prioridad (00, 11, 22, 33) */}
+              <div>
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">
+                  Prioridad (nivel de asignación):
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {PRIORITIES.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setPriority(p.value)}
+                      className={`rounded-lg px-2 py-1.5 text-center font-mono text-[11px] font-bold transition-all cursor-pointer border ${
+                        priority === p.value
+                          ? p.value === '00'
+                            ? 'bg-rose-500/25 border-rose-400 text-rose-200 shadow-sm'
+                            : p.value === '11'
+                            ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-sm'
+                            : p.value === '22'
+                            ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-sm'
+                            : 'bg-purple-500/25 border-purple-400 text-purple-200 shadow-sm'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'
+                      }`}
+                      title={p.label}
+                    >
+                      {p.value}
+                      <span className="block text-[9.5px] font-normal opacity-85 truncate">{p.shortLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Selector de Revisor Técnico */}
+              <div>
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">
+                  Revisor técnico asignado:
+                </label>
+                <select
+                  value={reviewer}
+                  onChange={(e) => setReviewer(e.target.value)}
+                  className={style}
+                >
+                  {TECHNICAL_REVIEWERS.map((r) => (
+                    <option key={r.label} value={r.person}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-[10px] text-slate-400 mt-1">
+                  Agrega tag de revisión para que se notifique al finalizar.
+                </span>
+              </div>
+            </div>
+          )}
+
           {!documentation && !(mode === 'notion' && actionType === 'create') && <label className="block text-xs">Título / Nombre<input aria-label="Título / Nombre" autoFocus value={title} onChange={e => setTitle(e.target.value)} className={style} placeholder="Descripción del archivo" /></label>}
           {count > 1 && mode !== 'dropbox' && actionType === 'create' && (
             <select aria-label="Organización de páginas" value={separate ? 'separate' : 'single'} onChange={e => setSeparate(e.target.value === 'separate')} className={style}>
@@ -944,7 +1023,11 @@ export function GlobalPasteModal({
         {mode !== 'dropbox' && actionType === 'create' && !directAttachment && (
           <section aria-label="Vista previa de Notion" className="space-y-2 rounded-xl border border-cyan-800 bg-cyan-950/25 p-3 text-xs">
             <h3 className="text-sm font-semibold text-cyan-200">Vista previa de la página en Notion</h3>
-            {!documentation && <p className="text-slate-300">Destino: Revisiones · Responsable: {chosen?.person || currentUser} · Sin horario</p>}
+            {!documentation && (
+              <p className="text-slate-300">
+                Destino: Revisiones · Responsable: {chosen?.person || currentUser} ({activePersonTag(chosen?.person || currentUser, priority)}){reviewer ? ` · Revisor: ${reviewer} (${pendingReviewTag(reviewer)})` : ''} · Sin horario
+              </p>
+            )}
             {!documentation ? (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[11px]">
