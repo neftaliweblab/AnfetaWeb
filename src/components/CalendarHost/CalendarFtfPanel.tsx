@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { NotionCalendarActivity } from '@/types/anfeta';
 import { calendarDisplayTitle, calendarDomain, calendarTime, mexicoDate } from '@/services/calendarPresentation';
-import { buildFtfDashboard, canViewFtfDashboard } from '@/services/ftfDashboard';
+import { buildFtfDashboard, canViewFtfDashboard, shiftFtfDate } from '@/services/ftfDashboard';
+import { ExternalLink } from 'lucide-react';
 import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
 import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User } from 'lucide-react';
@@ -16,10 +17,14 @@ export function CalendarFtfPanel({
   currentUser,
   date,
   onOpenActivity,
+  onSelectDate,
+  onOpenDailyProgress,
 }: {
   currentUser: string;
   date: string;
   onOpenActivity: (activity: NotionCalendarActivity) => void;
+  onSelectDate?: (date: string) => void;
+  onOpenDailyProgress?: () => void;
 }) {
   const [showWeek, setShowWeek] = useState(false);
   const [report, setReport] = useState<Report | null>(null);
@@ -175,6 +180,24 @@ export function CalendarFtfPanel({
       {/* Header General */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1 mr-1">
+            <button
+              type="button"
+              onClick={() => onSelectDate?.(shiftFtfDate(date, -1))}
+              className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900/80 text-[11px] text-slate-300 hover:text-white hover:border-slate-500 cursor-pointer"
+              title="Ver día anterior"
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectDate?.(shiftFtfDate(date, 1))}
+              className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900/80 text-[11px] text-slate-300 hover:text-white hover:border-slate-500 cursor-pointer"
+              title="Ver día siguiente"
+            >
+              ▶
+            </button>
+          </div>
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -352,8 +375,19 @@ export function CalendarFtfPanel({
                           <span className="text-[10px] text-slate-400 truncate">({person.role})</span>
                         )}
                       </div>
-                      <div className="text-[10.5px] text-slate-400">
-                        {person.verified}/{person.total} checks · {person.assignedHours || 0}h asignadas
+                      <div className="flex items-center justify-between text-[10.5px] text-slate-400 gap-2">
+                        <span>{person.verified}/{person.total} checks · {person.assignedHours || 0}h asignadas</span>
+                        {onOpenDailyProgress && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenDailyProgress()}
+                            className="inline-flex items-center gap-0.5 text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
+                            title="Abrir módulo de Avance Diario para ver desglose detallado"
+                          >
+                            <span>Avance</span>
+                            <ExternalLink size={9} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -409,6 +443,42 @@ export function CalendarFtfPanel({
                 </div>
 
                 <div className="mt-1 text-[10px] text-cyan-200">Por asignar en la jornada · {ftfHours(person.pendingAssignmentMinutes)}</div>
+
+                {/* Actividades del colaborador (Pendientes y Terminadas) */}
+                {((person as any).completedActivities?.length > 0 && person.pending.length === 0) && (
+                  <div className="mt-2 border-t border-slate-800/80 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => togglePersonExpand(person.name)}
+                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-slate-800/60"
+                    >
+                      <span>
+                        {isExpanded ? 'Ocultar' : 'Ver'} {(person as any).completedActivities.length} actividad{(person as any).completedActivities.length > 1 ? 'es' : ''} terminada{(person as any).completedActivities.length > 1 ? 's' : ''}
+                      </span>
+                      {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-1 max-h-40 overflow-y-auto space-y-1.5 pr-1 select-text">
+                        {(person as any).completedActivities.map((activity: any) => (
+                          <button
+                            type="button"
+                            key={activity.pageId}
+                            onClick={() => onOpenActivity(activity)}
+                            className="block w-full rounded border border-emerald-950/60 bg-emerald-950/20 p-2 text-left text-[10.5px] text-slate-300 transition-colors hover:border-emerald-500 hover:bg-slate-900"
+                          >
+                            <div className="flex items-center justify-between text-emerald-400 font-mono text-[10px] mb-0.5">
+                              <span>✓ {calendarTime(activity.start)}</span>
+                              <span className="truncate max-w-[120px]">{calendarDomain(activity.title)}</span>
+                            </div>
+                            <div className="line-clamp-2 text-slate-300 font-normal">
+                              {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Desplegable de Actividades Pendientes (con scroll interno de max-h-40) */}
                 {person.pending.length > 0 && (

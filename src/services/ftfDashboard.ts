@@ -179,6 +179,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       total:all.length,
       verified:all.length-pending.length,
       pending,
+      completedActivities: verifiedActivities,
       completedAt,
       late,
       timeKind:record?.timeKind||'observed',

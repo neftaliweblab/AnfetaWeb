@@ -751,7 +751,7 @@ export function CalendarHost({
         onTogglePalette={handleTogglePalette}
         onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
       />
-      {active&&canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity}/>}
+      {active&&canViewFtfDashboard(currentUser)&&<CalendarFtfPanel key={currentUser+':'+currentDate} currentUser={currentUser} date={currentDate} onOpenActivity={openNotificationActivity} onSelectDate={onSelectDate} onOpenDailyProgress={onOpenDailyProgress} />}
 
       <div className="px-3 py-1 border-b border-slate-800 text-xs"><button aria-pressed={showReminders} onClick={()=>setShowReminders(v=>!v)} className={showReminders?"text-cyan-300":"text-slate-400"}>🔔 {showReminders?"Ocultar":"Mostrar"} recordatorios del día</button></div>
       <details className="px-3 py-1 text-xs border-b border-slate-800"><summary className="cursor-pointer text-cyan-200">Diseño del calendario · fondo, líneas y horas</summary><div className="flex flex-wrap items-center gap-3 py-2">{Object.entries(calendarThemes).map(([key,value])=><button key={key} onClick={()=>setGridTheme(value)} className="rounded border border-slate-600 px-2 py-1">{key==='soft'?'Suave':key==='blue'?'Azul':'Alto contraste'}</button>)}{(['background','lines','hours'] as const).map(key=><label key={key} className="flex items-center gap-2">{key==='background'?'Fondo':key==='lines'?'Líneas':'Horas'}<input aria-label={'Color de '+key} type="color" value={gridTheme[key]} onChange={e=>setGridTheme(old=>({...old,[key]:e.target.value}))}/></label>)}</div></details>
@@ -814,13 +814,29 @@ export function CalendarHost({
 
           {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
           <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos)+Number(showReminders)) * columnWidth }}>
+            {/* Zona de revisión reciente (1 a 2 horas previas a la hora actual) */}
+            {currentTimeTop !== null && (
+              <div
+                style={{
+                  top: `${Math.max(56, currentTimeTop + 56 - (2 * pixelsPerHour))}px`,
+                  height: `${Math.min(currentTimeTop, 2 * pixelsPerHour)}px`,
+                }}
+                className="absolute left-0 right-0 bg-rose-500/[0.04] border-t border-dashed border-rose-500/30 z-20 pointer-events-none flex items-start px-2 py-1 select-none"
+                title="Zona de revisión reciente (últimas 2 horas de actividades)"
+              >
+                <span className="text-[9.5px] font-mono font-semibold text-rose-400/80 bg-rose-950/70 px-1.5 py-0.5 rounded border border-rose-800/40">
+                  ⏱ Zona de revisión reciente (últimas 2 hrs)
+                </span>
+              </div>
+            )}
+
             {/* Global red line across all columns */}
             {currentTimeTop !== null && (
               <div
                 style={{ top: `${currentTimeTop + 56}px` }}
                 className="absolute left-0 right-0 h-[2px] bg-[#EF4444] z-30 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.7)]"
               >
-                <div className="w-2 h-2 rounded-full bg-[#EF4444] -translate-y-[3px] -translate-x-1" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#EF4444] -translate-y-[4px] -translate-x-1 ring-2 ring-white/50" />
               </div>
             )}
 

@@ -328,11 +328,11 @@ function ActivityCardComponent({
     cardBg = "bg-[#181114]";
   } else if (isCompleted) {
     badgeLetter = "T";
-    badgeBg = "#062E22";
-    badgeBorder = "#059669";
-    badgeText = "#6EE7B7";
-    cardBorder = "border-[#065F46]/70";
-    cardBg = "bg-[#111815]";
+    badgeBg = "#061A14";
+    badgeBorder = "#064E3B";
+    badgeText = "#34D399";
+    cardBorder = "border-emerald-950/30";
+    cardBg = "bg-[#09110D]/50";
   } else if (isReview) {
     badgeLetter = "R";
     badgeBg = "#0C2E46";
@@ -367,7 +367,7 @@ function ActivityCardComponent({
   } else if (titlePriority(activity.title,activity.person)==='22') {
     priorityBorderColor = "#60A5FA";
   } else if (isCompleted) {
-    priorityBorderColor = "#10B981";
+    priorityBorderColor = "#064E3B";
   } else if (isReview) {
     priorityBorderColor = "#38BDF8";
   } else if (isSuspended) {
@@ -382,8 +382,8 @@ function ActivityCardComponent({
     desktopCardBg = "bg-[#28181D]";
     desktopCardBorder = "border-[#522935]";
   } else if (isCompleted) {
-    desktopCardBg = "bg-[#1D2B24]";
-    desktopCardBorder = "border-[#2B4438]";
+    desktopCardBg = "bg-[#0B1510]/55";
+    desktopCardBorder = "border-[#14261D]/40";
   } else if (isReview) {
     desktopCardBg = "bg-[#182535]";
     desktopCardBorder = "border-[#253D58]";
@@ -559,7 +559,7 @@ function ActivityCardComponent({
         }}
         className={`${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-        } transition-all select-none overflow-hidden ${
+        } transition-all select-none overflow-hidden ${isCompleted ? "opacity-45 hover:opacity-95 transition-opacity" : "opacity-100"} ${
           palette === "desktop" ? `${desktopCardBg} ${desktopCardBorder}` : `${cardBg} ${cardBorder}`
         } ${
           isSelected
@@ -674,7 +674,7 @@ function ActivityCardComponent({
 
         {/* Título de la actividad limpio y legible */}
         <div className="my-auto py-0.5 min-w-0">
-          <h5 className="text-[11px] font-medium text-[#E2E8F0] line-clamp-2 leading-[13px] break-words">
+          <h5 className={`text-[11px] leading-[13px] break-words line-clamp-2 ${isCompleted ? "text-slate-400/70 font-normal" : "font-medium text-[#E2E8F0]"}`}>
             {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.">{activity.isHandoffMirror?'TRANSFERIDA':'COPIA REVISIÓN'}</span>}
             {isFtfReminder(activity)&&<span className="mr-1 rounded border border-cyan-800 px-1 text-[9px] text-cyan-200" title="Recordatorio FTF: visible, sin sumar actividades ni carga de trabajo">FTF · Recordatorio</span>}
             <span className={wf==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':''}>{cleanTitle}</span>

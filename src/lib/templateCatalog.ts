@@ -131,6 +131,15 @@ export const CALENDAR_QUICK_TEMPLATES: CalendarQuickTemplateDefinition[] = [
     sourceUrl: CALENDAR_TEMPLATE_HUB_URL,
   },
   {
+    key: "diseno",
+    label: "Diseño",
+    projectToken: "ddise",
+    icon: "🎨",
+    defaultDurationMinutes: 60,
+    hint: "Plantillas reales para proyectos de Diseño y Catálogo.",
+    sourceUrl: CALENDAR_TEMPLATE_HUB_URL,
+  },
+  {
     key: "redes",
     label: "Redes Sociales",
     projectToken: "rrede",
@@ -403,6 +412,14 @@ export function filterTemplatesByCategory(
       }
       if (token === "aacce-ddomi") {
         return title.includes("aacce") && title.includes("ddomi");
+      }
+      if (token === "ddise") {
+        return (
+          title.includes("ddise") ||
+          title.includes("dise") ||
+          title.includes("ccata") ||
+          title.includes("catalogo")
+        );
       }
       if (token === "ccobr") {
         return title.includes("ccobr") || title.includes("cobro");

@@ -194,10 +194,10 @@ export function UnifiedActivityModal({
     const width = modalEl ? modalEl.offsetWidth : 480;
     const height = modalEl ? modalEl.offsetHeight : 500;
     const maxX = Math.max(10, window.innerWidth - width - 10);
-    const maxY = Math.max(10, window.innerHeight - height - 10);
+    const maxY = Math.max(12, window.innerHeight - height - 12);
     return {
       x: Math.max(10, Math.min(maxX, x)),
-      y: Math.max(10, Math.min(maxY, y)),
+      y: Math.max(12, Math.min(maxY, y)),
     };
   }, []);
 
@@ -1100,9 +1100,20 @@ export function UnifiedActivityModal({
 
         {/* ================= FOOTER / STATUS BAR ================= */}
         <div className="flex items-center justify-between px-3.5 py-2 border-t border-[#1C2C3D] bg-[#0E1520] text-[10.5px] text-slate-400 font-mono">
-          <span className="truncate">
-            ID: {String(activity.pageId || "").slice(0, 16)}…
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRequestClose}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-sans font-medium transition-colors cursor-pointer border border-slate-700 shadow-sm"
+              title="Cerrar ventana (Esc)"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Cerrar</span>
+            </button>
+            <span className="truncate hidden sm:inline">
+              ID: {String(activity.pageId || "").slice(0, 16)}…
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"

@@ -1,4 +1,5 @@
 "use client";
+import { normalizePerson } from "@/services/identityNormalizer";
 import {reviewNoticePresentation} from '@/lib/reviewNoticePresentation';
 import {calendarDisplayTitle} from '@/services/calendarPresentation';
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
@@ -49,7 +50,7 @@ export function CalendarReviewNotifications({
   const visibleItems=(itemsOwner===currentUser?items:[]).filter(item=>dismissed[item.id]!==item.updated);
   useEffect(()=>{
     if(automatic)return;
-    const next=visibleItems.find(item=>/^(?:Correcciones solicitadas|Actividad reasignada)/i.test(item.actionLabel||item.title||'')&&seen[item.id]!==item.updated&&!shown.current.has(item.id+':'+item.updated));
+    const next=visibleItems.find(item=>/^(?:Correcciones solicitadas|Actividad reasignada)/i.test(item.actionLabel||item.title||'')&&normalizePerson(item.authorName||'')!==normalizePerson(currentUser)&&seen[item.id]!==item.updated&&!shown.current.has(item.id+':'+item.updated));
     if(next){shown.current.add(next.id+':'+next.updated);setAutomatic(next);}
   },[items,itemsOwner,currentUser,seen,dismissed,automatic]);
   useEffect(()=>{
