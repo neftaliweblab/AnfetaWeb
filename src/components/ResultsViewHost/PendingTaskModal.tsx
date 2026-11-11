@@ -9,10 +9,27 @@ interface PendingTaskModalProps {
   onSave: (task: Omit<PendingTaskItem, "id">, editId?: string) => void;
   taskToEdit?: PendingTaskItem | null;
   initialQuery?: string;
+  currentUser?: string;
 }
 
-export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "" }: PendingTaskModalProps) {
+const COLLABORATORS = [
+  { id: "", label: "Sin asignar (Para mí / Personal)" },
+  { id: "John", label: "John" },
+  { id: "Edwin", label: "Edwin" },
+  { id: "Karla", label: "Karla" },
+  { id: "Brian", label: "Brian" },
+  { id: "Genaro", label: "Genaro" },
+  { id: "Isaias", label: "Isaias" },
+  { id: "Andrade", label: "Andrade" },
+  { id: "Sotelo", label: "Sotelo" },
+  { id: "Acalli", label: "Acalli" },
+  { id: "Neftali", label: "Neftali" },
+];
+
+export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "", currentUser }: PendingTaskModalProps) {
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
   const [scheduledDate, setScheduledDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
   });
@@ -22,6 +39,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
     if (isOpen) {
       if (taskToEdit) {
         setTitle(taskToEdit.title || "");
+        setDescription(taskToEdit.description || "");
+        setAssignedTo(taskToEdit.assignedTo || "");
         setScheduledDate(taskToEdit.scheduledDate || "");
         setQuery(taskToEdit.query || "");
       } else {
@@ -30,6 +49,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
           : "";
         const defaultText = (initialQuery || domInput || "").trim();
         setTitle(defaultText);
+        setDescription("");
+        setAssignedTo("");
         setScheduledDate(new Date().toISOString().split("T")[0]);
         setQuery(defaultText);
       }
@@ -58,13 +79,21 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
     onSave(
       {
         title: title.trim(),
+        description: description.trim() || undefined,
         scheduledDate,
         query: query.trim() || title.trim(),
         isCompleted: taskToEdit ? taskToEdit.isCompleted : false,
+        isAttended: taskToEdit ? taskToEdit.isAttended : false,
+        isArchived: taskToEdit ? taskToEdit.isArchived : false,
+        assignedTo: assignedTo.trim() || undefined,
+        assignedBy: assignedTo.trim() ? (taskToEdit?.assignedBy || currentUser || "Neftali") : undefined,
+        assignedAt: assignedTo.trim() ? (taskToEdit?.assignedAt || new Date().toISOString()) : undefined,
       },
       taskToEdit?.id
     );
     setTitle("");
+    setDescription("");
+    setAssignedTo("");
     setQuery("");
     onClose();
   };
@@ -102,6 +131,43 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
               placeholder="Ej. Revisar cotización y métricas..."
               className="w-full h-8 px-2.5 bg-[#141B26] text-[#F8FAFC] border border-[#26354A] rounded text-xs focus:border-[#38BDF8] focus:outline-none"
               autoFocus
+            />
+          </div>
+
+          {/* Campo Asignar a otro usuario (Desplegable) */}
+          <div>
+            <label className="block text-[11px] font-semibold text-[#E2E8F0] mb-1">
+              Asignar a compañero (opcional):
+            </label>
+            <select
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+              className="w-full h-8 px-2 bg-[#141B26] text-[#F8FAFC] border border-[#26354A] rounded text-xs focus:border-[#38BDF8] focus:outline-none cursor-pointer"
+            >
+              {COLLABORATORS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            {assignedTo && (
+              <p className="text-[10px] text-cyan-400 mt-1">
+                🔔 Se notificará a {assignedTo} indicándole que le asignaste este pendiente.
+              </p>
+            )}
+          </div>
+
+          {/* Campo Descripción opcional */}
+          <div>
+            <label className="block text-[11px] font-semibold text-[#E2E8F0] mb-1">
+              Descripción o notas adicionales (opcional):
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Detalles sobre el pendiente, fase o contexto..."
+              className="w-full p-2 bg-[#141B26] text-[#F8FAFC] border border-[#26354A] rounded text-xs focus:border-[#38BDF8] focus:outline-none resize-none"
             />
           </div>
 

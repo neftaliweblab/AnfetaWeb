@@ -1374,8 +1374,35 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "pendientes") {
-      const state=await readUserState(getSettings(),verifiedActor || await requireActor(req));
-      return NextResponse.json({items:state.values.pendingTasks || [],revision:state.revision},{headers:{'Cache-Control':'no-store'}});
+      const actor = verifiedActor || await requireActor(req);
+      const state = await readUserState(getSettings(), actor);
+      let items: any[] = Array.isArray(state.values.pendingTasks) ? [...state.values.pendingTasks] : [];
+
+      // Semilla inicial: Asignar pendiente inicial a John desde Neftali si aún no existe
+      const SEED_TASK_ID = 'task-seed-john-video-check';
+      const normActor = normalizePerson(actor);
+      if (normActor === 'neftali' || normActor === 'john') {
+        const hasTask = items.some((t: any) => t.id === SEED_TASK_ID || (typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv')));
+        if (!hasTask) {
+          const initialSeed = {
+            id: SEED_TASK_ID,
+            title: 'Analiza el video "C:\\Users\\nanoc\\Videos\\2026-11-11 16-57-01.mkv" y su transcripción para identificar los pendientes mencionados en su parte final, ya que al inicio se comentan de una forma y luego de otra. Una vez analizado, arma el check.',
+            description: 'Pasar los nombres de las fases a la base de datos.',
+            scheduledDate: new Date().toISOString().split('T')[0],
+            query: 'Revisiones',
+            isCompleted: false,
+            isAttended: false,
+            isArchived: false,
+            assignedTo: 'John',
+            assignedBy: 'Neftali',
+            assignedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          };
+          items = [initialSeed, ...items];
+        }
+      }
+
+      return NextResponse.json({items, revision: state.revision}, {headers: {'Cache-Control': 'no-store'}});
     }
 
     if (type === "dropbox-folders") {
@@ -2747,17 +2774,47 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "save-pendientes") {
       if (!Array.isArray(payload) || payload.length > 500) throw new Error('Lista de pendientes inválida.');
+      const actor = await requireActor(req);
       const sanitized = payload.filter((t: any) => t && (t.id || t.title || t.query)).map((t: any) => ({
         id: typeof t.id === 'string' && t.id.trim() ? t.id.slice(0, 100) : crypto.randomUUID(),
         title: typeof t.title === 'string' ? t.title.slice(0, 500) : (typeof t.query === 'string' ? t.query.slice(0, 500) : ''),
+        description: typeof t.description === 'string' && t.description.trim() ? t.description.slice(0, 2000) : undefined,
         query: typeof t.query === 'string' ? t.query.slice(0, 4000) : (typeof t.title === 'string' ? t.title.slice(0, 4000) : ''),
         scheduledDate: typeof t.scheduledDate === 'string' ? t.scheduledDate.slice(0, 50) : '',
         isCompleted: Boolean(t.isCompleted),
+        isArchived: Boolean(t.isArchived),
+        isAttended: Boolean(t.isAttended),
+        assignedTo: typeof t.assignedTo === 'string' && t.assignedTo.trim() ? t.assignedTo.trim().slice(0, 50) : undefined,
+        assignedBy: typeof t.assignedBy === 'string' && t.assignedBy.trim() ? t.assignedBy.trim().slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? actor : undefined),
+        assignedAt: typeof t.assignedAt === 'string' ? t.assignedAt.slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? new Date().toISOString() : undefined),
+        startTime: typeof t.startTime === 'string' && t.startTime.trim() ? t.startTime.trim().slice(0, 10) : undefined,
+        endTime: typeof t.endTime === 'string' && t.endTime.trim() ? t.endTime.trim().slice(0, 10) : undefined,
+        color: typeof t.color === 'string' && t.color.trim() ? t.color.trim().slice(0, 30) : undefined,
         createdAt: typeof t.createdAt === 'string' && t.createdAt ? t.createdAt.slice(0, 50) : new Date().toISOString(),
         ...(t.updatedAt && typeof t.updatedAt === 'string' ? { updatedAt: t.updatedAt.slice(0, 50) } : {}),
       }));
       if (!Number.isSafeInteger(body.expectedRevision)) throw new Error('Actualiza la lista antes de guardar.');
-      const state = await updateUserState(getSettings(), await requireActor(req), { pendingTasks: sanitized }, body.expectedRevision);
+      const state = await updateUserState(getSettings(), actor, { pendingTasks: sanitized }, body.expectedRevision);
+
+      // Sincronización cruzada: Si una tarea fue asignada a otro compañero, sincronizarla en sus pendientes
+      try {
+        const assignedCrossTasks = sanitized.filter((t: any) => t.assignedTo && normalizePerson(t.assignedTo) !== normalizePerson(actor));
+        for (const assignedTask of assignedCrossTasks) {
+          const targetPerson = normalizePerson(assignedTask.assignedTo);
+          const targetState = await readUserState(getSettings(), targetPerson);
+          const currentList = Array.isArray(targetState.values.pendingTasks) ? [...targetState.values.pendingTasks] : [];
+          const existingIdx = currentList.findIndex((x: any) => x.id === assignedTask.id);
+          if (existingIdx >= 0) {
+            currentList[existingIdx] = { ...currentList[existingIdx], ...assignedTask };
+          } else {
+            currentList.unshift({ ...assignedTask });
+          }
+          await updateUserState(getSettings(), targetPerson, { pendingTasks: currentList }, targetState.revision);
+        }
+      } catch (crossErr) {
+        console.warn('Advertencia: no se pudo sincronizar tarea cruzada:', crossErr);
+      }
+
       return NextResponse.json({ success: true, items: state.values.pendingTasks, revision: state.revision });
     }
 

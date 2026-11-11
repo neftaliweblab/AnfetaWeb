@@ -223,7 +223,7 @@ export function ResultsViewHost({
   useEffect(()=>{if(tabsOwner!==tabsKey)return;try{localStorage.setItem(searchDefaultsKey(normalizePerson(currentUser||'')),JSON.stringify({selectedTag,customTag}));}catch{}},[selectedTag,customTag,tabsOwner,tabsKey,currentUser]);
   const [textScale, setTextScale] = useState("100%");
   const [classification,setClassification]=useState('all');
-  const [groupBy, setGroupBy] = useState("none");
+  const [groupBy, setGroupBy] = useState("domain");
   const [hideTerminated, setHideTerminated] = useState(false);
   const [hideTerminatedMode, setHideTerminatedMode] = useState<"none" | "finished" | "all">(() => {
     if (typeof window !== "undefined") {
@@ -2201,7 +2201,14 @@ export function ResultsViewHost({
           <PendientesColumn
             onClose={()=>setIsPendientesOpen(false)}
             pendingTasks={pendingTasks}
+            currentUser={currentUser}
             onToggleTask={onTogglePendingTask}
+            onToggleAttended={(id) => {
+              const t = pendingTasks.find((x) => x.id === id);
+              if (t && onEditPendingTask) {
+                onEditPendingTask(id, { isAttended: !t.isAttended });
+              }
+            }}
             onOpenNewTaskModal={() => {
               setEditingTask(null);
               setIsNewTaskModalOpen(true);
@@ -2549,6 +2556,7 @@ export function ResultsViewHost({
         }}
         taskToEdit={editingTask}
         initialQuery={query}
+        currentUser={currentUser}
         onSave={(taskData, editId) => {
           if (editId && onEditPendingTask) {
             onEditPendingTask(editId, taskData);

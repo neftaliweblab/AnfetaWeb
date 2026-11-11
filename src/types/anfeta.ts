@@ -133,11 +133,20 @@ export interface PendingTaskItem {
   pageId?: string;
   id: string;
   title: string;
+  description?: string;
   scheduledDate: string;
   query: string;
   isCompleted?: boolean;
   isArchived?: boolean;
+  isAttended?: boolean;
+  assignedTo?: string;
+  assignedBy?: string;
+  assignedAt?: string;
+  startTime?: string;
+  endTime?: string;
+  color?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ActiveProjectSubActivity {
