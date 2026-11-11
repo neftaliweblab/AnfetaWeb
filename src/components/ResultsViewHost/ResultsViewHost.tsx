@@ -1958,6 +1958,13 @@ export function ResultsViewHost({
         onOpenAnnouncements={onOpenAnnouncements}
       />
 
+      {/* Indicador de carga no invasivo cuando se sincroniza con Notion o Dropbox */}
+      {(isSyncingNotion || isContentSyncing || isSyncingDropbox) && (
+        <div className="relative w-full h-[2.5px] overflow-hidden bg-slate-900/60 z-30" role="progressbar" aria-label="Sincronizando datos">
+          <div className="absolute top-0 bottom-0 left-0 right-0 bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 animate-pulse duration-700" />
+        </div>
+      )}
+
       {/* FRANJA C: Buscador Principal con Predictivo Integrado en la Misma Fila */}
       <SearchInputBar
         shortcutControl={<SearchShortcutSettings mode={shortcuts.mode} onChange={shortcuts.setMode} bindings={shortcuts.bindings} onChangeBindings={shortcuts.setBindings} />}

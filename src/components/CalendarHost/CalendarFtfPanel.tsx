@@ -6,7 +6,7 @@ import { buildFtfDashboard, canViewFtfDashboard, shiftFtfDate } from '@/services
 import { ExternalLink } from 'lucide-react';
 import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
-import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity, Copy, Check } from 'lucide-react';
 
 
 function formatSignalTime(isoString: string | null | undefined, selectedDay: string): string {
@@ -142,6 +142,34 @@ export function CalendarFtfPanel({
     setExpandedPeople(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
+  const [copiedReport, setCopiedReport] = useState(false);
+
+  const handleCopyReport = () => {
+    if (!report) return;
+    const lines: string[] = [
+      `📊 *Reporte Diario ANFETA · Bitácora FTF*`,
+      `📅 *Fecha:* ${date}`,
+      `⏱ *Horas asignadas:* ${report.totalAssignedHours}h | *Con FTF verificado:* ${report.totalCompletedHours || 0}h`,
+      `📈 *Estado:* ${report.completed} al día · ${report.pending} pendientes${report.late > 0 ? ` · ${report.late} tarde` : ''}`,
+      ``,
+      `👥 *Avance por Colaborador:*`,
+    ];
+
+    for (const person of report.people) {
+      const pct = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
+      const icon = person.status === 'complete' ? '✅' : person.status === 'pending' ? '⏳' : '⚪';
+      const pendingCount = Array.isArray(person.pending) ? person.pending.length : Number(person.pending) || 0;
+      const pendingText = pendingCount > 0 ? ` (${pendingCount} pend.)` : '';
+      lines.push(`${icon} *${person.name}*: ${pct}% · ${person.completedHours || 0}h / ${person.assignedHours || 0}h · ${person.verified}/${person.total} checks${pendingText}`);
+    }
+
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedReport(true);
+      setTimeout(() => setCopiedReport(false), 2500);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     setReport(null);
     setError('');
@@ -256,6 +284,16 @@ export function CalendarFtfPanel({
         <div className="flex items-center gap-2">
           <button type="button" aria-expanded={showWeek} onClick={() => setShowWeek(value => !value)} className="rounded border border-cyan-800 px-2 py-1 text-xs text-cyan-200">
             {showWeek ? 'Ocultar historial' : 'Historial semanal'}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyReport}
+            disabled={!report}
+            className="flex items-center gap-1.5 rounded border border-cyan-700/80 bg-cyan-950/50 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-900/60 transition-colors disabled:opacity-40 cursor-pointer"
+            title="Copiar reporte diario para WhatsApp o Slack"
+          >
+            {copiedReport ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            <span>{copiedReport ? '✓ Copiado' : 'Copiar reporte'}</span>
           </button>
           {supervisorReview ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/60 bg-emerald-950/50 px-2.5 py-1 text-xs text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.15)]">

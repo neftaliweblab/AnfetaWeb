@@ -1918,15 +1918,15 @@ async function POSTLive(req: NextRequest) {
           : cloudFolder(payload?.domain, targetDir, baseDropbox, payload?.root, payload?.category);
         return NextResponse.json(await uploadDropboxCloud(filename, Buffer.from(base64, 'base64'), dest, dbxToken));
       }
-      let destDir = payload?.domain ? path.join(baseDropbox,...drxFolder(String(payload.domain),payload?.root,payload?.category).split("/").filter(Boolean)) : targetDir;
+      let destDir = payload?.domain ? path.join(/*turbopackIgnore: true*/ baseDropbox,...drxFolder(String(payload.domain),payload?.root,payload?.category).split("/").filter(Boolean)) : targetDir;
       if (!destDir || !destDir.trim()) {
-        destDir = path.join(baseDropbox, "DRX");
+        destDir = path.join(/*turbopackIgnore: true*/ baseDropbox, "DRX");
       }
-      if (fs.existsSync(destDir) && fs.statSync(destDir).isFile()) {
+      if (fs.existsSync(/*turbopackIgnore: true*/ destDir) && fs.statSync(/*turbopackIgnore: true*/ destDir).isFile()) {
         destDir = path.dirname(destDir);
       }
 
-      if (!fs.existsSync(destDir)) {
+      if (!fs.existsSync(/*turbopackIgnore: true*/ destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
       }
 
@@ -1954,14 +1954,14 @@ async function POSTLive(req: NextRequest) {
       const baseDropbox = settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox";
       let destDir = targetDir;
       if (!destDir || !destDir.trim()) {
-        destDir = path.join(baseDropbox, "DRX");
+        destDir = path.join(/*turbopackIgnore: true*/ baseDropbox, "DRX");
       }
-      if (fs.existsSync(destDir) && fs.statSync(destDir).isFile()) {
+      if (fs.existsSync(/*turbopackIgnore: true*/ destDir) && fs.statSync(/*turbopackIgnore: true*/ destDir).isFile()) {
         destDir = path.dirname(destDir);
       }
 
-      const newFolderPath = path.join(destDir, folderName.trim());
-      if (!fs.existsSync(newFolderPath)) {
+      const newFolderPath = path.join(/*turbopackIgnore: true*/ destDir, folderName.trim());
+      if (!fs.existsSync(/*turbopackIgnore: true*/ newFolderPath)) {
         fs.mkdirSync(newFolderPath, { recursive: true });
       }
 
@@ -1976,16 +1976,16 @@ async function POSTLive(req: NextRequest) {
       const { title, body: pasteBody, domain, suffix, isUrl, targetDir } = payload || {};
       const settings = getSettings();
       const baseDropbox = settings.dropboxPath || "C:\\Users\\nanoc\\Dropbox";
-      const drxRoot = path.join(baseDropbox, "DRX");
+      const drxRoot = path.join(/*turbopackIgnore: true*/ baseDropbox, "DRX");
 
       let destDir = targetDir;
       if (!destDir || !destDir.trim()) {
         const cleanDomain = (domain || "anfeta.com").trim();
         const folderSuffix = suffix ? `.${suffix}` : ".proyecto";
-        destDir = path.join(drxRoot, `${cleanDomain}${folderSuffix}`);
+        destDir = path.join(/*turbopackIgnore: true*/ drxRoot, `${cleanDomain}${folderSuffix}`);
       }
 
-      if (!process.env.DROPBOX_ACCESS_TOKEN && !process.env.VERCEL && !fs.existsSync(destDir)) {
+      if (!process.env.DROPBOX_ACCESS_TOKEN && !process.env.VERCEL && !fs.existsSync(/*turbopackIgnore: true*/ destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
       }
 

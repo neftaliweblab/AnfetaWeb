@@ -25,7 +25,7 @@ class PageWatchHub{
   };
   wake=()=>{if(!document.hidden)void this.check();};
   saved=()=>{if(this.busy)this.queued=true;else this.wake();};
-  schedule(){if(this.timer)clearInterval(this.timer);if(this.stopped||document.hidden)return;this.timer=setInterval(this.wake,[...this.subscribers].some(s=>s.calendar)?2000:10000);}
+  schedule(){if(this.timer)clearInterval(this.timer);if(this.stopped||document.hidden)return;this.timer=setInterval(this.wake,[...this.subscribers].some(s=>s.calendar)?4000:15000);}
   deliver(states:any[]){
     states=states.flatMap(state=>{const id=pageIdentity(state.id),old=this.versions.get(id),next=mergePageDelta(old,state,true);if(old===next)return [];this.versions.delete(id);this.versions.set(id,{...next,contentChanged:false,checklistUpdate:undefined});if(this.versions.size>1000)this.versions.delete(this.versions.keys().next().value!);return [next];});
     if(!states.length)return;

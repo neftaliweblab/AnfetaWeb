@@ -39,7 +39,7 @@ import {CalendarFtfPanel} from './CalendarFtfPanel';
 import {canViewFtfDashboard} from '@/services/ftfDashboard';
 import {countedCalendarActivities} from '@/services/progressKpis';
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { CalendarTopControls } from "./CalendarTopControls";
 import { CalendarColHeader } from "./CalendarColHeader";
@@ -216,6 +216,14 @@ export function CalendarHost({
   const [gridInterval,setGridInterval]=useState(30);
   const [expandedCalendar,setExpandedCalendar]=useState(false);
   useEffect(()=>{if(!expandedCalendar)return;const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!event.defaultPrevented&&!document.querySelector('dialog[open],[role="dialog"]'))setExpandedCalendar(false);};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);},[expandedCalendar]);
+
+  // Presencia en tiempo real de quién está viendo o editando una actividad
+  const [activeViewers, setActiveViewers] = useState<Record<string, { user: string; timestamp: number }>>({});
+
+  // Historial de cambios para Deshacer (Undo Ctrl+Z)
+  const undoStackRef = useRef<{ pageId: string; previousSchedule: { start?: string; end?: string; person?: string; status?: string }; title: string }[]>([]);
+  const isUndoingRef = useRef(false);
+  const [undoCount, setUndoCount] = useState(0);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showPlanBModal, setShowPlanBModal] = useState(false);
@@ -360,6 +368,18 @@ export function CalendarHost({
       } else if (msg.type === "ACTIVITY_CREATED" && msg.activity) {
         mutationVersion.current++;
         setActivitiesList(prev=>upsertCalendarActivity(prev,msg.activity.pageId,msg.activity,currentDate));
+      } else if (msg.type === "ACTIVITY_VIEWING" && msg.pageId && msg.user) {
+        setActiveViewers(prev => ({
+          ...prev,
+          [msg.pageId!]: { user: msg.user!, timestamp: Date.now() },
+        }));
+      } else if (msg.type === "ACTIVITY_CLOSED" && msg.pageId) {
+        setActiveViewers(prev => {
+          if (!prev[msg.pageId!]) return prev;
+          const copy = { ...prev };
+          delete copy[msg.pageId!];
+          return copy;
+        });
       }
     });
     return () => unsubscribe();
@@ -452,6 +472,20 @@ export function CalendarHost({
     const originalMirror=activitiesListRef.current.find((a: NotionCalendarActivity)=>a.pageId==='review-mirror-'+pageId);
     const restoreSchedule=()=>{if(updates.start){setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?original:a));setSelectedActivity(prev=>prev?.pageId===pageId?original:prev);}};
     if(updates.start){const moving={...original,...updates};setActivitiesList(prev=>prev.map(a=>a.pageId===pageId?moving:a));setSelectedActivity(prev=>prev?.pageId===pageId?moving:prev);}
+    if (!isUndoingRef.current && original && (updates.start || updates.end || updates.person)) {
+      undoStackRef.current.push({
+        pageId,
+        previousSchedule: {
+          start: original.start,
+          end: original.end,
+          person: original.person,
+          status: original.status,
+        },
+        title: original.title || 'Actividad',
+      });
+      if (undoStackRef.current.length > 25) undoStackRef.current.shift();
+      setUndoCount(undoStackRef.current.length);
+    }
     try {
       const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction||updates.handoff)?{expectedReviewUpdatedAt}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
@@ -493,6 +527,58 @@ export function CalendarHost({
       return false;
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
   }, [currentUser, currentDate, onSelectDate]);
+
+  const handleUndo = React.useCallback(async () => {
+    const last = undoStackRef.current.pop();
+    setUndoCount(undoStackRef.current.length);
+    if (!last) return;
+    isUndoingRef.current = true;
+    try {
+      await handleUpdateActivity(last.pageId, {
+        ...last.previousSchedule,
+        allowOverlap: true,
+      });
+    } finally {
+      isUndoingRef.current = false;
+    }
+  }, [handleUpdateActivity]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        const activeEl = document.activeElement;
+        const isInput = activeEl && (
+          activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          (activeEl as HTMLElement).isContentEditable
+        );
+        if (isInput) return;
+        if (undoStackRef.current.length > 0) {
+          e.preventDefault();
+          void handleUndo();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo]);
+
+  useEffect(() => {
+    if (selectedActivity?.pageId && isDetailOpen) {
+      anfetaSync.broadcast({
+        type: 'ACTIVITY_VIEWING',
+        pageId: selectedActivity.pageId,
+        user: currentUser,
+      });
+      return () => {
+        anfetaSync.broadcast({
+          type: 'ACTIVITY_CLOSED',
+          pageId: selectedActivity.pageId,
+          user: currentUser,
+        });
+      };
+    }
+  }, [selectedActivity?.pageId, isDetailOpen, currentUser]);
 
   const handleCardChecklistUpdated = React.useCallback((pageId: string, updates: Partial<NotionCalendarActivity>) => {
     mutationVersion.current++;
@@ -743,7 +829,7 @@ export function CalendarHost({
         totalActivitiesCount={countedCalendarActivities(filteredActivities).length}
         pixelsPerHour={pixelsPerHour}
         gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
-        displayControls={<><button type="button" aria-pressed={showCopies} onClick={toggleCopies} title="Mostrar u ocultar solo las copias visuales transferidas; no cambia actividades originales ni la vista de otros usuarios" className="rounded border border-cyan-900 px-2 py-1 text-xs text-cyan-200">Copias transferidas: {showCopies?'visibles':'ocultas'}</button><CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/></>}
+        displayControls={<><button type="button" aria-pressed={showCopies} onClick={toggleCopies} title="Mostrar u ocultar solo las copias visuales transferidas; no cambia actividades originales ni la vista de otros usuarios" className="rounded border border-cyan-900 px-2 py-1 text-xs text-cyan-200">Copias transferidas: {showCopies?'visibles':'ocultas'}</button><button type="button" onClick={() => void handleUndo()} disabled={undoCount === 0} title="Deshacer último movimiento en calendario (Ctrl+Z)" className="rounded border border-cyan-800 bg-cyan-950/40 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-900/60 transition-colors disabled:opacity-40 flex items-center gap-1 cursor-pointer"><span>↶ Deshacer</span>{undoCount > 0 && <span className="text-[10px] bg-cyan-800 px-1 py-0.2 rounded-full font-mono">{undoCount}</span>}</button><CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/></>}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
@@ -933,6 +1019,7 @@ export function CalendarHost({
                           overlapTotal={overlapTotal}
                           palette={calendarPalette}
                           isSelected={selectedActivity?.pageId === act.pageId && isDetailOpen}
+                          activeViewer={activeViewers[act.pageId]?.user && normalizePerson(activeViewers[act.pageId]?.user) !== normalizePerson(currentUser) ? activeViewers[act.pageId]?.user : null}
                           onSelectActivity={handleCardSelectActivity}
                           onUpdateActivity={handleUpdateActivity}
                         />

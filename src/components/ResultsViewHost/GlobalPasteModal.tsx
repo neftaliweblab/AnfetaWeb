@@ -760,7 +760,7 @@ export function GlobalPasteModal({
             {!documentation && (
               <div className="text-xs">
                 <label className="block mb-1">Mes de referencia</label>
-                <div className="flex items-center gap-1 mb-1">
+                <div className="flex items-center gap-1 mb-1 flex-wrap">
                   {['11', '12', '01', '02', '03'].map(m => (
                     <button
                       key={m}
@@ -775,6 +775,36 @@ export function GlobalPasteModal({
                       {m}
                     </button>
                   ))}
+                  <span className="text-slate-600 mx-0.5">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setMonth(monthToken(new Date()))}
+                    className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 cursor-pointer"
+                    title="Asignar al mes actual (Hoy)"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMonth(monthToken(new Date(Date.now() + 86400000)))}
+                    className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 cursor-pointer"
+                    title="Asignar para Mañana"
+                  >
+                    Mañana
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      const diff = d.getDay() === 0 ? 1 : 8 - d.getDay();
+                      d.setDate(d.getDate() + diff);
+                      setMonth(monthToken(d));
+                    }}
+                    className="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 cursor-pointer"
+                    title="Asignar para el Lunes próximo"
+                  >
+                    Lunes prox.
+                  </button>
                 </div>
                 <input
                   value={month}

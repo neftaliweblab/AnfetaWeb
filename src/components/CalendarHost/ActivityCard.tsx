@@ -94,6 +94,7 @@ interface ActivityCardProps {
   palette?: "web" | "desktop";
   isSelected?: boolean;
   isSaving?: boolean;
+  activeViewer?: string | null;
   onChecklistUpdated?: (pageId:string,updates:Partial<NotionCalendarActivity>)=>void;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
@@ -109,6 +110,7 @@ function ActivityCardComponent({
   palette = "web",
   isSelected,
   isSaving = false,
+  activeViewer,
   onChecklistUpdated,
   onSelectActivity,
   onUpdateActivity,
@@ -566,7 +568,7 @@ function ActivityCardComponent({
           left: `calc(${leftPct}% + 2px)`,
           ...(palette === "desktop" ? { borderLeftWidth: "4px", borderLeftColor: priorityBorderColor } : {}),
         }}
-        className={`${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
+        className={`${activeViewer ? 'ring-2 ring-amber-400/90 shadow-[0_0_12px_rgba(251,191,36,0.35)] ' : ''}${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
         } transition-all select-none overflow-hidden ${isCompleted ? "opacity-45 hover:opacity-95 transition-opacity" : "opacity-100"} ${
           palette === "desktop" ? `${desktopCardBg} ${desktopCardBorder}` : `${cardBg} ${cardBorder}`
@@ -589,6 +591,14 @@ function ActivityCardComponent({
             >
               {badgeLetter}
             </span>
+            {activeViewer && (
+              <span
+                className="shrink-0 px-1 py-0.2 rounded bg-amber-950/80 text-amber-200 border border-amber-500/60 text-[8.5px] font-semibold animate-pulse shadow-sm flex items-center gap-0.5"
+                title={`${activeViewer} está viendo/editando esta actividad`}
+              >
+                👁️ {activeViewer}
+              </span>
+            )}
             {conflict && (
               <span
                 title={conflict.description}

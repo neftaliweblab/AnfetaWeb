@@ -13,13 +13,16 @@ export interface AnfetaSyncMessage {
     | "ACTIVITY_UPDATED"
     | "ACTIVITY_CREATED"
     | "CALENDAR_REFRESHED"
-    | "REMINDERS_CHANGED";
+    | "REMINDERS_CHANGED"
+    | "ACTIVITY_VIEWING"
+    | "ACTIVITY_CLOSED";
   messageId?:string;
   confirmed?:boolean;
   query?: string;
   date?: string;
   domain?: string;
   pageId?: string;
+  user?: string;
   activity?: any;
   activities?: any[];
   updates?: any;
