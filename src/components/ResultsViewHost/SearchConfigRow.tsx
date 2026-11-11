@@ -15,6 +15,9 @@ import {
   Layers,
   Calendar,
   X,
+  Eye,
+  EyeOff,
+  Columns,
 } from "lucide-react";
 
 export interface UserOption {
@@ -63,6 +66,11 @@ interface SearchConfigRowProps {
   onChangeTag?: (tag: string) => void;
   customTag?: string;
   onChangeCustomTag?: (tag: string) => void;
+  // Columnas visibles
+  visibleCols?: { path: boolean; status: boolean; scheduledDate: boolean; modifiedDate: boolean };
+  onToggleCol?: (col: "path" | "status" | "scheduledDate" | "modifiedDate") => void;
+  onMaximizeNameCol?: () => void;
+  onResetCols?: () => void;
   // Toggles de paneles
   isPendientesOpen: boolean;
   onTogglePendientes: () => void;
@@ -154,6 +162,10 @@ function SearchConfigRowComponent({
   onChangeTag,
   customTag,
   onChangeCustomTag,
+  visibleCols,
+  onToggleCol,
+  onMaximizeNameCol,
+  onResetCols,
   isPendientesOpen,
   onTogglePendientes,
   pendingCount,
@@ -170,8 +182,10 @@ function SearchConfigRowComponent({
 }: SearchConfigRowProps) {
   const [showAgruparMenu, setShowAgruparMenu] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [showColsMenu, setShowColsMenu] = useState(false);
   const agruparRef = useRef<HTMLDivElement>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const colsRef = useRef<HTMLDivElement>(null);
 
   const TEAM_USERS = [
     { code: "eed11", name: "Edwin" },
@@ -201,11 +215,15 @@ function SearchConfigRowComponent({
       if (toolsRef.current && !toolsRef.current.contains(event.target as Node)) {
         setShowToolsMenu(false);
       }
+      if (colsRef.current && !colsRef.current.contains(event.target as Node)) {
+        setShowColsMenu(false);
+      }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setShowAgruparMenu(false);
         setShowToolsMenu(false);
+        setShowColsMenu(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -593,6 +611,116 @@ function SearchConfigRowComponent({
             </div>
           )}
         </div>
+
+        {/* 8. Menú Visibilidad de Columnas (Path, Estado, Fechas) */}
+        {visibleCols && onToggleCol && (
+          <div ref={colsRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowColsMenu(!showColsMenu)}
+              style={{
+                fontSize: `${(10.5 * scale).toFixed(1)}px`,
+                minHeight: `${Math.round(25 * scale)}px`,
+                padding: `0 ${Math.round(7 * scale)}px`,
+              }}
+              className={`flex items-center gap-1 rounded border transition cursor-pointer ${
+                (!visibleCols.path || !visibleCols.status || !visibleCols.scheduledDate || !visibleCols.modifiedDate)
+                  ? "bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border-amber-700/80 shadow-xs"
+                  : "bg-[#141B26] hover:bg-[#1C283A] text-slate-300 hover:text-white border-[#24344A]"
+              }`}
+              title="Configurar columnas visibles en la lista de resultados (Path, Estado, Fechas)"
+            >
+              <Eye className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Columnas</span>
+              {(!visibleCols.path || !visibleCols.status || !visibleCols.scheduledDate || !visibleCols.modifiedDate) && (
+                <span className="text-[9.5px] font-mono font-bold bg-amber-500/20 text-amber-300 px-1 rounded">
+                  {[visibleCols.path, visibleCols.status, visibleCols.scheduledDate, visibleCols.modifiedDate].filter(Boolean).length}/4
+                </span>
+              )}
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showColsMenu && (
+              <div className="absolute right-0 mt-1 w-60 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-2 space-y-1 text-xs animate-in fade-in">
+                <div className="flex items-center justify-between px-1 pb-1 border-b border-[#1E293B]">
+                  <span className="text-[10px] font-mono font-bold uppercase text-cyan-400">
+                    Columnas visibles
+                  </span>
+                  <span className="text-[9.5px] text-slate-400 font-mono">
+                    {[visibleCols.path, visibleCols.status, visibleCols.scheduledDate, visibleCols.modifiedDate].filter(Boolean).length} activas
+                  </span>
+                </div>
+
+                {[
+                  { key: "path" as const, label: "Path / Base Notion", desc: "Ruta o base de datos de origen" },
+                  { key: "status" as const, label: "Estado actualización", desc: "Badge de estado y comprensión" },
+                  { key: "scheduledDate" as const, label: "Fecha por hacer", desc: "Horario asignado en calendario" },
+                  { key: "modifiedDate" as const, label: "Fecha modificada", desc: "Última fecha de edición en Notion" },
+                ].map(({ key, label, desc }) => {
+                  const isVis = visibleCols[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => onToggleCol(key)}
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-[#1A2536] text-left transition cursor-pointer group"
+                      title={desc}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className={`font-medium ${isVis ? "text-slate-200" : "text-slate-500 line-through"}`}>
+                          {label}
+                        </div>
+                        <div className="text-[9.5px] text-slate-400 truncate">
+                          {desc}
+                        </div>
+                      </div>
+                      <div
+                        className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition ${
+                          isVis
+                            ? "bg-cyan-600 border-cyan-400 text-white shadow-xs"
+                            : "border-slate-600 bg-slate-900/50 text-transparent"
+                        }`}
+                      >
+                        {isVis ? <Check className="w-3 h-3 stroke-[3]" /> : <EyeOff className="w-2.5 h-2.5 text-slate-500" />}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                <div className="pt-1.5 border-t border-[#1E293B] mt-1 space-y-1">
+                  {onMaximizeNameCol && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onMaximizeNameCol();
+                        setShowColsMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-cyan-300 hover:text-cyan-200 text-[11px] font-medium transition cursor-pointer flex items-center justify-between"
+                      title="Oculta las columnas opcionales para maximizar el ancho del Nombre y Título"
+                    >
+                      <span>Maximizar columna Nombre</span>
+                      <span className="text-[10px] text-cyan-400/80">⤢</span>
+                    </button>
+                  )}
+                  {onResetCols && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onResetCols();
+                        setShowColsMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-slate-400 hover:text-slate-200 text-[11px] transition cursor-pointer flex items-center justify-between"
+                      title="Restablecer todas las columnas a visibles"
+                    >
+                      <span>Restablecer todas</span>
+                      <span className="text-[10px] text-slate-500">↺</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lado Derecho: Conmutadores de Paneles y Nivel de Vista */}

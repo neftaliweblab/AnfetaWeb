@@ -592,13 +592,70 @@ export function ResultsViewHost({
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [createFolderTargetDir, setCreateFolderTargetDir] = useState("C:\\Users\\nanoc\\Dropbox\\DRX");
 
-  // Columns visibility
-  const [visibleCols, setVisibleCols] = useState({
-    path: true,
-    status: true,
-    scheduledDate: true,
-    modifiedDate: true,
+  // Columns visibility with localStorage persistence
+  const [visibleCols, setVisibleCols] = useState<{
+    path: boolean;
+    status: boolean;
+    scheduledDate: boolean;
+    modifiedDate: boolean;
+  }>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_visible_columns");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return {
+            path: parsed.path ?? true,
+            status: parsed.status ?? true,
+            scheduledDate: parsed.scheduledDate ?? true,
+            modifiedDate: parsed.modifiedDate ?? true,
+          };
+        }
+      } catch {}
+    }
+    return {
+      path: true,
+      status: true,
+      scheduledDate: true,
+      modifiedDate: true,
+    };
   });
+
+  const handleToggleCol = useCallback((col: "path" | "status" | "scheduledDate" | "modifiedDate") => {
+    setVisibleCols((prev) => {
+      const next = { ...prev, [col]: !prev[col] };
+      try {
+        localStorage.setItem("anfeta_visible_columns", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleMaximizeNameCol = useCallback(() => {
+    const next = {
+      path: false,
+      status: false,
+      scheduledDate: false,
+      modifiedDate: false,
+    };
+    setVisibleCols(next);
+    try {
+      localStorage.setItem("anfeta_visible_columns", JSON.stringify(next));
+    } catch {}
+  }, []);
+
+  const handleResetCols = useCallback(() => {
+    const next = {
+      path: true,
+      status: true,
+      scheduledDate: true,
+      modifiedDate: true,
+    };
+    setVisibleCols(next);
+    try {
+      localStorage.setItem("anfeta_visible_columns", JSON.stringify(next));
+    } catch {}
+  }, []);
 
   const [activityAction,setActivityAction]=useState<{item:any;mode:SearchActivityAction;position:{x:number;y:number}}|null>(null);
   // Table selections
@@ -2032,7 +2089,10 @@ export function ResultsViewHost({
         onRemoveCriterion={handleRemoveCriterion}
         onSelectSuggestion={handleSelectSuggestion}
         onExcludeSuggestion={handleExcludeSuggestion}
-        onSaveToPending={() => setIsNewTaskModalOpen(true)}
+        onSaveToPending={() => {
+          setIsPendientesOpen(true);
+          setIsNewTaskModalOpen(true);
+        }}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
         isSyncingNotion={isSyncingNotion}
@@ -2114,6 +2174,10 @@ export function ResultsViewHost({
         onChangeTextScale={handleTextScaleChange}
         viewZoom={viewZoom}
         onChangeViewZoom={handleChangeViewZoom}
+        visibleCols={visibleCols}
+        onToggleCol={handleToggleCol}
+        onMaximizeNameCol={handleMaximizeNameCol}
+        onResetCols={handleResetCols}
         isPendientesOpen={isPendientesOpen}
         onTogglePendientes={() => setIsPendientesOpen(!isPendientesOpen)}
         pendingCount={pendingTasks.filter((t) => !t.isCompleted).length}
@@ -2407,6 +2471,10 @@ export function ResultsViewHost({
           onDeleteSelected={handleDeleteSelected}
           onOpenUploadDropbox={handleOpenDropboxUpload}
           onDropFiles={handleDropFiles}
+          visibleCols={visibleCols}
+          onToggleCol={handleToggleCol}
+          onMaximizeNameCol={handleMaximizeNameCol}
+          onResetCols={handleResetCols}
           showPath={visibleCols.path}
           statusFilter={statusFilter} onStatusFilterChange={value=>{setStatusFilter(value);focusSearch();}}
           onUnderstood={handleUnderstoodRow}

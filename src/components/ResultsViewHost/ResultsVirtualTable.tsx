@@ -41,6 +41,8 @@ import {
   ChevronRight,
   ChevronDown,
   Eye,
+  EyeOff,
+  Columns,
   Download,
 } from "lucide-react";
 import { formatSmartDate } from "@/lib/dateUtils";
@@ -141,6 +143,10 @@ interface ResultsTableProps {
   onDeleteSelected?: () => void;
   onOpenUploadDropbox?: (targetDir?: string) => void;
   onDropFiles?: (files: File[]) => void;
+  visibleCols?: { path: boolean; status: boolean; scheduledDate: boolean; modifiedDate: boolean };
+  onToggleCol?: (col: "path" | "status" | "scheduledDate" | "modifiedDate") => void;
+  onMaximizeNameCol?: () => void;
+  onResetCols?: () => void;
   showPath?: boolean;
   statusFilter?:string;
   onStatusFilterChange?:(value:string)=>void;
@@ -198,6 +204,10 @@ function ResultsVirtualTableComponent({
   onChangeResultSort,
   onOpenUploadDropbox,
   onDropFiles,
+  visibleCols,
+  onToggleCol,
+  onMaximizeNameCol,
+  onResetCols,
   showPath = true,
   statusFilter='all',onStatusFilterChange,onUnderstood,
   showStatus = true,
@@ -211,6 +221,8 @@ function ResultsVirtualTableComponent({
 }: ResultsTableProps) {
   const [contextMenu, setContextMenu] = useState<{ item: any; x: number; y: number } | null>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+  const [showHeaderColsMenu, setShowHeaderColsMenu] = useState(false);
+  const headerColsMenuRef = useRef<HTMLDivElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -421,6 +433,26 @@ function ResultsVirtualTableComponent({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!showHeaderColsMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (headerColsMenuRef.current && !headerColsMenuRef.current.contains(e.target as Node)) {
+        setShowHeaderColsMenu(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowHeaderColsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showHeaderColsMenu]);
 
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const [moreBelowCount, setMoreBelowCount] = useState<number>(0);
@@ -1391,12 +1423,27 @@ function ResultsVirtualTableComponent({
               className="shrink-0 relative flex items-center justify-between pr-2 group/col"
             >
               <span className="truncate">Path / Base</span>
-              <div
-                onMouseDown={(e) => handleStartColResize("path", e)}
-                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
-                title="Arrastra para cambiar el ancho de la columna"
-              >
-                <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+              <div className="flex items-center gap-0.5">
+                {onToggleCol && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCol("path");
+                    }}
+                    title="Ocultar columna Path / Base"
+                    className="opacity-0 group-hover/col:opacity-100 p-0.5 rounded hover:bg-[#1E293B] text-slate-400 hover:text-amber-400 transition cursor-pointer"
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                )}
+                <div
+                  onMouseDown={(e) => handleStartColResize("path", e)}
+                  className="w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
+                  title="Arrastra para cambiar el ancho de la columna"
+                >
+                  <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+                </div>
               </div>
             </div>
           )}
@@ -1426,20 +1473,135 @@ function ResultsVirtualTableComponent({
               )}
             </button>
             <span>Título ▲</span>
+
+            {/* Acceso rápido ojito al lado del título para gestionar columnas */}
+            {onToggleCol && (
+              <div className="relative inline-flex items-center ml-1" ref={headerColsMenuRef}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowHeaderColsMenu((prev) => !prev);
+                  }}
+                  className={`p-1 rounded transition cursor-pointer flex items-center gap-1 text-[10px] font-normal ${
+                    (!showPath || !showStatus || !showScheduledDate || !showModifiedDate)
+                      ? "text-amber-300 bg-amber-950/60 border border-amber-700/80 px-1.5 shadow-xs"
+                      : "text-slate-400 hover:text-cyan-300 hover:bg-[#1A2536]"
+                  }`}
+                  title={
+                    (!showPath || !showStatus || !showScheduledDate || !showModifiedDate)
+                      ? "Hay columnas ocultas. Clic para ver u ocultar columnas."
+                      : "Ocultar o mostrar columnas de la lista (ojito)"
+                  }
+                >
+                  <Eye className="w-3 h-3 text-cyan-400" />
+                  {(!showPath || !showStatus || !showScheduledDate || !showModifiedDate) && (
+                    <span className="font-mono text-[9px] font-bold">
+                      {4 - [showPath, showStatus, showScheduledDate, showModifiedDate].filter(Boolean).length} ocultas
+                    </span>
+                  )}
+                </button>
+
+                {showHeaderColsMenu && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute left-0 top-7 z-50 w-56 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl p-2 space-y-1 text-xs animate-in fade-in select-none text-slate-200"
+                  >
+                    <div className="flex items-center justify-between px-1 pb-1 border-b border-[#1E293B]">
+                      <span className="text-[10px] font-mono font-bold uppercase text-cyan-400">
+                        Columnas de lista
+                      </span>
+                      <span className="text-[9.5px] text-slate-400 font-mono">
+                        {[showPath, showStatus, showScheduledDate, showModifiedDate].filter(Boolean).length}/4
+                      </span>
+                    </div>
+
+                    {[
+                      { key: "path" as const, label: "Path / Base Notion", isVis: showPath },
+                      { key: "status" as const, label: "Estado actualización", isVis: showStatus },
+                      { key: "scheduledDate" as const, label: "Fecha por hacer", isVis: showScheduledDate },
+                      { key: "modifiedDate" as const, label: "Fecha modificada", isVis: showModifiedDate },
+                    ].map(({ key, label, isVis }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => onToggleCol(key)}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-[#1A2536] text-left transition cursor-pointer"
+                      >
+                        <span className={`text-[11px] ${isVis ? "text-slate-200" : "text-slate-500 line-through"}`}>
+                          {label}
+                        </span>
+                        <div
+                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
+                            isVis
+                              ? "bg-cyan-600 border-cyan-400 text-white"
+                              : "border-slate-600 bg-slate-900/50"
+                          }`}
+                        >
+                          {isVis && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    ))}
+
+                    <div className="pt-1.5 border-t border-[#1E293B] mt-1 space-y-1">
+                      {onMaximizeNameCol && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onMaximizeNameCol();
+                            setShowHeaderColsMenu(false);
+                          }}
+                          className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-cyan-300 text-[10.5px] font-medium transition cursor-pointer"
+                        >
+                          Maximizar columna Nombre
+                        </button>
+                      )}
+                      {onResetCols && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onResetCols();
+                            setShowHeaderColsMenu(false);
+                          }}
+                          className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-slate-400 hover:text-slate-200 text-[10.5px] transition cursor-pointer"
+                        >
+                          Restablecer todas las columnas
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {showStatus && (
             <div
               style={{ width: `${colWidths.status}px` }}
-              className="shrink-0 px-1 relative flex items-center justify-between group/col"
+              className="shrink-0 px-1 relative flex items-center justify-between group/col gap-1"
             >
-              <select aria-label="Filtrar por estado de actualización" title="Filtrar todos los resultados por estado" value={statusFilter} onChange={e=>onStatusFilterChange?.(e.target.value)} className="min-w-0 w-full cursor-pointer rounded border border-slate-700 bg-[#101720] px-1 py-0.5 text-center text-[10px] text-cyan-200">{RESULT_STATUS_FILTERS.map(([value,label])=><option key={value} value={value}>{label}{statusCounts[value]!==undefined?` (${statusCounts[value]})`:''}</option>)}</select>
-              <div
-                onMouseDown={(e) => handleStartColResize("status", e)}
-                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
-                title="Arrastra para cambiar el ancho de la columna"
-              >
-                <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+              <select aria-label="Filtrar por estado de actualización" title="Filtrar todos los resultados por estado" value={statusFilter} onChange={e=>onStatusFilterChange?.(e.target.value)} className="min-w-0 flex-1 cursor-pointer rounded border border-slate-700 bg-[#101720] px-1 py-0.5 text-center text-[10px] text-cyan-200">{RESULT_STATUS_FILTERS.map(([value,label])=><option key={value} value={value}>{label}{statusCounts[value]!==undefined?` (${statusCounts[value]})`:''}</option>)}</select>
+              <div className="flex items-center shrink-0">
+                {onToggleCol && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCol("status");
+                    }}
+                    title="Ocultar columna Estado"
+                    className="opacity-0 group-hover/col:opacity-100 p-0.5 rounded hover:bg-[#1E293B] text-slate-400 hover:text-amber-400 transition cursor-pointer"
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                )}
+                <div
+                  onMouseDown={(e) => handleStartColResize("status", e)}
+                  className="w-2 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
+                  title="Arrastra para cambiar el ancho de la columna"
+                >
+                  <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+                </div>
               </div>
             </div>
           )}
@@ -1471,12 +1633,27 @@ function ResultsVirtualTableComponent({
                 {resultSort === 'scheduled-asc' && <span className="text-[10px] text-cyan-400">▲</span>}
                 {!resultSort?.startsWith('scheduled') && <span className="text-[9px] text-slate-500 opacity-60">⇅</span>}
               </button>
-              <div
-                onMouseDown={(e) => handleStartColResize("scheduledDate", e)}
-                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
-                title="Arrastra para cambiar el ancho de la columna"
-              >
-                <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+              <div className="flex items-center shrink-0">
+                {onToggleCol && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCol("scheduledDate");
+                    }}
+                    title="Ocultar columna Fecha por hacer"
+                    className="opacity-0 group-hover/col:opacity-100 p-0.5 rounded hover:bg-[#1E293B] text-slate-400 hover:text-amber-400 transition cursor-pointer"
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                )}
+                <div
+                  onMouseDown={(e) => handleStartColResize("scheduledDate", e)}
+                  className="w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
+                  title="Arrastra para cambiar el ancho de la columna"
+                >
+                  <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+                </div>
               </div>
             </div>
           )}
@@ -1508,12 +1685,27 @@ function ResultsVirtualTableComponent({
                 {resultSort === 'modified-asc' && <span className="text-[10px] text-cyan-400">▲</span>}
                 {!resultSort?.startsWith('modified') && <span className="text-[9px] text-slate-500 opacity-60">⇅</span>}
               </button>
-              <div
-                onMouseDown={(e) => handleStartColResize("modifiedDate", e)}
-                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
-                title="Arrastra para cambiar el ancho de la columna"
-              >
-                <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+              <div className="flex items-center shrink-0">
+                {onToggleCol && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCol("modifiedDate");
+                    }}
+                    title="Ocultar columna Fecha modificada"
+                    className="opacity-0 group-hover/col:opacity-100 p-0.5 rounded hover:bg-[#1E293B] text-slate-400 hover:text-amber-400 transition cursor-pointer"
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </button>
+                )}
+                <div
+                  onMouseDown={(e) => handleStartColResize("modifiedDate", e)}
+                  className="w-2.5 cursor-col-resize z-10 flex items-center justify-center hover:bg-[#38BDF8]/20 group-hover/col:bg-[#38BDF8]/10"
+                  title="Arrastra para cambiar el ancho de la columna"
+                >
+                  <div className="w-[1.5px] h-3 bg-[#26354A] group-hover/col:bg-[#38BDF8]" />
+                </div>
               </div>
             </div>
           )}
