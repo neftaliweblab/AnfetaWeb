@@ -16,10 +16,12 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles,
+  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles, Database,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
+import { openNotionPage } from "@/services/windowsIntegration";
+import { personWorkQuery } from "@/components/ResultsViewHost/PersistentSearchAccess";
 
 interface CalendarTopControlsProps {
   displayControls?:React.ReactNode;
@@ -48,6 +50,7 @@ interface CalendarTopControlsProps {
   onOpenTemplates: () => void;
   onOpenReport: () => void;
   onBackToSearch: () => void;
+  onSearchCollaborator?: (query: string) => void;
   searchFilterQuery?: string;
   onClearSearchFilter?: () => void;
   onRunAutomation?: () => void;
@@ -84,6 +87,7 @@ export function CalendarTopControls({
   onOpenTemplates,
   onOpenReport,
   onBackToSearch,
+  onSearchCollaborator,
   searchFilterQuery = "",
   onClearSearchFilter,
   onRunAutomation,
@@ -102,8 +106,38 @@ export function CalendarTopControls({
   const isTodayActive = calendarHeader.relativeBadge === "Hoy";
   const zoomPercent = Math.round((pixelsPerHour / 72) * 100);
 
+  const [baseLinks, setBaseLinks] = React.useState([
+    { id: 'Revisiones', name: 'Revisiones', url: 'https://www.notion.so/2eeabd7d91b781348ed5c537ec14962e' },
+    { id: 'Clientes', name: 'Clientes', url: 'https://www.notion.so/2f0abd7d91b781a0993ed4d3129ea46f' },
+    { id: 'Dominios', name: 'Dominios', url: 'https://www.notion.so/2f0abd7d91b781948d43d2627adf2212' },
+    { id: 'Cobrar y pagar', name: 'Cobros/Pagos', url: 'https://www.notion.so/2eeabd7d91b781a5a2eec9a20d3d656a' },
+    { id: 'Programas y proyectos', name: 'Proyectos', url: 'https://www.notion.so/3cdabd7d91b7835caf8781ca85181639' },
+    { id: 'Correos Contraseñas', name: 'Correos', url: 'https://www.notion.so/2f1abd7d91b781f5bd6ef2b1ecad4838' },
+  ]);
+
+  React.useEffect(() => {
+    let active = true;
+    fetch('/api/data?type=notion-base-links', { signal: AbortSignal.timeout(15000) })
+      .then(res => res.json())
+      .then(data => {
+        if (!active || !Array.isArray(data?.items) || data.items.length === 0) return;
+        setBaseLinks(prev => {
+          return prev.map(base => {
+            const found = data.items.find((it: any) =>
+              it.name?.toLowerCase().includes(base.name.toLowerCase()) ||
+              it.id === base.id
+            );
+            return found ? { ...base, url: found.url } : base;
+          });
+        });
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   return (
-    <div className="min-h-11 h-auto min-w-0 max-w-full bg-[#0F141A] border-b border-[#26323E] px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px] select-none flex-shrink-0">
+    <div className="flex flex-col w-full bg-[#0F141A] border-b border-[#26323E] flex-shrink-0 select-none">
+      <div className="min-h-11 h-auto min-w-0 max-w-full px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px]">
       <button onClick={onCreateActivity} title="Nueva actividad" aria-label="Nueva actividad" className="shrink-0 flex items-center gap-1 rounded border border-cyan-400/40 bg-cyan-500/15 px-2 py-1 text-cyan-300"><Plus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Nueva</span></button>
       <label className="flex items-center gap-1 text-cyan-200" title="Separación visual de la cuadrícula; no modifica horarios"><span>Divisiones</span><select aria-label="Divisiones del calendario" value={gridInterval} onChange={e=>onGridInterval?.(Number(e.target.value))} className="rounded border border-slate-700 bg-slate-900 p-1">{CALENDAR_GRID_INTERVALS.map(value=><option key={value} value={value}>{value} min</option>)}</select></label>
       {displayControls}
@@ -430,6 +464,57 @@ export function CalendarTopControls({
         >
           ⌕
         </button>
+      </div>
+      </div>
+
+      {/* Sub-franja: Accesos rápidos en forma de chips a Bases de Notion y Colaboradores */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 border-t border-[#1C2632] bg-[#0A0E13] px-2.5 py-1 text-[11px]">
+        {/* Izquierda: Bases de Notion en forma de chips directos (NO desplegable) */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mr-0.5">
+            <Database className="w-3 h-3 text-cyan-400" />
+            <span className="hidden sm:inline">Bases Notion:</span>
+          </span>
+          {baseLinks.map((base) => (
+            <button
+              key={base.id}
+              type="button"
+              onClick={() => openNotionPage(base.url)}
+              title={`Abrir base de Notion «${base.name}» (Abre Notion directamente)`}
+              className="flex items-center gap-1 rounded border border-cyan-900/80 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 px-2 py-0.5 text-[10.5px] font-medium text-cyan-200 transition-colors cursor-pointer shadow-sm"
+            >
+              <Database className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
+              <span>{base.name}</span>
+              <span className="rounded bg-cyan-900/90 px-1 py-0.2 text-[8.5px] font-bold text-cyan-300 border border-cyan-700/60">
+                BD
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Derecha: Accesos rápidos de trabajo por colaborador (redirección a Buscador sin duplicar pestañas) */}
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-[10px] text-slate-400 font-medium mr-0.5 hidden md:inline">Trabajo:</span>
+          {['Neftali', 'Genaro', 'Acalli', 'Karla', 'John', 'Isaias', 'Andrade', 'Brian', 'Sotelo', 'Edwin'].map((person) => (
+            <button
+              key={person}
+              type="button"
+              onClick={() => {
+                const q = personWorkQuery(person, ['00', '11', '22', '33'], true);
+                if (onSearchCollaborator) {
+                  onSearchCollaborator(q);
+                } else {
+                  window.dispatchEvent(new CustomEvent('anfeta_open_search_query', { detail: { query: q } }));
+                  onBackToSearch();
+                }
+              }}
+              title={`${person} · Ver trabajo en buscador`}
+              className="rounded border border-cyan-900/70 bg-cyan-950/30 hover:border-cyan-400 hover:bg-cyan-900/50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-300 transition-colors cursor-pointer"
+            >
+              {person}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

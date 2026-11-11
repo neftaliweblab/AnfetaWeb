@@ -891,13 +891,63 @@ export function ResultsViewHost({
   };
 
   const shortcuts=useSearchTabShortcuts({root:resultsRoot,active:isActive,owner:normalizePerson(currentUser),onNew:handleNewTab,onClose:()=>handleCloseTab(activeTabId)});
+  const handleCloseOtherTabs = () => {
+    setTabs(previous => previous.filter(tab => tab.id === activeTabId || !tab.canClose || tab.pending || tab.remindAt));
+  };
+
+  const handleReorderTabs = (sourceId: string, targetId: string) => {
+    setTabs(previous => {
+      const fromIdx = previous.findIndex(t => t.id === sourceId);
+      const toIdx = previous.findIndex(t => t.id === targetId);
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return previous;
+      const next = [...previous];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
   const openPersonSearch=(personQuery:string)=>{
-    const existing=findSearchTab(tabs,personQuery);if(existing){handleSelectTab(existing.id);return;}
-    focusSearch();if(tabs.length>=30){setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');return;}
-    const id='tab_'+crypto.randomUUID(),config=currentTabConfig(),targetConfig=normalizeSearchTabConfig(null);
-    setTabs(previous=>previous.map(tab=>tab.id===activeTabId?{...tab,config}:tab).concat({id,query:personQuery,canClose:true,config:targetConfig}));
-    applyTabConfig(targetConfig);setActiveTabId(id);setQuery(personQuery);onSearchChange?.(personQuery);
-  };  const handleTagChange = (newTag: string) => {
+    const cleanQ = personQuery.trim();
+    let existing = findSearchTab(tabs, cleanQ);
+    if (!existing) {
+      const personWord = cleanQ.split(/\s+/)[0]?.toLowerCase();
+      if (personWord) {
+        existing = tabs.find(t => t.query.trim().split(/\s+/)[0]?.toLowerCase() === personWord);
+      }
+    }
+    if (existing) {
+      handleSelectTab(existing.id);
+      if (existing.query.trim() !== cleanQ) {
+        setQuery(cleanQ);
+        onSearchChange?.(cleanQ);
+        setTabs(previous => previous.map(tab => tab.id === existing!.id ? { ...tab, query: cleanQ } : tab));
+      }
+      return;
+    }
+    focusSearch();
+    if (tabs.length >= 30) {
+      setStatusError('Puedes mantener hasta 30 búsquedas. Cierra una antes de abrir otra.');
+      return;
+    }
+    const id = 'tab_' + crypto.randomUUID(), config = currentTabConfig(), targetConfig = normalizeSearchTabConfig(null);
+    setTabs(previous => previous.map(tab => tab.id === activeTabId ? { ...tab, config } : tab).concat({ id, query: cleanQ, canClose: true, config: targetConfig }));
+    applyTabConfig(targetConfig);
+    setActiveTabId(id);
+    setQuery(cleanQ);
+    onSearchChange?.(cleanQ);
+  };
+
+  useEffect(() => {
+    const handleEvent = (event: Event) => {
+      const q = (event as CustomEvent)?.detail?.query;
+      if (typeof q === 'string' && q.trim()) {
+        openPersonSearch(q.trim());
+      }
+    };
+    window.addEventListener('anfeta_open_search_query', handleEvent);
+    return () => window.removeEventListener('anfeta_open_search_query', handleEvent);
+  }, [tabs, activeTabId]);  const handleTagChange = (newTag: string) => {
     focusSearch();
     const next={selectedTag:newTag,customTag};
     setSelectedTag(newTag);
@@ -1937,6 +1987,8 @@ export function ResultsViewHost({
           )
         }
         onCloseTab={handleCloseTab}
+        onCloseOtherTabs={handleCloseOtherTabs}
+        onReorderTabs={handleReorderTabs}
         onNewTab={handleNewTab}
         shortcutMode={shortcuts.mode}
         shortcutBindings={shortcuts.effectiveBindings}

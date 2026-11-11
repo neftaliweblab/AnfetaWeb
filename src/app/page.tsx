@@ -733,6 +733,10 @@ export default function AnfetaApp() {
             onSelectDate={handleSelectDate}
             availableDates={availableDates}
             onBackToSearch={() => setActiveView("results")}
+            onSearchCollaborator={(q) => {
+              setActiveView("results");
+              window.dispatchEvent(new CustomEvent('anfeta_open_search_query', { detail: { query: q } }));
+            }}
             automationReport={automationReport}
             searchFilterQuery={searchQuery}
             onClearSearchFilter={() => handleSearchChange("")}

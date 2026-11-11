@@ -67,6 +67,7 @@ interface CalendarHostProps {
   onSelectDate: (date: string) => void;
   availableDates: string[];
   onBackToSearch?: () => void;
+  onSearchCollaborator?: (query: string) => void;
   automationReport?: any;
   searchFilterQuery?: string;
   onClearSearchFilter?: () => void;
@@ -101,6 +102,7 @@ export function CalendarHost({
   onSelectDate,
   availableDates,
   onBackToSearch,
+  onSearchCollaborator,
   automationReport,
   searchFilterQuery = "",
   onClearSearchFilter,
@@ -843,6 +845,7 @@ export function CalendarHost({
         onOpenTemplates={() => setShowTemplates(true)}
         onOpenReport={() => setShowReport(true)}
         onBackToSearch={() => onBackToSearch?.()}
+        onSearchCollaborator={onSearchCollaborator}
         searchFilterQuery={searchFilterQuery}
         onClearSearchFilter={onClearSearchFilter}
         onRunAutomation={onRunAutomation}

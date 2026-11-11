@@ -24,6 +24,8 @@ interface SearchTabsRowProps {
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onCloseOtherTabs?: () => void;
+  onReorderTabs?: (sourceId: string, targetId: string) => void;
   onNewTab: () => void;
   shortcutMode?:SearchShortcutMode;
   shortcutBindings?:SearchShortcutBindings;
@@ -40,6 +42,8 @@ function SearchTabsRowComponent({
   activeTabId,
   onSelectTab,
   onCloseTab,
+  onCloseOtherTabs,
+  onReorderTabs,
   onNewTab,
   shortcutMode="compatible",
   shortcutBindings={new:"Ctrl+Alt+T",close:"Ctrl+Alt+W"},
@@ -51,6 +55,8 @@ function SearchTabsRowComponent({
   onOpenAnnouncements,
 }: SearchTabsRowProps) {
   const tabList=React.useRef<HTMLDivElement>(null);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   useEffect(()=>{const list=tabList.current,active=list?.querySelector<HTMLElement>('[aria-selected="true"]');if(!list||!active)return;const outer=list.getBoundingClientRect(),inner=active.getBoundingClientRect();if(inner.right>outer.right)list.scrollLeft+=inner.right-outer.right;else if(inner.left<outer.left)list.scrollLeft-=outer.left-inner.left;},[activeTabId,tabs.length]);
   const [now,setNow]=useState(()=>Date.now());
   const hasTimers=tabs.some(tab=>!!tab.remindAt);
@@ -75,16 +81,74 @@ function SearchTabsRowComponent({
         style={{ gap: `${Math.round(4 * scale)}px` }}
         ref={tabList} role="tablist" aria-label="Búsquedas abiertas" className="flex items-center overflow-x-auto scrollbar-none flex-1 min-w-0"
       >
-        <span className="shrink-0 text-[10px] text-slate-400" title="Búsquedas abiertas y pendientes">{tabs.length} abiertas{pendingCount?` · ${pendingCount} pendientes`:""}</span>
+        <div className="flex items-center gap-1.5 shrink-0 mr-1">
+          <span className="text-[10px] text-slate-400 font-medium" title="Búsquedas abiertas y pendientes">
+            {tabs.length} abiertas{pendingCount?` · ${pendingCount} pendientes`:""}
+          </span>
+          {tabs.length >= 10 && (
+            <span
+              className={`rounded px-1.5 py-0.2 text-[9px] font-semibold border flex items-center gap-0.5 ${
+                tabs.length >= 25
+                  ? 'bg-rose-950/80 border-rose-500 text-rose-200 animate-pulse'
+                  : tabs.length >= 16
+                  ? 'bg-amber-950/80 border-amber-500 text-amber-200'
+                  : 'bg-slate-800 border-slate-700 text-slate-300'
+              }`}
+              title={`Tienes ${tabs.length} pestañas abiertas (Límite: 30). Con muchas pestañas, puedes limpiar las que no uses para mejorar la velocidad.`}
+            >
+              <span>{tabs.length >= 25 ? '🚨' : '⚠️'}</span>
+              <span>{tabs.length}/30</span>
+            </span>
+          )}
+          {onCloseOtherTabs && tabs.length > 5 && (
+            <button
+              type="button"
+              onClick={onCloseOtherTabs}
+              className="rounded px-1.5 py-0.2 text-[9px] font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 cursor-pointer transition-colors"
+              title="Cerrar pestañas inactivas no pendientes"
+            >
+              Cerrar inactivas
+            </button>
+          )}
+        </div>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const expired=!!tab.remindAt&&tab.remindAt<=now;
           const alarm=tab.unseen||expired;
           const displayLabel = tab.query.trim() ? tab.query : "Búsqueda";
+          const isDragging = draggedTabId === tab.id;
+          const isOver = dragOverTabId === tab.id;
           return (
             <div
               key={tab.id}
               role="tab" aria-selected={isActive} tabIndex={0}
+              draggable={true}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", tab.id);
+                e.dataTransfer.effectAllowed = "move";
+                setDraggedTabId(tab.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverTabId !== tab.id) setDragOverTabId(tab.id);
+              }}
+              onDragLeave={() => {
+                if (dragOverTabId === tab.id) setDragOverTabId(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const sourceId = e.dataTransfer.getData("text/plain") || draggedTabId;
+                setDraggedTabId(null);
+                setDragOverTabId(null);
+                if (sourceId && sourceId !== tab.id && onReorderTabs) {
+                  onReorderTabs(sourceId, tab.id);
+                }
+              }}
+              onDragEnd={() => {
+                setDraggedTabId(null);
+                setDragOverTabId(null);
+              }}
               onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onSelectTab(tab.id);}}}
               onClick={() => onSelectTab(tab.id)}
               style={{
@@ -92,8 +156,8 @@ function SearchTabsRowComponent({
                 fontSize: `${(11 * scale).toFixed(1)}px`,
                 gap: `${Math.round(5 * scale)}px`,
               }}
-              title={displayLabel+(expired?" · Recordatorio vencido; pulsa para reconocerlo":"")}
-              className={`${alarm?"motion-safe:animate-pulse ring-1 ring-amber-400 shadow-[0_0_12px_#f59e0b55]":""} flex items-center rounded-t-md cursor-pointer border-t border-l border-r transition-colors ${
+              title={displayLabel+" (Arrastra para mover de lugar)"+(expired?" · Recordatorio vencido; pulsa para reconocerlo":"")}
+              className={`group ${alarm?"motion-safe:animate-pulse ring-1 ring-amber-400 shadow-[0_0_12px_#f59e0b55]":""} ${isDragging?"opacity-35 scale-95":""} ${isOver?"border-l-2 border-l-cyan-400 bg-cyan-950/40":""} flex items-center rounded-t-md cursor-grab active:cursor-grabbing border-t border-l border-r transition-all ${
                 isActive
                   ? "bg-[#161F2C] border-[#38BDF8] text-[#F1F5F9] font-medium shadow-[0_-1px_6px_rgba(56,189,248,0.2)]"
                   : "bg-[#101721] border-[#1E2836] text-[#94A3B8] hover:bg-[#131E2B] hover:text-[#CBD5E1]"
@@ -113,6 +177,34 @@ function SearchTabsRowComponent({
                 {displayLabel}
               </span>
               {onMarkPending&&<><button type="button" aria-label={tab.pending?'Quitar pendiente':'Marcar búsqueda pendiente'} title={tab.pending?'Quitar pendiente':'Marcar para revisar después'} className={tab.pending?'text-amber-300':'text-slate-500 hover:text-amber-300'} onClick={e=>{e.stopPropagation();onMarkPending(tab.id,!tab.pending);}}><Star className="h-3 w-3" fill={tab.pending?'currentColor':'none'}/></button><label title="Recordar esta búsqueda en minutos" className="flex items-center gap-0.5 text-slate-400" onClick={e=>e.stopPropagation()}><Timer className="h-3 w-3"/><select aria-label="Recordatorio de búsqueda" className="max-w-14 rounded bg-slate-900 text-[10px]" value="" onChange={e=>{if(e.target.value)onMarkPending(tab.id,true,Number(e.target.value));}}><option value="">{tab.remindAt?expired?'¡Revisar!':Math.ceil((tab.remindAt-now)/60000)+' min':'—'}</option><option value="5">5 min</option><option value="10">10 min</option><option value="60">1 hora</option></select></label></>}
+              {onReorderTabs && tabs.length > 1 && (
+                <span className="hidden group-hover:inline-flex items-center gap-0.5 ml-0.5 text-slate-500">
+                  <button
+                    type="button"
+                    title="Mover pestaña a la izquierda"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const idx = tabs.findIndex(t => t.id === tab.id);
+                      if (idx > 0) onReorderTabs(tab.id, tabs[idx - 1].id);
+                    }}
+                    className="hover:text-cyan-300 text-[9px] px-0.5 cursor-pointer"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    title="Mover pestaña a la derecha"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const idx = tabs.findIndex(t => t.id === tab.id);
+                      if (idx < tabs.length - 1) onReorderTabs(tab.id, tabs[idx + 1].id);
+                    }}
+                    className="hover:text-cyan-300 text-[9px] px-0.5 cursor-pointer"
+                  >
+                    ▶
+                  </button>
+                </span>
+              )}
               {tab.canClose && (
                 <button
                   type="button"
