@@ -136,8 +136,7 @@ export function CalendarTopControls({
   }, []);
 
   return (
-    <div className="flex flex-col w-full bg-[#0F141A] border-b border-[#26323E] flex-shrink-0 select-none">
-      <div className="min-h-11 h-auto min-w-0 max-w-full px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+    <div className="min-h-11 h-auto min-w-0 max-w-full bg-[#0F141A] border-b border-[#26323E] px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px] select-none flex-shrink-0">
       <button onClick={onCreateActivity} title="Nueva actividad" aria-label="Nueva actividad" className="shrink-0 flex items-center gap-1 rounded border border-cyan-400/40 bg-cyan-500/15 px-2 py-1 text-cyan-300"><Plus className="w-3.5 h-3.5"/><span className="hidden sm:inline">Nueva</span></button>
       <label className="flex items-center gap-1 text-cyan-200" title="Separación visual de la cuadrícula; no modifica horarios"><span>Divisiones</span><select aria-label="Divisiones del calendario" value={gridInterval} onChange={e=>onGridInterval?.(Number(e.target.value))} className="rounded border border-slate-700 bg-slate-900 p-1">{CALENDAR_GRID_INTERVALS.map(value=><option key={value} value={value}>{value} min</option>)}</select></label>
       {displayControls}
@@ -401,6 +400,9 @@ export function CalendarTopControls({
               { short: "G", name: "Genaro" },
               { short: "I", name: "Isaias" },
               { short: "S", name: "Sotelo" },
+              { short: "E", name: "Edwin" },
+              { short: "B", name: "Brian" },
+              { short: "Ac", name: "Acalli" },
             ].map(({ short, name }) => {
               const isSolo = visiblePeople?.length === 1 && visiblePeople[0] === name;
               const isIncluded = visiblePeople?.includes(name);
@@ -464,16 +466,15 @@ export function CalendarTopControls({
         >
           ⌕
         </button>
-      </div>
-      </div>
 
-      {/* Sub-franja: Accesos rápidos en forma de chips a Bases de Notion y Colaboradores */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 border-t border-[#1C2632] bg-[#0A0E13] px-2.5 py-1 text-[11px]">
-        {/* Izquierda: Bases de Notion en forma de chips directos (NO desplegable) */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Separador vertical */}
+        <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block shrink-0" />
+
+        {/* Accesos rápidos a Bases de Notion en Chips directos (ubicados en el espacio derecho de controles) */}
+        <div className="flex items-center gap-1 flex-wrap shrink-0" title="Bases originales de Notion (Abre Notion directamente)">
           <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mr-0.5">
             <Database className="w-3 h-3 text-cyan-400" />
-            <span className="hidden sm:inline">Bases Notion:</span>
+            <span className="hidden xl:inline">Bases:</span>
           </span>
           {baseLinks.map((base) => (
             <button
@@ -481,37 +482,13 @@ export function CalendarTopControls({
               type="button"
               onClick={() => openNotionPage(base.url)}
               title={`Abrir base de Notion «${base.name}» (Abre Notion directamente)`}
-              className="flex items-center gap-1 rounded border border-cyan-900/80 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 px-2 py-0.5 text-[10.5px] font-medium text-cyan-200 transition-colors cursor-pointer shadow-sm"
+              className="flex items-center gap-1 rounded border border-cyan-900/80 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 px-1.5 py-0.5 text-[10px] font-medium text-cyan-200 transition-colors cursor-pointer shadow-sm"
             >
               <Database className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
               <span>{base.name}</span>
-              <span className="rounded bg-cyan-900/90 px-1 py-0.2 text-[8.5px] font-bold text-cyan-300 border border-cyan-700/60">
+              <span className="rounded bg-cyan-900/90 px-1 py-0.2 text-[8px] font-bold text-cyan-300 border border-cyan-700/60">
                 BD
               </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Derecha: Accesos rápidos de trabajo por colaborador (redirección a Buscador sin duplicar pestañas) */}
-        <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] text-slate-400 font-medium mr-0.5 hidden md:inline">Trabajo:</span>
-          {['Neftali', 'Genaro', 'Acalli', 'Karla', 'John', 'Isaias', 'Andrade', 'Brian', 'Sotelo', 'Edwin'].map((person) => (
-            <button
-              key={person}
-              type="button"
-              onClick={() => {
-                const q = personWorkQuery(person, ['00', '11', '22', '33'], true);
-                if (onSearchCollaborator) {
-                  onSearchCollaborator(q);
-                } else {
-                  window.dispatchEvent(new CustomEvent('anfeta_open_search_query', { detail: { query: q } }));
-                  onBackToSearch();
-                }
-              }}
-              title={`${person} · Ver trabajo en buscador`}
-              className="rounded border border-cyan-900/70 bg-cyan-950/30 hover:border-cyan-400 hover:bg-cyan-900/50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-300 transition-colors cursor-pointer"
-            >
-              {person}
             </button>
           ))}
         </div>
