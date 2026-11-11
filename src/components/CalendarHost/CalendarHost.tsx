@@ -54,6 +54,8 @@ import { normalizePerson } from "@/services/identityNormalizer";
 import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
 import { canEditActivity, scheduleAtDrop, isDirection, isReviewer } from '@/services/activityPermissions';
+import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
+import { ACTIVITY_TAGS } from "@/services/activityTags";
 import { CreateActivityModal } from './CreateActivityModal';
 import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { UnifiedActivityModal } from './UnifiedActivityModal';
@@ -95,6 +97,42 @@ const DEFAULT_COLLABORATORS = [
   "Neftali",
   "Sin asignar",
 ];
+
+function matchesCalendarActivityFilter(act: NotionCalendarActivity, query: string): boolean {
+  const q = (query || "").trim();
+  if (!q) return true;
+
+  const row: any = {
+    id: act.pageId,
+    name: act.title,
+    displayName: act.title,
+    assignedPerson: act.person,
+    status: act.status,
+    scheduledDate: (act as any).date || act.originalScheduledDate || (act.start ? act.start.split('T')[0] : ''),
+    domainChip: act.domain,
+    searchText: `${act.title} ${act.status} ${act.project || ""} ${act.domain || ""} ${act.person || ""}`,
+    description: act.project || "",
+    sourceName: (act as any).sourceName || "Revisiones",
+  };
+
+  if (matchesFlexibleOrQuotedQuery(row, q)) {
+    return true;
+  }
+
+  const cleanQ = q.toLowerCase();
+  const personNorm = normalizePerson(act.person).toLowerCase();
+  if (personNorm && personNorm !== "sin asignar") {
+    const words = cleanQ.split(/\s+/);
+    if (words.some((w) => w === personNorm)) {
+      const tagEntry = ACTIVITY_TAGS[normalizePerson(act.person) as keyof typeof ACTIVITY_TAGS];
+      if (!tagEntry || cleanQ.includes(tagEntry.active.toLowerCase()) || cleanQ.includes(tagEntry.review.toLowerCase())) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 
 export function CalendarHost({
   activities: initialActivities, currentUser, active = true,
@@ -627,11 +665,8 @@ export function CalendarHost({
         else if (phaseFilter === 'completed' && workflowState(act.status, act.title) !== 'completed') return false;
         else if (phaseFilter !== 'terminated' && phaseFilter !== 'finalized' && phaseFilter !== 'completed' && workflowState(act.status, act.title) !== phaseFilter) return false;
       }
-      const text = `${act.title} ${act.status} ${act.project} ${act.domain || ""} ${act.person || ""}`.toLowerCase();
       if (searchFilterQuery && searchFilterQuery.trim()) {
-        const terms = searchFilterQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
-        const matchesAll = terms.every((t) => text.includes(t));
-        if (!matchesAll) return false;
+        if (!matchesCalendarActivityFilter(act, searchFilterQuery)) return false;
       }
       return true;
     });
