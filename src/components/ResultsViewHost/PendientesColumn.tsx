@@ -20,6 +20,9 @@ import {
   ChevronUp,
   SlidersHorizontal,
   Settings,
+  CopyPlus,
+  X,
+  ExternalLink,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
@@ -275,6 +278,7 @@ interface PendientesColumnProps {
   onDeleteAllTasks?: () => void;
   onSelectTaskQuery?: (query: string) => void;
   onReorderTasks?: (ids: string[]) => void;
+  onDuplicateTask?: (task: PendingTaskItem) => void;
 }
 
 function PendientesColumnComponent({
@@ -290,6 +294,7 @@ function PendientesColumnComponent({
   onDeleteAllTasks,
   onSelectTaskQuery,
   onReorderTasks,
+  onDuplicateTask,
 }: PendientesColumnProps) {
   const [contextMenu, setContextMenu] = useState<{ task: PendingTaskItem; x: number; y: number } | null>(null);
   const contextRef = useRef<HTMLDivElement>(null);
@@ -416,7 +421,32 @@ function PendientesColumnComponent({
       return !old;
     });
 
-  const activeTasks = useMemo(() => pendingTasks.filter((t) => !t.isArchived), [pendingTasks]);
+  const [dismissedNotification, setDismissedNotification] = useState(false);
+
+  // Helper para saber si un pendiente fue asignado directamente a mí por otro compañero
+  const isDirectlyAssignedToMe = (t: PendingTaskItem) => {
+    const normCurrent = normalizePerson(currentUser || "");
+    return Boolean(
+      t.assignedTo &&
+      normalizePerson(t.assignedTo) === normCurrent &&
+      t.assignedBy &&
+      normalizePerson(t.assignedBy) !== normCurrent &&
+      !t.isAttended &&
+      !t.isCompleted
+    );
+  };
+
+  // Active tasks: Asignados directos hasta arriba
+  const activeTasks = useMemo(() => {
+    const raw = pendingTasks.filter((t) => !t.isArchived);
+    return [...raw].sort((a, b) => {
+      const aDirect = isDirectlyAssignedToMe(a) ? 1 : 0;
+      const bDirect = isDirectlyAssignedToMe(b) ? 1 : 0;
+      if (aDirect !== bDirect) return bDirect - aDirect;
+      return 0;
+    });
+  }, [pendingTasks, currentUser]);
+
   const archivedTasks = useMemo(() => pendingTasks.filter((t) => Boolean(t.isArchived)), [pendingTasks]);
 
   // Timed tasks: Bloques de horario
@@ -424,10 +454,16 @@ function PendientesColumnComponent({
     return pendingTasks.filter((t) => extractTaskTime(t).hasTime && !t.isArchived);
   }, [pendingTasks]);
 
-  // Free tasks: Pendientes libres / normales
+  // Free tasks: Pendientes libres / normales (Asignados directos hasta arriba)
   const freeTasks = useMemo(() => {
-    return pendingTasks.filter((t) => !extractTaskTime(t).hasTime && !t.isArchived);
-  }, [pendingTasks]);
+    const raw = pendingTasks.filter((t) => !extractTaskTime(t).hasTime && !t.isArchived);
+    return [...raw].sort((a, b) => {
+      const aDirect = isDirectlyAssignedToMe(a) ? 1 : 0;
+      const bDirect = isDirectlyAssignedToMe(b) ? 1 : 0;
+      if (aDirect !== bDirect) return bDirect - aDirect;
+      return 0;
+    });
+  }, [pendingTasks, currentUser]);
 
   // Tareas asignadas a mí por otro compañero no atendidas (con normalización canónica robusta)
   const assignedToMeUnattended = useMemo(() => {
@@ -442,6 +478,15 @@ function PendientesColumnComponent({
         !t.isCompleted
     );
   }, [activeTasks, currentUser]);
+
+  const handleDuplicateTask = (task: PendingTaskItem) => {
+    if (onDuplicateTask) {
+      onDuplicateTask(task);
+    } else {
+      onOpenNewTaskModal();
+    }
+    setFeedback("Pendiente duplicado");
+  };
 
   // Notificar al usuario con Toast nativo y sonido si llega una tarea asignada nueva
   const notifiedTasksRef = useRef<Set<string>>(new Set());
@@ -584,6 +629,7 @@ function PendientesColumnComponent({
     const isCompleted = Boolean(task.isCompleted);
     const isDimmed = isAttended || isCompleted;
     const isDraggedOver = dragOverTaskId === task.id;
+    const isDirect = isDirectlyAssignedToMe(task);
 
     return (
       <div
@@ -597,14 +643,29 @@ function PendientesColumnComponent({
             onSelectTaskQuery?.(task.query || task.title);
           }
         }}
+        onDoubleClick={() => {
+          onEditTask?.(task);
+        }}
         onContextMenu={(e) => handleContextMenu(e, task)}
         className={`p-2 rounded-lg border transition-all relative group flex flex-col gap-1.5 cursor-pointer ${
           isDraggedOver
             ? "border-cyan-400 bg-cyan-950/40"
+            : isDirect
+            ? "border-cyan-400/90 bg-gradient-to-r from-cyan-950/70 to-[#141B26] shadow-[0_0_12px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/50"
             : "border-[#1E2836] bg-[#141B26] hover:bg-[#1A2332] hover:border-cyan-500/40"
         } ${isDimmed ? "opacity-40 bg-[#0C121A] grayscale-[30%]" : ""}`}
-        title="Clic: filtrar en explorador · Clic derecho: opciones · Arrastra para reordenar"
+        title="Clic: filtrar en buscador · Doble clic: editar · Clic derecho: opciones · Arrastra para reordenar"
       >
+        {/* Badge distintivo de Asignado Directo */}
+        {isDirect && (
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-400 flex items-center gap-1 shadow-xs">
+              <Sparkles className="w-2.5 h-2.5 text-cyan-400 animate-pulse" />
+              <span>ASIGNADO DIRECTO POR {task.assignedBy || "COMPAÑERO"}</span>
+            </span>
+          </div>
+        )}
+
         <div className="flex items-start gap-2">
           {/* Checkbox circular de completado */}
           <button
@@ -642,6 +703,23 @@ function PendientesColumnComponent({
               <p className="text-[10px] text-slate-400 line-clamp-2 my-0.5 bg-black/20 p-1 rounded border border-slate-800/60 font-sans">
                 {task.description}
               </p>
+            )}
+
+            {/* Link de Entrega si fue proporcionado */}
+            {task.url && (
+              <div className="mt-1">
+                <a
+                  href={task.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-[9px] text-cyan-300 hover:text-cyan-100 bg-cyan-950/90 px-1.5 py-0.5 rounded border border-cyan-700/60 font-mono truncate max-w-full"
+                  title={`Abrir entrega: ${task.url}`}
+                >
+                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{task.url.replace(/^https?:\/\//, '')}</span>
+                </a>
+              </div>
             )}
 
             {/* Badges de Asignación y Fecha */}
@@ -732,6 +810,30 @@ function PendientesColumnComponent({
             title="Copiar texto"
           >
             📋
+          </button>
+          {onEditTask && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditTask(task);
+              }}
+              className="p-1 text-slate-400 hover:text-cyan-300 cursor-pointer"
+              title="Editar pendiente"
+            >
+              <Edit2 className="w-3 h-3 text-cyan-400" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDuplicateTask(task);
+            }}
+            className="p-1 text-slate-400 hover:text-cyan-300 cursor-pointer"
+            title="Duplicar pendiente"
+          >
+            <CopyPlus className="w-3 h-3 text-cyan-400" />
           </button>
           {onEditTask && (
             <button
@@ -843,6 +945,23 @@ function PendientesColumnComponent({
           </p>
         )}
 
+        {/* Link de Entrega si fue proporcionado */}
+        {task.url && (
+          <div className="mt-1">
+            <a
+              href={task.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[8.5px] text-cyan-200 hover:text-white bg-black/40 px-1 py-0.5 rounded border border-white/10 font-mono truncate max-w-full"
+              title={`Abrir entrega: ${task.url}`}
+            >
+              <ExternalLink className="w-2 h-2 shrink-0" />
+              <span className="truncate">{task.url.replace(/^https?:\/\//, '')}</span>
+            </a>
+          </div>
+        )}
+
         {/* Footer del Bloque con acciones */}
         <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1 pt-1 border-t border-white/10">
           <div className="flex items-center gap-1 truncate">
@@ -869,6 +988,30 @@ function PendientesColumnComponent({
               title="Copiar texto"
             >
               📋
+            </button>
+            {onEditTask && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditTask(task);
+                }}
+                className="hover:text-cyan-300 cursor-pointer p-0.5"
+                title="Editar bloque"
+              >
+                <Edit2 className="w-2.5 h-2.5 text-cyan-300" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDuplicateTask(task);
+              }}
+              className="hover:text-cyan-300 cursor-pointer p-0.5"
+              title="Duplicar bloque"
+            >
+              <CopyPlus className="w-2.5 h-2.5 text-cyan-300" />
             </button>
             <button
               type="button"
@@ -1245,9 +1388,9 @@ function PendientesColumnComponent({
         </div>
       </div>
 
-      {/* Banner de Notificación de Pendientes Asignados por Compañero */}
-      {assignedToMeUnattended.length > 0 && (
-        <div className="mb-2 p-2 rounded-lg bg-gradient-to-r from-cyan-950/90 to-blue-950/70 border border-cyan-400/60 shadow-lg shrink-0">
+      {/* Banner de Notificación de Pendientes Asignados por Compañero (Con Entrar y Quitar) */}
+      {assignedToMeUnattended.length > 0 && !dismissedNotification && (
+        <div className="mb-2 p-2 rounded-lg bg-gradient-to-r from-cyan-950/95 to-blue-950/80 border border-cyan-400/80 shadow-[0_0_15px_rgba(6,182,212,0.2)] shrink-0 animate-in fade-in">
           <div className="flex items-start gap-2">
             <Bell className="w-4 h-4 text-cyan-400 animate-bounce shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
@@ -1260,7 +1403,36 @@ function PendientesColumnComponent({
                   {Array.from(new Set(assignedToMeUnattended.map((t) => t.assignedBy || "Compañero"))).join(", ")}
                 </span>
               </p>
+              {/* Botón Entrar */}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const first = assignedToMeUnattended[0];
+                    if (first) {
+                      if (first.query) onSelectTaskQuery?.(first.query);
+                      onEditTask?.(first);
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-[10px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                  title="Abrir y atender el pendiente asignado"
+                >
+                  <span>Entrar al pendiente →</span>
+                </button>
+              </div>
             </div>
+            {/* Botón Quitar / Descartar */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDismissedNotification(true);
+              }}
+              className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/10 transition cursor-pointer shrink-0"
+              title="Quitar / Descartar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}

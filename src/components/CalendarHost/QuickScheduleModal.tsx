@@ -24,7 +24,38 @@ export function QuickScheduleActions({activity,onClose,onSave,disabled=false,cur
     <p className="font-semibold text-cyan-200">Mover fecha / Duración</p>
     <p className="text-[10px] text-slate-400">Desde {mexicoDate(baseline.start)}; conserva la hora de inicio.</p>
     <fieldset disabled={busy||disabled} className="space-y-2">
-      <div className="flex flex-wrap gap-1">{[[-1,'Enviar para ayer'],[1,'Enviar para mañana'],[0,'Conservar fecha']].map(([n,label])=><button type="button" key={n} aria-pressed={!targetDate&&offset===n} onClick={()=>{setTargetDate('');setOffset(Number(n));}} className={buttonClass}>{label}</button>)}</div>
+      <div className="space-y-1">
+        <span className="text-[10px] text-slate-400 font-semibold block">Acceso rápido:</span>
+        <div className="grid grid-cols-3 gap-1">
+          <button
+            type="button"
+            aria-pressed={!targetDate && offset === -1}
+            onClick={() => { setTargetDate(''); setOffset(-1); }}
+            className={`${buttonClass} text-center font-bold text-amber-300 hover:border-amber-400`}
+            title="Mover actividad a ayer (-1 día)"
+          >
+            ⏪ Ayer (-1d)
+          </button>
+          <button
+            type="button"
+            aria-pressed={!targetDate && offset === 0}
+            onClick={() => { setTargetDate(''); setOffset(0); }}
+            className={`${buttonClass} text-center font-bold text-cyan-300 hover:border-cyan-400`}
+            title="Conservar fecha original"
+          >
+            📍 Hoy (0d)
+          </button>
+          <button
+            type="button"
+            aria-pressed={!targetDate && offset === 1}
+            onClick={() => { setTargetDate(''); setOffset(1); }}
+            className={`${buttonClass} text-center font-bold text-emerald-300 hover:border-emerald-400`}
+            title="Mover actividad a mañana (+1 día)"
+          >
+            ⏩ Mañana (+1d)
+          </button>
+        </div>
+      </div>
       <label className="flex items-center justify-between gap-2">Enviar para… <select aria-label="Días para mover la actividad" value={!targetDate&&offset>0?offset:0} onChange={e=>{setTargetDate('');setOffset(Number(e.target.value));}} className="min-w-0 rounded bg-slate-800 p-1.5"><option value={0}>Seleccionar días</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>En {n} día{n===1?'':'s'}</option>)}</select></label>
       <label className="block">Elegir fecha<input aria-label="Fecha de destino" type="date" value={targetDate||mexicoDate(proposal?.start||baseline.start)} onChange={e=>{setTargetDate(e.target.value);setOffset(0);}} className="mt-1 block w-full rounded bg-slate-800 p-1.5"/></label>
       <label className="flex items-center justify-between gap-2">Duración<select aria-label="Duración de la actividad" value={duration??''} onChange={e=>setDuration(e.target.value?Number(e.target.value):null)} className="rounded bg-slate-800 p-1.5"><option value="">Conservar</option>{[[15,'15 min'],[20,'20 min'],[30,'30 min'],[45,'45 min'],[60,'1 hora'],[90,'1 h 30 min'],[120,'2 horas']].map(([n,label])=><option key={n} value={n}>{label}</option>)}</select></label>

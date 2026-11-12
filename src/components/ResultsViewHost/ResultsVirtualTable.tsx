@@ -542,21 +542,52 @@ function ResultsVirtualTableComponent({
   }, [searchQuery]);
 
   const partitionedItems = React.useMemo(() => {
-    if (!searchedPeople.length || (groupBy && groupBy !== "none")) {
-      return { exact: orderedItems, secondary: [] };
+    if (groupBy && groupBy !== "none") {
+      return { exact: orderedItems, secondary: [], type: "none" as const };
     }
-    const exact: any[] = [];
-    const secondary: any[] = [];
-    for (const item of orderedItems) {
-      const assigned = normalizePerson(resultAssignedPerson(item) || "");
-      if (searchedPeople.includes(assigned)) {
-        exact.push(item);
-      } else {
-        secondary.push(item);
+    if (searchedPeople.length > 0) {
+      const exact: any[] = [];
+      const secondary: any[] = [];
+      for (const item of orderedItems) {
+        const assigned = normalizePerson(resultAssignedPerson(item) || "");
+        if (searchedPeople.includes(assigned)) {
+          exact.push(item);
+        } else {
+          secondary.push(item);
+        }
+      }
+      return { exact, secondary, type: "person" as const };
+    }
+
+    // Búsqueda inteligente: Título primero, luego Contenido interno separado
+    const cleanQ = (searchQuery || "").trim().toLowerCase();
+    const cleanTerms = cleanQ
+      .split(/\s+/)
+      .map((t) => t.replace(/^["(]+|[)"]+$/g, ""))
+      .filter((t) => t.length > 1 && !["and", "or", "not", "&&", "||"].includes(t));
+
+    if (cleanTerms.length > 0 && selectedScope !== "Contenido") {
+      const titleMatches: any[] = [];
+      const contentMatches: any[] = [];
+
+      for (const item of orderedItems) {
+        const titleStr = String(item.name || item.title || "").toLowerCase();
+        const matchesInTitle = cleanTerms.some((t) => titleStr.includes(t));
+
+        if (matchesInTitle) {
+          titleMatches.push(item);
+        } else {
+          contentMatches.push(item);
+        }
+      }
+
+      if (titleMatches.length > 0 && contentMatches.length > 0) {
+        return { exact: titleMatches, secondary: contentMatches, type: "content" as const };
       }
     }
-    return { exact, secondary };
-  }, [orderedItems, searchedPeople, groupBy]);
+
+    return { exact: orderedItems, secondary: [], type: "none" as const };
+  }, [orderedItems, searchedPeople, groupBy, searchQuery, selectedScope]);
 
   const statusCounts = React.useMemo(() => {
     const counts: Record<string, number> = { all: items.length };
@@ -1710,12 +1741,30 @@ function ResultsVirtualTableComponent({
           ) : partitionedItems.secondary.length > 0 && partitionedItems.exact.length > 0 ? (
             <>
               {partitionedItems.exact.map(renderRow)}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#172233]/90 border-y border-amber-500/40 text-amber-200 text-xs font-semibold select-none sticky top-0 z-10 backdrop-blur-sm">
-                <span className="text-amber-400">📝</span>
-                <span>Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
-                <span className="text-[10px] text-slate-400 font-normal ml-auto">
-                  Coincidencia de etiqueta o notas (asignado a otra persona o sin asignar)
-                </span>
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 border-y text-xs font-semibold select-none sticky top-0 z-10 backdrop-blur-sm shadow-md ${
+                  partitionedItems.type === "content"
+                    ? "bg-[#0F2238]/95 border-cyan-500/50 text-cyan-200"
+                    : "bg-[#172233]/90 border-amber-500/40 text-amber-200"
+                }`}
+              >
+                {partitionedItems.type === "content" ? (
+                  <>
+                    <span className="text-cyan-400">📄</span>
+                    <span>Coincidencias encontradas en Contenido interno y notas ({partitionedItems.secondary.length})</span>
+                    <span className="text-[10px] text-slate-400 font-normal ml-auto">
+                      Términos presentes en el cuerpo o notas (sin coincidencia en el título)
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-amber-400">📝</span>
+                    <span>Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
+                    <span className="text-[10px] text-slate-400 font-normal ml-auto">
+                      Coincidencia de etiqueta o notas (asignado a otra persona o sin asignar)
+                    </span>
+                  </>
+                )}
               </div>
               {partitionedItems.secondary.map(renderRow)}
             </>
@@ -1773,9 +1822,24 @@ function ResultsVirtualTableComponent({
           ) : partitionedItems.secondary.length > 0 && partitionedItems.exact.length > 0 ? (
             <>
               {partitionedItems.exact.map(renderCard)}
-              <div className="col-span-full flex items-center bg-[#172233]/90 border border-amber-500/40 rounded px-3 py-1 font-semibold text-amber-200 justify-between">
-                <span>📝 Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
-                <span className="text-amber-400 font-mono text-xs">Coincidencia de etiqueta</span>
+              <div
+                className={`col-span-full flex items-center border rounded px-3 py-1 font-semibold justify-between ${
+                  partitionedItems.type === "content"
+                    ? "bg-[#0F2238]/95 border-cyan-500/50 text-cyan-200"
+                    : "bg-[#172233]/90 border-amber-500/40 text-amber-200"
+                }`}
+              >
+                {partitionedItems.type === "content" ? (
+                  <>
+                    <span>📄 Coincidencias en Contenido interno y notas ({partitionedItems.secondary.length})</span>
+                    <span className="text-cyan-400 font-mono text-xs">Cuerpo de la página</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📝 Menciones en texto secundario o notas ({partitionedItems.secondary.length})</span>
+                    <span className="text-amber-400 font-mono text-xs">Coincidencia de etiqueta</span>
+                  </>
+                )}
               </div>
               {partitionedItems.secondary.map(renderCard)}
             </>

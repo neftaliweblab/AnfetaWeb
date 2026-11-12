@@ -2228,6 +2228,21 @@ export function ResultsViewHost({
             onDeleteAllTasks={onDeleteAllPendingTasks}
             onReorderTasks={onReorderPendingTasks}
             onSelectTaskQuery={(q) => handleQueryChange(q)}
+            onDuplicateTask={(task) => {
+              onAddPendingTask({
+                title: `${task.title} (Copia)`,
+                description: task.description,
+                query: task.query || task.title,
+                scheduledDate: task.scheduledDate,
+                url: task.url,
+                assignedTo: task.assignedTo,
+                assignedBy: task.assignedBy,
+                assignedAt: task.assignedAt,
+                isCompleted: false,
+                isAttended: false,
+                isArchived: false,
+              });
+            }}
           />
         )}
 
