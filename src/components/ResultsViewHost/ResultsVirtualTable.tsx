@@ -222,7 +222,9 @@ function ResultsVirtualTableComponent({
   const [contextMenu, setContextMenu] = useState<{ item: any; x: number; y: number } | null>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [showHeaderColsMenu, setShowHeaderColsMenu] = useState(false);
+  const [headerColsMenuPos, setHeaderColsMenuPos] = useState<{ top: number; left: number } | null>(null);
   const headerColsMenuRef = useRef<HTMLDivElement>(null);
+  const headerColsBtnRef = useRef<HTMLButtonElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -437,7 +439,12 @@ function ResultsVirtualTableComponent({
   useEffect(() => {
     if (!showHeaderColsMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (headerColsMenuRef.current && !headerColsMenuRef.current.contains(e.target as Node)) {
+      if (
+        headerColsMenuRef.current &&
+        !headerColsMenuRef.current.contains(e.target as Node) &&
+        headerColsBtnRef.current &&
+        !headerColsBtnRef.current.contains(e.target as Node)
+      ) {
         setShowHeaderColsMenu(false);
       }
     };
@@ -1448,7 +1455,7 @@ function ResultsVirtualTableComponent({
             </div>
           )}
 
-          <div className="flex-1 px-1 min-w-[120px] truncate flex items-center gap-1.5">
+          <div className="flex-1 px-1 min-w-[120px] min-w-0 flex items-center gap-1.5 overflow-visible">
             <button
               type="button"
               onClick={(e) => {
@@ -1472,15 +1479,21 @@ function ResultsVirtualTableComponent({
                 <ChevronRight className="w-3.5 h-3.5" />
               )}
             </button>
-            <span>Título ▲</span>
+            <span className="truncate">Título ▲</span>
 
             {/* Acceso rápido ojito al lado del título para gestionar columnas */}
             {onToggleCol && (
-              <div className="relative inline-flex items-center ml-1" ref={headerColsMenuRef}>
+              <div className="inline-flex items-center ml-1">
                 <button
+                  ref={headerColsBtnRef}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHeaderColsMenuPos({
+                      top: Math.min(rect.bottom + 4, (typeof window !== "undefined" ? window.innerHeight : 800) - 280),
+                      left: Math.max(10, Math.min(rect.left, (typeof window !== "undefined" ? window.innerWidth : 1200) - 270)),
+                    });
                     setShowHeaderColsMenu((prev) => !prev);
                   }}
                   className={`p-1 rounded transition cursor-pointer flex items-center gap-1 text-[10px] font-normal ${
@@ -1501,76 +1514,6 @@ function ResultsVirtualTableComponent({
                     </span>
                   )}
                 </button>
-
-                {showHeaderColsMenu && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute left-0 top-7 z-50 w-56 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl p-2 space-y-1 text-xs animate-in fade-in select-none text-slate-200"
-                  >
-                    <div className="flex items-center justify-between px-1 pb-1 border-b border-[#1E293B]">
-                      <span className="text-[10px] font-mono font-bold uppercase text-cyan-400">
-                        Columnas de lista
-                      </span>
-                      <span className="text-[9.5px] text-slate-400 font-mono">
-                        {[showPath, showStatus, showScheduledDate, showModifiedDate].filter(Boolean).length}/4
-                      </span>
-                    </div>
-
-                    {[
-                      { key: "path" as const, label: "Path / Base Notion", isVis: showPath },
-                      { key: "status" as const, label: "Estado actualización", isVis: showStatus },
-                      { key: "scheduledDate" as const, label: "Fecha por hacer", isVis: showScheduledDate },
-                      { key: "modifiedDate" as const, label: "Fecha modificada", isVis: showModifiedDate },
-                    ].map(({ key, label, isVis }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => onToggleCol(key)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-[#1A2536] text-left transition cursor-pointer"
-                      >
-                        <span className={`text-[11px] ${isVis ? "text-slate-200" : "text-slate-500 line-through"}`}>
-                          {label}
-                        </span>
-                        <div
-                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
-                            isVis
-                              ? "bg-cyan-600 border-cyan-400 text-white"
-                              : "border-slate-600 bg-slate-900/50"
-                          }`}
-                        >
-                          {isVis && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                        </div>
-                      </button>
-                    ))}
-
-                    <div className="pt-1.5 border-t border-[#1E293B] mt-1 space-y-1">
-                      {onMaximizeNameCol && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onMaximizeNameCol();
-                            setShowHeaderColsMenu(false);
-                          }}
-                          className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-cyan-300 text-[10.5px] font-medium transition cursor-pointer"
-                        >
-                          Maximizar columna Nombre
-                        </button>
-                      )}
-                      {onResetCols && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onResetCols();
-                            setShowHeaderColsMenu(false);
-                          }}
-                          className="w-full text-left px-2 py-1 rounded hover:bg-[#1A2536] text-slate-400 hover:text-slate-200 text-[10.5px] transition cursor-pointer"
-                        >
-                          Restablecer todas las columnas
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1877,6 +1820,98 @@ function ResultsVirtualTableComponent({
           <span>Hay {moreBelowCount} resultado{moreBelowCount > 1 ? 's' : ''} más abajo para tu búsqueda</span>
           <span className="text-[10px] text-cyan-200 bg-cyan-600/30 px-2 py-0.5 rounded-full font-mono font-bold">Ver ↓</span>
         </button>
+      )}
+
+      {/* Menú Flotante de Gestión de Columnas (Inmune a clipping por overflow) */}
+      {showHeaderColsMenu && headerColsMenuPos && (
+        <div
+          ref={headerColsMenuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: `${headerColsMenuPos.top}px`,
+            left: `${headerColsMenuPos.left}px`,
+            zIndex: 9999,
+          }}
+          className="w-64 bg-[#0D1522]/98 backdrop-blur-md border border-cyan-500/60 rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.85)] p-2.5 space-y-1.5 text-xs animate-in fade-in select-none text-slate-200"
+        >
+          <div className="flex items-center justify-between px-1 pb-1.5 border-b border-[#1E293B]">
+            <div className="flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-cyan-400">
+                Columnas visibles
+              </span>
+            </div>
+            <span className="text-[9.5px] text-slate-400 font-mono bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/50">
+              {[showPath, showStatus, showScheduledDate, showModifiedDate].filter(Boolean).length}/4 activas
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            {[
+              { key: "path" as const, label: "Path / Base Notion", desc: "Ruta o base de datos de origen", isVis: showPath },
+              { key: "status" as const, label: "Estado actualización", desc: "Badge de estado del documento", isVis: showStatus },
+              { key: "scheduledDate" as const, label: "Fecha por hacer", desc: "Horario asignado en calendario", isVis: showScheduledDate },
+              { key: "modifiedDate" as const, label: "Fecha modificada", desc: "Última fecha de edición en Notion", isVis: showModifiedDate },
+            ].map(({ key, label, desc, isVis }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onToggleCol?.(key)}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition cursor-pointer border ${
+                  isVis
+                    ? "bg-[#142338]/80 hover:bg-[#1B2F4B] border-cyan-800/60 text-slate-100"
+                    : "bg-[#0E1520] hover:bg-[#151F2E] border-slate-800/60 text-slate-400 opacity-70"
+                }`}
+              >
+                <div>
+                  <div className={`text-[11px] font-medium ${isVis ? "text-cyan-200" : "text-slate-400 line-through"}`}>
+                    {label}
+                  </div>
+                  <div className="text-[9.5px] text-slate-400">{desc}</div>
+                </div>
+                <div
+                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ml-2 transition-all ${
+                    isVis
+                      ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_8px_rgba(6,182,212,0.4)]"
+                      : "border-slate-600 bg-slate-900/80 text-transparent"
+                  }`}
+                >
+                  <Check className="w-3 h-3 stroke-[3]" />
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="pt-2 border-t border-[#1E293B] mt-1 space-y-1">
+            {onMaximizeNameCol && (
+              <button
+                type="button"
+                onClick={() => {
+                  onMaximizeNameCol();
+                  setShowHeaderColsMenu(false);
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#1A2536] text-cyan-300 text-[11px] font-medium transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Maximizar columna Nombre</span>
+                <span className="text-[10px] text-cyan-400/80">⤢</span>
+              </button>
+            )}
+            {onResetCols && (
+              <button
+                type="button"
+                onClick={() => {
+                  onResetCols();
+                  setShowHeaderColsMenu(false);
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[#1A2536] text-slate-400 hover:text-slate-200 text-[11px] transition cursor-pointer flex items-center justify-between"
+              >
+                <span>Restablecer todas las columnas</span>
+                <span className="text-[10px] text-slate-500">↺</span>
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Menú Contextual (Clic Derecho) - 1:1 ANFETA ResultsContextFlyout */}
