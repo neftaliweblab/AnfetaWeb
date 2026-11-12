@@ -103,6 +103,21 @@ export function CalendarFtfPanel({
       return 'large';
     }
   });
+  const [textScale, setTextScale] = useState<'normal' | 'large' | 'xl'>(() => {
+    try {
+      const saved = localStorage.getItem('anfeta_bitacora_text_scale');
+      if (saved === 'normal' || saved === 'xl') return saved;
+      return 'large';
+    } catch {
+      return 'large';
+    }
+  });
+  const updateTextScale = (next: 'normal' | 'large' | 'xl') => {
+    setTextScale(next);
+    try {
+      localStorage.setItem('anfeta_bitacora_text_scale', next);
+    } catch {}
+  };
   const [personFilter, setPersonFilter] = useState<'all' | 'active' | 'absent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCompactPerson, setSelectedCompactPerson] = useState<string>('');
@@ -495,13 +510,34 @@ export function CalendarFtfPanel({
 
     const allDayActivities: NotionCalendarActivity[] = (person as any).allActivities || [];
     const suspendedList: NotionCalendarActivity[] = (person as any).suspendedActivities || [];
+    const mealBreakInfo = (person as any).mealBreak as
+      | { enabled: boolean; startHour: number; startMinute: number; endHour: number; endMinute: number; minutes: number }
+      | null
+      | undefined;
+
+    const scale = {
+      colWidth: textScale === 'xl' ? 'w-[395px]' : textScale === 'large' ? 'w-[350px]' : 'w-[315px]',
+      nameText: textScale === 'xl' ? 'text-base' : textScale === 'large' ? 'text-[15px]' : 'text-sm',
+      subText: textScale === 'xl' ? 'text-xs' : textScale === 'large' ? 'text-[11.5px]' : 'text-[10.5px]',
+      scoreText: textScale === 'xl' ? 'text-base' : textScale === 'large' ? 'text-sm' : 'text-xs',
+      signalLabel: textScale === 'xl' ? 'text-[11px]' : textScale === 'large' ? 'text-[10.5px]' : 'text-[9.5px]',
+      signalTime: textScale === 'xl' ? 'text-base' : textScale === 'large' ? 'text-sm' : 'text-xs',
+      summaryText: textScale === 'xl' ? 'text-xs' : textScale === 'large' ? 'text-[11.5px]' : 'text-[10.5px]',
+      statText: textScale === 'xl' ? 'text-[12.5px]' : textScale === 'large' ? 'text-[11.5px]' : 'text-[10.5px]',
+      starText: textScale === 'xl' ? 'text-[11.5px]' : textScale === 'large' ? 'text-[10.5px]' : 'text-[9.5px]',
+      actTime: textScale === 'xl' ? 'text-[13.5px]' : textScale === 'large' ? 'text-xs' : 'text-[11px]',
+      actTitle: textScale === 'xl' ? 'text-sm' : textScale === 'large' ? 'text-[12.5px]' : 'text-[11.5px]',
+      actMeta: textScale === 'xl' ? 'text-[11.5px]' : textScale === 'large' ? 'text-[10.5px]' : 'text-[10px]',
+    };
+
+    const padTime = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
 
     return (
       <article
         key={person.name}
         className={`flex flex-col rounded-2xl border transition-colors ${
           windowMode === 'large'
-            ? 'w-[310px] shrink-0 h-full min-h-0'
+            ? `${scale.colWidth} shrink-0 h-full min-h-0`
             : 'w-full'
         } ${
           scoreInfo.absent
@@ -533,9 +569,9 @@ export function CalendarFtfPanel({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="font-bold text-sm text-slate-100 truncate">{person.name}</h3>
+                  <h3 className={`font-bold ${scale.nameText} text-slate-100 truncate`}>{person.name}</h3>
                   <span
-                    className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono ${
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
                       isOnlineNow
                         ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/50'
                         : 'bg-slate-900 text-slate-400 border border-slate-700/60'
@@ -544,7 +580,7 @@ export function CalendarFtfPanel({
                     {isOnlineNow ? 'En línea' : 'Offline'}
                   </span>
                 </div>
-                <p className="text-[10.5px] text-slate-400 mt-0.5">
+                <p className={`${scale.subText} text-slate-400 mt-0.5`}>
                   {scoreInfo.absent
                     ? 'Sin conexión registrada'
                     : isComplete
@@ -560,12 +596,12 @@ export function CalendarFtfPanel({
 
             <div className="shrink-0 text-right">
               <div
-                className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-extrabold font-mono ${scoreBadgeClass}`}
+                className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 ${scale.scoreText} font-extrabold font-mono ${scoreBadgeClass}`}
                 title={`Asistencia ${scoreInfo.breakdown.attendance}/20 + Agenda ${scoreInfo.breakdown.coverage}/20 + Avance ${scoreInfo.breakdown.progress}/35 + Cierre ${scoreInfo.breakdown.ftfFinal}/25`}
               >
-                <Award size={12} />
+                <Award size={13} />
                 <span>{scoreInfo.finalScore}</span>
-                <span className="text-[9.5px] opacity-75">/100</span>
+                <span className="text-[10px] opacity-75">/100</span>
               </div>
             </div>
           </div>
@@ -573,33 +609,33 @@ export function CalendarFtfPanel({
 
         {/* Zona 2: Conexión y Resumen de Horas limpio */}
         <div className="shrink-0 border-b border-slate-800/80 px-3.5 py-2.5 space-y-2.5 bg-slate-900/25">
-          {/* Tabla limpia de señales */}
-          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-800/80 bg-slate-950/70 px-2.5 py-2 text-[10.5px]">
+          {/* Tabla limpia de señales con tiempos grandes */}
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2">
             <div title={(person as any).firstActivityStart ? `1er bloque en calendario: ${calendarTime((person as any).firstActivityStart)}` : undefined}>
-              <span className="flex items-center gap-1 text-[9.5px] text-slate-400">
-                <LogIn size={10} className={firstSeenIso ? 'text-emerald-400' : 'text-rose-400'} />
+              <span className={`flex items-center gap-1 ${scale.signalLabel} text-slate-400`}>
+                <LogIn size={11} className={firstSeenIso ? 'text-emerald-400' : 'text-rose-400'} />
                 <span>Entrada (1ª señal)</span>
               </span>
-              <span className={`font-mono font-bold ${firstSeenIso ? 'text-slate-100' : 'text-rose-300'}`}>
+              <span className={`font-mono font-bold ${scale.signalTime} ${firstSeenIso ? 'text-slate-100' : 'text-rose-300'}`}>
                 {firstDisplay}
               </span>
             </div>
             <div>
-              <span className="flex items-center gap-1 text-[9.5px] text-slate-400">
-                <Activity size={10} className="text-cyan-400" />
+              <span className={`flex items-center gap-1 ${scale.signalLabel} text-slate-400`}>
+                <Activity size={11} className="text-cyan-400" />
                 <span>Última señal</span>
               </span>
-              <span className="font-mono font-bold text-slate-100 truncate block">{lastDisplay}</span>
+              <span className={`font-mono font-bold ${scale.signalTime} text-slate-100 truncate block`}>{lastDisplay}</span>
             </div>
           </div>
 
           {/* Avance de horas con barra y grilla 2x2 ordenada */}
           <div>
-            <div className="flex items-center justify-between text-[10.5px] mb-1">
+            <div className={`flex items-center justify-between ${scale.summaryText} mb-1`}>
               <span className="text-slate-300 font-medium">
                 Avance del día <strong className="text-white">{workPct}%</strong>
               </span>
-              <span className="font-mono text-slate-300">
+              <span className="font-mono text-slate-200 font-semibold">
                 <strong>{completedTotal}h</strong> / {assigned}h asignadas
               </span>
             </div>
@@ -612,7 +648,7 @@ export function CalendarFtfPanel({
               )}
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+            <div className={`mt-2 grid grid-cols-2 gap-x-3 gap-y-1 ${scale.statText}`}>
               <div className="flex items-center justify-between text-slate-400">
                 <span>Terminadas:</span>
                 <strong className="font-mono text-emerald-300">{workCompletedHours}h</strong>
@@ -631,22 +667,29 @@ export function CalendarFtfPanel({
               </div>
             </div>
 
-            <div className="mt-1.5 flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/60">
-              <span className={scoreInfo.coverageState === 'complete' ? 'text-emerald-300' : 'text-cyan-300/90'}>
+            <div className={`mt-1.5 flex items-center justify-between gap-1 flex-wrap ${scale.summaryText} pt-1.5 border-t border-slate-800/60`}>
+              <span className={scoreInfo.coverageState === 'complete' ? 'text-emerald-300 font-medium' : 'text-cyan-300/90'}>
                 {scoreInfo.coverageState === 'complete'
-                  ? '✓ Agenda 10–18h sin huecos'
+                  ? mealBreakInfo?.enabled
+                    ? `✓ Agenda cubierta (incl. Comida ${padTime(mealBreakInfo.startHour, mealBreakInfo.startMinute)}–${padTime(mealBreakInfo.endHour, mealBreakInfo.endMinute)})`
+                    : '✓ Agenda 10–18h sin huecos'
                   : scoreInfo.coverageState === 'empty'
                   ? 'Sin cobertura en 10–18h'
                   : `Hueco 10–18h: ${ftfHours(person.pendingAssignmentMinutes)}`}
               </span>
               {scoreInfo.overtimeHours > 0 && (
-                <span className="rounded bg-violet-950 border border-violet-500/50 px-1.5 py-0.2 font-mono text-[9.5px] font-bold text-violet-200">
+                <span className="rounded bg-violet-950 border border-violet-500/50 px-1.5 py-0.2 font-mono text-[10px] font-bold text-violet-200">
                   +{scoreInfo.overtimeHours}h Extra
                 </span>
               )}
             </div>
+            {mealBreakInfo?.enabled && scoreInfo.coverageState !== 'complete' && scoreInfo.coverageState !== 'empty' && (
+              <p className="mt-1 text-[10.5px] text-amber-300/90 font-mono">
+                🍽️ Comida {padTime(mealBreakInfo.startHour, mealBreakInfo.startMinute)}–{padTime(mealBreakInfo.endHour, mealBreakInfo.endMinute)} descontada de huecos
+              </p>
+            )}
             {suspendedHours > 0 && (
-              <p className="mt-1 text-[9.5px] text-slate-500 font-mono">
+              <p className="mt-1 text-[10px] text-slate-500 font-mono">
                 {suspendedHours}h en actividades suspendidas (excluidas del conteo)
               </p>
             )}
@@ -654,7 +697,7 @@ export function CalendarFtfPanel({
 
           {/* Zona 3: Calificación por Estrellas con soporte ½★ */}
           <div className="rounded-xl border border-slate-800/90 bg-slate-950/60 p-2 space-y-1.5">
-            <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
               <div className="flex items-center gap-1 flex-wrap">
                 {[
                   { key: 'star1' as const, label: 'FTF', value: scoreInfo.stars.star1, pts: `${scoreInfo.breakdown.coverage}/20` },
@@ -677,7 +720,7 @@ export function CalendarFtfPanel({
                         });
                       }}
                       title={`${st.label}: ${st.pts} pts${canMarkReview ? ' · Clic alterna ★ 100% → ½★ 50% → ☆ 0%' : ''}`}
-                      className={`inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-[9.5px] font-semibold border transition-colors ${
+                      className={`inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 ${scale.starText} font-semibold border transition-colors ${
                         isFull
                           ? 'border-amber-400/75 bg-amber-500/20 text-amber-200'
                           : isHalf
@@ -686,12 +729,12 @@ export function CalendarFtfPanel({
                       } ${canMarkReview ? 'cursor-pointer hover:border-amber-300' : 'cursor-default'}`}
                     >
                       {isHalf ? (
-                        <StarHalf size={10} fill="currentColor" className="text-amber-300" />
+                        <StarHalf size={11} fill="currentColor" className="text-amber-300" />
                       ) : (
-                        <Star size={10} fill={isFull ? 'currentColor' : 'none'} className={isFull ? 'text-amber-300' : 'text-slate-500'} />
+                        <Star size={11} fill={isFull ? 'currentColor' : 'none'} className={isFull ? 'text-amber-300' : 'text-slate-500'} />
                       )}
                       <span>{st.label}</span>
-                      <span className="text-[8.5px] font-mono opacity-80">{st.pts}</span>
+                      <span className="text-[9.5px] font-mono opacity-80">{st.pts}</span>
                     </button>
                   );
                 })}
@@ -701,7 +744,7 @@ export function CalendarFtfPanel({
                 <button
                   type="button"
                   onClick={() => setOpenScorerFor(isScorerOpen ? null : person.name)}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[9.5px] font-semibold border cursor-pointer transition-colors ${
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 ${scale.starText} font-semibold border cursor-pointer transition-colors ${
                     isScorerOpen
                       ? 'border-cyan-400 bg-cyan-950 text-cyan-200'
                       : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-500 hover:text-white'
@@ -898,18 +941,18 @@ export function CalendarFtfPanel({
                   onClick={() => onOpenActivity(activity)}
                   className={`block w-full rounded-xl border border-slate-800/90 border-l-4 ${stateStyle.bar} bg-slate-950/90 p-2.5 text-left transition-all hover:border-cyan-500/70 hover:bg-slate-900 cursor-pointer`}
                 >
-                  <div className="flex items-center justify-between gap-2 text-[10px] mb-1">
-                    <span className="font-mono font-semibold text-cyan-200">
+                  <div className={`flex items-center justify-between gap-2 ${scale.actTime} mb-1`}>
+                    <span className="font-mono font-bold text-cyan-200">
                       {calendarTime(activity.start)}–{calendarTime(activity.end || activity.start)} ({diffH}h)
                     </span>
-                    <span className={`rounded-full border px-2 py-0.2 text-[9.5px] font-semibold ${stateStyle.badge}`}>
+                    <span className={`rounded-full border px-2 py-0.2 text-[10px] font-semibold ${stateStyle.badge}`}>
                       {stateStyle.label}
                     </span>
                   </div>
-                  <div className="text-[11px] font-medium text-slate-100 leading-snug line-clamp-2">
+                  <div className={`${scale.actTitle} font-medium text-slate-100 leading-snug line-clamp-2`}>
                     {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
                   </div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[9.5px]">
+                  <div className={`mt-1.5 flex items-center justify-between gap-2 ${scale.actMeta}`}>
                     <span className="text-slate-400 truncate">{calendarDomain(activity.title) || 'General'}</span>
                     <span className={activity.ftfVerified ? 'text-emerald-400 font-medium' : 'text-amber-300/90'}>
                       {activity.ftfVerified ? '✓ FTF' : 'Pend. FTF'}
@@ -924,11 +967,11 @@ export function CalendarFtfPanel({
                 type="button"
                 key={activity.pageId}
                 onClick={() => onOpenActivity(activity)}
-                className="block w-full rounded-xl border border-slate-800/70 bg-slate-950/45 p-2 text-left text-[10px] text-slate-400 opacity-75 hover:opacity-100 cursor-pointer"
+                className={`block w-full rounded-xl border border-slate-800/70 bg-slate-950/45 p-2 text-left ${scale.actMeta} text-slate-400 opacity-75 hover:opacity-100 cursor-pointer`}
               >
-                <div className="flex items-center justify-between text-[9.5px] mb-0.5">
-                  <span className="font-mono">{calendarTime(activity.start)}–{calendarTime(activity.end || activity.start)}</span>
-                  <span className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.2 text-slate-400">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-mono font-semibold">{calendarTime(activity.start)}–{calendarTime(activity.end || activity.start)}</span>
+                  <span className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.2 text-slate-400 text-[10px]">
                     Suspendida (no cuenta)
                   </span>
                 </div>
@@ -1194,6 +1237,32 @@ export function CalendarFtfPanel({
                   >
                     <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                   </button>
+
+                  {/* Selector de tamaño de texto y tiempos (A / A+ / A++) */}
+                  <div
+                    className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 p-0.5"
+                    title="Tamaño de letra y tiempos en las columnas"
+                  >
+                    {([
+                      { id: 'normal' as const, label: 'A', desc: 'Compacto' },
+                      { id: 'large' as const, label: 'A+', desc: 'Grande' },
+                      { id: 'xl' as const, label: 'A++', desc: 'Extra grande' },
+                    ]).map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => updateTextScale(opt.id)}
+                        title={`Texto ${opt.desc}`}
+                        className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
+                          textScale === opt.id
+                            ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/60'
+                            : 'text-slate-400 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
 
                   {/* Selector rápido Grande ↔ Pequeña */}
                   <button

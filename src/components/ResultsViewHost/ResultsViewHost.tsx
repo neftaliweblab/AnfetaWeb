@@ -2237,6 +2237,7 @@ export function ResultsViewHost({
               setEditingTask(task);
               setIsNewTaskModalOpen(true);
             }}
+            onUpdateTask={onEditPendingTask}
             onDeleteTask={onDeletePendingTask}
             onDeleteAllTasks={onDeleteAllPendingTasks}
             onReorderTasks={onReorderPendingTasks}

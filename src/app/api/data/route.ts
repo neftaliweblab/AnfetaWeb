@@ -24,7 +24,7 @@ import {ftfState} from '@/services/ftfVerification';
 import {recordFtfCompletions} from '@/services/ftfNotifications';
 import {notionContentLookupTerm, readNotionContentProperty, replaceNotionContentProperty} from '@/lib/notionContentProperty';
 import {lookupNotionContent, fetchRecentNotionEdits} from '@/services/notionContentLookup';
-import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,shiftFtfDate} from '@/services/ftfDashboard';
+import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,MealBreakWindow,shiftFtfDate} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
@@ -532,13 +532,14 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page),...(rf?{reviewFlow:rf}:{})},0);
         }));
         let warning='';
+        const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
         if(weekly){
           const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
           const [state,presence]=await Promise.all([
             readUserState(settings,'John'),
             readFtfPresenceHistory(start,end).catch(()=>{warning='Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';return [];}),
           ]);
-          return NextResponse.json({...buildFtfWeek(actor,start,people,activities,state.values?.receipts?.ftfCompletions||{},presence),warning},{headers:{'Cache-Control':'no-store'}});
+          return NextResponse.json({...buildFtfWeek(actor,start,people,activities,state.values?.receipts?.ftfCompletions||{},presence,new Date(),mealBreaks),warning},{headers:{'Cache-Control':'no-store'}});
         }
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
@@ -546,7 +547,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           readUserState(settings,'John'),
           readFtfPresenceHistory(day, shiftFtfDate(day, 1)).catch(()=>{return [];}),
         ]);
-        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{},new Date(),presence),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
+        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
     }
     if (type === 'review-notifications') {
@@ -2794,6 +2795,8 @@ async function POSTLive(req: NextRequest) {
         isCompleted: Boolean(t.isCompleted),
         isArchived: Boolean(t.isArchived),
         isAttended: Boolean(t.isAttended),
+        isStarred: Boolean(t.isStarred),
+        isPostMidnight: Boolean(t.isPostMidnight),
         assignedTo: typeof t.assignedTo === 'string' && t.assignedTo.trim() ? t.assignedTo.trim().slice(0, 50) : undefined,
         assignedBy: typeof t.assignedBy === 'string' && t.assignedBy.trim() ? t.assignedBy.trim().slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? actor : undefined),
         assignedAt: typeof t.assignedAt === 'string' ? t.assignedAt.slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? new Date().toISOString() : undefined),
@@ -3316,6 +3319,27 @@ async function POSTLive(req: NextRequest) {
         } catch (error) {results.push({index,success:false,error:error instanceof Error ? error.message : 'No se pudo crear la plantilla.'});}
       }
       return NextResponse.json({success:results.every(item=>item.success),createdActivities,results,count:createdActivities.length,error:results.filter(item=>!item.success).map(item=> 'Plantilla ' + (item.index+1) + ': ' + item.error).join(' · ')});
+    }
+
+    if (action === 'save-meal-break') {
+      const targetUser = normalizePerson(String(payload.user || actor || ''));
+      const normActor = normalizePerson(actor || '');
+      if (!normActor || normActor === 'Sin asignar') throw new Error('Sesión inválida.');
+      if (targetUser !== normActor && normActor !== 'John' && normActor !== 'Neftali') {
+        throw new Error('No puedes modificar el horario de comida de otro colaborador.');
+      }
+      const cfg = payload.config || {};
+      const entry: MealBreakWindow = {
+        enabled: Boolean(cfg.enabled),
+        startHour: Number.isFinite(Number(cfg.startHour)) ? Math.max(0, Math.min(23, Math.trunc(Number(cfg.startHour)))) : 13,
+        startMinute: Number.isFinite(Number(cfg.startMinute)) ? Math.max(0, Math.min(59, Math.trunc(Number(cfg.startMinute)))) : 0,
+        endHour: Number.isFinite(Number(cfg.endHour)) ? Math.max(0, Math.min(23, Math.trunc(Number(cfg.endHour)))) : 14,
+        endMinute: Number.isFinite(Number(cfg.endMinute)) ? Math.max(0, Math.min(59, Math.trunc(Number(cfg.endMinute)))) : 0,
+      };
+      const store = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
+      store[targetUser] = entry;
+      writeLocalJson('meal_breaks.json', store);
+      return NextResponse.json({ success: true, user: targetUser, config: entry }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (action === 'save-ftf-review') {

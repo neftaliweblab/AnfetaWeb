@@ -12,6 +12,8 @@ const sanitizeTask = (t: any): PendingTaskItem => ({
   isCompleted: Boolean(t?.isCompleted),
   isArchived: Boolean(t?.isArchived),
   isAttended: Boolean(t?.isAttended),
+  isStarred: Boolean(t?.isStarred),
+  isPostMidnight: Boolean(t?.isPostMidnight),
   assignedTo: typeof t?.assignedTo === 'string' ? t.assignedTo : undefined,
   assignedBy: typeof t?.assignedBy === 'string' ? t.assignedBy : undefined,
   assignedAt: typeof t?.assignedAt === 'string' ? t.assignedAt : undefined,

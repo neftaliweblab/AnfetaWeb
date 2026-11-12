@@ -58,17 +58,70 @@ function ftfRecordedTime(record: any, day: string, now: Date): string | null {
   return Number.isFinite(timestamp) && timestamp <= now.getTime() && mexicoDate(time) === day ? time : null;
 }
 
-export function ftfPendingAssignmentMinutes(day: string, activities: NotionCalendarActivity[]) {
+export type MealBreakWindow = {
+  enabled: boolean;
+  startHour: number;
+  startMinute?: number;
+  endHour: number;
+  endMinute?: number;
+};
+
+export function resolvePersonMealBreak(
+  personName: string,
+  mealBreaksByPerson?: Record<string, MealBreakWindow>
+): MealBreakWindow | null {
+  const norm = normalizePerson(personName);
+  const custom = mealBreaksByPerson?.[norm];
+  if (custom) return custom.enabled ? custom : null;
+  if (norm === 'Neftali') {
+    return { enabled: true, startHour: 13, startMinute: 0, endHour: 14, endMinute: 0 };
+  }
+  return null;
+}
+
+function mealBreakTimestampRange(day: string, mealBreak?: MealBreakWindow | null): { start: number; end: number; minutes: number } | null {
+  if (!mealBreak?.enabled) return null;
+  const sh = Math.max(0, Math.min(23, Math.trunc(mealBreak.startHour)));
+  const sm = Math.max(0, Math.min(59, Math.trunc(mealBreak.startMinute || 0)));
+  const eh = Math.max(0, Math.min(23, Math.trunc(mealBreak.endHour)));
+  const em = Math.max(0, Math.min(59, Math.trunc(mealBreak.endMinute || 0)));
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  if (endMin <= startMin) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const start = Date.parse(`${day}T${pad(sh)}:${pad(sm)}:00-06:00`);
+  const end = Date.parse(`${day}T${pad(eh)}:${pad(em)}:00-06:00`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return { start, end, minutes: endMin - startMin };
+}
+
+export function ftfPendingAssignmentMinutes(
+  day: string,
+  activities: NotionCalendarActivity[],
+  mealBreak?: MealBreakWindow | null
+) {
   const from = Date.parse(day + 'T10:00:00-06:00');
   const until = Date.parse(day + 'T18:00:00-06:00');
-  const intervals = activities
-    .filter(activity => !activity.isSuspended && workflowState(activity.status, activity.title) !== 'suspended')
+  const eligible = activities
+    .filter(activity => !activity.isSuspended && workflowState(activity.status, activity.title) !== 'suspended');
+  const intervals = eligible
     .map(activity => ({
       start: Math.max(from, Date.parse(activity.start)),
       end: Math.min(until, Date.parse(activity.end)),
     }))
-    .filter(({start, end}) => end > start)
-    .sort((a, b) => a.start - b.start);
+    .filter(({start, end}) => end > start);
+
+  // Solo contar la hora de comida como cobertura dentro de 10:00-18:00 cuando existen actividades activas ese día
+  if (eligible.length > 0) {
+    const mealRange = mealBreakTimestampRange(day, mealBreak);
+    if (mealRange) {
+      const mStart = Math.max(from, mealRange.start);
+      const mEnd = Math.min(until, mealRange.end);
+      if (mEnd > mStart) intervals.push({ start: mStart, end: mEnd });
+    }
+  }
+
+  intervals.sort((a, b) => a.start - b.start);
 
   let covered = 0;
   let cursor = from;
@@ -77,7 +130,7 @@ export function ftfPendingAssignmentMinutes(day: string, activities: NotionCalen
     covered += end - Math.max(start, cursor);
     cursor = end;
   }
-  return Math.round((until - from - covered) / 60000);
+  return Math.max(0, Math.round((until - from - covered) / 60000));
 }
 
 export function shiftFtfDate(day: string, days: number) {
@@ -104,13 +157,14 @@ export function buildFtfWeek(
   records: Record<string, any>,
   presence: FtfPresenceDay[],
   now = new Date(),
+  mealBreaksByPerson?: Record<string, MealBreakWindow>,
 ) {
   const today = mexicoDate(now);
   const signals = new Map(presence.map(row => [row.day + ':' + row.person, row]));
   const days = Array.from({length: 7}, (_, index) => shiftFtfDate(start, index))
     .filter(day => day <= today)
     .map(day => {
-      const report = buildFtfDashboard(actor, day, people, activities, records, now);
+      const report = buildFtfDashboard(actor, day, people, activities, records, now, presence, mealBreaksByPerson);
       const weekend = [0, 6].includes(new Date(day + 'T12:00:00Z').getUTCDay());
       return {
         day,
@@ -155,7 +209,7 @@ export function buildFtfWeek(
   return {start, end: shiftFtfDate(start, 6), days};
 }
 
-export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date(),presence: FtfPresenceDay[] = []) {
+export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date(),presence: FtfPresenceDay[] = [], mealBreaksByPerson?: Record<string, MealBreakWindow>) {
   if(!canViewFtfDashboard(actor))throw Error('Inicia sesión para consultar la bitácora del equipo.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
@@ -192,7 +246,9 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       return Number.isFinite(endMs) && endMs <= now.getTime();
     });
 
-    const pendingAssignmentMinutes = ftfPendingAssignmentMinutes(day, all);
+    const mealBreak = resolvePersonMealBreak(name, mealBreaksByPerson);
+    const mealBreakRange = all.length > 0 ? mealBreakTimestampRange(day, mealBreak) : null;
+    const pendingAssignmentMinutes = ftfPendingAssignmentMinutes(day, all, mealBreak);
     const assignedHours = sumHours(all);
     const workCompletedHours = sumHours(completedWorkActivities);
     const reviewHours = sumHours(reviewActivities);
@@ -270,6 +326,16 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       status,
       assignedHours,
       pendingAssignmentMinutes,
+      mealBreak: mealBreak?.enabled
+        ? {
+            enabled: true,
+            startHour: mealBreak.startHour,
+            startMinute: mealBreak.startMinute || 0,
+            endHour: mealBreak.endHour,
+            endMinute: mealBreak.endMinute || 0,
+            minutes: mealBreakRange?.minutes || Math.max(0, (mealBreak.endHour * 60 + (mealBreak.endMinute || 0)) - (mealBreak.startHour * 60 + (mealBreak.startMinute || 0))),
+          }
+        : null,
       completedHours,
       workCompletedHours,
       reviewHours,

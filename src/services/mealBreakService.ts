@@ -67,6 +67,14 @@ export function saveMealBreakConfig(currentUser: string, config: MealBreakConfig
     const key = getMealBreakStorageKey(currentUser);
     localStorage.setItem(key, JSON.stringify(config));
     window.dispatchEvent(new CustomEvent(MEAL_BREAK_EVENT, { detail: { user: normalizePerson(currentUser), config } }));
+    // Sincronizar con el servidor para que Bitácora FTF (John y Neftali) descuente este bloque de comida en la cobertura
+    if (typeof fetch === "function") {
+      fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save-meal-break", payload: { user: currentUser, config } }),
+      }).catch(() => {});
+    }
   } catch (e) {
     console.error("Error guardando horario de comida:", e);
   }

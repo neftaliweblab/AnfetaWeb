@@ -74,6 +74,21 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
   assert.match(updates[0].newTitle, /^1:30 PM/);
   assert.equal(updates[1].task.id, 'old2');
   assert.equal(updates[1].newStartMinutes, 14 * 60); // 2:00 PM
+
+  const rangedTask = {
+    id: 'rng',
+    title: '9:00 AM - 10:00 AM · Reporte con rango',
+    scheduledDate: '2026-11-12',
+    startTime: '09:00',
+    endTime: '10:00',
+    query: 'rango',
+    isCompleted: false,
+  };
+  const rangedUpdates = computeCatchUpSchedule([rangedTask], 17 * 60 + 5, 30);
+  assert.equal(rangedUpdates.length, 1);
+  assert.equal(rangedUpdates[0].newTitle, '5:30 PM - 6:30 PM · Reporte con rango');
+  assert.equal(rangedUpdates[0].startTime, '17:30');
+  assert.equal(rangedUpdates[0].endTime, '18:30');
 });
 
 test('scheduleHelpers: simplifyReviewSearchQuery limpia etiquetas internas dejando dominio/título limpio', () => {

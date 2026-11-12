@@ -183,6 +183,7 @@ interface PendientesColumnProps {
   onOpenNewTaskModal: () => void;
   onOpenNewTaskModalWithTime?: (timeStr: string) => void;
   onEditTask?: (task: PendingTaskItem) => void;
+  onUpdateTask?: (id: string, patch: Partial<PendingTaskItem>) => void;
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks?: () => void;
   onSelectTaskQuery?: (query: string) => void;
@@ -199,6 +200,7 @@ function PendientesColumnComponent({
   onOpenNewTaskModal,
   onOpenNewTaskModalWithTime,
   onEditTask,
+  onUpdateTask,
   onDeleteTask,
   onDeleteAllTasks,
   onSelectTaskQuery,
@@ -519,18 +521,27 @@ function PendientesColumnComponent({
 
   // Función para desfasar el horario en cadena (+30 min / -30 min) sin brincar a las 00:00 de la mañana
   const handleShiftSchedule = (deltaMinutes: number) => {
-    if (!onEditTask) return;
+    const updater = onUpdateTask
+      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onUpdateTask(t.id, patch)
+      : onEditTask
+      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onEditTask({ ...t, ...patch })
+      : null;
+    if (!updater) return;
+    let moved = 0;
     timedTasks.forEach((t) => {
       const shifted = shiftTaskSchedule(t, deltaMinutes);
       if (shifted) {
-        onEditTask({
-          ...t,
+        moved += 1;
+        updater(t, {
           title: shifted.title,
-          isPostMidnight: shifted.isPostMidnight || undefined,
+          isPostMidnight: shifted.isPostMidnight,
+          ...(shifted.startTime ? { startTime: shifted.startTime, endTime: shifted.endTime } : {}),
         });
       }
     });
-    setFeedback(`Horario desfasado ${deltaMinutes > 0 ? `+${deltaMinutes}` : deltaMinutes} min`);
+    if (moved > 0) {
+      setFeedback(`Horario desfasado ${deltaMinutes > 0 ? `+${deltaMinutes}` : deltaMinutes} min`);
+    }
   };
 
   const overdueTimedCount = useMemo(
@@ -545,17 +556,22 @@ function PendientesColumnComponent({
 
   // Recoger bloques atrasados y reacomodarlos desde la hora actual en curso
   const handleCatchUpOverdue = () => {
-    if (!onEditTask) return;
+    const updater = onUpdateTask
+      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onUpdateTask(t.id, patch)
+      : onEditTask
+      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onEditTask({ ...t, ...patch })
+      : null;
+    if (!updater) return;
     const updates = computeCatchUpSchedule(timedTasks, currentTimeMinutes, gridInterval);
     if (updates.length === 0) {
       setFeedback("Sin bloques atrasados por recoger");
       return;
     }
-    updates.forEach(({ task, newTitle, isPostMidnight }) => {
-      onEditTask({
-        ...task,
+    updates.forEach(({ task, newTitle, startTime, endTime, isPostMidnight }) => {
+      updater(task, {
         title: newTitle,
-        isPostMidnight: isPostMidnight || undefined,
+        isPostMidnight,
+        ...(startTime ? { startTime, endTime } : {}),
       });
     });
     setFeedback(`✓ ${updates.length} atrasado${updates.length > 1 ? "s" : ""} recogido${updates.length > 1 ? "s" : ""} desde ${formatTimeMinutes(updates[0].newStartMinutes)}`);
@@ -666,12 +682,13 @@ function PendientesColumnComponent({
             ) : (
               <span />
             )}
-            {onEditTask && (
+            {(onUpdateTask || onEditTask) && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onEditTask({ ...task, isStarred: !isStarActive });
+                  if (onUpdateTask) onUpdateTask(task.id, { isStarred: !isStarActive });
+                  else onEditTask?.({ ...task, isStarred: !isStarActive });
                   setFeedback(!isStarActive ? "★ Destacado" : "Estrella quitada");
                 }}
                 className={`p-0.5 rounded transition-colors cursor-pointer ${
@@ -862,12 +879,13 @@ function PendientesColumnComponent({
           >
             <CopyPlus className="w-3 h-3 text-cyan-400" />
           </button>
-          {onEditTask && (
+          {(onUpdateTask || onEditTask) && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onEditTask({ ...task, isArchived: !task.isArchived });
+                if (onUpdateTask) onUpdateTask(task.id, { isArchived: !task.isArchived });
+                else onEditTask?.({ ...task, isArchived: !task.isArchived });
                 setFeedback(task.isArchived ? "Restaurado" : "Archivado");
               }}
               className="p-1 text-slate-400 hover:text-cyan-400 cursor-pointer"
@@ -1610,79 +1628,91 @@ function PendientesColumnComponent({
         {/* VISTA FILTRADA: SOLO HORARIOS (CUADRÍCULA COMPLETA) */}
         {pendingSubTab === "timed" && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[10.5px] font-bold text-[#00E5FF]">⏱️ CUADRÍCULA DE HORARIO</span>
-              <div className="flex items-center gap-1">
-                {/* Selector de División: 1h vs 30m */}
-                <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-0.5">
+            <div className="px-1 space-y-1.5">
+              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                <span className="text-[10.5px] font-bold text-[#00E5FF] whitespace-nowrap">
+                  ⏱️ CUADRÍCULA DE HORARIO <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => handleToggleInterval(60)}
-                    className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
-                      gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                    onClick={handleCatchUpOverdue}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                      overdueTimedCount > 0
+                        ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
+                        : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
                     }`}
-                    title="Ver en bloques de 1 hora (ej. 9 a 10, 10 a 11)"
+                    title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
                   >
-                    1h
+                    Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
                   </button>
+                  {onReorderTasks && timedTasks.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleSortTimedByHour}
+                      className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-950/30 text-[9px] font-semibold text-amber-300 hover:bg-amber-900/40 hover:text-amber-100 cursor-pointer whitespace-nowrap"
+                      title="Ordenar cronológicamente"
+                    >
+                      Ordenar
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <div className="flex items-center gap-1 flex-wrap">
+                  {/* Selector de División: 1h vs 30m */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleInterval(60)}
+                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                        gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="Ver en bloques de 1 hora (ej. 9 a 10, 10 a 11)"
+                    >
+                      1h
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleInterval(30)}
+                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                        gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="Ver en bloques de media hora (cada 30 min)"
+                    >
+                      30m
+                    </button>
+                  </div>
+                  {/* Botón de Ajustes de Rango */}
                   <button
                     type="button"
-                    onClick={() => handleToggleInterval(30)}
-                    className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
-                      gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                    onClick={() => setShowGridConfig((prev) => !prev)}
+                    className={`p-1 rounded border transition-colors cursor-pointer ${
+                      showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
                     }`}
-                    title="Ver en bloques de media hora (cada 30 min)"
+                    title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
                   >
-                    30m
+                    <SlidersHorizontal className="w-3 h-3" />
                   </button>
                 </div>
-                {/* Botón de Ajustes de Rango */}
-                <button
-                  type="button"
-                  onClick={() => setShowGridConfig((prev) => !prev)}
-                  className={`p-1 rounded border transition-colors cursor-pointer ${
-                    showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
-                  }`}
-                  title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
-                >
-                  <SlidersHorizontal className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleShiftSchedule(-30)}
-                  className="px-1 py-0.5 rounded bg-slate-800 text-[9px] text-cyan-300 hover:bg-slate-700 border border-slate-700"
-                  title="Desfasar todo -30 min"
-                >
-                  -30m
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleShiftSchedule(30)}
-                  className="px-1 py-0.5 rounded bg-slate-800 text-[9px] text-cyan-300 hover:bg-slate-700 border border-slate-700"
-                  title="Desfasar todo +30 min"
-                >
-                  +30m
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCatchUpOverdue}
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer ${
-                    overdueTimedCount > 0
-                      ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
-                      : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
-                  }`}
-                  title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
-                >
-                  Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSortTimedByHour}
-                  className="text-[9px] text-amber-300 underline hover:text-amber-100"
-                  title="Ordenar cronológicamente"
-                >
-                  Ordenar
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleShiftSchedule(-30)}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] text-cyan-300 hover:bg-slate-700 border border-slate-700 whitespace-nowrap"
+                    title="Desfasar todo -30 min"
+                  >
+                    -30m
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShiftSchedule(30)}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] text-cyan-300 hover:bg-slate-700 border border-slate-700 whitespace-nowrap"
+                    title="Desfasar todo +30 min"
+                  >
+                    +30m
+                  </button>
+                </div>
               </div>
             </div>
             {renderScheduleGrid()}
@@ -1722,99 +1752,111 @@ function PendientesColumnComponent({
 
             {/* 2. SECCIÓN INFERIOR: CUADRÍCULA DE HORAS CON BLOQUES VACÍOS Y LLENOS */}
             <div className="pt-2 border-t border-[#1C2634] space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10.5px] font-bold text-[#00E5FF]">⏱️ HORARIO & RUTINA</span>
-                  <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
+              <div className="px-1 space-y-1.5">
+                {/* Fila 1: Título + acciones rápidas (Recoger y Ordenar nunca se cortan) */}
+                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="text-[10.5px] font-bold text-[#00E5FF] whitespace-nowrap">⏱️ HORARIO & RUTINA</span>
+                    <span className="text-[9px] text-slate-400 font-normal whitespace-nowrap">({timedTasks.length})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCatchUpOverdue}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                        overdueTimedCount > 0
+                          ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
+                          : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
+                      }`}
+                      title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
+                    >
+                      Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
+                    </button>
+                    {onReorderTasks && timedTasks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleSortTimedByHour}
+                        className="px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-950/30 text-[9px] font-semibold text-amber-300 hover:bg-amber-900/40 hover:text-amber-100 cursor-pointer whitespace-nowrap"
+                        title="Ordenar cronológicamente por hora"
+                      >
+                        Ordenar
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  {isNeftali && (
+
+                {/* Fila 2: Comida, división de bloques, rango y desfase ±30m */}
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {isNeftali && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMealModal(true)}
+                        className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap ${
+                          mealBreak.enabled
+                            ? "bg-amber-950/70 text-amber-300 border-amber-600/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                            : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                        }`}
+                        title={`Horario especial · Comida: ${mealBreak.enabled ? `${formatHour12(mealBreak.startHour, mealBreak.startMinute)} – ${formatHour12(mealBreak.endHour, mealBreak.endMinute)}` : "Desactivada"}`}
+                      >
+                        <Utensils className="w-2.5 h-2.5 text-amber-400" />
+                        <span className="text-[8.5px] font-mono font-bold">Comida</span>
+                      </button>
+                    )}
+                    {/* Selector de División: 1h vs 30m */}
+                    <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleInterval(60)}
+                        className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                          gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                        }`}
+                        title="Intervalo de 1 hora (ej. 9 a 10, 10 a 11)"
+                      >
+                        1h
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleInterval(30)}
+                        className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                          gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                        }`}
+                        title="Intervalo de media hora (cada 30 min)"
+                      >
+                        30m
+                      </button>
+                    </div>
+                    {/* Botón de Ajustes de Rango */}
                     <button
                       type="button"
-                      onClick={() => setShowMealModal(true)}
-                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
-                        mealBreak.enabled
-                          ? "bg-amber-950/70 text-amber-300 border-amber-600/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                      onClick={() => setShowGridConfig((prev) => !prev)}
+                      className={`p-1 rounded border transition-colors cursor-pointer ${
+                        showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
                       }`}
-                      title={`Horario especial · Comida: ${mealBreak.enabled ? `${formatHour12(mealBreak.startHour, mealBreak.startMinute)} – ${formatHour12(mealBreak.endHour, mealBreak.endMinute)}` : "Desactivada"}`}
+                      title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
                     >
-                      <Utensils className="w-2.5 h-2.5 text-amber-400" />
-                      <span className="text-[8.5px] font-mono font-bold">Comida</span>
-                    </button>
-                  )}
-                  {/* Selector de División: 1h vs 30m */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleInterval(60)}
-                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
-                        gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
-                      }`}
-                      title="Intervalo de 1 hora (ej. 9 a 10, 10 a 11)"
-                    >
-                      1h
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleInterval(30)}
-                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
-                        gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
-                      }`}
-                      title="Intervalo de media hora (cada 30 min)"
-                    >
-                      30m
+                      <SlidersHorizontal className="w-3 h-3" />
                     </button>
                   </div>
-                  {/* Botón de Ajustes de Rango */}
-                  <button
-                    type="button"
-                    onClick={() => setShowGridConfig((prev) => !prev)}
-                    className={`p-1 rounded border transition-colors cursor-pointer ${
-                      showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
-                    }`}
-                    title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
-                  >
-                    <SlidersHorizontal className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleShiftSchedule(-30)}
-                    className="px-1.5 py-0.5 rounded bg-[#131D2A] text-[9px] text-cyan-300 hover:bg-cyan-950 border border-cyan-800/60"
-                    title="Desfasar bloques -30 min"
-                  >
-                    -30m
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleShiftSchedule(30)}
-                    className="px-1.5 py-0.5 rounded bg-[#131D2A] text-[9px] text-cyan-300 hover:bg-cyan-950 border border-cyan-800/60"
-                    title="Desfasar bloques +30 min"
-                  >
-                    +30m
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCatchUpOverdue}
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer ${
-                      overdueTimedCount > 0
-                        ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
-                        : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
-                    }`}
-                    title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
-                  >
-                    Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
-                  </button>
-                  {onReorderTasks && timedTasks.length > 1 && (
+
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={handleSortTimedByHour}
-                      className="text-[9px] font-normal text-amber-300 hover:text-amber-100 cursor-pointer underline flex items-center gap-0.5"
-                      title="Ordenar cronológicamente por hora"
+                      onClick={() => handleShiftSchedule(-30)}
+                      className="px-1.5 py-0.5 rounded bg-[#131D2A] text-[9px] text-cyan-300 hover:bg-cyan-950 border border-cyan-800/60 whitespace-nowrap"
+                      title="Desfasar bloques -30 min"
                     >
-                      <span>Ordenar</span>
+                      -30m
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => handleShiftSchedule(30)}
+                      className="px-1.5 py-0.5 rounded bg-[#131D2A] text-[9px] text-cyan-300 hover:bg-cyan-950 border border-cyan-800/60 whitespace-nowrap"
+                      title="Desfasar bloques +30 min"
+                    >
+                      +30m
+                    </button>
+                  </div>
                 </div>
               </div>
 

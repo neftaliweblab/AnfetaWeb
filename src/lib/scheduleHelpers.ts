@@ -123,11 +123,26 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
   return { hasTime: false, timeMinutes: 99999, endMinutes: 99999, timeBadge: "" };
 }
 
+function formatHHMM(totalMinutes: number): string {
+  const wrapped = ((totalMinutes % 1440) + 1440) % 1440;
+  const h = Math.floor(wrapped / 60);
+  const m = wrapped % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 /**
  * Replaces or prepends the leading time expression in a task title cleanly.
+ * Handles ranges ("9:00 AM - 10:00 AM") without leaving an orphaned end time.
  */
-export function rewriteTitleWithTime(title: string, targetMinutes: number): string {
+export function rewriteTitleWithTime(title: string, targetMinutes: number, targetEndMinutes?: number): string {
   const timeStr = formatMinutes12h(targetMinutes, false);
+  const rangeRegex = /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/i;
+  if (rangeRegex.test(title)) {
+    const endMin = typeof targetEndMinutes === "number" && targetEndMinutes > targetMinutes
+      ? targetEndMinutes
+      : targetMinutes + 60;
+    return title.replace(rangeRegex, `${timeStr} - ${formatMinutes12h(endMin, false)}`);
+  }
   const timeTokenRegex = /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i;
   if (timeTokenRegex.test(title)) {
     return title.replace(timeTokenRegex, timeStr);
@@ -142,19 +157,23 @@ export function rewriteTitleWithTime(title: string, targetMinutes: number): stri
 export function shiftTaskSchedule(
   task: PendingTaskItem,
   deltaMinutes: number
-): { title: string; timeMinutes: number; isPostMidnight: boolean } | null {
+): { title: string; timeMinutes: number; endMinutes: number; startTime?: string; endTime?: string; isPostMidnight: boolean } | null {
   const parsed = parseTaskTime(task);
   if (!parsed.hasTime) return null;
 
+  const duration = Math.max(15, parsed.endMinutes - parsed.timeMinutes);
   let newMin = parsed.timeMinutes + deltaMinutes;
   // Prevent wrapping backwards past 00:00 unless already early morning
   if (newMin < 0) newMin = 0;
   // Cap extended post-midnight schedule at 04:00 AM next day (1680 min)
   if (newMin > 1680) newMin = 1680;
+  const newEndMin = newMin + duration;
 
   return {
-    title: rewriteTitleWithTime(task.title, newMin),
+    title: rewriteTitleWithTime(task.title, newMin, newEndMin),
     timeMinutes: newMin,
+    endMinutes: newEndMin,
+    ...(task.startTime ? { startTime: formatHHMM(newMin), endTime: formatHHMM(newEndMin) } : {}),
     isPostMidnight: newMin >= 1440,
   };
 }
@@ -167,7 +186,15 @@ export function computeCatchUpSchedule(
   tasks: PendingTaskItem[],
   nowMinutes: number,
   stepMinutes: 30 | 60 = 30
-): Array<{ task: PendingTaskItem; newTitle: string; newStartMinutes: number; isPostMidnight: boolean }> {
+): Array<{
+  task: PendingTaskItem;
+  newTitle: string;
+  newStartMinutes: number;
+  newEndMinutes: number;
+  startTime?: string;
+  endTime?: string;
+  isPostMidnight: boolean;
+}> {
   const overdue = tasks
     .filter((t) => {
       if (t.isCompleted || t.isAttended || t.isArchived) return false;
@@ -180,11 +207,16 @@ export function computeCatchUpSchedule(
 
   const anchorStart = Math.max(nowMinutes, Math.ceil(nowMinutes / stepMinutes) * stepMinutes);
   return overdue.map((task, idx) => {
+    const parsed = parseTaskTime(task);
+    const duration = Math.max(30, parsed.endMinutes - parsed.timeMinutes);
     const slotMin = Math.min(1680, anchorStart + idx * stepMinutes);
+    const slotEnd = slotMin + duration;
     return {
       task,
-      newTitle: rewriteTitleWithTime(task.title, slotMin),
+      newTitle: rewriteTitleWithTime(task.title, slotMin, slotEnd),
       newStartMinutes: slotMin,
+      newEndMinutes: slotEnd,
+      ...(task.startTime ? { startTime: formatHHMM(slotMin), endTime: formatHHMM(slotEnd) } : {}),
       isPostMidnight: slotMin >= 1440,
     };
   });

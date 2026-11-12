@@ -329,6 +329,10 @@ test('ftfDashboard: excluye suspendidas (inclusive post-18:30), separa Por hacer
   assert.equal(neft.status, 'pending');
   assert.equal(neft.completedActivities.length, 0);
   assert.equal(neft.reviewActivities.length, 1);
+  assert.equal(neft.pendingAssignmentMinutes, 0);
+  assert.equal(neft.mealBreak?.enabled, true);
+  assert.equal(neft.mealBreak?.startHour, 13);
+  assert.equal(neft.mealBreak?.endHour, 14);
 
   assert.equal(gena.firstSignal, null);
   assert.equal(gena.expiredUnfinishedCount, 1);
