@@ -18,9 +18,13 @@ import {
   UserCheck,
   ChevronDown,
   ChevronUp,
+  SlidersHorizontal,
+  Settings,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
+import { normalizePerson } from "@/services/identityNormalizer";
+import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
 
 export function getCurrentMexicoMinutes(): number {
   const now = new Date();
@@ -296,7 +300,33 @@ function PendientesColumnComponent({
   const [isResizing, setIsResizing] = useState(false);
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState<number>(getCurrentMexicoMinutes());
 
-  // Intervalo de cuadrícula: 60 min (1h) o 30 min (media hora)
+  // Configuración de Cuadrícula Personalizable: Inicio, Fin e Intervalo
+  const [customStartHour, setCustomStartHour] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_start_hour");
+        if (saved !== null) {
+          const num = parseInt(saved, 10);
+          if (num >= 0 && num <= 23) return num;
+        }
+      } catch {}
+    }
+    return 8;
+  });
+
+  const [customEndHour, setCustomEndHour] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_end_hour");
+        if (saved !== null) {
+          const num = parseInt(saved, 10);
+          if (num >= 1 && num <= 24) return num;
+        }
+      } catch {}
+    }
+    return 19;
+  });
+
   const [gridInterval, setGridInterval] = useState<30 | 60>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -306,6 +336,16 @@ function PendientesColumnComponent({
     }
     return 60; // 1 hora por defecto (ej. 9 a 10, 10 a 11)
   });
+
+  const [showGridConfig, setShowGridConfig] = useState(false);
+
+  const saveCustomHours = (startH: number, endH: number) => {
+    try {
+      localStorage.setItem("anfeta_pendientes_start_hour", String(startH));
+      localStorage.setItem("anfeta_pendientes_end_hour", String(endH));
+    } catch {}
+    setFeedback(`Rango: ${String(startH).padStart(2, "0")}:00 a ${String(endH).padStart(2, "0")}:00`);
+  };
 
   const handleToggleInterval = (interval: 30 | 60) => {
     setGridInterval(interval);
@@ -389,19 +429,36 @@ function PendientesColumnComponent({
     return pendingTasks.filter((t) => !extractTaskTime(t).hasTime && !t.isArchived);
   }, [pendingTasks]);
 
-  // Tareas asignadas a mí por otro compañero no atendidas
+  // Tareas asignadas a mí por otro compañero no atendidas (con normalización canónica robusta)
   const assignedToMeUnattended = useMemo(() => {
-    const normCurrent = (currentUser || "").trim().toLowerCase();
+    const normCurrent = normalizePerson(currentUser || "");
     return activeTasks.filter(
       (t) =>
         t.assignedTo &&
-        t.assignedTo.toLowerCase() === normCurrent &&
+        normalizePerson(t.assignedTo) === normCurrent &&
         t.assignedBy &&
-        t.assignedBy.toLowerCase() !== normCurrent &&
+        normalizePerson(t.assignedBy) !== normCurrent &&
         !t.isAttended &&
         !t.isCompleted
     );
   }, [activeTasks, currentUser]);
+
+  // Notificar al usuario con Toast nativo y sonido si llega una tarea asignada nueva
+  const notifiedTasksRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (assignedToMeUnattended.length > 0) {
+      const newlyArrived = assignedToMeUnattended.filter((t) => !notifiedTasksRef.current.has(t.id));
+      if (newlyArrived.length > 0) {
+        newlyArrived.forEach((t) => notifiedTasksRef.current.add(t.id));
+        playCheckChime();
+        const first = newlyArrived[0];
+        sendWindowsNotification(
+          "Nuevo pendiente asignado",
+          `${first.assignedBy || "Un compañero"} te asignó: ${first.title}`
+        );
+      }
+    }
+  }, [assignedToMeUnattended]);
 
   const [pendingSubTab, setPendingSubTab] = useState<"all" | "free" | "timed" | "archived">("all");
 
@@ -848,10 +905,12 @@ function PendientesColumnComponent({
     );
   };
 
-  // Cálculo de los Bloques de Horas para la Cuadrícula (Horas como tal, e.g. 9 a 10, 10 a 11 o cada media hora)
+  // Cálculo de los Bloques de Horas para la Cuadrícula Personalizable
   const gridSlots = useMemo(() => {
-    let minH = 8;
-    let maxH = 19;
+    let minH = customStartHour;
+    let maxH = customEndHour;
+
+    // Asegurar que si hay tareas programadas fuera de las horas elegidas, se incluyan para no ocultarlas
     timedTasks.forEach((t) => {
       const info = extractTaskTime(t);
       if (info.hasTime) {
@@ -861,9 +920,6 @@ function PendientesColumnComponent({
         if (h2 > maxH) maxH = Math.min(24, h2);
       }
     });
-    const currentH = Math.floor(currentTimeMinutes / 60);
-    if (currentH < minH) minH = Math.max(0, currentH);
-    if (currentH + 1 > maxH) maxH = Math.min(24, currentH + 1);
 
     const slots: Array<{
       slotStart: number;
@@ -900,7 +956,124 @@ function PendientesColumnComponent({
     }
 
     return slots;
-  }, [timedTasks, currentTimeMinutes, gridInterval]);
+  }, [timedTasks, currentTimeMinutes, gridInterval, customStartHour, customEndHour]);
+
+  // Panel de Configuración de la Cuadrícula (100% Personalizable)
+  const renderGridConfigPanel = () => {
+    if (!showGridConfig) return null;
+
+    return (
+      <div className="p-2.5 mb-2 rounded-xl bg-[#121A24] border border-cyan-500/40 shadow-2xl space-y-2 select-none">
+        <div className="flex items-center justify-between pb-1.5 border-b border-slate-700/60">
+          <span className="text-[10.5px] font-bold text-cyan-300 flex items-center gap-1.5">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+            Configurar Horas de la Cuadrícula
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowGridConfig(false)}
+            className="text-slate-400 hover:text-white text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Presets Rápidos */}
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setCustomStartHour(8);
+              setCustomEndHour(18);
+              saveCustomHours(8, 18);
+            }}
+            className={`px-2 py-0.5 rounded text-[9px] font-medium border transition-colors ${
+              customStartHour === 8 && customEndHour === 18
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+            }`}
+          >
+            Jornada (08–18h)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCustomStartHour(7);
+              setCustomEndHour(20);
+              saveCustomHours(7, 20);
+            }}
+            className={`px-2 py-0.5 rounded text-[9px] font-medium border transition-colors ${
+              customStartHour === 7 && customEndHour === 20
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+            }`}
+          >
+            Extendida (07–20h)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCustomStartHour(5);
+              setCustomEndHour(23);
+              saveCustomHours(5, 23);
+            }}
+            className={`px-2 py-0.5 rounded text-[9px] font-medium border transition-colors ${
+              customStartHour === 5 && customEndHour === 23
+                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+            }`}
+          >
+            Completo (05–23h)
+          </button>
+        </div>
+
+        {/* Selectores Inicio y Fin */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <div>
+            <label className="block text-[9.5px] font-semibold text-slate-300 mb-1">
+              Hora de inicio:
+            </label>
+            <select
+              value={customStartHour}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setCustomStartHour(val);
+                saveCustomHours(val, customEndHour);
+              }}
+              className="w-full bg-[#182230] text-slate-200 border border-slate-700 rounded px-1.5 py-1 text-xs focus:border-cyan-400 focus:outline-none"
+            >
+              {Array.from({ length: 24 }).map((_, h) => (
+                <option key={h} value={h} disabled={h >= customEndHour}>
+                  {String(h).padStart(2, "0")}:00 ({h % 12 || 12} {h >= 12 ? "PM" : "AM"})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[9.5px] font-semibold text-slate-300 mb-1">
+              Hora de fin:
+            </label>
+            <select
+              value={customEndHour}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setCustomEndHour(val);
+                saveCustomHours(customStartHour, val);
+              }}
+              className="w-full bg-[#182230] text-slate-200 border border-slate-700 rounded px-1.5 py-1 text-xs focus:border-cyan-400 focus:outline-none"
+            >
+              {Array.from({ length: 24 }).map((_, h) => (
+                <option key={h + 1} value={h + 1} disabled={h + 1 <= customStartHour}>
+                  {String(h + 1).padStart(2, "0")}:00 ({(h + 1) % 12 || 12} {h + 1 >= 12 && h + 1 < 24 ? "PM" : "AM"})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Renderizado de la Cuadrícula Completa de Horas
   const renderScheduleGrid = () => {
@@ -909,6 +1082,9 @@ function PendientesColumnComponent({
 
     return (
       <div className="space-y-1.5 pt-1">
+        {/* Panel de Configuración Personalizable si está abierto */}
+        {renderGridConfigPanel()}
+
         {/* Si la hora actual es anterior a la primera hora del grid */}
         {isEarlierThanGrid && renderLiveTimelineBar()}
 
@@ -1165,7 +1341,7 @@ function PendientesColumnComponent({
               <span className="text-[10.5px] font-bold text-[#00E5FF]">⏱️ CUADRÍCULA DE HORARIO</span>
               <div className="flex items-center gap-1">
                 {/* Selector de División: 1h vs 30m */}
-                <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-1">
+                <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-0.5">
                   <button
                     type="button"
                     onClick={() => handleToggleInterval(60)}
@@ -1187,6 +1363,17 @@ function PendientesColumnComponent({
                     30m
                   </button>
                 </div>
+                {/* Botón de Ajustes de Rango */}
+                <button
+                  type="button"
+                  onClick={() => setShowGridConfig((prev) => !prev)}
+                  className={`p-1 rounded border transition-colors cursor-pointer ${
+                    showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                  }`}
+                  title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
+                >
+                  <SlidersHorizontal className="w-3 h-3" />
+                </button>
                 <button
                   type="button"
                   onClick={() => handleShiftSchedule(-30)}
@@ -1279,6 +1466,17 @@ function PendientesColumnComponent({
                       30m
                     </button>
                   </div>
+                  {/* Botón de Ajustes de Rango */}
+                  <button
+                    type="button"
+                    onClick={() => setShowGridConfig((prev) => !prev)}
+                    className={`p-1 rounded border transition-colors cursor-pointer ${
+                      showGridConfig ? "bg-cyan-500/30 text-cyan-300 border-cyan-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                    }`}
+                    title="Personalizar rango horario (de qué hora empieza a qué hora termina)"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleShiftSchedule(-30)}

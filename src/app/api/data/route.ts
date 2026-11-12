@@ -39,6 +39,7 @@ import {diagnoseNotion} from '@/services/notionDiagnostics';
 import {executiveActivities,isFtfReminder} from '@/services/progressKpis';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 import {readUserState,updateUserState} from '@/services/userState';
+import {sendPwaPush} from '@/services/pwaPush';
 import {recordChecklistMark} from '@/services/checklistHistory';
 import {executeCoordinatedAutomation} from '@/services/coordinatedAutomation';
 import {drxFolder,uploadFilename} from '@/lib/drxUploadPlan';
@@ -1383,7 +1384,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
       // Semilla única solicitada: Pasar el nombre de las vistas que van a ser las bases de datos
       const SEED_TASK_ID = 'task-seed-john-vistas-bd';
-      const normActor = normalizePerson(actor);
+      const normActor = normalizePerson(actor).toLowerCase();
       if (normActor === 'neftali' || normActor === 'john') {
         const hasTask = items.some((t: any) => t.id === SEED_TASK_ID || (typeof t.title === 'string' && t.title.includes('nombre de las vistas que van a ser las bases de datos')));
         if (!hasTask) {
@@ -2813,6 +2814,14 @@ async function POSTLive(req: NextRequest) {
             currentList.unshift({ ...assignedTask });
           }
           await updateUserState(getSettings(), targetPerson, { pendingTasks: currentList }, targetState.revision);
+          try {
+            await sendPwaPush(getSettings(), targetPerson, {
+              title: 'Nuevo pendiente asignado',
+              body: `${actor} te asignó: ${assignedTask.title}`,
+              tag: 'assigned-task-' + assignedTask.id,
+              url: '/',
+            });
+          } catch {}
         }
       } catch (crossErr) {
         console.warn('Advertencia: no se pudo sincronizar tarea cruzada:', crossErr);
