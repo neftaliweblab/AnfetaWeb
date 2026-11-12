@@ -1348,7 +1348,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         warning = 'Calendario en caché: configura el acceso a Notion para ver las actividades actuales.';
       }
       const unique = [...new Map(activities.map(a => [cleanPageId(a.pageId),a])).values()];
-      const mirrors = unique.filter(a => a.reviewFlow?.State === 'pending' && a.reviewFlow.LeaveVisualCopy !== false && normalizePerson(a.reviewFlow.OriginalPerson) !== normalizePerson(a.person)).map(a => ({...a,
+      // Sin duplicar tarjetas por defecto: solo emitir espejo si alguna actividad heredada tiene LeaveVisualCopy === true explícito
+      const mirrors = unique.filter(a => a.reviewFlow?.State === 'pending' && a.reviewFlow.LeaveVisualCopy === true && normalizePerson(a.reviewFlow.OriginalPerson) !== normalizePerson(a.person)).map(a => ({...a,
         pageId:'review-mirror-' + a.pageId, person:normalizePerson(a.reviewFlow.OriginalPerson), isReviewMirror:true,
         title:'[COPIA REVISIÓN] ' + a.title, shortTitle:a.title,
       }));
@@ -3336,6 +3337,86 @@ async function POSTLive(req: NextRequest) {
       const date = String(payload.date || '').slice(0, 10);
       const reviews = readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {});
       return NextResponse.json({ success: true, date, review: reviews[date] || null }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'get-ftf-scores') {
+      const date = payload.date ? String(payload.date).slice(0, 10) : '';
+      const dates = Array.isArray(payload.dates) ? payload.dates.map((d: any) => String(d).slice(0, 10)) : [];
+      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      if (date) {
+        return NextResponse.json({ success: true, date, scores: store[date] || {} }, { headers: { 'Cache-Control': 'no-store' } });
+      }
+      if (dates.length > 0) {
+        const subset: Record<string, Record<string, any>> = {};
+        for (const d of dates) subset[d] = store[d] || {};
+        return NextResponse.json({ success: true, scoresByDate: subset }, { headers: { 'Cache-Control': 'no-store' } });
+      }
+      return NextResponse.json({ success: true, scoresByDate: store }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'save-ftf-score') {
+      const normActor = normalizePerson(actor || payload.currentUser || '');
+      if (normActor !== 'John' && normActor !== 'Neftali') {
+        throw new Error('Solo John y Neftali pueden editar puntajes de bitácora.');
+      }
+      const date = String(payload.date || '').slice(0, 10);
+      const person = normalizePerson(String(payload.person || ''));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !person || person === 'Sin asignar') {
+        throw new Error('Fecha o colaborador inválido.');
+      }
+      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const dayMap = { ...(store[date] || {}) };
+      dayMap[person] = {
+        ...payload.entry,
+        person,
+        date,
+        updatedBy: normActor,
+        updatedAt: new Date().toISOString(),
+      };
+      store[date] = dayMap;
+      writeLocalJson('ftf_daily_scores.json', store);
+      return NextResponse.json({ success: true, date, person, entry: dayMap[person], scores: dayMap }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'publish-ftf-scores') {
+      const normActor = normalizePerson(actor || payload.currentUser || '');
+      if (normActor !== 'John' && normActor !== 'Neftali') {
+        throw new Error('Solo John y Neftali pueden publicar el corte diario de calificaciones.');
+      }
+      const date = String(payload.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Fecha inválida.');
+      const entries = Array.isArray(payload.entries) ? payload.entries : [];
+      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const dayMap = { ...(store[date] || {}) };
+      const publishedAt = new Date().toISOString();
+      for (const item of entries) {
+        const person = normalizePerson(String(item?.person || ''));
+        if (!person || person === 'Sin asignar') continue;
+        dayMap[person] = {
+          ...(dayMap[person] || {}),
+          ...item,
+          person,
+          date,
+          published: true,
+          publishedAt,
+          updatedBy: normActor,
+          updatedAt: publishedAt,
+        };
+      }
+      store[date] = dayMap;
+      writeLocalJson('ftf_daily_scores.json', store);
+      return NextResponse.json({ success: true, date, publishedAt, count: Object.keys(dayMap).length, scores: dayMap }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'get-my-ftf-score') {
+      const person = normalizePerson(String(payload.person || actor || ''));
+      const date = String(payload.date || mexicoDate()).slice(0, 10);
+      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const entry = person && person !== 'Sin asignar' ? store[date]?.[person] : null;
+      return NextResponse.json(
+        { success: true, date, person, entry: entry?.published ? entry : null },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     return NextResponse.json({ error: "Action not supported" }, { status: 400 });

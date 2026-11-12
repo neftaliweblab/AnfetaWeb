@@ -29,6 +29,7 @@ const COLLABORATORS = [
 
 export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "", initialTitle = "", currentUser }: PendingTaskModalProps) {
   const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
   const [description, setDescription] = useState("");
   const [url, setUrl] = useState("");
   const [timeHour, setTimeHour] = useState("");
@@ -43,6 +44,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
     if (isOpen) {
       if (taskToEdit) {
         setTitle(taskToEdit.title || "");
+        setNote(taskToEdit.note || "");
         setDescription(taskToEdit.description || "");
         setUrl(taskToEdit.url || "");
         setAssignedTo(taskToEdit.assignedTo || "");
@@ -67,6 +69,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
           : "";
         const defaultText = (initialTitle || initialQuery || domInput || "").trim();
         setTitle(defaultText);
+        setNote("");
         setDescription("");
         setUrl("");
         setAssignedTo("");
@@ -123,6 +126,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
     onSave(
       {
         title: finalTitle,
+        note: note.trim() || undefined,
         description: description.trim() || undefined,
         url: url.trim() || undefined,
         scheduledDate,
@@ -130,6 +134,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         isCompleted: taskToEdit ? taskToEdit.isCompleted : false,
         isAttended: taskToEdit ? taskToEdit.isAttended : false,
         isArchived: taskToEdit ? taskToEdit.isArchived : false,
+        isStarred: assignedTo.trim() ? (taskToEdit?.isStarred ?? true) : taskToEdit?.isStarred,
         assignedTo: assignedTo.trim() || undefined,
         assignedBy: assignedTo.trim() ? (taskToEdit?.assignedBy || currentUser || "Neftali") : undefined,
         assignedAt: assignedTo.trim() ? (taskToEdit?.assignedAt || new Date().toISOString()) : undefined,
@@ -137,6 +142,7 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
       taskToEdit?.id
     );
     setTitle("");
+    setNote("");
     setDescription("");
     setUrl("");
     setAssignedTo("");
@@ -309,6 +315,20 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
                 🔔 Se notificará a {assignedTo} indicándole que le asignaste este pendiente.
               </p>
             )}
+          </div>
+
+          {/* Campo Nota visible (no altera la búsqueda) */}
+          <div>
+            <label className="block text-[11px] font-semibold text-amber-200 mb-1">
+              Nota visible (opcional · no altera búsqueda):
+            </label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ej. Esperar respuesta del cliente / Revisar copy..."
+              className="w-full h-8 px-2.5 bg-[#141B26] text-amber-100 border border-amber-500/40 rounded text-xs focus:border-amber-400 focus:outline-none"
+            />
           </div>
 
           {/* Campo Descripción opcional */}

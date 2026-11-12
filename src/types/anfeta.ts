@@ -134,11 +134,16 @@ export interface PendingTaskItem {
   id: string;
   title: string;
   description?: string;
+  note?: string;
   scheduledDate: string;
   query: string;
   isCompleted?: boolean;
   isArchived?: boolean;
   isAttended?: boolean;
+  isStarred?: boolean;
+  isPostMidnight?: boolean;
+  isReviewNotice?: boolean;
+  reviewPageId?: string;
   assignedTo?: string;
   assignedBy?: string;
   assignedAt?: string;

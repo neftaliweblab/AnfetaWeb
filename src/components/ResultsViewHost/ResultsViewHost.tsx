@@ -2036,11 +2036,24 @@ export function ResultsViewHost({
         activeTabId={activeTabId}
         onSelectTab={handleSelectTab}
         onMarkPending={(id, pending, minutes) =>
-          setTabs(previous =>
-            previous.map(tab =>
+          setTabs(previous => {
+            const updated = previous.map(tab =>
               tab.id === id
                 ? { ...tab, pending, unseen: pending && tab.id !== activeTabId, remindAt: pending && minutes ? Date.now() + minutes * 60000 : undefined }
                 : tab
+            );
+            if (!pending) return updated;
+            const target = updated.find(t => t.id === id);
+            if (!target || !target.canClose) return updated;
+            const permanent = updated.filter(t => !t.canClose && t.id !== id);
+            const rest = updated.filter(t => t.canClose && t.id !== id);
+            return [...permanent, target, ...rest];
+          })
+        }
+        onUpdateTabNote={(id, note) =>
+          setTabs(previous =>
+            previous.map(tab =>
+              tab.id === id ? { ...tab, note: note.trim() ? note.trim().slice(0, 300) : undefined } : tab
             )
           )
         }

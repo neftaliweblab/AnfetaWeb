@@ -24,11 +24,19 @@ import {
   X,
   ExternalLink,
   Utensils,
+  Star,
+  StickyNote,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { normalizePerson } from "@/services/identityNormalizer";
 import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
+import {
+  parseTaskTime,
+  shiftTaskSchedule,
+  computeCatchUpSchedule,
+  simplifyReviewSearchQuery,
+} from "@/lib/scheduleHelpers";
 import { MealBreakModal } from "../CalendarHost/MealBreakModal";
 import {
   MealBreakConfig,
@@ -84,122 +92,15 @@ export function extractTaskTime(task: PendingTaskItem): {
   isActive: boolean;
 } {
   const currentMin = getCurrentMexicoMinutes();
-  const title = (task.title || "").trim();
-
-  // 1. Detectar rangos como: "10:00 - 11:30", "10:00 a 11:30", "10 to 11", "5:00-7:00"
-  const rangeMatch = title.match(
-    /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/i
-  );
-  if (rangeMatch) {
-    let h1 = parseInt(rangeMatch[1], 10);
-    const m1 = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : 0;
-    const mer1 = rangeMatch[3]?.toLowerCase();
-
-    let h2 = parseInt(rangeMatch[4], 10);
-    const m2 = rangeMatch[5] ? parseInt(rangeMatch[5], 10) : 0;
-    const mer2 = rangeMatch[6]?.toLowerCase() || mer1;
-
-    if (mer1 === "pm" && h1 < 12) h1 += 12;
-    if (mer1 === "am" && h1 === 12) h1 = 0;
-    if (!mer1 && h1 >= 1 && h1 <= 6) h1 += 12;
-
-    if (mer2 === "pm" && h2 < 12) h2 += 12;
-    if (mer2 === "am" && h2 === 12) h2 = 0;
-    if (!mer2 && h2 >= 1 && h2 <= 6) h2 += 12;
-
-    const t1 = h1 * 60 + m1;
-    let t2 = h2 * 60 + m2;
-    if (t2 <= t1) t2 = t1 + 60;
-
-    const b1 = `${h1 % 12 || 12}:${String(m1).padStart(2, "0")}`;
-    const b2 = `${h2 % 12 || 12}:${String(m2).padStart(2, "0")} ${h2 >= 12 ? "PM" : "AM"}`;
-    return {
-      hasTime: true,
-      timeMinutes: t1,
-      endMinutes: t2,
-      timeBadge: `${b1} - ${b2}`,
-      isPassed: currentMin >= t2,
-      isActive: currentMin >= t1 && currentMin < t2,
-    };
+  const parsed = parseTaskTime(task);
+  if (!parsed.hasTime) {
+    return { hasTime: false, timeMinutes: 99999, endMinutes: 99999, timeBadge: "", isPassed: false, isActive: false };
   }
-
-  // 2. Formato de hora única: 5.30, 5:30, 5pm, 17:00
-  const match = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i);
-  if (match) {
-    let hours = parseInt(match[1], 10);
-    const minutes = match[2] ? parseInt(match[2], 10) : 0;
-    const meridian = match[3]?.toLowerCase();
-
-    if (hours >= 0 && hours <= 24 && minutes >= 0 && minutes < 60) {
-      if (meridian === "pm" && hours < 12) {
-        hours += 12;
-      } else if (meridian === "am" && hours === 12) {
-        hours = 0;
-      } else if (!meridian) {
-        if (hours >= 1 && hours <= 6) {
-          hours += 12;
-        }
-      }
-
-      const timeMinutes = hours * 60 + minutes;
-      const endMinutes = timeMinutes + 60; // 1 hora por defecto
-      const dispHours = hours % 12 || 12;
-      const dispMeridian = hours >= 12 ? "PM" : "AM";
-      const timeBadge = `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`;
-      return {
-        hasTime: true,
-        timeMinutes,
-        endMinutes,
-        timeBadge,
-        isPassed: currentMin >= endMinutes,
-        isActive: currentMin >= timeMinutes && currentMin < endMinutes,
-      };
-    }
-  }
-
-  if (task.startTime) {
-    const p = task.startTime.split(":");
-    const h = parseInt(p[0] || "0", 10);
-    const m = parseInt(p[1] || "0", 10);
-    const startM = h * 60 + m;
-    let endM = startM + 60;
-    if (task.endTime) {
-      const p2 = task.endTime.split(":");
-      endM = parseInt(p2[0] || "0", 10) * 60 + parseInt(p2[1] || "0", 10);
-    }
-    const dispHours = h % 12 || 12;
-    const dispMeridian = h >= 12 ? "PM" : "AM";
-    return {
-      hasTime: true,
-      timeMinutes: startM,
-      endMinutes: endM,
-      timeBadge: `${dispHours}:${String(m).padStart(2, "0")} ${dispMeridian}`,
-      isPassed: currentMin >= endM,
-      isActive: currentMin >= startM && currentMin < endM,
-    };
-  }
-
-  if (task.scheduledDate) {
-    const timeMatch = task.scheduledDate.match(/T(\d{2}):(\d{2})/);
-    if (timeMatch) {
-      const hours = parseInt(timeMatch[1], 10);
-      const minutes = parseInt(timeMatch[2], 10);
-      const dispHours = hours % 12 || 12;
-      const dispMeridian = hours >= 12 ? "PM" : "AM";
-      const tMin = hours * 60 + minutes;
-      const eMin = tMin + 60;
-      return {
-        hasTime: true,
-        timeMinutes: tMin,
-        endMinutes: eMin,
-        timeBadge: `${dispHours}:${String(minutes).padStart(2, "0")} ${dispMeridian}`,
-        isPassed: currentMin >= eMin,
-        isActive: currentMin >= tMin && currentMin < eMin,
-      };
-    }
-  }
-
-  return { hasTime: false, timeMinutes: 99999, endMinutes: 99999, timeBadge: "", isPassed: false, isActive: false };
+  return {
+    ...parsed,
+    isPassed: currentMin >= parsed.endMinutes,
+    isActive: currentMin >= parsed.timeMinutes && currentMin < parsed.endMinutes,
+  };
 }
 
 // Estilos Bento temáticos para tarjetas de horario
@@ -538,6 +439,48 @@ function PendientesColumnComponent({
     }
   }, [assignedToMeUnattended]);
 
+  // Avisos directos de revisión recibidos para el revisor actual (sin duplicar tarjeta en calendario)
+  const [incomingReviews, setIncomingReviews] = useState<Array<{ id: string; activityTitle: string; title: string; authorName?: string; updated?: string }>>([]);
+  const [dismissedReviewIds, setDismissedReviewIds] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const normCurrent = normalizePerson(currentUser || "");
+    if (!normCurrent || normCurrent === "Sin asignar") {
+      setIncomingReviews([]);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const fetchReviews = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const res = await fetch(`/api/data?type=review-notifications&person=${encodeURIComponent(normCurrent)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const list = Array.isArray(data.items) ? data.items : [];
+        const pendingForMe = list.filter((item: any) => {
+          const isIncoming = !item.authorName || normalizePerson(item.authorName) !== normCurrent;
+          const isReviewAction = /lista para revisi[oó]n|revisi[oó]n/i.test(item.actionLabel || item.title || "");
+          return isIncoming && isReviewAction && item.kind !== "ftf";
+        });
+        setIncomingReviews(pendingForMe);
+      } catch {}
+    };
+    void fetchReviews();
+    const timer = setInterval(fetchReviews, 60000);
+    window.addEventListener("anfeta_review_saved", fetchReviews);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+      window.removeEventListener("anfeta_review_saved", fetchReviews);
+    };
+  }, [currentUser]);
+  const visibleIncomingReviews = incomingReviews.filter((r) => !dismissedReviewIds[r.id]);
+
   const [pendingSubTab, setPendingSubTab] = useState<"all" | "free" | "timed" | "archived">("all");
 
   const moveTask = (taskId: string, direction: "up" | "down") => {
@@ -571,29 +514,51 @@ function PendientesColumnComponent({
     const timed = [...timedTasks].sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
     const others = pendingTasks.filter((t) => !extractTaskTime(t).hasTime || t.isArchived);
     onReorderTasks([...others, ...timed].map((t) => t.id));
-    setFeedback("Horario ordenado cronológicamente");
+    setFeedback("✓ Ordenado por hora");
   };
 
-  // Función para desfasar el horario en cadena (+30 min / -30 min)
+  // Función para desfasar el horario en cadena (+30 min / -30 min) sin brincar a las 00:00 de la mañana
   const handleShiftSchedule = (deltaMinutes: number) => {
     if (!onEditTask) return;
     timedTasks.forEach((t) => {
-      const timeInfo = extractTaskTime(t);
-      if (timeInfo.hasTime) {
-        let newMin = timeInfo.timeMinutes + deltaMinutes;
-        if (newMin < 0) newMin += 1440;
-        if (newMin >= 1440) newMin -= 1440;
-        const nh = Math.floor(newMin / 60);
-        const nm = newMin % 60;
-        const newTimeStr = `${nh % 12 || 12}:${String(nm).padStart(2, "0")} ${nh >= 12 ? "PM" : "AM"}`;
-        const newTitle = t.title.replace(
-          /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i,
-          newTimeStr
-        );
-        onEditTask({ ...t, title: newTitle });
+      const shifted = shiftTaskSchedule(t, deltaMinutes);
+      if (shifted) {
+        onEditTask({
+          ...t,
+          title: shifted.title,
+          isPostMidnight: shifted.isPostMidnight || undefined,
+        });
       }
     });
     setFeedback(`Horario desfasado ${deltaMinutes > 0 ? `+${deltaMinutes}` : deltaMinutes} min`);
+  };
+
+  const overdueTimedCount = useMemo(
+    () =>
+      timedTasks.filter((t) => {
+        if (t.isCompleted || t.isAttended || t.isArchived) return false;
+        const info = extractTaskTime(t);
+        return info.hasTime && info.endMinutes <= currentTimeMinutes;
+      }).length,
+    [timedTasks, currentTimeMinutes]
+  );
+
+  // Recoger bloques atrasados y reacomodarlos desde la hora actual en curso
+  const handleCatchUpOverdue = () => {
+    if (!onEditTask) return;
+    const updates = computeCatchUpSchedule(timedTasks, currentTimeMinutes, gridInterval);
+    if (updates.length === 0) {
+      setFeedback("Sin bloques atrasados por recoger");
+      return;
+    }
+    updates.forEach(({ task, newTitle, isPostMidnight }) => {
+      onEditTask({
+        ...task,
+        title: newTitle,
+        isPostMidnight: isPostMidnight || undefined,
+      });
+    });
+    setFeedback(`✓ ${updates.length} atrasado${updates.length > 1 ? "s" : ""} recogido${updates.length > 1 ? "s" : ""} desde ${formatTimeMinutes(updates[0].newStartMinutes)}`);
   };
 
   const pendingCount = activeTasks.filter((t) => !t.isCompleted).length;
@@ -663,6 +628,7 @@ function PendientesColumnComponent({
     const isDimmed = isAttended || isCompleted;
     const isDraggedOver = dragOverTaskId === task.id;
     const isDirect = isDirectlyAssignedToMe(task);
+    const isStarActive = task.isStarred ?? isDirect;
 
     return (
       <div
@@ -684,18 +650,38 @@ function PendientesColumnComponent({
           isDraggedOver
             ? "border-cyan-400 bg-cyan-950/40"
             : isDirect
-            ? "border-cyan-400/90 bg-gradient-to-r from-cyan-950/70 to-[#141B26] shadow-[0_0_12px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/50"
+            ? "border-sky-300/85 bg-gradient-to-r from-sky-400/20 via-sky-500/10 to-[#141B26] shadow-[0_0_14px_rgba(125,211,252,0.22)] ring-1 ring-sky-300/50 hover:from-sky-400/25"
             : "border-[#1E2836] bg-[#141B26] hover:bg-[#1A2332] hover:border-cyan-500/40"
         } ${isDimmed ? "opacity-40 bg-[#0C121A] grayscale-[30%]" : ""}`}
         title="Clic: filtrar en buscador · Doble clic: editar · Clic derecho: opciones · Arrastra para reordenar"
       >
-        {/* Badge distintivo de Asignado Directo */}
-        {isDirect && (
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-cyan-500/20 text-cyan-200 border border-cyan-400 flex items-center gap-1 shadow-xs">
-              <Sparkles className="w-2.5 h-2.5 text-cyan-400 animate-pulse" />
-              <span>ASIGNADO DIRECTO POR {task.assignedBy || "COMPAÑERO"}</span>
-            </span>
+        {/* Badge distintivo de Asignado Directo + Estrella removible */}
+        {(isDirect || task.isStarred) && (
+          <div className="flex items-center justify-between gap-1 mb-0.5">
+            {isDirect ? (
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-sky-400/25 text-sky-100 border border-sky-300/70 flex items-center gap-1 shadow-xs">
+                <Sparkles className="w-2.5 h-2.5 text-sky-200 animate-pulse" />
+                <span>ASIGNADO DIRECTO POR {task.assignedBy || "COMPAÑERO"}</span>
+              </span>
+            ) : (
+              <span />
+            )}
+            {onEditTask && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditTask({ ...task, isStarred: !isStarActive });
+                  setFeedback(!isStarActive ? "★ Destacado" : "Estrella quitada");
+                }}
+                className={`p-0.5 rounded transition-colors cursor-pointer ${
+                  isStarActive ? "text-amber-300 hover:text-amber-100" : "text-slate-500 hover:text-amber-300"
+                }`}
+                title={isStarActive ? "Quitar estrella una vez revisado" : "Destacar con estrella"}
+              >
+                <Star className="w-3 h-3" fill={isStarActive ? "currentColor" : "none"} />
+              </button>
+            )}
           </div>
         )}
 
@@ -730,6 +716,14 @@ function PendientesColumnComponent({
                 {task.title}
               </span>
             </div>
+
+            {/* Nota visible independiente de la búsqueda */}
+            {task.note && (
+              <div className="flex items-start gap-1 text-[10px] text-amber-200 my-0.5 bg-amber-500/10 px-1.5 py-1 rounded border border-amber-400/35 font-sans">
+                <StickyNote className="w-2.5 h-2.5 text-amber-300 shrink-0 mt-0.5" />
+                <span className="break-words">{task.note}</span>
+              </div>
+            )}
 
             {/* Descripción opcional */}
             {task.description && (
@@ -971,6 +965,14 @@ function PendientesColumnComponent({
           </span>
         </div>
 
+        {/* Nota visible (no altera la búsqueda) */}
+        {task.note && (
+          <div className="flex items-start gap-1 text-[10px] text-amber-200 my-1 bg-amber-500/10 px-1.5 py-1 rounded border border-amber-400/35 font-sans">
+            <StickyNote className="w-2.5 h-2.5 text-amber-300 shrink-0 mt-0.5" />
+            <span className="break-words">{task.note}</span>
+          </div>
+        )}
+
         {/* Descripción o notas */}
         {task.description && (
           <p className="text-[10px] text-slate-300/90 line-clamp-2 my-1 bg-black/30 p-1.5 rounded border border-white/5 font-sans">
@@ -1086,14 +1088,14 @@ function PendientesColumnComponent({
     let minH = customStartHour;
     let maxH = customEndHour;
 
-    // Asegurar que si hay tareas programadas fuera de las horas elegidas, se incluyan para no ocultarlas
+    // Asegurar que si hay tareas programadas fuera de las horas elegidas (incluyendo post-medianoche hasta 04:00 +1d), se incluyan para no ocultarlas
     timedTasks.forEach((t) => {
       const info = extractTaskTime(t);
       if (info.hasTime) {
         const h1 = Math.floor(info.timeMinutes / 60);
         const h2 = Math.ceil(info.endMinutes / 60);
         if (h1 < minH) minH = Math.max(0, h1);
-        if (h2 > maxH) maxH = Math.min(24, h2);
+        if (h2 > maxH) maxH = Math.min(28, h2);
       }
     });
 
@@ -1294,6 +1296,11 @@ function PendientesColumnComponent({
                   >
                     {slot.label}
                   </span>
+                  {slot.slotStart >= 1440 && (
+                    <span className="text-[7.5px] font-mono font-bold text-indigo-300 bg-indigo-950/70 px-1 rounded border border-indigo-500/40 mt-0.5">
+                      +1d
+                    </span>
+                  )}
                   <div
                     className={`w-0.5 flex-1 min-h-[20px] my-1 rounded-full ${
                       slot.isActive ? "bg-cyan-500/60" : "bg-slate-800/70"
@@ -1574,7 +1581,19 @@ function PendientesColumnComponent({
         )}
       </div>
 
-      {feedback && <p role="status" className="text-emerald-300 text-[10px] pb-1 px-1">{feedback}</p>}
+      {feedback && (
+        <div role="status" className="mb-1.5 px-2 py-1 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-[10px] flex items-center justify-between gap-1 shrink-0">
+          <span className="truncate">{feedback}</span>
+          <button
+            type="button"
+            onClick={() => setFeedback("")}
+            className="text-emerald-300/70 hover:text-white cursor-pointer"
+            title="Ocultar aviso"
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
+        </div>
+      )}
 
       {/* Contenido Principal Scrolleable */}
       <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin pr-0.5 min-h-0">
@@ -1643,6 +1662,18 @@ function PendientesColumnComponent({
                   title="Desfasar todo +30 min"
                 >
                   +30m
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCatchUpOverdue}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer ${
+                    overdueTimedCount > 0
+                      ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
+                      : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
+                  }`}
+                  title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
+                >
+                  Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
                 </button>
                 <button
                   type="button"
@@ -1762,6 +1793,18 @@ function PendientesColumnComponent({
                   >
                     +30m
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleCatchUpOverdue}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer ${
+                      overdueTimedCount > 0
+                        ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
+                        : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
+                    }`}
+                    title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
+                  >
+                    Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
+                  </button>
                   {onReorderTasks && timedTasks.length > 1 && (
                     <button
                       type="button"
@@ -1781,11 +1824,59 @@ function PendientesColumnComponent({
           </>
         )}
 
-        {pendingTasks.length === 0 && (
+        {pendingTasks.length === 0 && visibleIncomingReviews.length === 0 && (
           <div className="h-40 flex flex-col items-center justify-center p-4 text-center text-[#64748B] text-[10.5px]">
             <Calendar className="w-6 h-6 text-[#475569] mb-2 opacity-60" />
             <span>No hay pendientes guardados.</span>
             <span className="mt-1 text-[#94A3B8]">Presiona &apos;+&apos; para programar uno con fecha.</span>
+          </div>
+        )}
+
+        {/* Revisiones pendientes directas (clic carga el buscador limpio sin duplicar en calendario) */}
+        {visibleIncomingReviews.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-indigo-500/30 space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] font-bold text-indigo-300 flex items-center gap-1">
+                <Bell className="w-3 h-3 text-indigo-300" />
+                <span>REVISIONES PENDIENTES ({visibleIncomingReviews.length})</span>
+              </span>
+            </div>
+            {visibleIncomingReviews.slice(0, 6).map((rev) => {
+              const cleanQuery = simplifyReviewSearchQuery(rev.activityTitle || rev.title || "");
+              return (
+                <div
+                  key={rev.id}
+                  onClick={() => {
+                    if (cleanQuery) {
+                      onSelectTaskQuery?.(cleanQuery);
+                      setFeedback(`🔍 Buscando revisión: ${cleanQuery}`);
+                    }
+                  }}
+                  className="p-2 rounded-lg border border-indigo-400/50 bg-indigo-950/35 hover:bg-indigo-900/45 transition-all cursor-pointer group flex items-start justify-between gap-1.5"
+                  title={`Clic para cargar "${cleanQuery}" en el buscador`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-200 block">
+                      Tienes una revisión pendiente{rev.authorName ? ` · De ${rev.authorName}` : ""}
+                    </span>
+                    <span className="text-[11px] font-semibold text-white block truncate mt-0.5">
+                      {cleanQuery || rev.activityTitle || rev.title}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDismissedReviewIds((prev) => ({ ...prev, [rev.id]: true }));
+                    }}
+                    className="p-0.5 text-slate-400 hover:text-white rounded cursor-pointer shrink-0"
+                    title="Ocultar aviso"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

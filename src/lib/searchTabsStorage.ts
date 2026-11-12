@@ -1,13 +1,13 @@
 import {normalizeSearchTabConfig,type SearchTabConfig} from './searchTabConfig';
 import {ACTIVITY_TAGS,type ActivityPerson} from '../services/activityTags';
 import {normalizePerson} from '../services/identityNormalizer';
-export interface StoredSearchTab {id:string;query:string;canClose:boolean;unseen?:boolean;pending?:boolean;remindAt?:number;config?:SearchTabConfig}
+export interface StoredSearchTab {id:string;query:string;canClose:boolean;unseen?:boolean;pending?:boolean;remindAt?:number;note?:string;config?:SearchTabConfig}
 export function findSearchTab(tabs:StoredSearchTab[],query:string){return tabs.find(tab=>tab.query.trim()===query.trim());}
 export function parseSearchTabs(raw:string|null):{tabs:StoredSearchTab[];activeTabId:string}|null{
   if(!raw)return null;
   try{const data=JSON.parse(raw),seen=new Set<string>();
     if(!Array.isArray(data.tabs)||!data.tabs.length)return null;
-    const tabs=data.tabs.map((tab:any,index:number)=>{if(typeof tab.id!=='string'||!tab.id||seen.has(tab.id)||typeof tab.query!=='string'||tab.query.length>4000)throw Error('Invalid tab');seen.add(tab.id);return {id:tab.id,query:tab.query,canClose:index!==0,...(tab.config?{config:normalizeSearchTabConfig(tab.config)}:{}),unseen:tab.unseen===true,pending:tab.pending===true,...(typeof tab.remindAt==='number'&&Number.isFinite(tab.remindAt)&&tab.remindAt>0?{remindAt:tab.remindAt}:{})};});
+    const tabs=data.tabs.map((tab:any,index:number)=>{if(typeof tab.id!=='string'||!tab.id||seen.has(tab.id)||typeof tab.query!=='string'||tab.query.length>4000)throw Error('Invalid tab');seen.add(tab.id);return {id:tab.id,query:tab.query,canClose:index!==0,...(tab.config?{config:normalizeSearchTabConfig(tab.config)}:{}),unseen:tab.unseen===true,pending:tab.pending===true,...(typeof tab.note==='string'&&tab.note.trim()?{note:tab.note.slice(0,300)}:{}),...(typeof tab.remindAt==='number'&&Number.isFinite(tab.remindAt)&&tab.remindAt>0?{remindAt:tab.remindAt}:{})};});
     return {tabs,activeTabId:seen.has(data.activeTabId)?data.activeTabId:tabs[0].id};
   }catch{return null;}
 }

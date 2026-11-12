@@ -3,7 +3,7 @@
 import type {SearchShortcutBindings,SearchShortcutMode} from "@/lib/searchTabNavigation";
 import type {ActiveSearchCriterion} from "@/lib/inlinePredictiveEngine";
 import React, {useEffect,useState} from "react";
-import { Search, Plus, X, Star, Timer } from "lucide-react";
+import { Search, Plus, X, Star, Timer, StickyNote } from "lucide-react";
 import { TopBarUtilities } from "../TopBarUtilities";
 
 export type {SearchTabConfig} from '@/lib/searchTabConfig';
@@ -16,6 +16,7 @@ export interface SearchTab {
   unseen?: boolean;
   pending?: boolean;
   remindAt?: number;
+  note?: string;
   config?: SearchTabConfig;
 }
 
@@ -30,6 +31,7 @@ interface SearchTabsRowProps {
   shortcutMode?:SearchShortcutMode;
   shortcutBindings?:SearchShortcutBindings;
   onMarkPending?: (id:string,pending:boolean,minutes?:number)=>void;
+  onUpdateTabNote?: (id: string, note: string) => void;
   onRestorePrevious?: () => void;
   textScale?: string;
   currentUser?: string;
@@ -48,6 +50,7 @@ function SearchTabsRowComponent({
   shortcutMode="compatible",
   shortcutBindings={new:"Ctrl+Alt+T",close:"Ctrl+Alt+W"},
   onMarkPending,
+  onUpdateTabNote,
   onRestorePrevious,
   textScale = "100%",
   currentUser,
@@ -57,6 +60,9 @@ function SearchTabsRowComponent({
   const tabList=React.useRef<HTMLDivElement>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const [editingNoteTabId, setEditingNoteTabId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const activeTab = tabs.find(t => t.id === activeTabId);
   useEffect(()=>{const list=tabList.current,active=list?.querySelector<HTMLElement>('[aria-selected="true"]');if(!list||!active)return;const outer=list.getBoundingClientRect(),inner=active.getBoundingClientRect();if(inner.right>outer.right)list.scrollLeft+=inner.right-outer.right;else if(inner.left<outer.left)list.scrollLeft-=outer.left-inner.left;},[activeTabId,tabs.length]);
   const [now,setNow]=useState(()=>Date.now());
   const hasTimers=tabs.some(tab=>!!tab.remindAt);
@@ -176,6 +182,33 @@ function SearchTabsRowComponent({
               >
                 {displayLabel}
               </span>
+              {tab.note && (
+                <span
+                  className="inline-flex items-center gap-0.5 max-w-[90px] truncate rounded bg-amber-500/15 border border-amber-400/35 px-1 py-0 text-[9px] text-amber-200 font-sans shrink-0"
+                  title={`Nota visible (no altera la búsqueda): ${tab.note}`}
+                >
+                  <StickyNote className="w-2.5 h-2.5 text-amber-300 shrink-0" />
+                  <span className="truncate">{tab.note}</span>
+                </span>
+              )}
+              {onUpdateTabNote && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingNoteTabId(tab.id);
+                    setNoteDraft(tab.note || "");
+                  }}
+                  title={tab.note ? `Editar nota: ${tab.note}` : "Agregar nota humana a esta pestaña (no afecta el filtro)"}
+                  className={`p-0.5 rounded transition-colors shrink-0 ${
+                    tab.note
+                      ? "text-amber-300 hover:bg-amber-500/20"
+                      : "text-slate-500 opacity-0 group-hover:opacity-100 hover:text-amber-300"
+                  }`}
+                >
+                  <StickyNote className="h-3 w-3" />
+                </button>
+              )}
               {onMarkPending&&<><button type="button" aria-label={tab.pending?'Quitar pendiente':'Marcar búsqueda pendiente'} title={tab.pending?'Quitar pendiente':'Marcar para revisar después'} className={tab.pending?'text-amber-300':'text-slate-500 hover:text-amber-300'} onClick={e=>{e.stopPropagation();onMarkPending(tab.id,!tab.pending);}}><Star className="h-3 w-3" fill={tab.pending?'currentColor':'none'}/></button><label title="Recordar esta búsqueda en minutos" className="flex items-center gap-0.5 text-slate-400" onClick={e=>e.stopPropagation()}><Timer className="h-3 w-3"/><select aria-label="Recordatorio de búsqueda" className="max-w-14 rounded bg-slate-900 text-[10px]" value="" onChange={e=>{if(e.target.value)onMarkPending(tab.id,true,Number(e.target.value));}}><option value="">{tab.remindAt?expired?'¡Revisar!':Math.ceil((tab.remindAt-now)/60000)+' min':'—'}</option><option value="5">5 min</option><option value="10">10 min</option><option value="60">1 hora</option></select></label></>}
               {onReorderTabs && tabs.length > 1 && (
                 <span className="hidden group-hover:inline-flex items-center gap-0.5 ml-0.5 text-slate-500">
@@ -243,6 +276,63 @@ function SearchTabsRowComponent({
           </button>
         )}
       </div>
+
+      {/* Editor inline de nota de pestaña (independiente de la consulta de búsqueda) */}
+      {onUpdateTabNote && editingNoteTabId && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onUpdateTabNote(editingNoteTabId, noteDraft);
+            setEditingNoteTabId(null);
+          }}
+          className="flex items-center gap-1 bg-[#111926] border border-amber-400/50 rounded px-1.5 py-0.5 shrink-0"
+        >
+          <StickyNote className="w-3 h-3 text-amber-300 shrink-0" />
+          <input
+            autoFocus
+            type="text"
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditingNoteTabId(null);
+            }}
+            placeholder="Nota (no altera búsqueda)..."
+            className="w-40 bg-transparent text-[10px] text-amber-100 placeholder-slate-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/35"
+          >
+            Guardar
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingNoteTabId(null)}
+            className="text-slate-400 hover:text-white p-0.5"
+            title="Cancelar"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </form>
+      )}
+      {onUpdateTabNote && !editingNoteTabId && activeTab && (
+        <button
+          type="button"
+          onClick={() => {
+            setEditingNoteTabId(activeTab.id);
+            setNoteDraft(activeTab.note || "");
+          }}
+          className={`hidden md:inline-flex items-center gap-1 shrink-0 rounded px-2 py-0.5 text-[10px] border transition-colors ${
+            activeTab.note
+              ? "border-amber-400/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 max-w-[160px]"
+              : "border-slate-700/80 bg-slate-900/70 text-slate-400 hover:text-amber-200 hover:border-amber-400/40"
+          }`}
+          title="Agregar o editar nota visible de la pestaña activa (no altera el buscador)"
+        >
+          <StickyNote className="w-3 h-3 shrink-0" />
+          <span className="truncate">{activeTab.note ? activeTab.note : "Nota pestaña"}</span>
+        </button>
+      )}
 
       {/* Lado derecho: Herramientas secundarias reubicadas desde la barra superior */}
       <TopBarUtilities

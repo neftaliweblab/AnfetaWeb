@@ -178,6 +178,22 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     lastCandidates.sort();
     const lastSignal = lastCandidates.at(-1) || null;
 
+    const afterCutoffActivities = activities.filter(activity =>
+      activity.start &&
+      !activity.isReviewMirror &&
+      !activity.isHandoffMirror &&
+      !isFtfReminder(activity) &&
+      !isTemporaryCalendarResponse(activity) &&
+      normalizePerson(activity.person) === name &&
+      mexicoDate(activity.start) === day &&
+      mexicoMinutes(activity.start) >= 1110
+    );
+    const activityOvertimeHours = afterCutoffActivities.reduce((sum, a) => sum + activityHours(a), 0);
+    const presenceOvertimeMin = presenceLastSeen && mexicoDate(presenceLastSeen) === day
+      ? Math.max(0, mexicoMinutes(presenceLastSeen) - 1110)
+      : 0;
+    const afterCutoffHours = Number(Math.max(activityOvertimeHours, presenceOvertimeMin / 60).toFixed(1));
+
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
     const validRecord=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime();
     
@@ -202,6 +218,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       assignedHours,
       pendingAssignmentMinutes,
       completedHours,
+      afterCutoffHours,
       lastActivityEdited,
       firstActivityStart,
       firstSeen,

@@ -201,17 +201,21 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   }
   const fields = Object.entries(page.properties || {}) as [string, Property][];
 
-  // Reasignación o Envío a Revisión
+  // Reasignación o Envío a Revisión (la actividad original conserva su creador en su columna; solo cambian indicadores y reviewFlow)
   if (updates.person || updates.reviewer) {
-    const target = updates.reviewer || updates.person;
     const isSendingToReview = !!updates.reviewer || updates.status === 'rtuzREVISION' || updates.status === 'rtuzR' || updates.status === 'EN REVISIÓN' || (!!updates.status && workflowState(updates.status) === 'review');
+    const originalOwner = !isRevState ? normalizePerson(activity.person) : (previousFlow?.OriginalPerson || normalizePerson(activity.person));
+    const keepLegacyCopy = updates.leaveVisualCopy === true && !!updates.reviewer;
+    const target = updates.reviewer && !updates.person && !keepLegacyCopy
+      ? (originalOwner && originalOwner !== 'Sin asignar' ? originalOwner : updates.reviewer)
+      : (updates.person || updates.reviewer);
     const isCompleting = completed || (!!updates.status && workflowState(updates.status) === 'completed');
     const restoringAssignedReview=(completed||returned)&&previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee);
     if (!handoff && !restoringAssignedReview && !isCompleting && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
       throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
     }
+    if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===normalizePerson(updates.reviewer)))throw Error('Selecciona un integrante activo del equipo como revisor.');
     const person = normalizePerson(target);
-    if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===person))throw Error('Selecciona un integrante activo del equipo como revisor.');
     const hasActiveTagOwner = Boolean(scanActivityTags(title).some(tag => tag.role === 'active'));
     const clearing = (returned && person === 'Sin asignar') || (completed && person === 'Sin asignar' && !hasActiveTagOwner);
     const restoring = (completed || returned) && previousFlow?.OriginalAssigneeUserId;
@@ -366,7 +370,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       State: returned ? 'returned' : reassigned ? 'reassigned' : completed ? 'approved' : 'pending', SubmittedAt: updates.reviewer ? new Date().toISOString() : previousFlow?.SubmittedAt || new Date().toISOString(),
       Round: updates.reviewer ? (Number(previousFlow?.Round)||0)+1 : previousFlow?.Round||1,
       UpdatedAt: new Date().toISOString(), UpdatedBy: actor, Note: returned ? String(updates.note).trim() : reassigned ? 'Reasignada para continuar trabajo.' : completed ? 'Revisión terminada desde ANFETA web.' : 'Enviada a revisión desde ANFETA web.',
-      LeaveVisualCopy: returned?false:updates.reviewer ? updates.leaveVisualCopy !== false : previousFlow?.LeaveVisualCopy,
+      LeaveVisualCopy: returned ? false : updates.reviewer ? Boolean(updates.leaveVisualCopy === true) : previousFlow?.LeaveVisualCopy,
       AlertPageId: previousFlow?.AlertPageId || '', AlertPageUrl: previousFlow?.AlertPageUrl || '',
     };
   }

@@ -121,7 +121,13 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
     title,
     shortTitle: raw.ShortTitle || raw.shortTitle || title,
     person: (() => {
-      let val = raw.IsReviewMirror||raw.isReviewMirror||raw.isHandoffMirror?normalizePerson(raw.Person||raw.person):currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person);
+      if (raw.IsReviewMirror || raw.isReviewMirror || raw.isHandoffMirror) {
+        return normalizePerson(raw.Person || raw.person);
+      }
+      if (raw.reviewFlow?.State === 'pending' && raw.reviewFlow?.LeaveVisualCopy === false && raw.reviewFlow?.OriginalPerson && normalizePerson(raw.reviewFlow.OriginalPerson) !== 'Sin asignar') {
+        return normalizePerson(raw.reviewFlow.OriginalPerson);
+      }
+      let val = currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person);
       if (val === 'Sin asignar' && (workflow === 'completed' || /(?<![\p{L}\p{Nd}_])(?:tuzR|uzR|zR|zREVISION)(?![\p{L}\p{Nd}_])/iu.test(title))) {
         const inf = inferActivityPerson(title, raw.Status || raw.status || '');
         if (inf && normalizePerson(inf) !== 'Sin asignar') val = normalizePerson(inf);
