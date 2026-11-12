@@ -49,6 +49,17 @@ export function formatTimeMinutes(minutes: number): string {
   return `${dispH}:${String(min).padStart(2, "0")} ${meridian}`;
 }
 
+export function formatSlotHour(minutes: number): string {
+  const m = ((minutes % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+export function formatSlotRange(startMin: number, endMin: number): string {
+  return `${formatSlotHour(startMin)} - ${formatSlotHour(endMin)}`;
+}
+
 export function extractTaskTime(task: PendingTaskItem): {
   hasTime: boolean;
   timeMinutes: number;
@@ -254,6 +265,7 @@ interface PendientesColumnProps {
   onToggleTask: (id: string) => void;
   onToggleAttended?: (id: string) => void;
   onOpenNewTaskModal: () => void;
+  onOpenNewTaskModalWithTime?: (timeStr: string) => void;
   onEditTask?: (task: PendingTaskItem) => void;
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks?: () => void;
@@ -268,6 +280,7 @@ function PendientesColumnComponent({
   onToggleTask,
   onToggleAttended,
   onOpenNewTaskModal,
+  onOpenNewTaskModalWithTime,
   onEditTask,
   onDeleteTask,
   onDeleteAllTasks,
@@ -282,6 +295,24 @@ function PendientesColumnComponent({
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState<number>(getCurrentMexicoMinutes());
+
+  // Intervalo de cuadrícula: 60 min (1h) o 30 min (media hora)
+  const [gridInterval, setGridInterval] = useState<30 | 60>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_grid_interval");
+        if (saved === "30" || saved === "60") return parseInt(saved, 10) as 30 | 60;
+      } catch {}
+    }
+    return 60; // 1 hora por defecto (ej. 9 a 10, 10 a 11)
+  });
+
+  const handleToggleInterval = (interval: 30 | 60) => {
+    setGridInterval(interval);
+    try {
+      localStorage.setItem("anfeta_pendientes_grid_interval", String(interval));
+    } catch {}
+  };
 
   // Actualizar hora cada 30 segundos para animar la línea de tiempo y transparencias en vivo
   useEffect(() => {
@@ -750,7 +781,7 @@ function PendientesColumnComponent({
 
         {/* Descripción o notas */}
         {task.description && (
-          <p className="text-[10px] text-slate-300/90 line-clamp-2 my-1 bg-black/30 p-1.5 rounded border border-white/5">
+          <p className="text-[10px] text-slate-300/90 line-clamp-2 my-1 bg-black/30 p-1.5 rounded border border-white/5 font-sans">
             {task.description}
           </p>
         )}
@@ -804,7 +835,7 @@ function PendientesColumnComponent({
     const liveTimeStr = formatTimeMinutes(currentTimeMinutes);
 
     return (
-      <div className="relative my-2 py-1 flex items-center group select-none">
+      <div className="relative my-1.5 py-0.5 flex items-center group select-none">
         {/* Glow horizontal vibrante */}
         <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#00E5FF] to-transparent shadow-[0_0_10px_#00E5FF]" />
         {/* Badge flotante con la hora en vivo */}
@@ -813,6 +844,153 @@ function PendientesColumnComponent({
           <span>● {liveTimeStr}</span>
           <span className="text-[8px] uppercase tracking-wider text-cyan-300 font-sans">EN VIVO</span>
         </div>
+      </div>
+    );
+  };
+
+  // Cálculo de los Bloques de Horas para la Cuadrícula (Horas como tal, e.g. 9 a 10, 10 a 11 o cada media hora)
+  const gridSlots = useMemo(() => {
+    let minH = 8;
+    let maxH = 19;
+    timedTasks.forEach((t) => {
+      const info = extractTaskTime(t);
+      if (info.hasTime) {
+        const h1 = Math.floor(info.timeMinutes / 60);
+        const h2 = Math.ceil(info.endMinutes / 60);
+        if (h1 < minH) minH = Math.max(0, h1);
+        if (h2 > maxH) maxH = Math.min(24, h2);
+      }
+    });
+    const currentH = Math.floor(currentTimeMinutes / 60);
+    if (currentH < minH) minH = Math.max(0, currentH);
+    if (currentH + 1 > maxH) maxH = Math.min(24, currentH + 1);
+
+    const slots: Array<{
+      slotStart: number;
+      slotEnd: number;
+      label: string;
+      rangeLabel: string;
+      tasks: PendingTaskItem[];
+      isPassed: boolean;
+      isActive: boolean;
+    }> = [];
+
+    const step = gridInterval;
+    for (let m = minH * 60; m < maxH * 60; m += step) {
+      const sStart = m;
+      const sEnd = m + step;
+      const slotTasks = timedTasks.filter((t) => {
+        const info = extractTaskTime(t);
+        if (!info.hasTime) return false;
+        return info.timeMinutes >= sStart && info.timeMinutes < sEnd;
+      });
+
+      const isPassed = currentTimeMinutes >= sEnd;
+      const isActive = currentTimeMinutes >= sStart && currentTimeMinutes < sEnd;
+
+      slots.push({
+        slotStart: sStart,
+        slotEnd: sEnd,
+        label: formatSlotHour(sStart),
+        rangeLabel: formatSlotRange(sStart, sEnd),
+        tasks: slotTasks,
+        isPassed,
+        isActive,
+      });
+    }
+
+    return slots;
+  }, [timedTasks, currentTimeMinutes, gridInterval]);
+
+  // Renderizado de la Cuadrícula Completa de Horas
+  const renderScheduleGrid = () => {
+    const isEarlierThanGrid = gridSlots.length > 0 && currentTimeMinutes < gridSlots[0].slotStart;
+    const isLaterThanGrid = gridSlots.length > 0 && currentTimeMinutes >= gridSlots[gridSlots.length - 1].slotEnd;
+
+    return (
+      <div className="space-y-1.5 pt-1">
+        {/* Si la hora actual es anterior a la primera hora del grid */}
+        {isEarlierThanGrid && renderLiveTimelineBar()}
+
+        {gridSlots.map((slot) => {
+          return (
+            <div key={slot.slotStart} className="space-y-1">
+              {/* Si la hora en vivo cae dentro de este intervalo */}
+              {slot.isActive && renderLiveTimelineBar()}
+
+              <div
+                className={`flex items-start gap-2 p-1.5 rounded-xl border transition-all ${
+                  slot.isActive
+                    ? "border-cyan-500/50 bg-cyan-950/20 shadow-[0_0_10px_rgba(0,229,255,0.15)] ring-1 ring-cyan-500/30"
+                    : slot.isPassed
+                    ? "border-slate-800/40 bg-black/20 opacity-45"
+                    : "border-slate-800/70 bg-[#0E141D]/50"
+                }`}
+              >
+                {/* Columna de Hora / Cuadrícula (Izquierda) */}
+                <div className="w-10 shrink-0 pt-1 flex flex-col items-center select-none">
+                  <span
+                    className={`font-mono text-[9.5px] font-bold ${
+                      slot.isActive
+                        ? "text-[#00E5FF]"
+                        : slot.isPassed
+                        ? "text-slate-500"
+                        : "text-slate-300"
+                    }`}
+                  >
+                    {slot.label}
+                  </span>
+                  <div
+                    className={`w-0.5 flex-1 min-h-[20px] my-1 rounded-full ${
+                      slot.isActive ? "bg-cyan-500/60" : "bg-slate-800/70"
+                    }`}
+                  />
+                  <span className="font-mono text-[8px] text-slate-600">
+                    {gridInterval === 30 ? ":30" : ""}
+                  </span>
+                </div>
+
+                {/* Carril de Actividades de la Cuadrícula (Derecha) */}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  {slot.tasks.length > 0 ? (
+                    slot.tasks.map((task, idx) => renderTimedScheduleCard(task, idx))
+                  ) : (
+                    /* Bloque Vacío de la Cuadrícula visible como tal */
+                    <div
+                      onClick={() => {
+                        const timeStr = formatSlotHour(slot.slotStart);
+                        if (onOpenNewTaskModalWithTime) {
+                          onOpenNewTaskModalWithTime(timeStr);
+                        } else {
+                          onOpenNewTaskModal();
+                        }
+                      }}
+                      className={`min-h-[36px] rounded-lg border border-dashed transition-all p-2 flex items-center justify-between cursor-pointer group/empty ${
+                        slot.isPassed
+                          ? "border-slate-800/50 bg-black/10 hover:border-slate-700 hover:bg-slate-900/30"
+                          : slot.isActive
+                          ? "border-cyan-500/40 bg-cyan-950/20 hover:border-cyan-400"
+                          : "border-slate-800/80 bg-[#0C121A]/40 hover:bg-[#141C28]/80 hover:border-cyan-500/40"
+                      }`}
+                      title={`Espacio de ${slot.rangeLabel} · Clic para programar actividad`}
+                    >
+                      <span className="font-mono text-[9px] text-slate-500 group-hover/empty:text-slate-300 transition-colors">
+                        {slot.rangeLabel}
+                      </span>
+                      <span className="opacity-0 group-hover/empty:opacity-100 text-[9px] text-cyan-400 font-medium flex items-center gap-1 transition-opacity">
+                        <Plus className="w-2.5 h-2.5" />
+                        <span>Agregar bloque</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Si la hora actual es posterior a la última hora del grid */}
+        {isLaterThanGrid && renderLiveTimelineBar()}
       </div>
     );
   };
@@ -944,7 +1122,7 @@ function PendientesColumnComponent({
               ? "bg-[#1E293B] text-amber-300 font-bold border border-amber-600/60"
               : "text-slate-400 hover:text-white"
           }`}
-          title="Bloques de Horario y Rutina"
+          title="Cuadrícula de Horas y Rutina"
         >
           <span>⏱️</span>
           <span>Horario ({timedTasks.length})</span>
@@ -980,12 +1158,35 @@ function PendientesColumnComponent({
           </div>
         )}
 
-        {/* VISTA FILTRADA: SOLO HORARIOS */}
+        {/* VISTA FILTRADA: SOLO HORARIOS (CUADRÍCULA COMPLETA) */}
         {pendingSubTab === "timed" && (
           <div className="space-y-2">
             <div className="flex items-center justify-between px-1">
-              <span className="text-[10px] font-bold text-[#00E5FF]">⏱️ BLOQUES DE HORARIO</span>
+              <span className="text-[10.5px] font-bold text-[#00E5FF]">⏱️ CUADRÍCULA DE HORARIO</span>
               <div className="flex items-center gap-1">
+                {/* Selector de División: 1h vs 30m */}
+                <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleInterval(60)}
+                    className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                      gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Ver en bloques de 1 hora (ej. 9 a 10, 10 a 11)"
+                  >
+                    1h
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleInterval(30)}
+                    className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                      gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                    }`}
+                    title="Ver en bloques de media hora (cada 30 min)"
+                  >
+                    30m
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => handleShiftSchedule(-30)}
@@ -1006,14 +1207,13 @@ function PendientesColumnComponent({
                   type="button"
                   onClick={handleSortTimedByHour}
                   className="text-[9px] text-amber-300 underline hover:text-amber-100"
-                  title="Ordenar por hora"
+                  title="Ordenar cronológicamente"
                 >
                   Ordenar
                 </button>
               </div>
             </div>
-            {renderLiveTimelineBar()}
-            {timedTasks.map((t, idx) => renderTimedScheduleCard(t, idx))}
+            {renderScheduleGrid()}
           </div>
         )}
 
@@ -1028,10 +1228,10 @@ function PendientesColumnComponent({
           </div>
         )}
 
-        {/* VISTA COMPLETA (ALL): ARRIBA PENDIENTES NORMALES / LIBRES, ABAJO HORARIO Y LÍNEA DE TIEMPO */}
+        {/* VISTA COMPLETA (ALL): ARRIBA PENDIENTES LIBRES, ABAJO CUADRÍCULA DE HORARIO Y LÍNEA DE TIEMPO */}
         {pendingSubTab === "all" && (
           <>
-            {/* 1. SECCIÓN SUPERIOR: LISTA DE PENDIENTES MEJORADA */}
+            {/* 1. SECCIÓN SUPERIOR: LISTA DE PENDIENTES LIBRES Y ASIGNACIONES */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[10px] font-bold text-slate-200 px-1 pb-0.5">
                 <div className="flex items-center gap-1.5">
@@ -1042,13 +1242,13 @@ function PendientesColumnComponent({
               {freeTasks.length > 0 ? (
                 freeTasks.map((t) => renderNormalTaskCard(t))
               ) : (
-                <div className="p-3 text-center text-slate-500 text-[10px] bg-slate-900/30 rounded-lg border border-slate-800/40">
+                <div className="p-2.5 text-center text-slate-500 text-[10px] bg-slate-900/30 rounded-lg border border-slate-800/40">
                   Sin tareas libres. Presiona &apos;+&apos; para crear una.
                 </div>
               )}
             </div>
 
-            {/* 2. SECCIÓN INFERIOR: BLOQUE DE HORARIO, RUTINAS Y LÍNEA DE TIEMPO */}
+            {/* 2. SECCIÓN INFERIOR: CUADRÍCULA DE HORAS CON BLOQUES VACÍOS Y LLENOS */}
             <div className="pt-2 border-t border-[#1C2634] space-y-2">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-1.5">
@@ -1056,6 +1256,29 @@ function PendientesColumnComponent({
                   <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Selector de División: 1h vs 30m */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleInterval(60)}
+                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                        gridInterval === 60 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="Intervalo de 1 hora (ej. 9 a 10, 10 a 11)"
+                    >
+                      1h
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleInterval(30)}
+                      className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold transition-colors ${
+                        gridInterval === 30 ? "bg-cyan-500/30 text-cyan-300 border border-cyan-600/50" : "text-slate-400 hover:text-white"
+                      }`}
+                      title="Intervalo de media hora (cada 30 min)"
+                    >
+                      30m
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleShiftSchedule(-30)}
@@ -1085,19 +1308,8 @@ function PendientesColumnComponent({
                 </div>
               </div>
 
-              {/* Línea de tiempo en vivo (color cian moderno, no rojo) */}
-              {renderLiveTimelineBar()}
-
-              {/* Tarjetas de Horario con Colores Temáticos Bento y Transparencia */}
-              <div className="space-y-2">
-                {timedTasks.length > 0 ? (
-                  timedTasks.map((t, idx) => renderTimedScheduleCard(t, idx))
-                ) : (
-                  <div className="p-3 text-center text-slate-500 text-[10px] bg-slate-900/30 rounded-lg border border-slate-800/40">
-                    No hay bloques con horario fijado. Puedes agregar horarios como &quot;10:00 a 11:30 Creación Web&quot;.
-                  </div>
-                )}
-              </div>
+              {/* Cuadrícula de horas estructurada */}
+              {renderScheduleGrid()}
             </div>
           </>
         )}

@@ -1378,16 +1378,19 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       const state = await readUserState(getSettings(), actor);
       let items: any[] = Array.isArray(state.values.pendingTasks) ? [...state.values.pendingTasks] : [];
 
-      // Semilla inicial: Asignar pendiente inicial a John desde Neftali si aún no existe
-      const SEED_TASK_ID = 'task-seed-john-video-check';
+      // Limpiar cualquier semilla previa con el nombre del video
+      items = items.filter((t: any) => t && t.id !== 'task-seed-john-video-check' && !(typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv')));
+
+      // Semilla única solicitada: Pasar el nombre de las vistas que van a ser las bases de datos
+      const SEED_TASK_ID = 'task-seed-john-vistas-bd';
       const normActor = normalizePerson(actor);
       if (normActor === 'neftali' || normActor === 'john') {
-        const hasTask = items.some((t: any) => t.id === SEED_TASK_ID || (typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv')));
+        const hasTask = items.some((t: any) => t.id === SEED_TASK_ID || (typeof t.title === 'string' && t.title.includes('nombre de las vistas que van a ser las bases de datos')));
         if (!hasTask) {
           const initialSeed = {
             id: SEED_TASK_ID,
-            title: 'Analiza el video "C:\\Users\\nanoc\\Videos\\2026-11-11 16-57-01.mkv" y su transcripción para identificar los pendientes mencionados en su parte final, ya que al inicio se comentan de una forma y luego de otra. Una vez analizado, arma el check.',
-            description: 'Pasar los nombres de las fases a la base de datos.',
+            title: 'Pasar los nombres de las vistas que van a ser las bases de datos',
+            description: 'Vistas de Notion acordadas para integración directa con ANFETA.',
             scheduledDate: new Date().toISOString().split('T')[0],
             query: 'Revisiones',
             isCompleted: false,
@@ -2775,7 +2778,7 @@ async function POSTLive(req: NextRequest) {
     if (action === "save-pendientes") {
       if (!Array.isArray(payload) || payload.length > 500) throw new Error('Lista de pendientes inválida.');
       const actor = await requireActor(req);
-      const sanitized = payload.filter((t: any) => t && (t.id || t.title || t.query)).map((t: any) => ({
+      const sanitized = payload.filter((t: any) => t && (t.id || t.title || t.query) && t.id !== 'task-seed-john-video-check' && !(typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv'))).map((t: any) => ({
         id: typeof t.id === 'string' && t.id.trim() ? t.id.slice(0, 100) : crypto.randomUUID(),
         title: typeof t.title === 'string' ? t.title.slice(0, 500) : (typeof t.query === 'string' ? t.query.slice(0, 500) : ''),
         description: typeof t.description === 'string' && t.description.trim() ? t.description.slice(0, 2000) : undefined,

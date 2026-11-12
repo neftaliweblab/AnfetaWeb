@@ -367,6 +367,7 @@ export function ResultsViewHost({
   // Panel toggles & task editing
   const [isPendientesOpen, setIsPendientesOpen] = useState(true);
   const [editingTask, setEditingTask] = useState<PendingTaskItem | null>(null);
+  const [prefilledTaskTitle, setPrefilledTaskTitle] = useState("");
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
   const [isSyncingNotion, setIsSyncingNotion] = useState(false);
   const [isSyncingDropbox, setIsSyncingDropbox] = useState(false);
@@ -2211,6 +2212,12 @@ export function ResultsViewHost({
             }}
             onOpenNewTaskModal={() => {
               setEditingTask(null);
+              setPrefilledTaskTitle("");
+              setIsNewTaskModalOpen(true);
+            }}
+            onOpenNewTaskModalWithTime={(timeStr) => {
+              setEditingTask(null);
+              setPrefilledTaskTitle(timeStr + " ");
               setIsNewTaskModalOpen(true);
             }}
             onEditTask={(task) => {
@@ -2553,9 +2560,11 @@ export function ResultsViewHost({
         onClose={() => {
           setIsNewTaskModalOpen(false);
           setEditingTask(null);
+          setPrefilledTaskTitle("");
         }}
         taskToEdit={editingTask}
         initialQuery={query}
+        initialTitle={prefilledTaskTitle}
         currentUser={currentUser}
         onSave={(taskData, editId) => {
           if (editId && onEditPendingTask) {
@@ -2564,6 +2573,7 @@ export function ResultsViewHost({
             onAddPendingTask(taskData);
           }
           setEditingTask(null);
+          setPrefilledTaskTitle("");
         }}
       />
 

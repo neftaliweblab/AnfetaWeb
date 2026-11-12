@@ -9,6 +9,7 @@ interface PendingTaskModalProps {
   onSave: (task: Omit<PendingTaskItem, "id">, editId?: string) => void;
   taskToEdit?: PendingTaskItem | null;
   initialQuery?: string;
+  initialTitle?: string;
   currentUser?: string;
 }
 
@@ -26,7 +27,7 @@ const COLLABORATORS = [
   { id: "Neftali", label: "Neftali" },
 ];
 
-export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "", currentUser }: PendingTaskModalProps) {
+export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQuery = "", initialTitle = "", currentUser }: PendingTaskModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
@@ -47,15 +48,15 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         const domInput = typeof document !== "undefined"
           ? (document.querySelector('input[placeholder*="Buscar"], input[type="search"], input[data-search-input]') as HTMLInputElement)?.value
           : "";
-        const defaultText = (initialQuery || domInput || "").trim();
+        const defaultText = (initialTitle || initialQuery || domInput || "").trim();
         setTitle(defaultText);
         setDescription("");
         setAssignedTo("");
         setScheduledDate(new Date().toISOString().split("T")[0]);
-        setQuery(defaultText);
+        setQuery(initialTitle ? "" : defaultText);
       }
     }
-  }, [isOpen, taskToEdit, initialQuery]);
+  }, [isOpen, taskToEdit, initialQuery, initialTitle]);
 
   if (!isOpen) return null;
 
