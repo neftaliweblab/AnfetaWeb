@@ -559,11 +559,17 @@ function ResultsVirtualTableComponent({
       return { exact, secondary, type: "person" as const };
     }
 
+    // Si la búsqueda es explícita de título (ej. title:..., name:..., ^...), no particionar en contenido
+    const isExplicitTitleQuery = /^(title|titulo|título|name|nombre):/i.test(searchQuery || "") || (searchQuery || "").trim().startsWith("^");
+    if (isExplicitTitleQuery) {
+      return { exact: orderedItems, secondary: [], type: "none" as const };
+    }
+
     // Búsqueda inteligente: Título primero, luego Contenido interno separado
     const cleanQ = (searchQuery || "").trim().toLowerCase();
     const cleanTerms = cleanQ
       .split(/\s+/)
-      .map((t) => t.replace(/^["(]+|[)"]+$/g, ""))
+      .map((t) => t.replace(/^["(=^]+|[)"=]+$/g, "").replace(/^(title|titulo|título|name|nombre):/i, ""))
       .filter((t) => t.length > 1 && !["and", "or", "not", "&&", "||"].includes(t));
 
     if (cleanTerms.length > 0 && selectedScope !== "Contenido") {

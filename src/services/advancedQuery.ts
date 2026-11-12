@@ -415,7 +415,12 @@ function getParsedQueryPlan(q: string, options?: SearchMatchOptions): ParsedQuer
     }
 
     if (val) {
-      currentClause.push({ value: val, isExact: t.isQuoted, isNegated });
+      let isExact = t.isQuoted;
+      if (!t.isQuoted && val.startsWith("=") && val.length > 1) {
+        isExact = true;
+        val = val.slice(1);
+      }
+      currentClause.push({ value: val, isExact, isNegated });
     }
   }
 
@@ -760,14 +765,20 @@ function checkSingleToken(
     return token.isNegated ? !isFile : isFile;
   }
 
-  // Frase exacta entre comillas
+  // Frase o término exacto (comillas "uzR" u operador =uzR)
   if (token.isExact) {
     const tokenValFolded = tokenVal.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const hasExact = matchWholeWord
-      ? (new RegExp(`\\b${tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable) ||
-         new RegExp(`\\b${tokenValFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchableFolded))
+
+    const isSingleWord = !tokenVal.includes(" ");
+    const escVal = tokenVal.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const escFolded = tokenValFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+
+    const hasExact = isSingleWord
+      ? (new RegExp(`(?<![\\p{L}\\p{N}_])${escVal}(?![\\p{L}\\p{N}_])`, matchCase ? "u" : "iu").test(searchable) ||
+         new RegExp(`(?<![\\p{L}\\p{N}_])${escFolded}(?![\\p{L}\\p{N}_])`, matchCase ? "u" : "iu").test(searchableFolded))
       : (searchable.includes(tokenVal) || searchableFolded.includes(tokenValFolded));
+
     return token.isNegated ? !hasExact : hasExact;
   }
 
@@ -789,9 +800,11 @@ function checkSingleToken(
 
     const cleanSpFolded = cleanSp.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const searchableFolded = searchable.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const escSp = cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const escSpFolded = cleanSpFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
     let has = matchWholeWord
-      ? new RegExp(`\\b${cleanSp.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchable) ||
-        new RegExp(`\\b${cleanSpFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, matchCase ? "" : "i").test(searchableFolded)
+      ? (new RegExp(`(?<![\\p{L}\\p{N}_])${escSp}(?![\\p{L}\\p{N}_])`, matchCase ? "u" : "iu").test(searchable) ||
+         new RegExp(`(?<![\\p{L}\\p{N}_])${escSpFolded}(?![\\p{L}\\p{N}_])`, matchCase ? "u" : "iu").test(searchableFolded))
       : (searchable.includes(cleanSp) ||
          searchableWithSpaces.includes(cleanSp) ||
          searchableFolded.includes(cleanSpFolded) ||

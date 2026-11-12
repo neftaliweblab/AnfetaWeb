@@ -409,16 +409,18 @@ export function SearchInputBar({
               onClick={() => onToggleSearchOption("matchWholeWord")}
               style={{
                 fontSize: `${(10 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(4 * scale)}px`,
+                padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(5 * scale)}px`,
               }}
-              className={`rounded font-mono font-bold transition-all border cursor-pointer ${
+              className={`rounded font-mono font-bold transition-all border cursor-pointer flex items-center gap-1 ${
                 searchOptions?.matchWholeWord
-                  ? "bg-[#0284C7]/20 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.3)]"
+                  ? "bg-[#0284C7]/25 border-[#38BDF8] text-[#38BDF8] shadow-[0_0_10px_rgba(56,189,248,0.4)] ring-1 ring-cyan-400/40"
                   : "bg-transparent border-[#26354A] text-[#64748B] hover:text-[#94A3B8] hover:border-[#475569]"
               }`}
-              title="Palabra completa (Whole Word)"
+              title="Búsqueda Exacta (Exact Match): solo palabras completas (no coincide con tuzR para uzR)"
+              aria-label="Activar búsqueda exacta"
             >
-              "w"
+              <span>=</span>
+              <span className="text-[8.5px] uppercase tracking-wider font-sans">Exacta</span>
             </button>
             <button
               type="button"
