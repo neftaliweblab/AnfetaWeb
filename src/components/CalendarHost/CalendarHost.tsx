@@ -61,6 +61,14 @@ import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { UnifiedActivityModal } from './UnifiedActivityModal';
 import { PlanBContingencyModal } from './PlanBContingencyModal';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
+import { Utensils, Settings2 } from "lucide-react";
+import { MealBreakModal } from "./MealBreakModal";
+import {
+  MealBreakConfig,
+  getMealBreakConfig,
+  formatHour12,
+  MEAL_BREAK_EVENT,
+} from "@/services/mealBreakService";
 interface CalendarHostProps {
   active?: boolean;
   currentUser: string;
@@ -172,6 +180,26 @@ export function CalendarHost({
   const [showWhatsappModal, setShowWhatsappModal] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [durationProposal,setDurationProposal]=useState<any[]|undefined>();
+
+  // Horario Especial / Comida (Configurable para el usuario)
+  const isNeftali = normalizePerson(currentUser) === "Neftali";
+  const [mealBreak, setMealBreak] = useState<MealBreakConfig>(() => getMealBreakConfig(currentUser));
+  const [showMealModal, setShowMealModal] = useState(false);
+
+  useEffect(() => {
+    setMealBreak(getMealBreakConfig(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    const onMealBreakUpdate = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail || detail.user === normalizePerson(currentUser)) {
+        setMealBreak(getMealBreakConfig(currentUser));
+      }
+    };
+    window.addEventListener(MEAL_BREAK_EVENT, onMealBreakUpdate);
+    return () => window.removeEventListener(MEAL_BREAK_EVENT, onMealBreakUpdate);
+  }, [currentUser]);
   const mutationVersion = React.useRef(0);
   const pending = React.useRef(new Set<string>());
   const [,setSaveRevision]=useState(0);
@@ -866,7 +894,25 @@ export function CalendarHost({
         totalActivitiesCount={countedCalendarActivities(filteredActivities).length}
         pixelsPerHour={pixelsPerHour}
         gridInterval={gridInterval} onGridInterval={handleGridIntervalChange}
-        displayControls={<><button type="button" aria-pressed={showCopies} onClick={toggleCopies} title="Mostrar u ocultar solo las copias visuales transferidas; no cambia actividades originales ni la vista de otros usuarios" className="rounded border border-cyan-900 px-2 py-1 text-xs text-cyan-200">Copias transferidas: {showCopies?'visibles':'ocultas'}</button><button type="button" onClick={() => void handleUndo()} disabled={undoCount === 0} title="Deshacer último movimiento en calendario (Ctrl+Z)" className="rounded border border-cyan-800 bg-cyan-950/40 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-900/60 transition-colors disabled:opacity-40 flex items-center gap-1 cursor-pointer"><span>↶ Deshacer</span>{undoCount > 0 && <span className="text-[10px] bg-cyan-800 px-1 py-0.2 rounded-full font-mono">{undoCount}</span>}</button><CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/></>}
+        displayControls={<>
+          {isNeftali && (
+            <button
+              type="button"
+              onClick={() => setShowMealModal(true)}
+              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-xs transition-all cursor-pointer font-sans ${
+                mealBreak.enabled
+                  ? "bg-amber-950/70 border-amber-500/60 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.25)] hover:bg-amber-900/60"
+                  : "bg-slate-900/60 border-slate-700 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Configurar u ocultar hora de comida / horario especial (1:00 PM – 2:00 PM)"
+            >
+              <Utensils className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="font-semibold">
+                {mealBreak.enabled ? `Comida: ${formatHour12(mealBreak.startHour, mealBreak.startMinute)} – ${formatHour12(mealBreak.endHour, mealBreak.endMinute)}` : "Comida desactivada"}
+              </span>
+            </button>
+          )}
+          <button type="button" aria-pressed={showCopies} onClick={toggleCopies} title="Mostrar u ocultar solo las copias visuales transferidas; no cambia actividades originales ni la vista de otros usuarios" className="rounded border border-cyan-900 px-2 py-1 text-xs text-cyan-200">Copias transferidas: {showCopies?'visibles':'ocultas'}</button><button type="button" onClick={() => void handleUndo()} disabled={undoCount === 0} title="Deshacer último movimiento en calendario (Ctrl+Z)" className="rounded border border-cyan-800 bg-cyan-950/40 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-900/60 transition-colors disabled:opacity-40 flex items-center gap-1 cursor-pointer"><span>↶ Deshacer</span>{undoCount > 0 && <span className="text-[10px] bg-cyan-800 px-1 py-0.2 rounded-full font-mono">{undoCount}</span>}</button><CalendarDisplaySettings currentUser={normalizePerson(currentUser)} value={currentLayout} onChange={applyCalendarLayout} expanded={expandedCalendar} onToggleExpanded={()=>setExpandedCalendar(previous=>!previous)}/></>}
         onChangeZoom={handleChangeZoom}
         onResetZoom={() => setPixelsPerHour(72)}
         filterCobros={filterCobros}
@@ -949,6 +995,22 @@ export function CalendarHost({
                   </span>
                 </div>
               )}
+              {/* Indicador de Horario Especial / Comida en la regla de horas */}
+              {isNeftali && mealBreak.enabled && (() => {
+                const startMin = mealBreak.startHour * 60 + (mealBreak.startMinute || 0);
+                const endMin = mealBreak.endHour * 60 + (mealBreak.endMinute || 0);
+                const railTop = Math.max(0, ((startMin - 8 * 60) / 60) * pixelsPerHour);
+                const railHeight = Math.max(20, ((endMin - startMin) / 60) * pixelsPerHour);
+                return (
+                  <div
+                    style={{ top: `${railTop}px`, height: `${railHeight}px` }}
+                    className="absolute left-0 right-0 border-r-2 border-amber-400 bg-amber-500/15 pointer-events-none z-20 flex flex-col justify-center items-end pr-1 select-none shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]"
+                    title={`Horario especial · Comida (${formatHour12(mealBreak.startHour, mealBreak.startMinute)} – ${formatHour12(mealBreak.endHour, mealBreak.endMinute)})`}
+                  >
+                    <span className="text-[10px] font-mono font-bold text-amber-300 drop-shadow-[0_0_4px_rgba(245,158,11,0.8)]">🍽️</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -1044,6 +1106,54 @@ export function CalendarHost({
                       style={{ height: `${canvasHeight}px`,backgroundColor:columnIndex%2?'color-mix(in srgb, var(--anfeta-calendar-bg) 92%, #4338ca 8%)':'color-mix(in srgb, var(--anfeta-calendar-bg) 96%, #0284c7 4%)' }}
                     >
                       <CalendarHourGrid pixelsPerHour={pixelsPerHour} interval={gridInterval}/>
+                      {/* Franja visual de Horario Especial / Comida (Configurable para Neftali) */}
+                      {mealBreak.enabled && normalizePerson(person) === normalizePerson(currentUser) && isNeftali && (() => {
+                        const startMin = mealBreak.startHour * 60 + (mealBreak.startMinute || 0);
+                        const endMin = mealBreak.endHour * 60 + (mealBreak.endMinute || 0);
+                        const mealTop = Math.max(0, ((startMin - 8 * 60) / 60) * pixelsPerHour);
+                        const mealHeight = Math.max(28, ((endMin - startMin) / 60) * pixelsPerHour);
+
+                        return (
+                          <div
+                            style={{
+                              top: `${mealTop}px`,
+                              height: `${mealHeight}px`,
+                            }}
+                            className="absolute inset-x-0 z-5 pointer-events-none border-y-2 border-dashed border-amber-500/60 bg-gradient-to-r from-amber-950/45 via-orange-950/30 to-amber-950/45 backdrop-blur-[1px] select-none flex items-center justify-between px-2.5 shadow-[inset_0_0_15px_rgba(245,158,11,0.12)]"
+                          >
+                            <div className="flex items-center gap-2 pointer-events-auto">
+                              <div className="w-6 h-6 rounded-md bg-amber-500/25 border border-amber-500/40 flex items-center justify-center text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.25)] shrink-0">
+                                <Utensils className="w-3.5 h-3.5 text-amber-400" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-amber-200 tracking-wide font-sans">
+                                    {mealBreak.label}
+                                  </span>
+                                  <span className="text-[9px] font-mono font-bold bg-amber-500/25 text-amber-300 px-1.5 py-0.2 rounded border border-amber-500/40">
+                                    {formatHour12(mealBreak.startHour, mealBreak.startMinute)} – {formatHour12(mealBreak.endHour, mealBreak.endMinute)}
+                                  </span>
+                                </div>
+                                <div className="text-[9.5px] text-amber-400/80 font-sans truncate">
+                                  Horario especial reservado · Pausa de comida
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowMealModal(true);
+                              }}
+                              className="pointer-events-auto shrink-0 ml-2 px-2 py-1 rounded-md bg-amber-950/85 hover:bg-amber-900 border border-amber-600/60 text-[10px] text-amber-200 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                              title="Configurar horario de comida"
+                            >
+                              <Settings2 className="w-3 h-3 text-amber-300" />
+                              <span>Ajustar</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
                       {positioned.map(({ activity: act, overlapIndex, overlapTotal }, idx) => (
                         <ActivityCard
                           key={act.pageId || idx}
@@ -1170,6 +1280,16 @@ export function CalendarHost({
               return Array.from(map.values());
             });
           }}
+        />
+      )}
+
+      {showMealModal && (
+        <MealBreakModal
+          currentUser={currentUser}
+          config={mealBreak}
+          isOpen={showMealModal}
+          onClose={() => setShowMealModal(false)}
+          onSaved={(updated) => setMealBreak(updated)}
         />
       )}
     </div>

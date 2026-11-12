@@ -23,11 +23,19 @@ import {
   CopyPlus,
   X,
   ExternalLink,
+  Utensils,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { normalizePerson } from "@/services/identityNormalizer";
 import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
+import { MealBreakModal } from "../CalendarHost/MealBreakModal";
+import {
+  MealBreakConfig,
+  getMealBreakConfig,
+  MEAL_BREAK_EVENT,
+  formatHour12,
+} from "@/services/mealBreakService";
 
 export function getCurrentMexicoMinutes(): number {
   const now = new Date();
@@ -343,6 +351,26 @@ function PendientesColumnComponent({
   });
 
   const [showGridConfig, setShowGridConfig] = useState(false);
+
+  // Horario Especial / Comida
+  const isNeftali = normalizePerson(currentUser) === "Neftali";
+  const [mealBreak, setMealBreak] = useState<MealBreakConfig>(() => getMealBreakConfig(currentUser));
+  const [showMealModal, setShowMealModal] = useState(false);
+
+  useEffect(() => {
+    setMealBreak(getMealBreakConfig(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    const onMealBreakUpdate = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail || detail.user === normalizePerson(currentUser)) {
+        setMealBreak(getMealBreakConfig(currentUser));
+      }
+    };
+    window.addEventListener(MEAL_BREAK_EVENT, onMealBreakUpdate);
+    return () => window.removeEventListener(MEAL_BREAK_EVENT, onMealBreakUpdate);
+  }, [currentUser]);
 
   const saveCustomHours = (startH: number, endH: number) => {
     try {
@@ -1278,37 +1306,84 @@ function PendientesColumnComponent({
 
                 {/* Carril de Actividades de la Cuadrícula (Derecha) */}
                 <div className="flex-1 min-w-0 space-y-1.5">
-                  {slot.tasks.length > 0 ? (
-                    slot.tasks.map((task, idx) => renderTimedScheduleCard(task, idx))
-                  ) : (
+                  {(() => {
+                    const isMealBreakSlot = isNeftali && mealBreak.enabled && (() => {
+                      const mealStart = mealBreak.startHour * 60 + (mealBreak.startMinute || 0);
+                      const mealEnd = mealBreak.endHour * 60 + (mealBreak.endMinute || 0);
+                      return slot.slotStart >= mealStart && slot.slotStart < mealEnd;
+                    })();
+
+                    if (slot.tasks.length > 0) {
+                      return (
+                        <>
+                          {isMealBreakSlot && (
+                            <div className="flex items-center gap-1 text-[8.5px] text-amber-300 bg-amber-950/50 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono">
+                              <Utensils className="w-2.5 h-2.5 text-amber-400" />
+                              <span>{mealBreak.label} ({slot.rangeLabel})</span>
+                            </div>
+                          )}
+                          {slot.tasks.map((task, idx) => renderTimedScheduleCard(task, idx))}
+                        </>
+                      );
+                    }
+
+                    if (isMealBreakSlot) {
+                      return (
+                        <div
+                          onClick={() => setShowMealModal(true)}
+                          className="min-h-[38px] rounded-lg border border-dashed border-amber-500/60 bg-gradient-to-r from-amber-950/35 via-orange-950/20 to-amber-950/35 p-2 flex items-center justify-between cursor-pointer hover:bg-amber-950/45 transition-all group/meal shadow-[0_0_12px_rgba(245,158,11,0.12)]"
+                          title={`${mealBreak.label} (${slot.rangeLabel}) · Clic para configurar horario`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                              <Utensils className="w-3 h-3" />
+                            </div>
+                            <div>
+                              <span className="text-[10.5px] font-bold text-amber-200 block font-sans">
+                                {mealBreak.label}
+                              </span>
+                              <span className="text-[8.5px] font-mono text-amber-400/80 block">
+                                {slot.rangeLabel} · Horario especial reservado
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[8.5px] text-amber-400/80 group-hover/meal:text-amber-200 font-mono bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30">
+                            Ajustar
+                          </span>
+                        </div>
+                      );
+                    }
+
                     /* Bloque Vacío de la Cuadrícula visible como tal */
-                    <div
-                      onClick={() => {
-                        const timeStr = formatSlotHour(slot.slotStart);
-                        if (onOpenNewTaskModalWithTime) {
-                          onOpenNewTaskModalWithTime(timeStr);
-                        } else {
-                          onOpenNewTaskModal();
-                        }
-                      }}
-                      className={`min-h-[36px] rounded-lg border border-dashed transition-all p-2 flex items-center justify-between cursor-pointer group/empty ${
-                        slot.isPassed
-                          ? "border-slate-800/50 bg-black/10 hover:border-slate-700 hover:bg-slate-900/30"
-                          : slot.isActive
-                          ? "border-cyan-500/40 bg-cyan-950/20 hover:border-cyan-400"
-                          : "border-slate-800/80 bg-[#0C121A]/40 hover:bg-[#141C28]/80 hover:border-cyan-500/40"
-                      }`}
-                      title={`Espacio de ${slot.rangeLabel} · Clic para programar actividad`}
-                    >
-                      <span className="font-mono text-[9px] text-slate-500 group-hover/empty:text-slate-300 transition-colors">
-                        {slot.rangeLabel}
-                      </span>
-                      <span className="opacity-0 group-hover/empty:opacity-100 text-[9px] text-cyan-400 font-medium flex items-center gap-1 transition-opacity">
-                        <Plus className="w-2.5 h-2.5" />
-                        <span>Agregar bloque</span>
-                      </span>
-                    </div>
-                  )}
+                    return (
+                      <div
+                        onClick={() => {
+                          const timeStr = formatSlotHour(slot.slotStart);
+                          if (onOpenNewTaskModalWithTime) {
+                            onOpenNewTaskModalWithTime(timeStr);
+                          } else {
+                            onOpenNewTaskModal();
+                          }
+                        }}
+                        className={`min-h-[36px] rounded-lg border border-dashed transition-all p-2 flex items-center justify-between cursor-pointer group/empty ${
+                          slot.isPassed
+                            ? "border-slate-800/50 bg-black/10 hover:border-slate-700 hover:bg-slate-900/30"
+                            : slot.isActive
+                            ? "border-cyan-500/40 bg-cyan-950/20 hover:border-cyan-400"
+                            : "border-slate-800/80 bg-[#0C121A]/40 hover:bg-[#141C28]/80 hover:border-cyan-500/40"
+                        }`}
+                        title={`Espacio de ${slot.rangeLabel} · Clic para programar actividad`}
+                      >
+                        <span className="font-mono text-[9px] text-slate-500 group-hover/empty:text-slate-300 transition-colors">
+                          {slot.rangeLabel}
+                        </span>
+                        <span className="opacity-0 group-hover/empty:opacity-100 text-[9px] text-cyan-400 font-medium flex items-center gap-1 transition-opacity">
+                          <Plus className="w-2.5 h-2.5" />
+                          <span>Agregar bloque</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1622,6 +1697,21 @@ function PendientesColumnComponent({
                   <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  {isNeftali && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMealModal(true)}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                        mealBreak.enabled
+                          ? "bg-amber-950/70 text-amber-300 border-amber-600/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                      }`}
+                      title={`Horario especial · Comida: ${mealBreak.enabled ? `${formatHour12(mealBreak.startHour, mealBreak.startMinute)} – ${formatHour12(mealBreak.endHour, mealBreak.endMinute)}` : "Desactivada"}`}
+                    >
+                      <Utensils className="w-2.5 h-2.5 text-amber-400" />
+                      <span className="text-[8.5px] font-mono font-bold">Comida</span>
+                    </button>
+                  )}
                   {/* Selector de División: 1h vs 30m */}
                   <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-0.5 mr-0.5">
                     <button
@@ -1765,6 +1855,16 @@ function PendientesColumnComponent({
             </>
           )}
         </div>
+      )}
+
+      {showMealModal && (
+        <MealBreakModal
+          currentUser={currentUser}
+          config={mealBreak}
+          isOpen={showMealModal}
+          onClose={() => setShowMealModal(false)}
+          onSaved={(cfg) => setMealBreak(cfg)}
+        />
       )}
     </div>
   );
