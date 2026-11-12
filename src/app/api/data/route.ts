@@ -3411,6 +3411,10 @@ async function GETRaw(req:NextRequest){
 export async function POST(req:NextRequest){if(!req.headers?.get('x-anfeta-request-id'))return POSTWithInvalidation(req);return replayMutation(req,()=>POSTWithInvalidation(req));}
 export async function GET(req:NextRequest){
  const response=await GETRaw(req);if(!response.ok||!response.headers.get('content-type')?.includes('application/json')||['file-preview','ftf-dashboard'].includes(new URL(req.url).searchParams.get('type')||''))return response;
+ const data=await response.clone().json().catch(()=>null);
+ // Status/unchanged/diagnostic responses contain no rows to filter.
+ // Do not spend a Supabase request on tombstones for those responses.
+ if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)))return response;
  const token=resolveNotionToken(req);
  const settings={...getSettings(),notionToken:token};
  const sourceKey=notionSourceKey(settings);
@@ -3419,7 +3423,6 @@ export async function GET(req:NextRequest){
  try{persistentIds=await getConfirmedDeletedPageIds(sourceKey);}catch{}
  const ids=[...new Set([...memoryIds,...persistentIds])];
  if(!ids.length)return response;
- const data=await response.clone().json().catch(()=>null);if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)))return response;
  const deleted=new Set(ids),keep=(item:any)=>!deleted.has(cleanPageId(String(item.externalId||item.originalPageId||item.pageId||item.id||'').replace(/^review-mirror-/,'')));
  return NextResponse.json({...data,...(Array.isArray(data.items)?{scannedCount:data.items.length,items:data.items.filter(keep)}:{}),...(Array.isArray(data.activities)?{activities:data.activities.filter(keep)}:{}),deletedPageIds:ids},{headers:response.headers});
 }

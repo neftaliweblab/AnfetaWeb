@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     assertSameOrigin(req);
     await requireActor(req);
     if (!supabaseConfigured()) return NextResponse.json({configured: false, people: []});
-    const identity = await supabaseIdentity(), admin = supabaseAdmin();
+    const identity = await supabaseIdentity(req), admin = supabaseAdmin();
     const result = await admin.from('team_presence').upsert({user_id: identity.id, last_seen: new Date().toISOString()});
     if (result.error) {
       return NextResponse.json({error:'No se pudo actualizar presencia.'}, {status:503,headers: {'Cache-Control': 'no-store'}});

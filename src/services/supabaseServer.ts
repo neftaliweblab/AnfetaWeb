@@ -72,7 +72,18 @@ async function checkedSignIn(client: any, credentials: any) {
   }
 }
 
-export async function supabaseIdentity() {
+// Reuse authentication only inside the exact HTTP request. Never cache a
+// completed identity between requests: revoked sessions and profiles stay live.
+const requestIdentities = new WeakMap<Request, ReturnType<typeof resolveSupabaseIdentity>>();
+export function supabaseIdentity(request?: Request) {
+  if (!request) return resolveSupabaseIdentity();
+  const existing = requestIdentities.get(request);
+  if (existing) return existing;
+  const pending = resolveSupabaseIdentity();
+  requestIdentities.set(request, pending);
+  return pending;
+}
+async function resolveSupabaseIdentity() {
   const store = await cookies();
   const sessionKey = store.getAll().map((c) => `${c.name}:${c.value}`).sort().join(';');
   const client = await supabaseSessionClient();

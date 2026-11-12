@@ -1,0 +1,33 @@
+const fs=require('node:fs'),path=require('node:path'),Module=require('node:module'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
+const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+require.extensions['.ts']=(m,f)=>m._compile(compile(fs.readFileSync(f,'utf8')),f);
+let user='A',active=true,authCalls=0,profileCalls=0;
+const client={auth:{getUser:async()=>{authCalls++;return {data:{user:{id:user}}}}},from:()=>({select(){return this},eq(){return this},single:async()=>{profileCalls++;return {data:{id:user,person_tag:'Neftali',active}}}})};
+const original=Module._load;
+Module._load=function(n,p,...args){if(p?.filename.endsWith('supabaseServer.ts')){
+ if(n==='next/headers')return {cookies:async()=>({getAll:()=>[{name:'session',value:user}]})};
+ if(n==='@supabase/ssr')return {createServerClient:()=>client};
+ if(n==='./supabaseConfiguration')return {supabaseConnectionConfig:()=>({url:'https://test.supabase.co',key:'test'})};
+ if(n==='./sharedAccess')return {sharedAccessConfigured:()=>false};
+ if(n==='./identityNormalizer')return {normalizePerson:x=>x,PERSON_ALIASES:{Neftali:['neft']}};
+ }return original.call(this,n,p,...args)};
+(async()=>{
+ const {supabaseIdentity}=require('../src/services/supabaseServer.ts');
+ const req=new Request('https://anfeta.test/api/presence');
+ const first=await supabaseIdentity(req);await supabaseIdentity(req);
+ assert.equal(authCalls,1);assert.equal(profileCalls,1,'sequential consumers reuse verification inside the request');
+ await supabaseIdentity(new Request(req));assert.equal(authCalls,2,'a new request rechecks the session');
+ user='B';const second=await supabaseIdentity(new Request(req));assert.equal(second.id,'B');assert.notEqual(first.id,second.id);
+ active=false;const denied=new Request(req);await assert.rejects(()=>supabaseIdentity(denied),/activo/);await assert.rejects(()=>supabaseIdentity(denied),/activo/);
+ active=true;await supabaseIdentity(new Request(req));
+ const src=fs.readFileSync(path.join(__dirname,'../src/app/api/data/route.ts'),'utf8');
+ const get=src.slice(src.lastIndexOf('export async function GET(req:NextRequest)'));
+ let body={unchanged:true},lookups=0;
+ const context={exports:{},GETRaw:async()=>Response.json(body),resolveNotionToken:()=>'',getSettings:()=>({}),notionSourceKey:()=> 'source',confirmedDeletedPages:new Map(),getConfirmedDeletedPageIds:async()=>{lookups++;return ['gone']},cleanPageId:x=>x,NextResponse:{json:(data,init)=>Response.json(data,init)},URL,Set};
+ vm.runInNewContext(compile(get),context);
+ await context.exports.GET(req);assert.equal(lookups,0,'unchanged responses must not request tombstones');
+ body={status:'ready'};await context.exports.GET(req);assert.equal(lookups,0);
+ body={items:[{id:'gone'},{id:'kept'}]};let result=await context.exports.GET(req);assert.equal(lookups,1);assert.deepEqual((await result.json()).items,[{id:'kept'}]);
+ body={activities:[{pageId:'gone'},{pageId:'kept'}]};result=await context.exports.GET(req);assert.equal(lookups,2);assert.deepEqual((await result.json()).activities,[{pageId:'kept'}]);
+ console.log('OK: autenticación única por solicitud, sesión/perfil revalidados en nuevas solicitudes, aislamiento de usuarios y borrados filtrados solo en respuestas con filas.');
+})().catch(e=>{console.error(e);process.exitCode=1});
