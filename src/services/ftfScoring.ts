@@ -1,7 +1,28 @@
+export type FtfStarValue = boolean | number;
+
+export function starWeight(value: FtfStarValue | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(1, value));
+  }
+  return value === true ? 1 : 0;
+}
+
+export function normalizeStarValue(weight: number): FtfStarValue {
+  const clamped = Math.max(0, Math.min(1, weight));
+  if (clamped >= 0.99) return true;
+  if (clamped <= 0.01) return false;
+  return Math.round(clamped * 100) / 100;
+}
+
 export interface FtfPersonInput {
   name: string;
   assignedHours: number;
   completedHours: number;
+  workCompletedHours?: number;
+  reviewHours?: number;
+  inProgressHours?: number;
+  ftfVerifiedHours?: number;
+  expiredUnfinishedCount?: number;
   verified: number;
   total: number;
   ftfPendingAssignmentMinutes?: number;
@@ -16,9 +37,9 @@ export interface FtfPersonInput {
 }
 
 export interface FtfStars {
-  star1: boolean; // Tiempo 1: Cobertura FTF dinámica (sin huecos)
-  star2: boolean; // Tiempo 2: Avances, checks y terminados
-  star3: boolean; // Tiempo 3: FTF final antes de corte 18:30
+  star1: FtfStarValue; // Tiempo 1: Cobertura FTF dinámica (sin huecos)
+  star2: FtfStarValue; // Tiempo 2: Avances, checks y terminados
+  star3: FtfStarValue; // Tiempo 3: FTF final antes de corte 18:30
 }
 
 export interface SavedFtfScoreEntry {
@@ -56,7 +77,7 @@ export interface WeeklyPayrollRow {
   days: Array<{
     date: string;
     score: number | null;
-    stars: [boolean, boolean, boolean];
+    stars: [FtfStarValue, FtfStarValue, FtfStarValue];
     absent: boolean;
     overtimeHours: number;
     published: boolean;
@@ -90,15 +111,16 @@ export function computeHybridFtfScore(
   options?: { now?: Date; pendingTitles?: string[] }
 ): ComputedFtfScore {
   const now = options?.now || new Date();
+  // Solo señal real de conexión en ANFETA o trabajo real terminado/en revisión cuenta como asistencia;
+  // actividades pre-agendadas en "Por hacer" sin conexión NO otorgan puntos de asistencia.
   const hasWork =
     Boolean(person.isOnline) ||
     Boolean(person.firstSignalAt) ||
     Boolean(person.lastSignalAt) ||
-    person.assignedHours > 0 ||
     person.completedHours > 0 ||
-    person.verified > 0;
+    (person.reviewHours || 0) > 0;
 
-  const isExplicitlyAbsent = saved?.absent === true || (!hasWork && person.status === 'empty');
+  const isExplicitlyAbsent = saved?.absent === true || (saved?.absent !== false && !hasWork);
 
   const pendingGapMinutes = Math.max(0, Math.round(person.ftfPendingAssignmentMinutes || 0));
   const fullCoverage = person.assignedHours > 0 && pendingGapMinutes <= 0;
@@ -107,61 +129,104 @@ export function computeHybridFtfScore(
   const attendancePts = isExplicitlyAbsent ? 0 : hasWork ? 20 : 0;
 
   // 2. Tiempo 1: Cobertura FTF dinámica (0..20 pts)
-  // Se actualiza dinámicamente durante el día cuando la agenda se llena sin huecos
   let coveragePts = 0;
+  let coverageRatio = 0;
   let coverageState: 'complete' | 'dynamic_pending' | 'empty' = 'empty';
   if (!isExplicitlyAbsent && person.assignedHours > 0) {
     if (fullCoverage) {
       coveragePts = 20;
+      coverageRatio = 1;
       coverageState = 'complete';
     } else {
       const assignedMin = person.assignedHours * 60;
-      const ratio = assignedMin / Math.max(1, assignedMin + pendingGapMinutes);
-      coveragePts = Math.round(ratio * 20);
+      coverageRatio = assignedMin / Math.max(1, assignedMin + pendingGapMinutes);
+      coveragePts = Math.round(coverageRatio * 20);
       coverageState = 'dynamic_pending';
     }
   }
 
-  // 3. Tiempo 2: Avances, Checks y Actividades terminadas (0..35 pts)
+  // 3. Tiempo 2: Avances reales (Terminadas/En revisión + FTF checks - bloques vencidos sin cerrar) (0..35 pts)
   let progressPts = 0;
+  let progressRatio = 0;
+  const expiredCount = Math.max(0, Number(person.expiredUnfinishedCount || 0));
   if (!isExplicitlyAbsent) {
-    if (person.total > 0) {
-      progressPts = Math.round((person.verified / person.total) * 35);
-    } else if (person.assignedHours > 0) {
-      progressPts = Math.round(Math.min(1, person.completedHours / Math.max(0.5, person.assignedHours)) * 35);
+    if (person.assignedHours > 0) {
+      const hoursRatio = Math.min(1, person.completedHours / Math.max(0.5, person.assignedHours));
+      const checksRatio = person.total > 0 ? person.verified / person.total : hoursRatio;
+      const penalty = expiredCount > 0 ? Math.min(0.35, expiredCount * 0.12) : 0;
+      progressRatio = Math.max(0, Math.min(1, hoursRatio * 0.7 + checksRatio * 0.3 - penalty));
+      progressPts = Math.round(progressRatio * 35);
+    } else if (person.total > 0) {
+      progressRatio = Math.min(1, person.verified / person.total);
+      progressPts = Math.round(progressRatio * 35);
     } else if (hasWork) {
-      progressPts = 15;
+      progressRatio = 0.4;
+      progressPts = 14;
     }
   }
 
-  // 4. Tiempo 3: FTF Final antes del corte 18:30 (0..25 pts)
-  const autoStar1 = !isExplicitlyAbsent && (saved?.starsOverride?.star1 ?? fullCoverage);
-  const autoStar2 =
-    !isExplicitlyAbsent &&
-    (saved?.starsOverride?.star2 ??
-      ((person.total > 0 ? person.verified / person.total >= 0.7 : person.completedHours >= Math.min(person.assignedHours || 6.5, 5)) &&
-        person.completedHours > 0));
+  // Estrellas 1..3 (soportan valores fraccionales 0..1: 0=0%, 0.5=½★ 50%, 1=★ 100%)
+  const hasStar1Override = saved?.starsOverride?.star1 !== undefined;
+  const hasStar2Override = saved?.starsOverride?.star2 !== undefined;
+  const hasStar3Override = saved?.starsOverride?.star3 !== undefined;
+
+  const autoStar1: FtfStarValue = isExplicitlyAbsent
+    ? false
+    : hasStar1Override
+    ? normalizeStarValue(starWeight(saved!.starsOverride!.star1))
+    : fullCoverage;
+
+  const computedStar2Weight =
+    progressRatio >= 0.8 && person.completedHours > 0
+      ? 1
+      : progressRatio >= 0.35 && (person.completedHours > 0 || person.verified > 0)
+      ? 0.5
+      : 0;
+  const autoStar2: FtfStarValue = isExplicitlyAbsent
+    ? false
+    : hasStar2Override
+    ? normalizeStarValue(starWeight(saved!.starsOverride!.star2))
+    : normalizeStarValue(computedStar2Weight);
+
   const ftfCompletedCleanly =
     !isExplicitlyAbsent &&
-    (person.status === 'complete' || Boolean(person.completedAt) || (person.total > 0 && person.verified === person.total && person.total > 0));
-  const autoStar3 = !isExplicitlyAbsent && (saved?.starsOverride?.star3 ?? (ftfCompletedCleanly && !person.late));
+    (person.status === 'complete' || Boolean(person.completedAt) || (person.total > 0 && person.verified === person.total && person.completedHours >= person.assignedHours * 0.85));
 
-  let ftfFinalPts = 0;
-  if (!isExplicitlyAbsent) {
-    if (autoStar3) {
-      ftfFinalPts = 25;
-    } else if (ftfCompletedCleanly && person.late) {
-      ftfFinalPts = 15; // Completado pero después de horario
-    } else if (saved?.starsOverride?.star3 === true) {
-      ftfFinalPts = 25;
-    }
-  }
+  const autoStar3: FtfStarValue = isExplicitlyAbsent
+    ? false
+    : hasStar3Override
+    ? normalizeStarValue(starWeight(saved!.starsOverride!.star3))
+    : ftfCompletedCleanly
+    ? person.late
+      ? 0.5
+      : true
+    : false;
 
-  // Aplicar ajuste de estrellas manuales en los puntos si el supervisor las forzó
-  const effectiveCoveragePts =
-    isExplicitlyAbsent ? 0 : saved?.starsOverride?.star1 === true ? 20 : saved?.starsOverride?.star1 === false ? Math.min(coveragePts, 10) : coveragePts;
-  const effectiveProgressPts =
-    isExplicitlyAbsent ? 0 : saved?.starsOverride?.star2 === true ? Math.max(progressPts, 30) : progressPts;
+  const w1 = starWeight(autoStar1);
+  const w2 = starWeight(autoStar2);
+  const w3 = starWeight(autoStar3);
+
+  const ftfFinalPts = isExplicitlyAbsent
+    ? 0
+    : hasStar3Override
+    ? Math.round(w3 * 25)
+    : w3 >= 0.99
+    ? 25
+    : w3 > 0
+    ? Math.round(w3 * 25)
+    : 0;
+
+  // Si el supervisor ajusta manualmente una estrella (ej. 50% ½★), recalcula ese rubro proporcionalmente
+  const effectiveCoveragePts = isExplicitlyAbsent
+    ? 0
+    : hasStar1Override
+    ? Math.round(w1 * 20)
+    : coveragePts;
+  const effectiveProgressPts = isExplicitlyAbsent
+    ? 0
+    : hasStar2Override
+    ? Math.round(w2 * 35)
+    : progressPts;
 
   const autoScore = isExplicitlyAbsent
     ? 0
@@ -175,7 +240,7 @@ export function computeHybridFtfScore(
     : autoScore;
 
   // Bono Horas Extra post-18:30 solo si cumplió jornada normal
-  const normalShiftFulfilled = !isExplicitlyAbsent && (person.completedHours >= 6.5 || finalScore >= 75 || autoStar3);
+  const normalShiftFulfilled = !isExplicitlyAbsent && (person.completedHours >= 6.5 || finalScore >= 75 || w3 >= 0.99);
   const rawOvertime = Number(person.afterCutoffHours ?? saved?.overtimeHours ?? 0);
   const overtimeHours = normalShiftFulfilled && rawOvertime > 0 ? Math.round(rawOvertime * 10) / 10 : 0;
 
@@ -228,7 +293,7 @@ export function buildWeeklyPayrollMatrix(
         return {
           date,
           score: null,
-          stars: [false, false, false] as [boolean, boolean, boolean],
+          stars: [false, false, false] as [FtfStarValue, FtfStarValue, FtfStarValue],
           absent: false,
           overtimeHours: 0,
           published: false,
@@ -237,7 +302,11 @@ export function buildWeeklyPayrollMatrix(
       return {
         date,
         score: entry.absent ? 0 : entry.finalScore,
-        stars: [Boolean(entry.stars?.star1), Boolean(entry.stars?.star2), Boolean(entry.stars?.star3)] as [boolean, boolean, boolean],
+        stars: [
+          normalizeStarValue(starWeight(entry.stars?.star1)),
+          normalizeStarValue(starWeight(entry.stars?.star2)),
+          normalizeStarValue(starWeight(entry.stars?.star3)),
+        ] as [FtfStarValue, FtfStarValue, FtfStarValue],
         absent: Boolean(entry.absent),
         overtimeHours: Number(entry.overtimeHours || 0),
         published: Boolean(entry.published),

@@ -10,6 +10,31 @@ export function canViewFtfDashboard(user:string){
   return Boolean(norm && norm !== 'Sin asignar');
 }
 
+function isSuspendedActivity(a: NotionCalendarActivity): boolean {
+  return Boolean(a.isSuspended || workflowState(a.status, a.title) === 'suspended');
+}
+
+function effectiveActivityOwner(a: NotionCalendarActivity): string {
+  const wf = workflowState(a.status, a.title);
+  if (wf === 'review' && a.reviewFlow?.OriginalPerson) {
+    const orig = normalizePerson(String(a.reviewFlow.OriginalPerson));
+    if (orig && orig !== 'Sin asignar') return orig;
+  }
+  return normalizePerson(a.person);
+}
+
+function isEligibleDayActivity(a: NotionCalendarActivity, name: string, day: string): boolean {
+  return Boolean(
+    a.start &&
+      !a.isReviewMirror &&
+      !a.isHandoffMirror &&
+      !isFtfReminder(a) &&
+      !isTemporaryCalendarResponse(a) &&
+      effectiveActivityOwner(a) === name &&
+      mexicoDate(a.start) === day
+  );
+}
+
 function activityHours(a: NotionCalendarActivity): number {
   if (!a.start) return 0.5;
   const start = Date.parse(a.start);
@@ -17,6 +42,10 @@ function activityHours(a: NotionCalendarActivity): number {
   if (!Number.isFinite(start)) return 0.5;
   const diff = (end - start) / 3600000;
   return diff > 0 && diff <= 14 ? diff : 0.5;
+}
+
+function sumHours(list: NotionCalendarActivity[]): number {
+  return Number(list.reduce((sum, a) => sum + activityHours(a), 0).toFixed(1));
 }
 
 function ftfRecordedTime(record: any, day: string, now: Date): string | null {
@@ -89,15 +118,14 @@ export function buildFtfWeek(
           const signal = signals.get(day + ':' + person.name);
           const recordedAt = person.completedAt;
           const personActivities = activities.filter(activity =>
-            normalizePerson(activity.person) === person.name &&
-            activity.start?.slice(0, 10) === day
+            isEligibleDayActivity(activity, person.name, day) && !isSuspendedActivity(activity)
           );
           const ftfVerifiedMinutes = personActivities
-            .filter(a => a.ftfVerified)
-            .reduce((sum, a) => sum + Math.max(0, (Date.parse(a.end) - Date.parse(a.start)) / 60000), 0);
+            .filter(a => a.ftfAvailable && a.ftfVerified)
+            .reduce((sum, a) => sum + Math.max(0, (Date.parse(a.end || a.start) - Date.parse(a.start)) / 60000), 0);
           const completedMinutes = personActivities
-            .filter(a => a.isFinalized || workflowState(a.status, a.title) === 'completed')
-            .reduce((sum, a) => sum + Math.max(0, (Date.parse(a.end) - Date.parse(a.start)) / 60000), 0);
+            .filter(a => a.isFinalized || workflowState(a.status, a.title) === 'completed' || workflowState(a.status, a.title) === 'review')
+            .reduce((sum, a) => sum + Math.max(0, (Date.parse(a.end || a.start) - Date.parse(a.start)) / 60000), 0);
 
           let agenda10Status = 'Sin evidencia';
           if (weekend) {
@@ -140,18 +168,41 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
   const weeklyTargetPerPerson = Number((workDaysElapsed * 6.5).toFixed(1));
   
   const rows=team.filter(p=>normalizePerson(p.name)!=='Emmanuel'&&normalizePerson(p.name)!=='Sin asignar').map(person=>{
-    const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>();
+    const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>(),suspendedMap=new Map<string,NotionCalendarActivity>();
     for(const activity of activities){
-      if(!activity.start||activity.isReviewMirror||activity.isHandoffMirror||isFtfReminder(activity)||isTemporaryCalendarResponse(activity)||normalizePerson(activity.person)!==name||mexicoDate(activity.start)!==day||mexicoMinutes(activity.start)>=1080)continue;
+      if(!isEligibleDayActivity(activity,name,day)||mexicoMinutes(activity.start)>=1080)continue;
+      if(isSuspendedActivity(activity)){
+        suspendedMap.set(activity.pageId,activity);
+        continue;
+      }
       unique.set(activity.pageId,activity);
     }
-    const all=[...unique.values()],pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified).sort((a,b)=>a.start.localeCompare(b.start));
+    const all=[...unique.values()].sort((a,b)=>a.start.localeCompare(b.start));
+    const suspendedActivities=[...suspendedMap.values()].sort((a,b)=>a.start.localeCompare(b.start));
+    const pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified);
     const verifiedActivities = all.filter(a => a.ftfAvailable && a.ftfVerified);
+    const completedWorkActivities = all.filter(a => workflowState(a.status, a.title) === 'completed');
+    const reviewActivities = all.filter(a => workflowState(a.status, a.title) === 'review');
+    const inProgressActivities = all.filter(a => {
+      const wf = workflowState(a.status, a.title);
+      return wf === 'pending' || wf === 'unknown';
+    });
+    const expiredUnfinishedActivities = inProgressActivities.filter(a => {
+      const endMs = Date.parse(a.end || a.start);
+      return Number.isFinite(endMs) && endMs <= now.getTime();
+    });
+
     const pendingAssignmentMinutes = ftfPendingAssignmentMinutes(day, all);
-    const assignedHours = Number(all.reduce((sum, a) => sum + activityHours(a), 0).toFixed(1));
-    const completedHours = Number(verifiedActivities.reduce((sum, a) => sum + activityHours(a), 0).toFixed(1));
+    const assignedHours = sumHours(all);
+    const workCompletedHours = sumHours(completedWorkActivities);
+    const reviewHours = sumHours(reviewActivities);
+    const inProgressHours = sumHours(inProgressActivities);
+    const ftfVerifiedHours = sumHours(verifiedActivities);
+    const suspendedHours = sumHours(suspendedActivities);
+    // Solo horas realmente terminadas (zR/tuzR) o enviadas a revisión (rtuzR) cuentan como avance real; "Por hacer" NO es terminada
+    const completedHours = Number((workCompletedHours + reviewHours).toFixed(1));
     
-    // Exact last modified time of activities in Notion for this person
+    // Exact last modified time of non-suspended workday activities in Notion for this person
     const lastActivityEdited = all
       .map(a => (a as any).serverModified || (a as any).lastEdited || (a as any).last_edited_time)
       .filter(v => v && Number.isFinite(Date.parse(v)))
@@ -168,27 +219,22 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     const firstSeen = signal?.firstSeen || null;
     const presenceLastSeen = signal?.lastSeen || null;
 
-    // Primer señal: Presencia real en ANFETA si existe; si no, primera actividad programada
-    const firstSignal = firstSeen || firstActivityStart || null;
+    // 1ª señal real: únicamente presencia/login real en ANFETA (no inventar horario desde calendario)
+    const firstSignal = firstSeen || null;
 
-    // Última señal: La más reciente entre última presencia ANFETA y última edición en Notion
-    const lastCandidates = [presenceLastSeen, lastActivityEdited].filter(
+    // Última señal: último latido real en ANFETA (o edición en Notion solo si tuvo conexión real ese día)
+    const lastCandidates = [presenceLastSeen, firstSeen ? lastActivityEdited : null].filter(
       (v): v is string => Boolean(v && Number.isFinite(Date.parse(v)))
     );
     lastCandidates.sort();
     const lastSignal = lastCandidates.at(-1) || null;
 
     const afterCutoffActivities = activities.filter(activity =>
-      activity.start &&
-      !activity.isReviewMirror &&
-      !activity.isHandoffMirror &&
-      !isFtfReminder(activity) &&
-      !isTemporaryCalendarResponse(activity) &&
-      normalizePerson(activity.person) === name &&
-      mexicoDate(activity.start) === day &&
+      isEligibleDayActivity(activity, name, day) &&
+      !isSuspendedActivity(activity) &&
       mexicoMinutes(activity.start) >= 1110
     );
-    const activityOvertimeHours = afterCutoffActivities.reduce((sum, a) => sum + activityHours(a), 0);
+    const activityOvertimeHours = firstSeen ? sumHours(afterCutoffActivities) : 0;
     const presenceOvertimeMin = presenceLastSeen && mexicoDate(presenceLastSeen) === day
       ? Math.max(0, mexicoMinutes(presenceLastSeen) - 1110)
       : 0;
@@ -203,14 +249,21 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
 
     const lateStamp = completedAt ? Date.parse(completedAt) : stamp;
     const late = !!completedAt && Number.isFinite(lateStamp) && lateStamp > cutoff;
-    const status=!all.length?'empty':pending.length?'pending':validRecord?'complete':'unconfirmed';
+    const hasOpenWork = inProgressActivities.length > 0;
+    const status=!all.length?'empty':(pending.length>0||hasOpenWork)?'pending':validRecord?'complete':'unconfirmed';
     return {
       ...person,
       name,
       total:all.length,
       verified:all.length-pending.length,
       pending,
-      completedActivities: verifiedActivities,
+      allActivities: all,
+      completedActivities: completedWorkActivities,
+      reviewActivities,
+      inProgressActivities,
+      expiredUnfinishedActivities,
+      expiredUnfinishedCount: expiredUnfinishedActivities.length,
+      suspendedActivities,
       completedAt,
       late,
       timeKind:record?.timeKind||'observed',
@@ -218,6 +271,11 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       assignedHours,
       pendingAssignmentMinutes,
       completedHours,
+      workCompletedHours,
+      reviewHours,
+      inProgressHours,
+      ftfVerifiedHours,
+      suspendedHours,
       afterCutoffHours,
       lastActivityEdited,
       firstActivityStart,

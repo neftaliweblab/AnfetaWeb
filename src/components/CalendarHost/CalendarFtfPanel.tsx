@@ -6,8 +6,21 @@ import { buildFtfDashboard, canViewFtfDashboard, shiftFtfDate } from '@/services
 import { ExternalLink } from 'lucide-react';
 import {CalendarFtfWeek, ftfHours} from './CalendarFtfWeek';
 import { normalizePerson } from '@/services/identityNormalizer';
-import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity, Copy, Check, Star, Send, SlidersHorizontal, Award } from 'lucide-react';
-import { computeHybridFtfScore, SavedFtfScoreEntry } from '@/services/ftfScoring';
+import { workflowState } from '@/services/activityWorkflow';
+import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, ShieldCheck, User, LogIn, Activity, Copy, Check, Star, StarHalf, Send, SlidersHorizontal, Award } from 'lucide-react';
+import { computeHybridFtfScore, FtfStarValue, normalizeStarValue, SavedFtfScoreEntry, starWeight } from '@/services/ftfScoring';
+
+function nextStarCycle(current: FtfStarValue): number {
+  const w = starWeight(current);
+  if (w >= 0.99) return 0.5;
+  if (w >= 0.25) return 0;
+  return 1;
+}
+
+function starGlyph(value: FtfStarValue): string {
+  const w = starWeight(value);
+  return w >= 0.99 ? '★' : w >= 0.25 ? '◐' : '☆';
+}
 
 
 function formatSignalTime(isoString: string | null | undefined, selectedDay: string): string {
@@ -162,25 +175,35 @@ export function CalendarFtfPanel({
     setExpandedPeople(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
-  const computePersonScore = (person: Report['people'][number], targetDay: string) => {
+  const buildScoreInput = (person: Report['people'][number]) => {
     const pres = presenceMap[person.name];
+    return {
+      name: person.name,
+      assignedHours: person.assignedHours || 0,
+      completedHours: person.completedHours || 0,
+      workCompletedHours: (person as any).workCompletedHours || 0,
+      reviewHours: (person as any).reviewHours || 0,
+      inProgressHours: (person as any).inProgressHours || 0,
+      ftfVerifiedHours: (person as any).ftfVerifiedHours || 0,
+      expiredUnfinishedCount: (person as any).expiredUnfinishedCount || 0,
+      verified: person.verified || 0,
+      total: person.total || 0,
+      ftfPendingAssignmentMinutes: person.pendingAssignmentMinutes || 0,
+      status: person.status,
+      late: person.late,
+      completedAt: person.completedAt,
+      lastActivityEdited: person.lastActivityEdited,
+      // Presencia real ANFETA (nunca hora inventada de calendario)
+      firstSignalAt: (person as any).firstSeen || null,
+      lastSignalAt: pres?.lastSeen || (person as any).presenceLastSeen || (person as any).lastSignal || null,
+      isOnline: pres?.isOnline,
+      afterCutoffHours: (person as any).afterCutoffHours || 0,
+    };
+  };
+
+  const computePersonScore = (person: Report['people'][number], targetDay: string) => {
     return computeHybridFtfScore(
-      {
-        name: person.name,
-        assignedHours: person.assignedHours || 0,
-        completedHours: person.completedHours || 0,
-        verified: person.verified || 0,
-        total: person.total || 0,
-        ftfPendingAssignmentMinutes: person.pendingAssignmentMinutes || 0,
-        status: person.status,
-        late: person.late,
-        completedAt: person.completedAt,
-        lastActivityEdited: person.lastActivityEdited,
-        firstSignalAt: (person as any).firstSignal || (person as any).firstSeen,
-        lastSignalAt: (person as any).lastSignal || pres?.lastSeen,
-        isOnline: pres?.isOnline,
-        afterCutoffHours: (person as any).afterCutoffHours || 0,
-      },
+      buildScoreInput(person),
       targetDay,
       scoresMap[person.name],
       {
@@ -203,22 +226,7 @@ export function CalendarFtfPanel({
       },
     };
     const nextComputed = computeHybridFtfScore(
-      {
-        name: person.name,
-        assignedHours: person.assignedHours || 0,
-        completedHours: person.completedHours || 0,
-        verified: person.verified || 0,
-        total: person.total || 0,
-        ftfPendingAssignmentMinutes: person.pendingAssignmentMinutes || 0,
-        status: person.status,
-        late: person.late,
-        completedAt: person.completedAt,
-        lastActivityEdited: person.lastActivityEdited,
-        firstSignalAt: (person as any).firstSignal || (person as any).firstSeen,
-        lastSignalAt: (person as any).lastSignal || presenceMap[person.name]?.lastSeen,
-        isOnline: presenceMap[person.name]?.isOnline,
-        afterCutoffHours: (person as any).afterCutoffHours || 0,
-      },
+      buildScoreInput(person),
       report.day,
       mergedSaved,
       {
@@ -272,21 +280,21 @@ export function CalendarFtfPanel({
     const lines: string[] = [
       `📊 *Reporte Diario ANFETA · Bitácora FTF & Puntajes*`,
       `📅 *Fecha:* ${date} · Corte 18:30`,
-      `⏱ *Horas asignadas:* ${report.totalAssignedHours}h | *Con FTF verificado:* ${report.totalCompletedHours || 0}h`,
+      `⏱ *Horas asignadas:* ${report.totalAssignedHours}h | *Terminadas/Revisión:* ${report.totalCompletedHours || 0}h`,
       `📈 *Estado:* ${report.completed} al día · ${report.pending} pendientes${report.late > 0 ? ` · ${report.late} tarde` : ''}`,
       ``,
       `👥 *Avance y Puntaje por Colaborador:*`,
     ];
 
     for (const person of report.people) {
-      const pct = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
+      const pct = person.assignedHours > 0 ? Math.min(100, Math.round(((person.completedHours || 0) / person.assignedHours) * 100)) : 0;
       const sc = computePersonScore(person, report.day);
-      const starsStr = `${sc.stars.star1 ? '★' : '☆'}${sc.stars.star2 ? '★' : '☆'}${sc.stars.star3 ? '★' : '☆'}`;
+      const starsStr = `${starGlyph(sc.stars.star1)}${starGlyph(sc.stars.star2)}${starGlyph(sc.stars.star3)}`;
       const icon = sc.absent ? '🚫' : sc.finalScore >= 85 ? '🌟' : person.status === 'complete' ? '✅' : person.status === 'pending' ? '⏳' : '⚪';
       const pendingCount = Array.isArray(person.pending) ? person.pending.length : Number(person.pending) || 0;
-      const pendingText = pendingCount > 0 ? ` (${pendingCount} pend.)` : '';
+      const pendingText = pendingCount > 0 ? ` (${pendingCount} sin check FTF)` : '';
       const extraText = sc.overtimeHours > 0 ? ` · +${sc.overtimeHours}h Extra Bono` : '';
-      lines.push(`${icon} *${person.name}*: *${sc.finalScore}/100 pts* [${starsStr}] · ${pct}% · ${person.completedHours || 0}h/${person.assignedHours || 0}h · ${person.verified}/${person.total}${pendingText}${extraText}`);
+      lines.push(`${icon} *${person.name}*: *${sc.finalScore}/100 pts* [${starsStr}] · ${pct}% (${person.completedHours || 0}h/${person.assignedHours || 0}h) · FTF ${person.verified}/${person.total}${pendingText}${extraText}`);
     }
 
     const text = lines.join('\n');
@@ -386,7 +394,7 @@ export function CalendarFtfPanel({
             {report && (
               <>
                 <span className="rounded bg-cyan-950/60 px-2 py-0.5 border border-cyan-800/60 text-cyan-200 font-mono">
-                  {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h con FTF verificado
+                  {report.totalAssignedHours}h asignadas · {report.totalCompletedHours || 0}h terminadas/revisión
                 </span>
                 {(report as any).weeklyTargetPerPerson > 0 && (
                   <span
@@ -515,12 +523,24 @@ export function CalendarFtfPanel({
           {report.people.map(person => {
             const isComplete = person.status === 'complete';
             const isPending = person.status === 'pending';
-            const isEmpty = person.status === 'empty';
             const isExpanded = !!expandedPeople[person.name];
 
-            const percent = person.total > 0 ? Math.round((person.verified / person.total) * 100) : 0;
+            const workCompletedHours = Number((person as any).workCompletedHours || 0);
+            const reviewHours = Number((person as any).reviewHours || 0);
+            const inProgressHours = Number((person as any).inProgressHours || 0);
+            const suspendedHours = Number((person as any).suspendedHours || 0);
+            const expiredUnfinishedCount = Number((person as any).expiredUnfinishedCount || 0);
+            const workPct = (person.assignedHours || 0) > 0
+              ? Math.min(100, Math.round(((person.completedHours || 0) / Math.max(0.5, person.assignedHours || 0)) * 100))
+              : 0;
+            const workOnlyPct = (person.assignedHours || 0) > 0
+              ? Math.min(100, Math.round((workCompletedHours / Math.max(0.5, person.assignedHours || 0)) * 100))
+              : 0;
+            const reviewOnlyPct = (person.assignedHours || 0) > 0
+              ? Math.min(100 - workOnlyPct, Math.round((reviewHours / Math.max(0.5, person.assignedHours || 0)) * 100))
+              : 0;
+
             const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
-            const lastEditTime = person.lastActivityEdited ? calendarTime(person.lastActivityEdited) : null;
             const scoreInfo = computePersonScore(person, report.day);
             const isScorerOpen = openScorerFor === person.name;
             const scoreBadgeClass = scoreInfo.absent
@@ -531,6 +551,9 @@ export function CalendarFtfPanel({
               ? 'border-amber-400/75 bg-amber-500/20 text-amber-200'
               : 'border-rose-400/80 bg-rose-500/20 text-rose-200';
 
+            const allDayActivities: NotionCalendarActivity[] = (person as any).allActivities || [];
+            const suspendedList: NotionCalendarActivity[] = (person as any).suspendedActivities || [];
+
             return (
               <div
                 key={person.name}
@@ -540,16 +563,18 @@ export function CalendarFtfPanel({
                     : isComplete
                     ? 'border-emerald-600/40 bg-emerald-950/20'
                     : isPending
-                    ? 'border-amber-600/40 bg-amber-950/20'
+                    ? 'border-amber-600/40 bg-amber-950/15'
                     : 'border-slate-800 bg-slate-900/40 opacity-85'
-                } p-2.5 shadow-md`}
+                } p-3 shadow-md space-y-2`}
               >
                 {/* Cabecera del colaborador */}
-                <div className="flex items-start justify-between gap-1.5">
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px] ${
-                        isComplete
+                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-bold text-[10.5px] ${
+                        scoreInfo.absent
+                          ? 'bg-rose-950 text-rose-200 border border-rose-500/70'
+                          : isComplete
                           ? 'bg-emerald-900 text-emerald-200 border border-emerald-500'
                           : isPending
                           ? 'bg-amber-900 text-amber-200 border border-amber-500'
@@ -558,37 +583,36 @@ export function CalendarFtfPanel({
                     >
                       {person.name.slice(0, 2).toUpperCase()}
                       {presenceMap[person.name]?.isOnline && (
-                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-[#0B101B]" title="En línea" />
+                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B101B]" title="En línea" />
                       )}
                     </div>
-                    <div className="truncate">
-                      <div className="flex items-center gap-1.5 truncate">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-semibold text-xs text-slate-100">{person.name}</span>
                         {presenceMap[person.name] && (
                           <span
-                            className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono flex items-center gap-1 ${
+                            className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono inline-flex items-center gap-1 ${
                               presenceMap[person.name].isOnline
                                 ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-600/60'
-                                : 'bg-slate-900/60 text-slate-400 border border-slate-700/50'
+                                : 'bg-slate-900/70 text-slate-400 border border-slate-700/60'
                             }`}
-                            title={presenceMap[person.name].isOnline ? 'En línea en ANFETA' : `Última conexión: ${presenceMap[person.name].lastSeenLabel || 'Desconectado'}`}
+                            title={presenceMap[person.name].isOnline ? 'En línea en ANFETA' : `Última conexión: ${presenceMap[person.name].lastSeenLabel || 'Sin registro hoy'}`}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${presenceMap[person.name].isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
                             <span>{presenceMap[person.name].isOnline ? 'En línea' : 'Desconectado'}</span>
                           </span>
                         )}
-                        {person.role && (
-                          <span className="text-[10px] text-slate-400 truncate">({person.role})</span>
-                        )}
                       </div>
-                      <div className="flex items-center justify-between text-[10.5px] text-slate-400 gap-2">
-                        <span>{person.verified}/{person.total} checks · {person.assignedHours || 0}h asignadas</span>
+                      <div className="flex items-center text-[10px] text-slate-400 gap-2 mt-0.5">
+                        <span>Checks FTF: <strong className="text-slate-200">{person.verified}/{person.total}</strong></span>
+                        <span>·</span>
+                        <span>Agenda: <strong className="text-cyan-200">{person.assignedHours || 0}h</strong></span>
                         {onOpenDailyProgress && (
                           <button
                             type="button"
                             onClick={() => onOpenDailyProgress()}
                             className="inline-flex items-center gap-0.5 text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
-                            title="Abrir módulo de Avance Diario para ver desglose detallado"
+                            title="Abrir módulo de Avance Diario"
                           >
                             <span>Avance</span>
                             <ExternalLink size={9} />
@@ -602,12 +626,16 @@ export function CalendarFtfPanel({
                   <div className="shrink-0 text-right flex flex-col items-end gap-1">
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold font-mono border ${scoreBadgeClass}`}
-                      title={`Puntaje diario: ${scoreInfo.finalScore}/100 · Asistencia ${scoreInfo.breakdown.attendance}/20 · Cobertura FTF ${scoreInfo.breakdown.coverage}/20 · Avances ${scoreInfo.breakdown.progress}/35 · Cierre 18:30 ${scoreInfo.breakdown.ftfFinal}/25${scoreInfo.published ? ' (Publicado)' : ''}`}
+                      title={`Asistencia ${scoreInfo.breakdown.attendance}/20 + FTF ${scoreInfo.breakdown.coverage}/20 + Avance ${scoreInfo.breakdown.progress}/35 + Cierre ${scoreInfo.breakdown.ftfFinal}/25${scoreInfo.published ? ' (Publicado)' : ''}`}
                     >
                       <Award size={11} />
                       <span>{scoreInfo.finalScore} pts</span>
                     </span>
-                    {isComplete ? (
+                    {scoreInfo.absent ? (
+                      <span className="inline-flex items-center gap-1 rounded bg-rose-950/70 px-1.5 py-0.2 text-[9.5px] font-semibold text-rose-300 border border-rose-500/50">
+                        Sin conexión (0)
+                      </span>
+                    ) : isComplete ? (
                       <span
                         className="inline-flex items-center gap-1 rounded bg-emerald-900/60 px-1.5 py-0.2 text-[9.5px] font-semibold text-emerald-300 border border-emerald-500/50"
                         title={person.timeKind === 'confirmed' ? 'Confirmación FTF' : 'FTF observado'}
@@ -615,88 +643,115 @@ export function CalendarFtfPanel({
                         <CheckCircle2 size={10} />
                         <span>{completionTime || 'Completó'}</span>
                       </span>
+                    ) : expiredUnfinishedCount > 0 ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-rose-950/70 px-1.5 py-0.2 text-[9.5px] font-medium text-rose-300 border border-rose-500/50"
+                        title="Bloques cuyo horario ya terminó hoy y siguen en Por hacer"
+                      >
+                        <AlertTriangle size={10} />
+                        <span>{expiredUnfinishedCount} vencida{expiredUnfinishedCount > 1 ? 's' : ''}</span>
+                      </span>
                     ) : isPending ? (
                       <span className="inline-flex items-center gap-1 rounded bg-amber-900/60 px-1.5 py-0.2 text-[9.5px] font-medium text-amber-300 border border-amber-500/50">
                         <Clock size={10} />
-                        <span>{person.pending.length} pend.</span>
+                        <span>En curso</span>
                       </span>
                     ) : (
-                      <span className="text-[9.5px] text-slate-500 italic">{scoreInfo.absent ? 'Falta (0 pts)' : 'Sin horario'}</span>
+                      <span className="text-[9.5px] text-slate-500 italic">Sin horario</span>
                     )}
                   </div>
                 </div>
 
-                {/* Barra de progreso */}
-                <div className="mt-2">
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
-                    <span>Avance: {percent}%</span>
-                    <span>
-                      {person.completedHours || 0}h / {person.assignedHours || 0}h
+                {/* Barra de avance real + Desglose exacto de horas */}
+                <div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                    <span>Avance real: <strong className="text-slate-200">{workPct}%</strong></span>
+                    <span className="font-mono text-slate-300">
+                      {person.completedHours || 0}h cerradas/rev. de {person.assignedHours || 0}h
                     </span>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-950 border border-slate-800">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        isComplete ? 'bg-emerald-500' : isPending ? 'bg-amber-500' : 'bg-slate-600'
-                      }`}
-                      style={{ width: `${percent}%` }}
-                    />
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-950 border border-slate-800 flex">
+                    {workOnlyPct > 0 && (
+                      <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${workOnlyPct}%` }} title={`Terminadas: ${workCompletedHours}h`} />
+                    )}
+                    {reviewOnlyPct > 0 && (
+                      <div className="h-full bg-violet-500 transition-all duration-300" style={{ width: `${reviewOnlyPct}%` }} title={`En revisión: ${reviewHours}h`} />
+                    )}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1 text-[9.5px] font-mono">
+                    {workCompletedHours > 0 && (
+                      <span className="rounded bg-emerald-950/60 border border-emerald-600/40 px-1.5 py-0.2 text-emerald-300">
+                        ✓ {workCompletedHours}h Term.
+                      </span>
+                    )}
+                    {reviewHours > 0 && (
+                      <span className="rounded bg-violet-950/60 border border-violet-500/50 px-1.5 py-0.2 text-violet-200">
+                        ◎ {reviewHours}h Revisión
+                      </span>
+                    )}
+                    {inProgressHours > 0 && (
+                      <span className="rounded bg-sky-950/50 border border-sky-700/40 px-1.5 py-0.2 text-sky-300">
+                        ● {inProgressHours}h Por hacer
+                      </span>
+                    )}
+                    {suspendedHours > 0 && (
+                      <span
+                        className="rounded bg-slate-900 border border-slate-700/80 px-1.5 py-0.2 text-slate-400 line-through"
+                        title="Actividades suspendidas: excluidas de horas asignadas, avance y bono extra"
+                      >
+                        {suspendedHours}h Susp.
+                      </span>
+                    )}
+                    {(person.assignedHours || 0) === 0 && suspendedHours === 0 && (
+                      <span className="text-slate-500 italic">Sin bloques productivos hoy</span>
+                    )}
                   </div>
                 </div>
 
-                {/* Conexiones & Horarios: 1ª señal y Última señal juntas con iconos */}
+                {/* Señales reales de conexión (1ª señal = login real en ANFETA, nunca inventada del horario) */}
                 {(() => {
                   const isOnlineNow = !!presenceMap[person.name]?.isOnline;
-                  const firstSignalIso = (person as any).firstSeen || (person as any).firstActivityStart;
-                  const firstDisplay = formatSignalTime(firstSignalIso, report.day);
-                  const firstTitle = (person as any).firstSeen
-                    ? `1ª conexión en ANFETA: ${(person as any).firstSeen}`
+                  const firstSeenIso = (person as any).firstSeen || null;
+                  const firstDisplay = firstSeenIso ? formatSignalTime(firstSeenIso, report.day) : 'Sin conexión';
+                  const firstTitle = firstSeenIso
+                    ? `1ª conexión real en ANFETA: ${firstSeenIso}`
                     : (person as any).firstActivityStart
-                    ? `1ª actividad programada: ${(person as any).firstActivityStart}`
-                    : 'Sin registro de primera señal';
+                    ? `Sin conexión registrada en ANFETA (1er bloque en agenda: ${calendarTime((person as any).firstActivityStart)})`
+                    : 'Sin registro de conexión en ANFETA';
 
-                  const personLastActivity = person.lastActivityEdited;
-                  const presenceLastSeen = presenceMap[person.name]?.lastSeen || (person as any).presenceLastSeen;
-                  const lastCandidates = [presenceLastSeen, personLastActivity].filter(
-                    (v): v is string => Boolean(v && Number.isFinite(Date.parse(v)))
-                  );
-                  lastCandidates.sort();
-                  const effectiveLast = lastCandidates.at(-1) || null;
-
+                  const presenceLastSeen = presenceMap[person.name]?.lastSeen || (person as any).presenceLastSeen || null;
                   const lastDisplay = isOnlineNow
                     ? 'En línea'
-                    : effectiveLast
-                    ? formatSignalTime(effectiveLast, report.day)
-                    : (lastEditTime || 'Sin cambios');
+                    : presenceLastSeen
+                    ? formatSignalTime(presenceLastSeen, report.day)
+                    : firstSeenIso && person.lastActivityEdited
+                    ? formatSignalTime(person.lastActivityEdited, report.day)
+                    : 'Sin señal';
 
                   const lastTitle = isOnlineNow
-                    ? 'En línea en este momento en ANFETA'
-                    : effectiveLast === personLastActivity
-                    ? `Última edición en Notion: ${personLastActivity}`
+                    ? 'En línea ahora en ANFETA'
                     : presenceLastSeen
-                    ? `Última conexión ANFETA: ${presenceLastSeen}`
-                    : 'Sin registro de última señal';
+                    ? `Último latido ANFETA: ${presenceLastSeen}`
+                    : firstSeenIso && person.lastActivityEdited
+                    ? `Última edición en Notion: ${person.lastActivityEdited}`
+                    : 'Sin señal de actividad';
 
                   return (
-                    <div className="mt-2 rounded-lg bg-slate-950/70 border border-slate-800/90 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono shadow-inner">
-                      <div className="flex items-center gap-1.5" title={firstTitle}>
-                        <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-                          <LogIn size={11} className="text-emerald-400" />
-                          <span>1ª señal:</span>
-                        </span>
-                        <span className="text-slate-200 font-bold">
+                    <div className="rounded-lg bg-slate-950/75 border border-slate-800/90 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono">
+                      <div className="flex items-center gap-1" title={firstTitle}>
+                        <LogIn size={11} className={firstSeenIso ? 'text-emerald-400' : 'text-rose-400/80'} />
+                        <span className="text-slate-400">1ª:</span>
+                        <span className={`font-bold ${firstSeenIso ? 'text-slate-100' : 'text-rose-300/90'}`}>
                           {firstDisplay}
                         </span>
                       </div>
 
                       <span className="text-slate-700">|</span>
 
-                      <div className="flex items-center gap-1.5" title={lastTitle}>
-                        <span className="flex items-center gap-1 text-cyan-400 font-semibold">
-                          <Activity size={11} className="text-cyan-400" />
-                          <span>Última señal:</span>
-                        </span>
-                        <span className="text-slate-200 font-bold truncate max-w-[120px] flex items-center gap-1">
+                      <div className="flex items-center gap-1" title={lastTitle}>
+                        <Activity size={11} className={isOnlineNow || presenceLastSeen ? 'text-cyan-400' : 'text-slate-500'} />
+                        <span className="text-slate-400">Últ:</span>
+                        <span className="text-slate-200 font-bold truncate max-w-[95px] inline-flex items-center gap-1">
                           {isOnlineNow && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                           <span>{lastDisplay}</span>
                         </span>
@@ -706,69 +761,85 @@ export function CalendarFtfPanel({
                   );
                 })()}
 
-                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px]">
-                  <span className={scoreInfo.coverageState === 'complete' ? 'text-emerald-300 font-medium' : 'text-cyan-200'}>
+                <div className="flex flex-wrap items-center justify-between gap-1 text-[10px]">
+                  <span className={scoreInfo.coverageState === 'complete' ? 'text-emerald-300 font-medium' : 'text-cyan-200/90'}>
                     {scoreInfo.coverageState === 'complete'
-                      ? '✓ Agenda llena sin huecos'
-                      : `Por asignar (dinámico): ${ftfHours(person.pendingAssignmentMinutes)}`}
+                      ? '✓ Agenda sin huecos (10–18h)'
+                      : scoreInfo.coverageState === 'empty'
+                      ? 'Sin cobertura registrada'
+                      : `Por cubrir (10–18h): ${ftfHours(person.pendingAssignmentMinutes)}`}
                   </span>
                   {scoreInfo.overtimeHours > 0 && (
                     <span
                       className="rounded-full bg-violet-950/80 border border-violet-400/60 px-1.5 py-0.2 text-[9.5px] font-bold text-violet-200 font-mono"
-                      title="Horas extra trabajadas después del corte 18:30 tras cumplir la jornada normal"
+                      title="Horas extra reales post-18:30 (actividades suspendidas excluidas)"
                     >
-                      +{scoreInfo.overtimeHours}h Bono Extra
+                      +{scoreInfo.overtimeHours}h Extra Bono
                     </span>
                   )}
                 </div>
 
-                {/* 3 Tiempos / Estrellas Interactivas + Tabulador del Supervisor */}
-                <div className="mt-1.5 flex items-center justify-between gap-1 rounded-lg border border-slate-800 bg-slate-950/60 px-2 py-1">
+                {/* 3 Estrellas con soporte ½ ★ + Botón Ajustar intuitivo */}
+                <div className="flex items-center justify-between gap-1 rounded-lg border border-slate-800 bg-slate-950/60 px-2 py-1">
                   <div className="flex items-center gap-1 flex-wrap">
                     {[
                       {
                         key: 'star1' as const,
                         label: 'FTF',
-                        active: scoreInfo.stars.star1,
-                        tip:
-                          scoreInfo.coverageState === 'complete'
-                            ? 'Tiempo 1: Agenda llena sin huecos (completo)'
-                            : 'Tiempo 1 (Dinámico): se marca completo automáticamente al llenar las horas del día',
+                        maxPts: 20,
+                        value: scoreInfo.stars.star1,
+                        tip: 'Cobertura sin huecos (20 pts)',
                       },
                       {
                         key: 'star2' as const,
                         label: 'Avance',
-                        active: scoreInfo.stars.star2,
-                        tip: 'Tiempo 2: Avances, checks y tareas terminadas durante el día',
+                        maxPts: 35,
+                        value: scoreInfo.stars.star2,
+                        tip: 'Terminadas, en revisión y checks (35 pts)',
                       },
                       {
                         key: 'star3' as const,
                         label: 'Cierre',
-                        active: scoreInfo.stars.star3,
-                        tip: 'Tiempo 3: FTF Final completado antes del corte 18:30',
+                        maxPts: 25,
+                        value: scoreInfo.stars.star3,
+                        tip: 'Cierre FTF antes de 18:30 (25 pts)',
                       },
-                    ].map(st => (
-                      <button
-                        key={st.key}
-                        type="button"
-                        disabled={!canMarkReview}
-                        onClick={() => {
-                          if (!canMarkReview) return;
-                          void savePersonScore(person, {
-                            starsOverride: { [st.key]: !st.active },
-                          });
-                        }}
-                        title={canMarkReview ? `${st.tip} · Clic para alternar manualmente` : st.tip}
-                        className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9.5px] font-semibold border transition-colors ${
-                          st.active
-                            ? 'border-amber-400/70 bg-amber-500/20 text-amber-200'
-                            : 'border-slate-700/80 bg-slate-900/80 text-slate-500'
-                        } ${canMarkReview ? 'cursor-pointer hover:border-amber-300' : 'cursor-default'}`}
-                      >
-                        <Star size={10} fill={st.active ? 'currentColor' : 'none'} className={st.active ? 'text-amber-300' : 'text-slate-500'} />
-                        <span>{st.label}</span>
-                      </button>
-                    ))}
+                    ].map(st => {
+                      const w = starWeight(st.value);
+                      const isFull = w >= 0.99;
+                      const isHalf = w > 0.01 && w < 0.99;
+                      const pctLabel = Math.round(w * 100);
+                      return (
+                        <button
+                          key={st.key}
+                          type="button"
+                          disabled={!canMarkReview}
+                          onClick={() => {
+                            if (!canMarkReview) return;
+                            void savePersonScore(person, {
+                              absent: false,
+                              starsOverride: { [st.key]: nextStarCycle(st.value) },
+                            });
+                          }}
+                          title={canMarkReview ? `${st.tip} (${pctLabel}%) · Clic alterna ★ 100% → ½★ 50% → ☆ 0%` : `${st.tip} (${pctLabel}%)`}
+                          className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9.5px] font-semibold border transition-colors ${
+                            isFull
+                              ? 'border-amber-400/75 bg-amber-500/20 text-amber-200'
+                              : isHalf
+                              ? 'border-amber-400/60 border-dashed bg-amber-500/10 text-amber-300'
+                              : 'border-slate-700/80 bg-slate-900/80 text-slate-500'
+                          } ${canMarkReview ? 'cursor-pointer hover:border-amber-300' : 'cursor-default'}`}
+                        >
+                          {isHalf ? (
+                            <StarHalf size={10} fill="currentColor" className="text-amber-300" />
+                          ) : (
+                            <Star size={10} fill={isFull ? 'currentColor' : 'none'} className={isFull ? 'text-amber-300' : 'text-slate-500'} />
+                          )}
+                          <span>{st.label}</span>
+                          {isHalf && <span className="text-[8.5px] font-mono">{pctLabel}%</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                   {canMarkReview && (
                     <button
@@ -779,26 +850,31 @@ export function CalendarFtfPanel({
                           ? 'border-cyan-400 bg-cyan-950/70 text-cyan-200'
                           : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white hover:border-cyan-600'
                       }`}
-                      title="Abrir tabulador manual 0–100 y nota de retroalimentación"
+                      title="Abrir ponderación detallada (0–100), medios puntos (½★) y nota"
                     >
                       <SlidersHorizontal size={10} />
-                      <span>Calificar</span>
+                      <span>Ajustar</span>
                     </button>
                   )}
                 </div>
 
                 {scoreInfo.supervisorNote && !isScorerOpen && (
-                  <p className="mt-1 rounded bg-indigo-950/35 border border-indigo-500/30 px-2 py-1 text-[10px] text-indigo-200">
+                  <p className="rounded bg-indigo-950/35 border border-indigo-500/30 px-2 py-1 text-[10px] text-indigo-200">
                     📝 {scoreInfo.supervisorNote}
                   </p>
                 )}
 
-                {/* Panel Tabulador del Supervisor */}
+                {/* Panel claro de Ponderación del Supervisor */}
                 {canMarkReview && isScorerOpen && (
-                  <div className="mt-1.5 rounded-lg border border-cyan-500/40 bg-slate-950/90 p-2 space-y-1.5 text-[10px]">
+                  <div className="rounded-lg border border-cyan-500/45 bg-slate-950/95 p-2.5 space-y-2 text-[10px]">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-cyan-200">Tabulador (Auto: {scoreInfo.autoScore})</span>
-                      <div className="flex items-center gap-1">
+                      <div>
+                        <span className="font-semibold text-cyan-200">Ponderación del día (Auto: {scoreInfo.autoScore})</span>
+                        <p className="text-[9px] text-slate-400">
+                          Asistencia {scoreInfo.breakdown.attendance}/20 + FTF {scoreInfo.breakdown.coverage}/20 + Avance {scoreInfo.breakdown.progress}/35 + Cierre {scoreInfo.breakdown.ftfFinal}/25
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() =>
@@ -813,25 +889,72 @@ export function CalendarFtfPanel({
                               : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-rose-200'
                           }`}
                         >
-                          {scoreInfo.absent ? '✓ Falta (0 pts)' : 'Marcar falta'}
+                          {scoreInfo.absent ? '✓ Falta (0)' : 'Falta'}
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             void savePersonScore(person, {
                               manualScoreOverride: null,
-                              absent: false,
+                              absent: undefined,
                               starsOverride: {},
                             })
                           }
                           className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-300 hover:text-white text-[9px] cursor-pointer"
-                          title="Restaurar cálculo automático"
+                          title="Volver al cálculo automático"
                         >
                           Auto
                         </button>
                       </div>
                     </div>
+
+                    {/* Selector rápido de % por estrella (0%, 50% ½★, 100% ★) */}
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { key: 'star1' as const, label: 'FTF (20p)', value: scoreInfo.stars.star1 },
+                        { key: 'star2' as const, label: 'Avance (35p)', value: scoreInfo.stars.star2 },
+                        { key: 'star3' as const, label: 'Cierre (25p)', value: scoreInfo.stars.star3 },
+                      ].map(st => {
+                        const w = starWeight(st.value);
+                        return (
+                          <div key={st.key} className="rounded border border-slate-800 bg-slate-900/70 p-1 text-center">
+                            <div className="text-[9px] text-slate-400 mb-1 truncate">{st.label}</div>
+                            <div className="flex items-center justify-center gap-0.5">
+                              {[
+                                { w: 0, lbl: '0%' },
+                                { w: 0.5, lbl: '½★' },
+                                { w: 1, lbl: '★' },
+                              ].map(opt => {
+                                const selected = Math.abs(w - opt.w) < 0.15;
+                                return (
+                                  <button
+                                    key={opt.lbl}
+                                    type="button"
+                                    onClick={() =>
+                                      void savePersonScore(person, {
+                                        absent: false,
+                                        manualScoreOverride: null,
+                                        starsOverride: { [st.key]: opt.w },
+                                      })
+                                    }
+                                    className={`px-1 py-0.5 rounded text-[9px] font-mono cursor-pointer border ${
+                                      selected
+                                        ? 'border-amber-400 bg-amber-500/25 text-amber-200 font-bold'
+                                        : 'border-slate-700/70 bg-slate-950 text-slate-400 hover:text-white'
+                                    }`}
+                                  >
+                                    {opt.lbl}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
                     <div className="flex items-center gap-2">
+                      <span className="text-[9.5px] text-slate-400 shrink-0">Total:</span>
                       <input
                         type="range"
                         min={0}
@@ -877,90 +1000,81 @@ export function CalendarFtfPanel({
                   </div>
                 )}
 
-                {/* Actividades del colaborador (Pendientes y Terminadas) */}
-                {((person as any).completedActivities?.length > 0 && person.pending.length === 0) && (
-                  <div className="mt-2 border-t border-slate-800/80 pt-1.5">
+                {/* Desplegable transparente de todas las actividades del día con su estado real */}
+                {(allDayActivities.length > 0 || suspendedList.length > 0) && (
+                  <div className="border-t border-slate-800/80 pt-1.5">
                     <button
                       type="button"
                       onClick={() => togglePersonExpand(person.name)}
-                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-[11px] font-medium text-emerald-300 hover:bg-slate-800/60"
+                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-[10.5px] font-medium text-cyan-200 hover:bg-slate-800/60 cursor-pointer"
                     >
                       <span>
-                        {isExpanded ? 'Ocultar' : 'Ver'} {(person as any).completedActivities.length} actividad{(person as any).completedActivities.length > 1 ? 'es' : ''} terminada{(person as any).completedActivities.length > 1 ? 's' : ''}
-                      </span>
-                      {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </button>
-                    {isExpanded && (
-                      <div className="mt-1 max-h-40 overflow-y-auto space-y-1.5 pr-1 select-text">
-                        {(person as any).completedActivities.map((activity: any) => (
-                          <button
-                            type="button"
-                            key={activity.pageId}
-                            onClick={() => onOpenActivity(activity)}
-                            className="block w-full rounded border border-emerald-950/60 bg-emerald-950/20 p-2 text-left text-[10.5px] text-slate-300 transition-colors hover:border-emerald-500 hover:bg-slate-900"
-                          >
-                            <div className="flex items-center justify-between text-emerald-400 font-mono text-[10px] mb-0.5">
-                              <span>✓ {calendarTime(activity.start)}</span>
-                              <span className="truncate max-w-[120px]">{calendarDomain(activity.title)}</span>
-                            </div>
-                            <div className="line-clamp-2 text-slate-300 font-normal">
-                              {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Desplegable de Actividades Pendientes (con scroll interno de max-h-40) */}
-                {person.pending.length > 0 && (
-                  <div className="mt-2 border-t border-slate-800/80 pt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => togglePersonExpand(person.name)}
-                      className="flex w-full items-center justify-between rounded px-1.5 py-1 text-[11px] font-medium text-amber-200 hover:bg-slate-800/60"
-                    >
-                      <span>
-                        {isExpanded ? 'Ocultar' : 'Ver'} {person.pending.length} actividad
-                        {person.pending.length > 1 ? 'es' : ''} pendiente
-                        {person.pending.length > 1 ? 's' : ''}
+                        {isExpanded ? 'Ocultar' : 'Ver'} desglose ({allDayActivities.length} act. · {person.assignedHours || 0}h)
                       </span>
                       {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                     </button>
 
                     {isExpanded && (
-                      <div className="mt-1 max-h-40 overflow-y-auto space-y-1.5 pr-1 select-text">
-                        {person.pending.map(activity => (
+                      <div className="mt-1 max-h-48 overflow-y-auto space-y-1.5 pr-1 select-text">
+                        {allDayActivities.map(activity => {
+                          const wf = workflowState(activity.status, activity.title);
+                          const isDone = wf === 'completed';
+                          const isRev = wf === 'review';
+                          const endMs = Date.parse(activity.end || activity.start);
+                          const isExpired = !isDone && !isRev && Number.isFinite(endMs) && endMs <= Date.now();
+                          const stateBadge = isDone
+                            ? { label: '✓ Terminada', cls: 'bg-emerald-950/70 text-emerald-300 border-emerald-600/50' }
+                            : isRev
+                            ? { label: '◎ En revisión', cls: 'bg-violet-950/70 text-violet-200 border-violet-500/50' }
+                            : isExpired
+                            ? { label: '⚠ Vencida (Por hacer)', cls: 'bg-rose-950/70 text-rose-300 border-rose-500/50' }
+                            : { label: '● Por hacer', cls: 'bg-sky-950/60 text-sky-300 border-sky-600/40' };
+                          return (
+                            <button
+                              type="button"
+                              key={activity.pageId}
+                              onClick={() => onOpenActivity(activity)}
+                              className="block w-full rounded border border-slate-800 bg-slate-950/85 p-2 text-left text-[10.5px] text-slate-200 transition-colors hover:border-cyan-500 hover:bg-slate-900 cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between gap-1 text-[9.5px] mb-1">
+                                <span className={`rounded border px-1.5 py-0.2 font-semibold ${stateBadge.cls}`}>
+                                  {stateBadge.label}
+                                </span>
+                                <span className="font-mono text-slate-400">
+                                  {calendarTime(activity.start)}–{calendarTime(activity.end || activity.start)}
+                                </span>
+                              </div>
+                              <div className="line-clamp-2 text-slate-200 font-normal">
+                                {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
+                              </div>
+                              <div className="mt-1 flex items-center justify-between text-[9.5px] text-slate-400">
+                                <span className="truncate max-w-[120px]">{calendarDomain(activity.title)}</span>
+                                <span className={activity.ftfVerified ? 'text-emerald-400' : 'text-amber-300'}>
+                                  {activity.ftfVerified ? '✓ Check FTF' : 'Sin check FTF'}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        {suspendedList.map(activity => (
                           <button
                             type="button"
                             key={activity.pageId}
                             onClick={() => onOpenActivity(activity)}
-                            className="block w-full rounded border border-slate-800 bg-slate-950/80 p-2 text-left text-[10.5px] text-slate-200 transition-colors hover:border-cyan-500 hover:bg-slate-900"
+                            className="block w-full rounded border border-slate-800/60 bg-slate-950/40 p-2 text-left text-[10px] text-slate-400 opacity-75 hover:opacity-100 cursor-pointer"
                           >
-                            <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px] mb-0.5">
-                              <span>{calendarTime(activity.start)}</span>
-                              <span className="truncate max-w-[120px]">{calendarDomain(activity.title)}</span>
-                            </div>
-                            <div className="line-clamp-2 text-slate-200 font-normal">
-                              {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
-                            </div>
-                            {!activity.ftfAvailable && (
-                              <span className="mt-1 block text-[10px] text-amber-300">
-                                ⚠ Falta la casilla FTF en Notion.
+                            <div className="flex items-center justify-between text-[9px] mb-0.5">
+                              <span className="rounded border border-slate-700 bg-slate-900 px-1 py-0.2 text-slate-400">
+                                Suspendida · No cuenta
                               </span>
-                            )}
+                              <span className="font-mono">{calendarTime(activity.start)}</span>
+                            </div>
+                            <div className="line-clamp-1 line-through">
+                              {calendarDisplayTitle(activity.title, calendarDomain(activity.title))}
+                            </div>
                           </button>
                         ))}
-
-                        <button
-                          type="button"
-                          onClick={() => togglePersonExpand(person.name)}
-                          className="mt-1 flex w-full items-center justify-center gap-1 rounded py-1 text-[10.5px] font-medium text-amber-300/80 hover:bg-slate-800/80 hover:text-amber-200 border-t border-slate-800/60"
-                        >
-                          <ChevronUp size={12} />
-                          <span>Cerrar pendientes</span>
-                        </button>
                       </div>
                     )}
                   </div>

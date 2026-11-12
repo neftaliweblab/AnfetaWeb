@@ -525,7 +525,12 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const settings=getSettings();
         const {activeTeam}=await import('@/services/teamDirectory');
         const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,!weekly),activeTeam()]);
-        const activities=pages.map((page:any)=>{const live=extractNotionPageData(page);return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page)},0);});
+        const activities=await Promise.all(pages.map(async(page:any)=>{
+          const live=extractNotionPageData(page);
+          const wf=workflowState(live.status,live.title);
+          const rf=knownReviewFlow(settings,page)||(wf==='review'?await cachedReviewFlow(settings,page).catch(()=>undefined):undefined);
+          return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page),...(rf?{reviewFlow:rf}:{})},0);
+        }));
         let warning='';
         if(weekly){
           const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');

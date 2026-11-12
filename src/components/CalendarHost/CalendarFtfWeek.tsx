@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import {readApiJson} from '@/lib/readApiJson';
 import {calendarTime, mexicoDate} from '@/services/calendarPresentation';
 import {buildFtfWeek, ftfWeekStart, shiftFtfDate} from '@/services/ftfDashboard';
-import {buildWeeklyPayrollMatrix, computeHybridFtfScore, SavedFtfScoreEntry} from '@/services/ftfScoring';
+import {buildWeeklyPayrollMatrix, computeHybridFtfScore, SavedFtfScoreEntry, starWeight} from '@/services/ftfScoring';
 
 type WeekReport = ReturnType<typeof buildFtfWeek> & {warning?: string};
 
@@ -68,7 +68,7 @@ export function CalendarFtfWeek({date}: {date: string}) {
       const existingDay = { ...(mergedScoresByDate[dayEntry.day] || {}) };
       for (const p of dayEntry.people) {
         if (!existingDay[p.name] && p.workdayHours !== null) {
-          const hasAnySignal = Boolean(p.firstSeen || p.lastSeen || p.recordedAt || p.total > 0);
+          const hasAnySignal = Boolean(p.firstSeen || p.lastSeen || (p.completedMinutes || 0) > 0 || p.total > 0);
           if (hasAnySignal) {
             existingDay[p.name] = computeHybridFtfScore(
               {
@@ -189,8 +189,14 @@ export function CalendarFtfWeek({date}: {date: string}) {
                               >
                                 {d.score}
                               </span>
-                              <span className="text-[9px] text-amber-300 mt-0.5">
-                                {d.stars.map(s => (s ? '★' : '☆')).join('')}
+                              <span
+                                className="text-[9px] text-amber-300 mt-0.5"
+                                title="★ = 100% · ◐ = ½ estrella (parcial) · ☆ = 0%"
+                              >
+                                {d.stars.map(s => {
+                                  const w = starWeight(s);
+                                  return w >= 0.99 ? '★' : w >= 0.25 ? '◐' : '☆';
+                                }).join('')}
                               </span>
                             </div>
                           )}
