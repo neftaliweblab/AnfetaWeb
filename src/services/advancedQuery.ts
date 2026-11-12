@@ -653,6 +653,69 @@ function checkSingleToken(
     if(tagMatch!==undefined)return token.isNegated?!tagMatch:tagMatch;
   }
 
+  // Filtro explícito de título / nombre (title:uzR, titulo:uzR, name:uzR)
+  if (/^(title|titulo|título|name|nombre):/i.test(token.value) && !token.isExact) {
+    const rawVal = token.value.replace(/^(title|titulo|título|name|nombre):/i, "").replace(/^"|"$/g, "").trim();
+    const isPrefix = rawVal.startsWith("^");
+    const cleanTerm = isPrefix ? rawVal.slice(1) : rawVal;
+    const term = matchCase ? cleanTerm : cleanTerm.toLowerCase();
+    const termFolded = term.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+    const titleRaw = String(item.name || (item as any).title || "");
+    const title = matchCase ? titleRaw : titleRaw.toLowerCase();
+    const titleFolded = title.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+    let titleMatch = false;
+    if (isPrefix) {
+      titleMatch =
+        title.startsWith(term) ||
+        titleFolded.startsWith(termFolded) ||
+        title.replace(/^\[[^\]]+\]\s*/, "").startsWith(term) ||
+        titleFolded.replace(/^\[[^\]]+\]\s*/, "").startsWith(termFolded);
+    } else {
+      titleMatch = title.includes(term) || titleFolded.includes(termFolded);
+    }
+    return token.isNegated ? !titleMatch : titleMatch;
+  }
+
+  // Búsqueda directa por inicio de título con circunflejo (^prefijo, ej. ^uzR, ^"uzR")
+  if (token.value.startsWith("^") && token.value.length > 1) {
+    const rawPrefix = token.value.slice(1).replace(/^"|"$/g, "");
+    const prefix = matchCase ? rawPrefix : rawPrefix.toLowerCase();
+    const prefixFolded = prefix.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    const titleRaw = String(item.name || (item as any).title || "");
+    const title = matchCase ? titleRaw : titleRaw.toLowerCase();
+    const titleFolded = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const titleWithoutBrackets = title.replace(/^\[[^\]]+\]\s*/, "");
+    const titleWithoutBracketsFolded = titleFolded.replace(/^\[[^\]]+\]\s*/, "");
+
+    const startsMatch =
+      title.startsWith(prefix) ||
+      titleFolded.startsWith(prefixFolded) ||
+      titleWithoutBrackets.startsWith(prefix) ||
+      titleWithoutBracketsFolded.startsWith(prefixFolded) ||
+      new RegExp("(?:^|[\\s|\\[])" + prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), matchCase ? "" : "i").test(title);
+
+    return token.isNegated ? !startsMatch : startsMatch;
+  }
+
+  // Búsqueda por prefijo con comodín asterisco (ej. uzR*)
+  if (token.value.endsWith("*") && token.value.length > 2 && !token.value.startsWith("*") && !token.isExact) {
+    const cleanPrefix = token.value.slice(0, -1).replace(/^"|"$/g, "");
+    const pfx = matchCase ? cleanPrefix : cleanPrefix.toLowerCase();
+    const pfxFolded = pfx.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const titleRaw = String(item.name || (item as any).title || "");
+    const title = matchCase ? titleRaw : titleRaw.toLowerCase();
+    const titleFolded = title.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+    const wildcardMatch =
+      new RegExp("\\b" + pfx.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), matchCase ? "" : "i").test(title) ||
+      new RegExp("\\b" + pfxFolded.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), matchCase ? "" : "i").test(titleFolded);
+
+    return token.isNegated ? !wildcardMatch : wildcardMatch;
+  }
+
   // Filtro por proveedor / fuente explícita (ej. source:notion, source:dropbox)
   if (valLow.startsWith("source:") && !token.isExact) {
     const sWant = valLow.slice(7).replace(/^"|"$/g, "").toLowerCase().trim();

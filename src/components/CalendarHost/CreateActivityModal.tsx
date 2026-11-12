@@ -259,29 +259,53 @@ export function CreateActivityModal({
             setSaving(true);
             setError('');
             try {
+              const hasTemplate = Boolean(selectedTemplate?.PageId || selectedTemplate?.pageId || selectedTemplate?.id);
+              const sourcePageId = selectedTemplate?.PageId || selectedTemplate?.pageId || selectedTemplate?.id;
+
+              const reqBody = hasTemplate
+                ? {
+                    action: 'create-from-template',
+                    payload: {
+                      currentUser,
+                      date: day,
+                      requests: [
+                        {
+                          sourcePageId,
+                          title,
+                          domain: domain || 'DOMINIO',
+                          person: person || 'Sin asignar',
+                          start: `${day}T${start}:00-06:00`,
+                          end: `${day}T${end}:00-06:00`,
+                        },
+                      ],
+                    },
+                  }
+                : {
+                    action: 'create-activity',
+                    payload: {
+                      title,
+                      domain,
+                      person,
+                      currentUser,
+                      start: `${day}T${start}:00-06:00`,
+                      end: `${day}T${end}:00-06:00`,
+                    },
+                  };
+
               const response = await fetchWithScheduleChoice('/api/data', {
                 method: 'POST',
-                signal:AbortSignal.timeout(115000),
+                signal: AbortSignal.timeout(115000),
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'create-activity',
-                  payload: {
-                    title,
-                    domain,
-                    person,
-                    currentUser,
-                    start: `${day}T${start}:00-06:00`,
-                    end: `${day}T${end}:00-06:00`,
-                  },
-                }),
+                body: JSON.stringify(reqBody),
               });
               const data = await response.json();
               if (!response.ok || !data.success) {
                 throw new Error(data.error || 'No se pudo crear la actividad');
               }
-              const url = data.activity?.pageUrl || (data.activity?.pageId ? `https://www.notion.so/${data.activity.pageId.replace(/-/g, '')}` : undefined);
-              showCreationResult(true, `Actividad creada para ${person}`, title, url, data.activity?.pageId);
-              onCreated(data.activity);
+              const createdActivity = hasTemplate ? data.createdActivities?.[0] : data.activity;
+              const url = createdActivity?.pageUrl || (createdActivity?.pageId ? `https://www.notion.so/${createdActivity.pageId.replace(/-/g, '')}` : undefined);
+              showCreationResult(true, `Actividad creada para ${person}`, title, url, createdActivity?.pageId);
+              if (createdActivity) onCreated(createdActivity);
             } catch (err) {
               showCreationResult(false, 'No se confirmó la creación', 'Revisa el detalle en el formulario.');
               const message=err instanceof Error?err.message:'Error de conexión';
@@ -391,9 +415,20 @@ export function CreateActivityModal({
             )}
 
             {selectedTemplate && (
-              <div className="text-[11px] text-[#38BDF8] flex items-center gap-1.5 pt-1">
-                <Check className="w-3 h-3 text-[#38BDF8]" />
-                <span>Plantilla activa: {selectedTemplate.Title || selectedTemplate.title}</span>
+              <div className="flex items-center justify-between text-[11px] text-[#38BDF8] bg-cyan-950/40 border border-cyan-800/60 rounded-lg px-2.5 py-1 mt-1">
+                <div className="flex items-center gap-1.5 truncate">
+                  <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="font-semibold text-cyan-300">Plantilla vinculada:</span>
+                  <span className="truncate text-slate-300">{selectedTemplate.Title || selectedTemplate.title}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTemplate(null)}
+                  className="ml-2 text-slate-400 hover:text-rose-400 text-[10.5px] font-medium shrink-0 cursor-pointer"
+                  title="Desvincular plantilla (crear en blanco)"
+                >
+                  ✕ Desvincular
+                </button>
               </div>
             )}
           </div>

@@ -145,6 +145,11 @@ export function extractSearchTerms(query: string): string[] {
       // Términos negados (-word o !word) no se resaltan
       if ((val.startsWith("-") || val.startsWith("!")) && val.length > 1) continue;
       if (val.startsWith(".")) val = val.slice(1);
+      if (/^(title|titulo|título|name|nombre):/i.test(val)) {
+        val = val.replace(/^(title|titulo|título|name|nombre):/i, "").replace(/^[^"']+|["']+$/g, "");
+      }
+      if (val.startsWith("^") && val.length > 1) val = val.slice(1);
+      if (val.endsWith("*") && val.length > 1) val = val.slice(0, -1);
     }
 
     val = val.trim();
