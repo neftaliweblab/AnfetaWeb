@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from 'react';
+import {ArrowLeft, Calendar, ArrowRight} from 'lucide-react';
 import {quickActivitySchedule} from '@/lib/quickActivitySchedule';
 import {calendarTime,mexicoDate} from '@/services/calendarPresentation';
 import type {NotionCalendarActivity} from '@/types/anfeta';
@@ -31,28 +32,40 @@ export function QuickScheduleActions({activity,onClose,onSave,disabled=false,cur
             type="button"
             aria-pressed={!targetDate && offset === -1}
             onClick={() => { setTargetDate(''); setOffset(-1); }}
-            className={`${buttonClass} text-center font-bold text-amber-300 hover:border-amber-400`}
+            className={`${buttonClass} text-center font-bold text-amber-300 hover:border-amber-400 p-1 flex flex-col items-center justify-center transition-colors`}
             title="Mover actividad a ayer (-1 día)"
           >
-            ⏪ Ayer (-1d)
+            <div className="flex items-center gap-1 text-[11px]">
+              <ArrowLeft className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Ayer</span>
+            </div>
+            <span className="text-[9.5px] opacity-75 font-mono">(-1d)</span>
           </button>
           <button
             type="button"
             aria-pressed={!targetDate && offset === 0}
             onClick={() => { setTargetDate(''); setOffset(0); }}
-            className={`${buttonClass} text-center font-bold text-cyan-300 hover:border-cyan-400`}
+            className={`${buttonClass} text-center font-bold text-cyan-300 hover:border-cyan-400 p-1 flex flex-col items-center justify-center transition-colors`}
             title="Conservar fecha original"
           >
-            📍 Hoy (0d)
+            <div className="flex items-center gap-1 text-[11px]">
+              <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Hoy</span>
+            </div>
+            <span className="text-[9.5px] opacity-75 font-mono">(0d)</span>
           </button>
           <button
             type="button"
             aria-pressed={!targetDate && offset === 1}
             onClick={() => { setTargetDate(''); setOffset(1); }}
-            className={`${buttonClass} text-center font-bold text-emerald-300 hover:border-emerald-400`}
+            className={`${buttonClass} text-center font-bold text-emerald-300 hover:border-emerald-400 p-1 flex flex-col items-center justify-center transition-colors`}
             title="Mover actividad a mañana (+1 día)"
           >
-            ⏩ Mañana (+1d)
+            <div className="flex items-center gap-1 text-[11px]">
+              <span>Mañana</span>
+              <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            </div>
+            <span className="text-[9.5px] opacity-75 font-mono">(+1d)</span>
           </button>
         </div>
       </div>
