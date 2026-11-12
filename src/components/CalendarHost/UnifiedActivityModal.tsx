@@ -32,6 +32,7 @@ import { ActivityContentPanel } from "./ActivityContentPanel";
 import { ReturnedObservations } from "./ReturnedObservations";
 import { ReturnToOwnerModal } from "./ReturnToOwnerModal";
 import { SendToReviewModal } from "./SendToReviewModal";
+import { normalizePerson } from "@/services/identityNormalizer";
 import { QuickAssigneeSelect } from "./QuickAssigneeSelect";
 import { ActivityQuickEntry } from "./ActivityQuickEntry";
 import { ActivityWhatsappGroups } from "../ActivityWhatsappGroups";
@@ -470,6 +471,11 @@ export function UnifiedActivityModal({
   const isCompleted = workflowState(activity.status, rawTitle) === "completed";
   const isReview = workflowState(activity.status, rawTitle) === "review";
   const isSuspended = workflowState(activity.status, rawTitle) === "suspended";
+  const reviewTarget = isReview
+    ? (activity.reviewFlow?.ReviewAssignee && normalizePerson(String(activity.reviewFlow.ReviewAssignee)) !== "Sin asignar"
+        ? normalizePerson(String(activity.reviewFlow.ReviewAssignee))
+        : currentReviewTagPerson(rawTitle, activity.status || ""))
+    : "";
   const conflict = detectActivityConflict({
     name: rawTitle,
     title: rawTitle,
@@ -657,6 +663,15 @@ export function UnifiedActivityModal({
                     await onUpdateActivity?.(activity.pageId, { status: newStatus });
                   }}
                 />
+                {isReview && !activity.isReviewMirror && (
+                  <span
+                    title={reviewTarget ? `Enviada a revisión con ${reviewTarget} (notificada en Pendientes)` : "Enviada a revisión"}
+                    className="inline-flex items-center gap-1 rounded border border-sky-500/60 bg-sky-950/75 px-2 py-0.5 text-[10.5px] font-semibold text-sky-200"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    <span>{reviewTarget ? `En revisión → ${reviewTarget}` : "En revisión"}</span>
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 text-[11px]">

@@ -1320,7 +1320,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               const state = workflowState(live.status, live.title);
               // A restricted nested/synced block must not hide every calendar page.
               const known=knownReviewFlow(liveSettings,page);
-              let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status?old.reviewFlow:undefined),reviewFlowScanned=!!known;
+              let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status&&(!old?.serverModified||!page.last_edited_time||old.serverModified===page.last_edited_time)?old.reviewFlow:undefined),reviewFlowScanned=!!known;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
               if (!basic || (enrichOffset===undefined && state === 'review' && !reviewFlow)) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }

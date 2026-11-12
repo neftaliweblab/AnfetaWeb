@@ -9,7 +9,7 @@ import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChe
 import {ActivityContentPanel} from './ActivityContentPanel';
 import {ReassignActivityModal} from './ReassignActivityModal';
 import {QuickAssigneeSelect} from './QuickAssigneeSelect';
-import {titlePriority} from '@/services/activityTags';
+import {currentReviewTagPerson, titlePriority} from '@/services/activityTags';
 
 import { calendarDomain, calendarDisplayTitle, calendarType, calendarUrgent, calendarInterval, calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import {isFtfReminder} from '@/services/progressKpis';
@@ -312,6 +312,11 @@ function ActivityCardComponent({
   const isCompleted = wf === "completed";
   const isReview = wf === "review";
   const isSuspended = wf === "suspended";
+  const reviewTarget = isReview
+    ? (activity.reviewFlow?.ReviewAssignee && normalizePerson(String(activity.reviewFlow.ReviewAssignee)) !== "Sin asignar"
+        ? normalizePerson(String(activity.reviewFlow.ReviewAssignee))
+        : currentReviewTagPerson(title, status))
+    : "";
 
   const isFin = isCompleted && (/^(?:z|fin|finaliz)/i.test(activity.status || '') || /(?<![a-z])z[rdscp]?\b/i.test(activity.title || '') || /cobro\/documentacion|cobrado/i.test(activity.status || '') || Boolean(activity.isFinalized));
 
@@ -587,7 +592,7 @@ function ActivityCardComponent({
             <span
               style={{ backgroundColor: badgeBg, borderColor: badgeBorder, color: badgeText }}
               className="shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-black font-mono shadow-sm"
-              title={isFin ? "Finalizada (FIN definitivo · Sin vuelta atrás)" : isCompleted ? "Terminada (En espera de revisión · Aún se puede regresar con correcciones)" : isReview ? "En Revisión" : isSuspended ? "Suspendida" : "Pendiente"}
+              title={isFin ? "Finalizada (FIN definitivo · Sin vuelta atrás)" : isCompleted ? "Terminada (En espera de revisión · Aún se puede regresar con correcciones)" : isReview ? (reviewTarget ? `En Revisión · Enviada a ${reviewTarget}` : "En Revisión") : isSuspended ? "Suspendida" : "Pendiente"}
             >
               {badgeLetter}
             </span>
@@ -709,6 +714,17 @@ function ActivityCardComponent({
           </span>
         )}
         {['returned','handoff'].includes(activity.reviewFlow?.State||'')&&!!activity.reviewFlow?.Note&&<span title={String(activity.reviewFlow.Note)} className="mb-1 truncate rounded border border-amber-500/60 px-1 text-[9px] font-bold text-amber-200">↩ Con observaciones</span>}
+        {isReview && !activity.isReviewMirror && (
+          <span
+            title={reviewTarget ? `Enviada a revisión · Notificada a ${reviewTarget} en Pendientes` : "En revisión"}
+            className="mb-1 inline-flex max-w-full items-center gap-1 self-start truncate rounded border border-sky-500/60 bg-sky-950/75 px-1.5 py-0.5 text-[9px] font-semibold text-sky-200 shadow-sm"
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" />
+            <span className="truncate">
+              {reviewTarget ? `En revisión → ${reviewTarget}` : "En revisión"}
+            </span>
+          </span>
+        )}
         {/* Fila Inferior: Horario + Duración (ej: 09:00 - 10:00 · 1H) */}
         <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400 pt-0.5 border-t border-[#26262B]/50">
           <span className="truncate">

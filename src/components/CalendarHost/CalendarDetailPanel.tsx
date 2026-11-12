@@ -24,6 +24,7 @@ import { isReviewer, isDirection, canEditActivity } from "@/services/activityPer
 import { CheckSquare, ExternalLink, Clock, User, Shield, Check, Loader2, ArrowRight, CheckCircle2, Send, ListChecks, Calendar as CalendarIcon } from "lucide-react";
 import { CalendarActivityTools } from './CalendarActivityTools';
 import { normalizePerson } from '@/services/identityNormalizer';
+import { currentReviewTagPerson } from '@/services/activityTags';
 import { SendToReviewModal } from "./SendToReviewModal";
 
 export interface NotionTodoItem {
@@ -101,6 +102,12 @@ export function CalendarDetailPanel({
   const timeLabel = startStr && endStr ? `${calendarTime(startStr)} – ${calendarTime(endStr)}` : startStr ? calendarTime(startStr) : "08:00";
 
   const wf = workflowState(status, title);
+  const reviewTarget = wf === "review"
+    ? (activity.reviewFlow?.ReviewAssignee && normalizePerson(String(activity.reviewFlow.ReviewAssignee)) !== "Sin asignar"
+        ? normalizePerson(String(activity.reviewFlow.ReviewAssignee))
+        : currentReviewTagPerson(title, status))
+    : "";
+  const canActAsReviewer = normalizePerson(currentUser) === normalizePerson(reviewTarget || activity.person);
   const cumulative=checklistTotals({checklistItems:items});
   const daily=dailyChecklist(items,mexicoDate(activity.start));
   const [showHistory,setShowHistory]=useState(false);
@@ -229,9 +236,20 @@ export function CalendarDetailPanel({
           </div>
 
           {/* Estado de Notion interactivo */}
-          <div className="flex items-center justify-between pt-1 border-t border-[#2D2D33]">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#2D2D33]">
             <span className="text-slate-400">Estado Notion:</span>
-            <ActivityStatusSelect pageId={activity.pageId} status={status} disabled={!editable} onReview={()=>setShowReviewModal(true)} onSave={async next=>{if(!onActivityUpdated)throw Error('No se puede guardar desde esta vista.');return await onActivityUpdated({status:next});}}/>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ActivityStatusSelect pageId={activity.pageId} status={status} disabled={!editable} onReview={()=>setShowReviewModal(true)} onSave={async next=>{if(!onActivityUpdated)throw Error('No se puede guardar desde esta vista.');return await onActivityUpdated({status:next});}}/>
+              {wf === "review" && !activity.isReviewMirror && (
+                <span
+                  title={reviewTarget ? `Enviada a revisión · Notificada a ${reviewTarget} en Pendientes` : "En revisión"}
+                  className="inline-flex items-center gap-1 rounded border border-sky-500/60 bg-sky-950/75 px-2 py-0.5 text-[10px] font-semibold text-sky-200"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>{reviewTarget ? `En revisión → ${reviewTarget}` : "En revisión"}</span>
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="pt-1 border-t border-[#2D2D33] space-y-1.5">
@@ -256,7 +274,7 @@ export function CalendarDetailPanel({
 
         {/* Botones de Acción de Flujo ANFETA (1:1 WPF) */}
         <div className="grid grid-cols-2 gap-2 pt-1">
-          {workflowState(activity.status,activity.title)==='review'?<button type="button" disabled={!editable||normalizePerson(currentUser)!==normalizePerson(activity.person)||!!activity.isReviewMirror} onClick={()=>setShowReturn(true)} className="rounded-lg border border-amber-500/60 bg-amber-950/50 px-3 py-2 text-xs font-semibold text-amber-200">↩ Regresar a responsable</button>:(<button
+          {workflowState(activity.status,activity.title)==='review'?<button type="button" disabled={!editable||!canActAsReviewer||!!activity.isReviewMirror} onClick={()=>setShowReturn(true)} className="rounded-lg border border-amber-500/60 bg-amber-950/50 px-3 py-2 text-xs font-semibold text-amber-200 disabled:opacity-40 disabled:cursor-not-allowed">↩ Regresar a responsable</button>:(<button
             disabled={!editable}
             onClick={() => setShowReviewModal(true)}
             className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#162235] hover:bg-[#1E3A5F] text-[#38BDF8] border border-[#223848] text-xs font-semibold transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
