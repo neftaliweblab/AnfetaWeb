@@ -449,9 +449,14 @@ function PendientesColumnComponent({
 
   const archivedTasks = useMemo(() => pendingTasks.filter((t) => Boolean(t.isArchived)), [pendingTasks]);
 
-  // Timed tasks: Bloques de horario
+  // Timed tasks: Bloques de horario (Siempre ordenados cronológicamente por hora)
   const timedTasks = useMemo(() => {
-    return pendingTasks.filter((t) => extractTaskTime(t).hasTime && !t.isArchived);
+    const raw = pendingTasks.filter((t) => extractTaskTime(t).hasTime && !t.isArchived);
+    return [...raw].sort((a, b) => {
+      const aInfo = extractTaskTime(a);
+      const bInfo = extractTaskTime(b);
+      return aInfo.timeMinutes - bInfo.timeMinutes;
+    });
   }, [pendingTasks]);
 
   // Free tasks: Pendientes libres / normales (Asignados directos hasta arriba)
@@ -1078,11 +1083,13 @@ function PendientesColumnComponent({
     for (let m = minH * 60; m < maxH * 60; m += step) {
       const sStart = m;
       const sEnd = m + step;
-      const slotTasks = timedTasks.filter((t) => {
-        const info = extractTaskTime(t);
-        if (!info.hasTime) return false;
-        return info.timeMinutes >= sStart && info.timeMinutes < sEnd;
-      });
+      const slotTasks = timedTasks
+        .filter((t) => {
+          const info = extractTaskTime(t);
+          if (!info.hasTime) return false;
+          return info.timeMinutes >= sStart && info.timeMinutes < sEnd;
+        })
+        .sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
 
       const isPassed = currentTimeMinutes >= sEnd;
       const isActive = currentTimeMinutes >= sStart && currentTimeMinutes < sEnd;
