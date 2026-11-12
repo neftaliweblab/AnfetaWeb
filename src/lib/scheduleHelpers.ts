@@ -30,7 +30,7 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
     task.isPostMidnight && tMin < 360 ? tMin + 1440 : tMin;
 
   const rangeMatch = title.match(
-    /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/i
+    /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i
   );
   if (rangeMatch) {
     let h1 = parseInt(rangeMatch[1], 10);
@@ -66,7 +66,7 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
     };
   }
 
-  const singleMatch = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i);
+  const singleMatch = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm|hrs?|h)(?:\s*(?:am|pm|hrs?|h))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i);
   if (singleMatch) {
     let hours = parseInt(singleMatch[1], 10);
     const minutes = singleMatch[2] ? parseInt(singleMatch[2], 10) : 0;
@@ -132,22 +132,47 @@ function formatHHMM(totalMinutes: number): string {
 
 /**
  * Replaces or prepends the leading time expression in a task title cleanly.
- * Handles ranges ("9:00 AM - 10:00 AM") without leaving an orphaned end time.
+ * Guarantees only a single AM/PM token is written, strips duplicated/glued AM/PM tokens
+ * (e.g. "6:00 PMPMPMprueba" -> "6:00 PM prueba"), and handles full ranges cleanly.
  */
 export function rewriteTitleWithTime(title: string, targetMinutes: number, targetEndMinutes?: number): string {
   const timeStr = formatMinutes12h(targetMinutes, false);
-  const rangeRegex = /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/i;
+  const dedupeMeridians = (s: string) =>
+    s
+      .replace(/(\d{1,2}:\d{2}\s*(?:AM|PM))(?:\s*(?:AM|PM))+/gi, "$1")
+      .replace(/(\d{1,2}:\d{2}\s*(?:AM|PM))([^\s·•\-])/gi, "$1 $2");
+
+  const rangeRegex =
+    /(?:^|\b)\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?\s*(?:-|a|al|to)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?(\s*[·•\-]\s*|\s*)/i;
   if (rangeRegex.test(title)) {
-    const endMin = typeof targetEndMinutes === "number" && targetEndMinutes > targetMinutes
-      ? targetEndMinutes
-      : targetMinutes + 60;
-    return title.replace(rangeRegex, `${timeStr} - ${formatMinutes12h(endMin, false)}`);
+    const endMin =
+      typeof targetEndMinutes === "number" && targetEndMinutes > targetMinutes
+        ? targetEndMinutes
+        : targetMinutes + 60;
+    const replacement = `${timeStr} - ${formatMinutes12h(endMin, false)}`;
+    const updated = title.replace(rangeRegex, (_, sep: string) => {
+      if (!sep) return replacement;
+      return sep.includes("·") || sep.includes("•") || sep.includes("-")
+        ? `${replacement} ${sep.trim()} `
+        : `${replacement} `;
+    });
+    return dedupeMeridians(updated).trim();
   }
-  const timeTokenRegex = /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|hrs?|h)?\b/i;
+
+  const timeTokenRegex =
+    /(?:^|\b)\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?(\s*[·•\-]\s*|\s*)/i;
   if (timeTokenRegex.test(title)) {
-    return title.replace(timeTokenRegex, timeStr);
+    const updated = title.replace(timeTokenRegex, (full, sep: string, offset: number) => {
+      const after = title.slice(offset + full.length);
+      if (!after.trim()) return timeStr;
+      if (sep && (sep.includes("·") || sep.includes("•") || sep.includes("-"))) {
+        return `${timeStr} ${sep.trim()} `;
+      }
+      return `${timeStr} `;
+    });
+    return dedupeMeridians(updated).trim();
   }
-  return `${timeStr} · ${title}`;
+  return `${timeStr} · ${title}`.trim();
 }
 
 /**
@@ -179,13 +204,15 @@ export function shiftTaskSchedule(
 }
 
 /**
- * Collects unfinished overdue timed tasks (`endMinutes <= nowMinutes`) and reschedules them
- * sequentially from the next rounded block after `nowMinutes`.
+ * Collects unfinished overdue timed tasks (`endMinutes <= nowMinutes`) and reschedules either
+ * all of them (`mode: 'all'`) or only the latest overdue task (`mode: 'last'`) consecutively into
+ * the next free blocks starting from `nowMinutes`.
  */
 export function computeCatchUpSchedule(
   tasks: PendingTaskItem[],
   nowMinutes: number,
-  stepMinutes: 30 | 60 = 30
+  stepMinutes: 30 | 60 = 30,
+  options?: { mode?: "all" | "last" }
 ): Array<{
   task: PendingTaskItem;
   newTitle: string;
@@ -206,10 +233,32 @@ export function computeCatchUpSchedule(
   if (overdue.length === 0) return [];
 
   const anchorStart = Math.max(nowMinutes, Math.ceil(nowMinutes / stepMinutes) * stepMinutes);
-  return overdue.map((task, idx) => {
+  const overdueIds = new Set(overdue.map((t) => t.id));
+  const occupiedSlots = new Set<number>();
+  for (const t of tasks) {
+    if (overdueIds.has(t.id) || t.isArchived || t.isCompleted) continue;
+    const parsed = parseTaskTime(t);
+    if (!parsed.hasTime || parsed.timeMinutes < anchorStart) continue;
+    const bucket = Math.floor(parsed.timeMinutes / stepMinutes) * stepMinutes;
+    occupiedSlots.add(bucket);
+  }
+
+  let cursor = anchorStart;
+  const allocateNextSlot = () => {
+    while (occupiedSlots.has(cursor) && cursor < 1680) {
+      cursor = Math.min(1680, cursor + stepMinutes);
+    }
+    const chosen = cursor;
+    occupiedSlots.add(chosen);
+    cursor = Math.min(1680, chosen + stepMinutes);
+    return chosen;
+  };
+
+  const targets = options?.mode === "last" ? [overdue[overdue.length - 1]] : overdue;
+  return targets.map((task) => {
     const parsed = parseTaskTime(task);
     const duration = Math.max(30, parsed.endMinutes - parsed.timeMinutes);
-    const slotMin = Math.min(1680, anchorStart + idx * stepMinutes);
+    const slotMin = allocateNextSlot();
     const slotEnd = slotMin + duration;
     return {
       task,

@@ -87,6 +87,7 @@ interface ResultsViewHostProps {
   onTogglePendingTask: (id: string) => void;
   onAddPendingTask: (task: Omit<PendingTaskItem, "id">) => void;
   onEditPendingTask?: (id: string, updatedData: Partial<PendingTaskItem>) => void;
+  onBatchEditPendingTasks?: (patches: Array<{ id: string; patch: Partial<PendingTaskItem> }>) => void;
   onDeletePendingTask: (id: string) => void;
   onDeleteAllPendingTasks?: () => void;
   onReorderPendingTasks?: (ids: string[]) => void;
@@ -122,6 +123,7 @@ export function ResultsViewHost({
   onTogglePendingTask,
   onAddPendingTask,
   onEditPendingTask,
+  onBatchEditPendingTasks,
   onDeletePendingTask,
   onDeleteAllPendingTasks,
   onReorderPendingTasks,
@@ -2238,6 +2240,7 @@ export function ResultsViewHost({
               setIsNewTaskModalOpen(true);
             }}
             onUpdateTask={onEditPendingTask}
+            onBatchUpdateTasks={onBatchEditPendingTasks}
             onDeleteTask={onDeletePendingTask}
             onDeleteAllTasks={onDeleteAllPendingTasks}
             onReorderTasks={onReorderPendingTasks}

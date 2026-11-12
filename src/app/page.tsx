@@ -223,7 +223,7 @@ export default function AnfetaApp() {
   const [currentDate, setCurrentDate] = useState(() => mexicoDate());
   const calendarContextRef=useRef('');calendarContextRef.current=currentUser+':'+currentDate;
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setSearchIndex(previous=>filterDeletedPages(previous,currentUser));setCalendarActivities(previous=>filterDeletedPages(previous,currentUser));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
-  const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleDeletePendingTask,handleDeleteAllPendingTasks,handleReorderPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
+  const {pendingTasks,pendingError,handleTogglePendingTask,handleAddPendingTask,handleEditPendingTask,handleBatchEditPendingTasks,handleDeletePendingTask,handleDeleteAllPendingTasks,handleReorderPendingTasks}=usePendingTasks(currentUser,isAuthenticated);
   const [showAutomation, setShowAutomation] = useState(false);
   const [automationReport, setAutomationReport] = useState<any>(null);
 
@@ -693,6 +693,7 @@ export default function AnfetaApp() {
             onTogglePendingTask={handleTogglePendingTask}
             onAddPendingTask={handleAddPendingTask}
             onEditPendingTask={handleEditPendingTask}
+            onBatchEditPendingTasks={handleBatchEditPendingTasks}
             onDeletePendingTask={handleDeletePendingTask}
             onDeleteAllPendingTasks={handleDeleteAllPendingTasks}
             onReorderPendingTasks={handleReorderPendingTasks}

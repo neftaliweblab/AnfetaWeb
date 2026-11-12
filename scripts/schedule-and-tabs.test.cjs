@@ -89,6 +89,34 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
   assert.equal(rangedUpdates[0].newTitle, '5:30 PM - 6:30 PM · Reporte con rango');
   assert.equal(rangedUpdates[0].startTime, '17:30');
   assert.equal(rangedUpdates[0].endTime, '18:30');
+
+  // Evita duplicar "PM" / "AM" y limpia textos pegados como "6:00 PMPMPMPMprueba..."
+  const corrupt = {
+    id: 'stuck',
+    title: '6:00 PMPMPMPMprueba guardado bien machin',
+    scheduledDate: '2026-11-12',
+    query: 'prueba',
+    isCompleted: false,
+  };
+  const cleaned = shiftTaskSchedule(corrupt, -60);
+  assert.equal(cleaned.title, '5:00 PM prueba guardado bien machin');
+  assert.equal(shiftTaskSchedule({ ...corrupt, title: cleaned.title }, 60).title, '6:00 PM prueba guardado bien machin');
+
+  // Modo 'last': mueve solo el último atrasado y evita chocar en el mismo bloque al repetir
+  const stack = [
+    { id: 't1', title: '9:00 AM · Primero', scheduledDate: '2026-11-12', query: '1', isCompleted: false },
+    { id: 't2', title: '11:00 AM · Último', scheduledDate: '2026-11-12', query: '2', isCompleted: false },
+  ];
+  const step1 = computeCatchUpSchedule(stack, 17 * 60 + 16, 60, { mode: 'last' });
+  assert.equal(step1.length, 1);
+  assert.equal(step1[0].task.id, 't2');
+  assert.equal(step1[0].newStartMinutes, 18 * 60); // 6:00 PM
+
+  const afterStep1 = [stack[0], { ...stack[1], title: step1[0].newTitle }];
+  const step2 = computeCatchUpSchedule(afterStep1, 17 * 60 + 16, 60, { mode: 'last' });
+  assert.equal(step2.length, 1);
+  assert.equal(step2[0].task.id, 't1');
+  assert.equal(step2[0].newStartMinutes, 19 * 60); // 7:00 PM (siguiente hueco consecutivo)
 });
 
 test('scheduleHelpers: simplifyReviewSearchQuery limpia etiquetas internas dejando dominio/título limpio', () => {

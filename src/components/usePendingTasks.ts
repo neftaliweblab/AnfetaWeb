@@ -74,6 +74,7 @@ export function usePendingTasks(user:string,authenticated:boolean){
             if(op.item&&!data.items.some((item:any)=>item.id===op.item.id))throw Error('El servidor no devolvió el pendiente guardado.');
             if(op.remove?.some(id=>data.items.some((item:any)=>item.id===id)))throw Error('El servidor no confirmó el borrado.');
             if(op.patch&&!data.items.some((item:any)=>item.id===op.id&&Object.entries(op.patch).every(([key,value])=>item[key]===value)))throw Error('El servidor no confirmó la edición.');
+            if(op.patches?.length&&!op.patches.every(entry=>data.items.some((item:any)=>item.id===entry.id&&Object.entries(entry.patch).every(([key,value])=>item[key]===value))))throw Error('El servidor no confirmó los cambios en lote.');
             confirmedRevision=data.revision;remote={items:data.items,revision:data.revision};confirmed=true;
           }
           if(!confirmed)throw Error('Los pendientes cambiaron en otra ventana. Vuelve a intentar.');
@@ -111,6 +112,7 @@ export function usePendingTasks(user:string,authenticated:boolean){
     pendingError:error,
     handleAddPendingTask:useCallback((task:Omit<PendingTaskItem,'id'>)=>send({item:{...task,id:crypto.randomUUID(),createdAt:new Date().toISOString()}}),[send]),
     handleEditPendingTask:useCallback((id:string,patch:Partial<PendingTaskItem>)=>send({id,patch}),[send]),
+    handleBatchEditPendingTasks:useCallback((patches:Array<{id:string;patch:Partial<PendingTaskItem>}>)=>{if(patches.length)send({patches});},[send]),
     handleTogglePendingTask:useCallback((id:string)=>{const task=current.current.find(t=>t.id===id);if(task)send({id,patch:{isCompleted:!task.isCompleted}});},[send]),
     handleDeletePendingTask:useCallback((id:string)=>send({remove:[id]}),[send]),
     handleDeleteAllPendingTasks:useCallback(()=>send({remove:current.current.map(t=>t.id)}),[send]),

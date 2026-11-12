@@ -184,6 +184,7 @@ interface PendientesColumnProps {
   onOpenNewTaskModalWithTime?: (timeStr: string) => void;
   onEditTask?: (task: PendingTaskItem) => void;
   onUpdateTask?: (id: string, patch: Partial<PendingTaskItem>) => void;
+  onBatchUpdateTasks?: (patches: Array<{ id: string; patch: Partial<PendingTaskItem> }>) => void;
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks?: () => void;
   onSelectTaskQuery?: (query: string) => void;
@@ -201,6 +202,7 @@ function PendientesColumnComponent({
   onOpenNewTaskModalWithTime,
   onEditTask,
   onUpdateTask,
+  onBatchUpdateTasks,
   onDeleteTask,
   onDeleteAllTasks,
   onSelectTaskQuery,
@@ -521,27 +523,32 @@ function PendientesColumnComponent({
 
   // Función para desfasar el horario en cadena (+30 min / -30 min) sin brincar a las 00:00 de la mañana
   const handleShiftSchedule = (deltaMinutes: number) => {
-    const updater = onUpdateTask
-      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onUpdateTask(t.id, patch)
-      : onEditTask
-      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onEditTask({ ...t, ...patch })
-      : null;
-    if (!updater) return;
-    let moved = 0;
+    const patches: Array<{ id: string; patch: Partial<PendingTaskItem> }> = [];
     timedTasks.forEach((t) => {
       const shifted = shiftTaskSchedule(t, deltaMinutes);
       if (shifted) {
-        moved += 1;
-        updater(t, {
-          title: shifted.title,
-          isPostMidnight: shifted.isPostMidnight,
-          ...(shifted.startTime ? { startTime: shifted.startTime, endTime: shifted.endTime } : {}),
+        patches.push({
+          id: t.id,
+          patch: {
+            title: shifted.title,
+            isPostMidnight: shifted.isPostMidnight,
+            ...(shifted.startTime ? { startTime: shifted.startTime, endTime: shifted.endTime } : {}),
+          },
         });
       }
     });
-    if (moved > 0) {
-      setFeedback(`Horario desfasado ${deltaMinutes > 0 ? `+${deltaMinutes}` : deltaMinutes} min`);
+    if (patches.length === 0) return;
+    if (onBatchUpdateTasks) {
+      onBatchUpdateTasks(patches);
+    } else if (onUpdateTask) {
+      patches.forEach(({ id, patch }) => onUpdateTask(id, patch));
+    } else if (onEditTask) {
+      patches.forEach(({ id, patch }) => {
+        const orig = timedTasks.find((t) => t.id === id);
+        if (orig) onEditTask({ ...orig, ...patch });
+      });
     }
+    setFeedback(`Horario desfasado ${deltaMinutes > 0 ? `+${deltaMinutes}` : deltaMinutes} min`);
   };
 
   const overdueTimedCount = useMemo(
@@ -554,27 +561,33 @@ function PendientesColumnComponent({
     [timedTasks, currentTimeMinutes]
   );
 
-  // Recoger bloques atrasados y reacomodarlos desde la hora actual en curso
-  const handleCatchUpOverdue = () => {
-    const updater = onUpdateTask
-      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onUpdateTask(t.id, patch)
-      : onEditTask
-      ? (t: PendingTaskItem, patch: Partial<PendingTaskItem>) => onEditTask({ ...t, ...patch })
-      : null;
-    if (!updater) return;
-    const updates = computeCatchUpSchedule(timedTasks, currentTimeMinutes, gridInterval);
+  // Recoger bloques atrasados: mode 'all' mueve todos juntos en lote; mode 'last' mueve solo el último atrasado al siguiente hueco libre
+  const handleCatchUpOverdue = (mode: "all" | "last" = "all") => {
+    const updates = computeCatchUpSchedule(timedTasks, currentTimeMinutes, gridInterval, { mode });
     if (updates.length === 0) {
       setFeedback("Sin bloques atrasados por recoger");
       return;
     }
-    updates.forEach(({ task, newTitle, startTime, endTime, isPostMidnight }) => {
-      updater(task, {
+    const patches = updates.map(({ task, newTitle, startTime, endTime, isPostMidnight }) => ({
+      id: task.id,
+      patch: {
         title: newTitle,
         isPostMidnight,
         ...(startTime ? { startTime, endTime } : {}),
-      });
-    });
-    setFeedback(`✓ ${updates.length} atrasado${updates.length > 1 ? "s" : ""} recogido${updates.length > 1 ? "s" : ""} desde ${formatTimeMinutes(updates[0].newStartMinutes)}`);
+      } as Partial<PendingTaskItem>,
+    }));
+    if (onBatchUpdateTasks) {
+      onBatchUpdateTasks(patches);
+    } else if (onUpdateTask) {
+      patches.forEach(({ id, patch }) => onUpdateTask(id, patch));
+    } else if (onEditTask) {
+      updates.forEach(({ task }, idx) => onEditTask({ ...task, ...patches[idx].patch }));
+    }
+    setFeedback(
+      mode === "last"
+        ? `✓ Último atrasado movido a ${formatTimeMinutes(updates[0].newStartMinutes)}`
+        : `✓ ${updates.length} atrasado${updates.length > 1 ? "s" : ""} recogido${updates.length > 1 ? "s" : ""} desde ${formatTimeMinutes(updates[0].newStartMinutes)}`
+    );
   };
 
   const pendingCount = activeTasks.filter((t) => !t.isCompleted).length;
@@ -1633,18 +1646,31 @@ function PendientesColumnComponent({
                 <span className="text-[10.5px] font-bold text-[#00E5FF] whitespace-nowrap">
                   ⏱️ CUADRÍCULA DE HORARIO <span className="text-[9px] text-slate-400 font-normal">({timedTasks.length})</span>
                 </span>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 flex-wrap">
                   <button
                     type="button"
-                    onClick={handleCatchUpOverdue}
+                    onClick={() => handleCatchUpOverdue("all")}
                     className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
                       overdueTimedCount > 0
                         ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
                         : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
                     }`}
-                    title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
+                    title="Recoger TODOS los bloques atrasados juntos en horarios consecutivos"
                   >
                     Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCatchUpOverdue("last")}
+                    disabled={overdueTimedCount === 0}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors whitespace-nowrap ${
+                      overdueTimedCount > 0
+                        ? "bg-amber-950/60 text-amber-300 border-amber-500/50 hover:bg-amber-900/50 cursor-pointer"
+                        : "bg-slate-900/50 text-slate-600 border-slate-800 cursor-not-allowed"
+                    }`}
+                    title="Recoger SOLO el último bloque atrasado al siguiente horario libre"
+                  >
+                    Último
                   </button>
                   {onReorderTasks && timedTasks.length > 1 && (
                     <button
@@ -1759,18 +1785,31 @@ function PendientesColumnComponent({
                     <span className="text-[10.5px] font-bold text-[#00E5FF] whitespace-nowrap">⏱️ HORARIO & RUTINA</span>
                     <span className="text-[9px] text-slate-400 font-normal whitespace-nowrap">({timedTasks.length})</span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 flex-wrap">
                     <button
                       type="button"
-                      onClick={handleCatchUpOverdue}
+                      onClick={() => handleCatchUpOverdue("all")}
                       className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
                         overdueTimedCount > 0
                           ? "bg-amber-500/20 text-amber-200 border-amber-400/60 hover:bg-amber-500/30"
                           : "bg-slate-800/70 text-slate-400 border-slate-700 hover:text-white"
                       }`}
-                      title="Recoger bloques atrasados no atendidos y reagendarlos desde la hora actual"
+                      title="Recoger TODOS los bloques atrasados juntos en horarios consecutivos"
                     >
                       Recoger{overdueTimedCount > 0 ? ` (${overdueTimedCount})` : ""}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCatchUpOverdue("last")}
+                      disabled={overdueTimedCount === 0}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-colors whitespace-nowrap ${
+                        overdueTimedCount > 0
+                          ? "bg-amber-950/60 text-amber-300 border-amber-500/50 hover:bg-amber-900/50 cursor-pointer"
+                          : "bg-slate-900/50 text-slate-600 border-slate-800 cursor-not-allowed"
+                      }`}
+                      title="Recoger SOLO el último bloque atrasado al siguiente horario libre"
+                    >
+                      Último
                     </button>
                     {onReorderTasks && timedTasks.length > 1 && (
                       <button
