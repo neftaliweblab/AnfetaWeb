@@ -124,7 +124,7 @@ export function normalizeActivity(raw: any, idx: number): NotionCalendarActivity
       if (raw.IsReviewMirror || raw.isReviewMirror || raw.isHandoffMirror) {
         return normalizePerson(raw.Person || raw.person);
       }
-      if (raw.reviewFlow?.State === 'pending' && raw.reviewFlow?.LeaveVisualCopy === false && raw.reviewFlow?.OriginalPerson && normalizePerson(raw.reviewFlow.OriginalPerson) !== 'Sin asignar') {
+      if (raw.reviewFlow?.State === 'pending' && raw.reviewFlow?.LeaveVisualCopy !== true && raw.reviewFlow?.OriginalPerson && normalizePerson(raw.reviewFlow.OriginalPerson) !== 'Sin asignar') {
         return normalizePerson(raw.reviewFlow.OriginalPerson);
       }
       let val = currentReviewTagPerson(title,raw.Status||raw.status||'')||normalizePerson(raw.Person||raw.person);

@@ -25,7 +25,7 @@ export function upsertCalendarActivity(rows:NotionCalendarActivity[],pageId:stri
   if(here){
     expected.push(saved);
     const flow=saved.reviewFlow;
-    if(flow?.State==='pending'&&flow.LeaveVisualCopy!==false&&normalizePerson(flow.OriginalPerson)!==normalizePerson(saved.person))expected.push({...saved,pageId:'review-mirror-'+saved.pageId,person:normalizePerson(flow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+saved.title});
+    if(flow?.State==='pending'&&flow.LeaveVisualCopy===true&&normalizePerson(flow.OriginalPerson)!==normalizePerson(saved.person))expected.push({...saved,pageId:'review-mirror-'+saved.pageId,person:normalizePerson(flow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+saved.title});
   }
   let inserted=false;const next:NotionCalendarActivity[]=[];
   for(const row of rows){

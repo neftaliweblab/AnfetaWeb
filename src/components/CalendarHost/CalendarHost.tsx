@@ -278,7 +278,7 @@ export function CalendarHost({
     for(const [id,saved] of recentHandoffs.current){if(saved.until<Date.now()){recentHandoffs.current.delete(id);continue;}if(mexicoDate(saved.activity.start)===currentDate)historical.set(id,saved.activity);}
     const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
     for(const saved of recentSaves.current.values())if(saved.until>Date.now()&&mexicoDate(saved.activity.start)===currentDate&&!originals.some(a=>pageIdentity(a)===pageIdentity(saved.activity)))originals.push(saved.activity);
-    const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
+    const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
   };
   const [pixelsPerHour, setPixelsPerHour] = useState(72);
   const [gridInterval,setGridInterval]=useState(30);
@@ -486,7 +486,7 @@ export function CalendarHost({
         setActivitiesList(prev=>{
           const oldById=new Map(prev.map(row=>[row.pageId,row]));
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=oldById.get(activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,oldById.get(a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,oldById.get(a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;
@@ -567,7 +567,7 @@ export function CalendarHost({
         const next = prev.filter(a => a.pageId !== pageId && a.pageId !== 'review-mirror-' + pageId);
         next.push(saved);
         if(Array.isArray(data.handoffCopies)){for(const copy of data.handoffCopies){if(!next.some(a=>a.pageId===copy.pageId))next.push(copy);}}
-        if (saved.reviewFlow?.State === 'pending' && saved.reviewFlow.LeaveVisualCopy !== false && normalizePerson(saved.reviewFlow.OriginalPerson) !== normalizePerson(saved.person)) next.push({...saved, pageId:'review-mirror-' + pageId, person:normalizePerson(saved.reviewFlow.OriginalPerson), isReviewMirror:true, title:'[COPIA REVISIÓN] ' + saved.title});
+        if (saved.reviewFlow?.State === 'pending' && saved.reviewFlow.LeaveVisualCopy === true && normalizePerson(saved.reviewFlow.OriginalPerson) !== normalizePerson(saved.person)) next.push({...saved, pageId:'review-mirror-' + pageId, person:normalizePerson(saved.reviewFlow.OriginalPerson), isReviewMirror:true, title:'[COPIA REVISIÓN] ' + saved.title});
         return next;
       });
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);

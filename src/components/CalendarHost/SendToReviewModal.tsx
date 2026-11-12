@@ -3,5 +3,5 @@ import type {NotionCalendarActivity} from '@/types/anfeta';
 import {TeamAssignmentDialog} from './TeamAssignmentDialog';
 import {submitReviewInBackground} from '@/lib/reviewSubmission';
 export function SendToReviewModal({activity,currentUser,onClose,onConfirm}:{activity:NotionCalendarActivity;currentUser:string;onClose:()=>void;onConfirm:(person:string,copy:boolean)=>Promise<boolean|void>|void}){
- return <TeamAssignmentDialog activity={activity} mode="review" onClose={onClose} onConfirm={(person,copy)=>{void submitReviewInBackground(activity.pageId,person,()=>onConfirm(person,copy),onClose,currentUser).catch(()=>{});}}/>;
+ return <TeamAssignmentDialog activity={activity} mode="review" onClose={onClose} onConfirm={(person)=>{void submitReviewInBackground(activity.pageId,person,()=>onConfirm(person,false),onClose,currentUser).catch(()=>{});}}/>;
 }

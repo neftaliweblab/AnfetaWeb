@@ -195,7 +195,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
         const next=old.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId);
         next.push(saved);
         for(const copy of data.handoffCopies||[])if(!next.some(a=>a.pageId===copy.pageId))next.push(copy);
-        if(saved.reviewFlow?.State==='pending'&&saved.reviewFlow.LeaveVisualCopy!==false&&normalizePerson(saved.reviewFlow.OriginalPerson)!==normalizePerson(saved.person))next.push({...saved,pageId:'review-mirror-'+pageId,person:normalizePerson(saved.reviewFlow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+saved.title});
+        if(saved.reviewFlow?.State==='pending'&&saved.reviewFlow.LeaveVisualCopy===true&&normalizePerson(saved.reviewFlow.OriginalPerson)!==normalizePerson(saved.person))next.push({...saved,pageId:'review-mirror-'+pageId,person:normalizePerson(saved.reviewFlow.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+saved.title});
         return next;
       });
       setNotice(data.warning||'Cambio confirmado en Notion.');
