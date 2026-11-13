@@ -14,7 +14,7 @@ import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
 import {UpdateNotice} from '../UpdateNotice';
 import {DiagnosticMessage} from '../Diagnostics/DiagnosticsLogs';
-import {retainedReviewFlow} from '@/lib/retainedReviewFlow';
+import {retainedReviewFlow,fixedReviewColumnPerson} from '@/lib/retainedReviewFlow';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {calendarConflict,nearbyFreeCalendarSlots} from '@/services/calendarConflicts';
 import {planDurationCascade} from '@/services/calendarPlanner';
@@ -485,8 +485,17 @@ export function CalendarHost({
         setRefreshWarning('');
         setActivitiesList(prev=>{
           const oldById=new Map(prev.map(row=>[row.pageId,row]));
-          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{const old=oldById.get(activity.pageId);return !activity.checklistScanned && old?.checklistScanned?{...activity,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:retainedReviewFlow(activity,old)}:activity;});
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror).map((a:NotionCalendarActivity)=>({...a,reviewFlow:retainedReviewFlow(a,oldById.get(a.pageId))}));const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
+          const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{
+            const old=oldById.get(activity.pageId);
+            const rf=retainedReviewFlow(activity,old);
+            const person=fixedReviewColumnPerson(activity.person,activity.status,activity.title,rf,Boolean(activity.isReviewMirror||activity.isHandoffMirror));
+            return !activity.checklistScanned && old?.checklistScanned
+              ? {...activity,person,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:rf}
+              : {...activity,person,reviewFlow:rf};
+          });
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror);
+          const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));
+          const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;

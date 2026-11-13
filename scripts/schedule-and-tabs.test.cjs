@@ -31,6 +31,7 @@ const {
   moveTaskToMinutes,
   computeCatchUpSchedule,
   simplifyReviewSearchQuery,
+  stripLeadingScheduleTime,
 } = require(root + '/src/lib/scheduleHelpers.ts');
 const { parseSearchTabs } = require(root + '/src/lib/searchTabsStorage.ts');
 const { matchesFlexibleOrQuotedQuery, parseAdvancedQuery } = require(root + '/src/services/advancedQuery.ts');
@@ -46,19 +47,21 @@ test('scheduleHelpers: desfasar después de las 11:30 PM no brinca a las 00:00 A
   const shifted1 = shiftTaskSchedule(lateTask, 30);
   assert.equal(shifted1.timeMinutes, 1440);
   assert.equal(shifted1.isPostMidnight, true);
-  assert.match(shifted1.title, /^12:00 AM/);
+  assert.equal(shifted1.startTime, '00:00');
+  assert.equal(shifted1.title, 'Revisar servidor nocturno');
 
-  const shifted2 = shiftTaskSchedule({ ...lateTask, title: shifted1.title, isPostMidnight: true }, 30);
+  const shifted2 = shiftTaskSchedule({ ...lateTask, title: shifted1.title, startTime: shifted1.startTime, isPostMidnight: true }, 30);
   assert.equal(shifted2.timeMinutes, 1470);
   assert.equal(shifted2.isPostMidnight, true);
-  assert.match(shifted2.title, /^12:30 AM/);
+  assert.equal(shifted2.startTime, '00:30');
+  assert.equal(shifted2.title, 'Revisar servidor nocturno');
 
-  const parsedLate = parseTaskTime({ ...lateTask, title: shifted2.title, isPostMidnight: true });
+  const parsedLate = parseTaskTime({ ...lateTask, title: shifted2.title, startTime: shifted2.startTime, isPostMidnight: true });
   assert.equal(parsedLate.timeMinutes, 1470);
   assert.match(parsedLate.timeBadge, /\(\+1d\)/);
 });
 
-test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas desde la hora actual', () => {
+test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas desde la hora actual sin poner hora en el título', () => {
   const nowMin = 13 * 60 + 10; // 1:10 PM
   const tasks = [
     { id: 'done', title: '10:00 AM · Hecha', scheduledDate: '2026-11-12', query: 'a', isCompleted: true },
@@ -72,9 +75,12 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
   assert.equal(updates.length, 2);
   assert.equal(updates[0].task.id, 'old1');
   assert.equal(updates[0].newStartMinutes, 13 * 60 + 30); // 1:30 PM
-  assert.match(updates[0].newTitle, /^1:30 PM/);
+  assert.equal(updates[0].startTime, '13:30');
+  assert.equal(updates[0].newTitle, 'Reporte 1');
   assert.equal(updates[1].task.id, 'old2');
   assert.equal(updates[1].newStartMinutes, 14 * 60); // 2:00 PM
+  assert.equal(updates[1].startTime, '14:00');
+  assert.equal(updates[1].newTitle, 'Reporte 2');
 
   const rangedTask = {
     id: 'rng',
@@ -87,11 +93,11 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
   };
   const rangedUpdates = computeCatchUpSchedule([rangedTask], 17 * 60 + 5, 30);
   assert.equal(rangedUpdates.length, 1);
-  assert.equal(rangedUpdates[0].newTitle, '5:30 PM - 6:30 PM · Reporte con rango');
+  assert.equal(rangedUpdates[0].newTitle, 'Reporte con rango');
   assert.equal(rangedUpdates[0].startTime, '17:30');
   assert.equal(rangedUpdates[0].endTime, '18:30');
 
-  // Evita duplicar "PM" / "AM" y limpia textos pegados como "6:00 PMPMPMPMprueba..."
+  // Limpia textos corruptos pegados como "6:00 PMPMPMPMprueba..." sin reinsertar AM/PM en title
   const corrupt = {
     id: 'stuck',
     title: '6:00 PMPMPMPMprueba guardado bien machin',
@@ -99,9 +105,13 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
     query: 'prueba',
     isCompleted: false,
   };
+  assert.equal(stripLeadingScheduleTime(corrupt.title), 'prueba guardado bien machin');
   const cleaned = shiftTaskSchedule(corrupt, -60);
-  assert.equal(cleaned.title, '5:00 PM prueba guardado bien machin');
-  assert.equal(shiftTaskSchedule({ ...corrupt, title: cleaned.title }, 60).title, '6:00 PM prueba guardado bien machin');
+  assert.equal(cleaned.title, 'prueba guardado bien machin');
+  assert.equal(cleaned.startTime, '17:00');
+  const shiftedBack = shiftTaskSchedule({ ...corrupt, title: cleaned.title, startTime: cleaned.startTime }, 60);
+  assert.equal(shiftedBack.title, 'prueba guardado bien machin');
+  assert.equal(shiftedBack.startTime, '18:00');
 
   // Modo 'last': mueve solo el último atrasado y evita chocar en el mismo bloque al repetir
   const stack = [
@@ -112,12 +122,15 @@ test('scheduleHelpers: recoger atrasados solo mueve tareas vencidas no atendidas
   assert.equal(step1.length, 1);
   assert.equal(step1[0].task.id, 't2');
   assert.equal(step1[0].newStartMinutes, 18 * 60); // 6:00 PM
+  assert.equal(step1[0].startTime, '18:00');
+  assert.equal(step1[0].newTitle, 'Último');
 
-  const afterStep1 = [stack[0], { ...stack[1], title: step1[0].newTitle }];
+  const afterStep1 = [stack[0], { ...stack[1], title: step1[0].newTitle, startTime: step1[0].startTime, endTime: step1[0].endTime }];
   const step2 = computeCatchUpSchedule(afterStep1, 17 * 60 + 16, 60, { mode: 'last' });
   assert.equal(step2.length, 1);
   assert.equal(step2[0].task.id, 't1');
   assert.equal(step2[0].newStartMinutes, 19 * 60); // 7:00 PM (siguiente hueco consecutivo)
+  assert.equal(step2[0].startTime, '19:00');
 });
 
 test('scheduleHelpers: simplifyReviewSearchQuery limpia etiquetas internas dejando dominio/título limpio', () => {
@@ -183,10 +196,11 @@ test('scheduleHelpers: hora explícita inicial no es sobreescrita por rango entr
   assert.equal(catchUp.length, 1);
   assert.equal(catchUp[0].task.id, 's5');
   assert.equal(catchUp[0].newStartMinutes, 18 * 60); // 6:00 PM
-  assert.equal(catchUp[0].newTitle, '6:00 PM Prueba');
+  assert.equal(catchUp[0].startTime, '18:00');
+  assert.equal(catchUp[0].newTitle, 'Prueba');
 });
 
-test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino conservando duración y AM/PM único', () => {
+test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino guardando hora en startTime sin repetir AM/PM en título', () => {
   const single = {
     id: 'm1',
     title: '5:30 PM · Revisar bitácora',
@@ -197,8 +211,9 @@ test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino conserv
   const movedSingle = moveTaskToMinutes(single, 19 * 60 + 30, 30); // 7:30 PM
   assert.equal(movedSingle.timeMinutes, 19 * 60 + 30);
   assert.equal(movedSingle.endMinutes, 20 * 60);
-  assert.equal(movedSingle.startTime, undefined);
-  assert.equal(movedSingle.title, '7:30 PM · Revisar bitácora');
+  assert.equal(movedSingle.startTime, '19:30');
+  assert.equal(movedSingle.endTime, undefined);
+  assert.equal(movedSingle.title, 'Revisar bitácora');
 
   const withExplicitFields = {
     id: 'm1b',
@@ -212,7 +227,7 @@ test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino conserv
   const movedExplicit = moveTaskToMinutes(withExplicitFields, 19 * 60 + 30, 30);
   assert.equal(movedExplicit.startTime, '19:30');
   assert.equal(movedExplicit.endTime, '20:00');
-  assert.equal(movedExplicit.title, '7:30 PM - 8:00 PM · En curso');
+  assert.equal(movedExplicit.title, 'En curso');
 
   const untimed = {
     id: 'm2',
@@ -224,5 +239,6 @@ test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino conserv
   const movedUntimed = moveTaskToMinutes(untimed, 18 * 60, 30);
   assert.equal(movedUntimed.timeMinutes, 18 * 60);
   assert.equal(movedUntimed.endMinutes, 18 * 60 + 30);
-  assert.equal(movedUntimed.title, '6:00 PM · Revisar pendientes sueltos');
+  assert.equal(movedUntimed.startTime, '18:00');
+  assert.equal(movedUntimed.title, 'Revisar pendientes sueltos');
 });

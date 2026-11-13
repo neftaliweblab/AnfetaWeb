@@ -40,6 +40,7 @@ import {
   moveTaskToMinutes,
   computeCatchUpSchedule,
   simplifyReviewSearchQuery,
+  stripLeadingScheduleTime,
 } from "@/lib/scheduleHelpers";
 import { MealBreakModal } from "../CalendarHost/MealBreakModal";
 import {
@@ -561,7 +562,8 @@ function PendientesColumnComponent({
           patch: {
             title: shifted.title,
             isPostMidnight: shifted.isPostMidnight,
-            ...(shifted.startTime ? { startTime: shifted.startTime, endTime: shifted.endTime } : {}),
+            startTime: shifted.startTime,
+            endTime: shifted.endTime,
           },
         });
       }
@@ -596,7 +598,8 @@ function PendientesColumnComponent({
     const patch: Partial<PendingTaskItem> = {
       title: moved.title,
       isPostMidnight: moved.isPostMidnight,
-      ...(moved.startTime ? { startTime: moved.startTime, endTime: moved.endTime } : {}),
+      startTime: moved.startTime,
+      endTime: moved.endTime,
     };
     if (onUpdateTask) {
       onUpdateTask(task.id, patch);
@@ -632,7 +635,8 @@ function PendientesColumnComponent({
       patch: {
         title: newTitle,
         isPostMidnight,
-        ...(startTime ? { startTime, endTime } : {}),
+        startTime,
+        endTime,
       } as Partial<PendingTaskItem>,
     }));
     if (onBatchUpdateTasks) {
@@ -1084,10 +1088,10 @@ function PendientesColumnComponent({
           </div>
         </div>
 
-        {/* Título del Bloque */}
+        {/* Título del Bloque (sin prefijo redundante de hora/AM/PM; la hora se muestra en el badge) */}
         <div className="font-bold text-[11.5px] text-white tracking-wide mb-1 leading-snug">
           <span className={isAttended || isCompleted ? "line-through text-slate-300" : ""}>
-            {task.title}
+            {stripLeadingScheduleTime(task.title) || task.query || task.title}
           </span>
         </div>
 

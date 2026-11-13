@@ -1320,7 +1320,13 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
               const state = workflowState(live.status, live.title);
               // A restricted nested/synced block must not hide every calendar page.
               const known=knownReviewFlow(liveSettings,page);
-              let reviewFlow: any = known || (old?.title===live.title&&old?.person===live.person&&old?.status===live.status&&(!old?.serverModified||!page.last_edited_time||old.serverModified===page.last_edited_time)?old.reviewFlow:undefined),reviewFlowScanned=!!known;
+              const sameReviewOwner=Boolean(
+                old?.reviewFlow?.State==='pending'&&
+                old?.reviewFlow?.LeaveVisualCopy!==true&&
+                normalizePerson(old?.person)===normalizePerson(old?.reviewFlow?.OriginalPerson)&&
+                normalizePerson(old?.reviewFlow?.ReviewAssignee)===normalizePerson(live.person)
+              );
+              let reviewFlow: any = known || (old?.title===live.title&&(old?.person===live.person||sameReviewOwner)&&old?.status===live.status&&(!old?.serverModified||!page.last_edited_time||old.serverModified===page.last_edited_time)?old.reviewFlow:undefined),reviewFlowScanned=!!known;
               let checklist: any = {checklistScanned:false,checklistTotal:0,checklistCompleted:0,todayChecklistCompleted:0,completedChecks:[]};
               const basic = searchParams.get('basic') === '1' || (enrichOffset!==undefined && (offset+batchIndex<enrichOffset || offset+batchIndex>=enrichOffset+6));
               if (!basic || (enrichOffset===undefined && state === 'review' && !reviewFlow)) try { reviewFlow = await cachedReviewFlow(liveSettings, page);reviewFlowScanned=true; }
@@ -1785,12 +1791,25 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
   }
 }
 
-async function publishCalendarPage(settings:any,page:any,activity:import('@/types/anfeta').NotionCalendarActivity|undefined=calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)){
+async function hydratePageReviewFlow(settings:any,page:any){
+ if(!page||page.__reviewFlow)return page;
+ const known=knownReviewFlow(settings,page);
+ if(known)return {...page,__reviewFlow:known};
  const live=extractNotionPageData(page);
- await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'page.properties_updated',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:activity}});
+ if(workflowState(live.status,live.title)==='review'){
+  const flow=await cachedReviewFlow(settings,page).catch(()=>undefined);
+  if(flow)return {...page,__reviewFlow:flow};
+ }
+ return page;
+}
+async function publishCalendarPage(settings:any,page:any,activity?:import('@/types/anfeta').NotionCalendarActivity){
+ const hydrated=activity?page:await hydratePageReviewFlow(settings,page);
+ const calActivity=activity||calendarActivityFromPage(hydrated,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId);
+ const live=extractNotionPageData(hydrated);
+ await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'page.properties_updated',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:calActivity?.person||live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calActivity}});
 }
 async function publishContentChange(settings:any,pageId:string){
- try{const page=await notionRequest(settings,'pages/'+cleanPageId(pageId));await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:page.last_edited_time,properties:{calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)}});}catch{console.warn('[ANFETA content] El contenido se guardó; queda pendiente la propagación del aviso.');}
+ try{const page=await notionRequest(settings,'pages/'+cleanPageId(pageId));const hydrated=await hydratePageReviewFlow(settings,page);await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:page.last_edited_time,properties:{calendarActivity:calendarActivityFromPage(hydrated,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)}});}catch{console.warn('[ANFETA content] El contenido se guardó; queda pendiente la propagación del aviso.');}
 }
 
 async function POSTLive(req: NextRequest) {
@@ -1822,10 +1841,13 @@ async function POSTLive(req: NextRequest) {
             states.push({id,deleted:true});
           }else{
             confirmedDeletedPages.delete(settings.notionToken+':'+id);
-            const live=extractNotionPageData(page);
+            const hydratedPage=await hydratePageReviewFlow(settings,page);
+            const live=extractNotionPageData(hydratedPage);
             liveNotionOverrides.set(live.id,live);
-            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)}});}catch{}
-            states.push({id,deleted:false,name:live.title,assignedPerson:live.person,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calendarActivityFromPage(page,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId)});
+            const calActivity=calendarActivityFromPage(hydratedPage,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId);
+            const statePerson=calActivity?.person||live.person;
+            try{await recordPageEvent({sourceKey,pageId:id,state:'active',eventType:'polled_state',serverModified:live.lastEdited,properties:{name:live.title,assignedPerson:statePerson,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calActivity}});}catch{}
+            states.push({id,deleted:false,name:live.title,assignedPerson:statePerson,updateStatus:live.status,serverModified:live.lastEdited,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,aiContent:readNotionContentProperty(page.properties),ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:calActivity});
           }
         }catch(err:any){
           const is404=err?.status===404||/404|no se puede verificar|faltar acceso/i.test(err?.message||'');
@@ -2875,7 +2897,7 @@ async function POSTLive(req: NextRequest) {
           person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
           reviewFlow:page.__reviewFlow || cached?.reviewFlow, isUrgent:undefined }, 0);
         (activity as any).serverModified=page.last_edited_time;
-        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'polled_state',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:activity}});
+        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'polled_state',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:activity.person||live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:activity}});
         persistCalendarActivity(activity);
         previewMemoryCache.clear();
         let ftfWarning='';
@@ -3087,7 +3109,8 @@ async function POSTLive(req: NextRequest) {
         invalidateChecklist(settings,pageId);
         let stats:any;try{stats=await checklistSnapshot(settings,currentPage,mexicoDate());}catch{warning=[warning,'El check se guardó, pero no se confirmaron los contadores.'].filter(Boolean).join(' ');}
         const checklistUpdate={blockId:item.blockId,checked,checklistTotal:stats?.checklistTotal,checklistCompleted:stats?.checklistCompleted,todayChecklistCompleted:stats?.todayChecklistCompleted};
-        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:block.last_edited_time||currentPage.last_edited_time,properties:{calendarActivity:calendarActivityFromPage(currentPage,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId),checklistUpdate}});
+        const hydratedCurrent=await hydratePageReviewFlow(settings,currentPage);
+        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:block.last_edited_time||currentPage.last_edited_time,properties:{calendarActivity:calendarActivityFromPage(hydratedCurrent,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId),checklistUpdate}});
         return NextResponse.json({success:true, blockId:item.blockId, checked,warning,stats});
         });
       } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }

@@ -3,7 +3,7 @@ import type {NotionCalendarActivity} from '../types/anfeta';
 import {pageIdentity} from './deletedPages';
 import {mexicoDate} from '../services/calendarPresentation';
 import {normalizePerson} from '../services/identityNormalizer';
-import {retainedReviewFlow} from './retainedReviewFlow';
+import {retainedReviewFlow,fixedReviewColumnPerson} from './retainedReviewFlow';
 import {applyNotionStates} from './applyNotionStates';
 const equal=(a:any,b:any)=>Object.keys(b).every(key=>a[key]===b[key])&&Object.keys(a).every(key=>key in b);
 function merge(old:NotionCalendarActivity|undefined,incoming:Partial<NotionCalendarActivity>){
@@ -12,6 +12,7 @@ function merge(old:NotionCalendarActivity|undefined,incoming:Partial<NotionCalen
   const next={...old,...patch} as NotionCalendarActivity;
   if(old?.checklistScanned&&incoming.checklistScanned===false)for(const key of ['checklistScanned','checklistTotal','checklistCompleted','checklistItems','completedChecks','todayChecklistCompleted'] as const)(next as any)[key]=old[key];
   next.reviewFlow=retainedReviewFlow({...next,reviewFlow:incoming.reviewFlow,reviewFlowScanned:incoming.reviewFlowScanned},old);
+  next.person=fixedReviewColumnPerson(next.person,next.status,next.title,next.reviewFlow,Boolean(next.isReviewMirror||next.isHandoffMirror));
   return old&&equal(old,next)?old:next;
 }
 /** Apply one confirmed activity, including arrival/departure from this day and review mirrors. */

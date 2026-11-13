@@ -22,13 +22,45 @@ export function formatMinutes12h(totalMinutes: number, includeNextDaySuffix = fa
 }
 
 /**
- * Parses start/end minutes from task title or metadata, keeping post-midnight shifts (>= 1440) in extended coordinates.
+ * Parses start/end minutes from dedicated schedule fields (`startTime`/`endTime`) first,
+ * falling back to task title or `scheduledDate`, keeping post-midnight shifts (>= 1440) in extended coordinates.
  */
 export function parseTaskTime(task: PendingTaskItem, defaultDurationMinutes = 60): ParsedTaskTime {
-  const title = (task.title || "").trim();
   const applyPostMidnight = (tMin: number) =>
     task.isPostMidnight && tMin < 360 ? tMin + 1440 : tMin;
 
+  if (task.startTime && /^\d{1,2}:\d{2}$/.test(task.startTime.trim())) {
+    const [sh, sm] = task.startTime.trim().split(":").map((v) => parseInt(v || "0", 10));
+    if (sh >= 0 && sh <= 24 && sm >= 0 && sm < 60) {
+      const startM = applyPostMidnight(sh * 60 + sm);
+      let endM = startM + defaultDurationMinutes;
+      let hasCustomRange = false;
+      if (task.endTime && /^\d{1,2}:\d{2}$/.test(task.endTime.trim())) {
+        const [eh, em] = task.endTime.trim().split(":").map((v) => parseInt(v || "0", 10));
+        if (eh >= 0 && eh <= 24 && em >= 0 && em < 60) {
+          const candidateEnd = applyPostMidnight(eh * 60 + em);
+          if (candidateEnd > startM) {
+            endM = candidateEnd;
+            hasCustomRange = true;
+          }
+        }
+      }
+      const w1 = ((startM % 1440) + 1440) % 1440;
+      const wh1 = Math.floor(w1 / 60);
+      const wm1 = w1 % 60;
+      const b1 = `${wh1 % 12 || 12}:${String(wm1).padStart(2, "0")}`;
+      return {
+        hasTime: true,
+        timeMinutes: startM,
+        endMinutes: endM,
+        timeBadge: hasCustomRange
+          ? `${b1} - ${formatMinutes12h(endM, endM >= 1440)}`
+          : formatMinutes12h(startM, startM >= 1440),
+      };
+    }
+  }
+
+  const title = (task.title || "").trim();
   const rangeMatch = title.match(
     /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i
   );
@@ -97,23 +129,6 @@ export function parseTaskTime(task: PendingTaskItem, defaultDurationMinutes = 60
     }
   }
 
-  if (task.startTime) {
-    const [sh, sm] = task.startTime.split(":").map((v) => parseInt(v || "0", 10));
-    const startM = applyPostMidnight(sh * 60 + sm);
-    let endM = startM + defaultDurationMinutes;
-    if (task.endTime) {
-      const [eh, em] = task.endTime.split(":").map((v) => parseInt(v || "0", 10));
-      endM = applyPostMidnight(eh * 60 + em);
-      if (endM <= startM) endM = startM + defaultDurationMinutes;
-    }
-    return {
-      hasTime: true,
-      timeMinutes: startM,
-      endMinutes: endM,
-      timeBadge: formatMinutes12h(startM, startM >= 1440),
-    };
-  }
-
   if (task.scheduledDate) {
     const timeMatch = task.scheduledDate.match(/T(\d{2}):(\d{2})/);
     if (timeMatch) {
@@ -137,6 +152,48 @@ function formatHHMM(totalMinutes: number): string {
   const h = Math.floor(wrapped / 60);
   const m = wrapped % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/**
+ * Strips any leading schedule range or timestamp (plus duplicated/glued AM/PM tokens such as
+ * "7:00 PMPMPMprueba guardado" -> "prueba guardado") so the title stays clean while the clock lives in `startTime`.
+ */
+export function stripLeadingScheduleTime(title: string): string {
+  const source = (title || "").trim();
+  if (!source) return "";
+  const leadingRange =
+    /^\s*\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?\s*(?:-|a|al|to)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?(?:\s*[·•\-]\s*|\s+|$)/i;
+  if (leadingRange.test(source)) {
+    return source.replace(leadingRange, "").trim();
+  }
+  const leadingMeridian =
+    /^\s*\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.?m\.?|p\.?m\.?)+(?:\s*[·•\-]\s*|\s+|$|(?=[A-Za-zÀ-ÿ0-9]))/i;
+  if (leadingMeridian.test(source)) {
+    return source.replace(leadingMeridian, "").trim();
+  }
+  const leadingHoursSuffix = /^\s*\d{1,2}(?:[:.]\d{2})?\s*(?:hrs?|h)(?:\s*[·•\-]\s*|\s+|$)/i;
+  if (leadingHoursSuffix.test(source)) {
+    return source.replace(leadingHoursSuffix, "").trim();
+  }
+  const leadingClock = /^\s*\d{1,2}[:.]\d{2}(?:\s*[·•\-]\s*|\s+|$)/;
+  if (leadingClock.test(source)) {
+    return source.replace(leadingClock, "").trim();
+  }
+  return source;
+}
+
+function cleanScheduleTitle(task: PendingTaskItem): string {
+  const cleaned = stripLeadingScheduleTime(task.title || "");
+  if (cleaned) return cleaned;
+  const fromQuery = (task.query || "").trim();
+  if (fromQuery) return stripLeadingScheduleTime(fromQuery) || fromQuery;
+  return (task.title || "").trim();
+}
+
+function taskHasExplicitRange(task: PendingTaskItem): boolean {
+  if (task.endTime && /^\d{1,2}:\d{2}$/.test(task.endTime.trim())) return true;
+  const title = (task.title || "").trim();
+  return /^\s*\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?\s*(?:-|a|al|to)\s*\d{1,2}(?:[:.]\d{2})?\s*(?:(?:am|pm|a\.?m\.?|p\.?m\.?|hrs?|h)+)?/i.test(title);
 }
 
 /**
@@ -185,17 +242,19 @@ export function rewriteTitleWithTime(title: string, targetMinutes: number, targe
 }
 
 /**
- * Shifts a task's time by `deltaMinutes` while preventing wrap-around back to 00:00 of the same morning.
- * Shifts crossing midnight (>= 1440 up to 1680 = 04:00 AM next day) mark `isPostMidnight: true`.
+ * Shifts a task's time by `deltaMinutes` without embedding clock strings back into `title`.
+ * Stores the updated clock in `startTime` (and `endTime` when explicitly ranged) and cleans any
+ * leftover leading timestamp from `title`.
  */
 export function shiftTaskSchedule(
   task: PendingTaskItem,
   deltaMinutes: number,
   defaultDurationMinutes = 60
-): { title: string; timeMinutes: number; endMinutes: number; startTime?: string; endTime?: string; isPostMidnight: boolean } | null {
+): { title: string; timeMinutes: number; endMinutes: number; startTime: string; endTime?: string; isPostMidnight: boolean } | null {
   const parsed = parseTaskTime(task, defaultDurationMinutes);
   if (!parsed.hasTime) return null;
 
+  const keepExplicitEnd = taskHasExplicitRange(task);
   const duration = Math.max(15, parsed.endMinutes - parsed.timeMinutes);
   let newMin = parsed.timeMinutes + deltaMinutes;
   // Prevent wrapping backwards past 00:00 unless already early morning
@@ -205,33 +264,36 @@ export function shiftTaskSchedule(
   const newEndMin = newMin + duration;
 
   return {
-    title: rewriteTitleWithTime(task.title, newMin, newEndMin),
+    title: cleanScheduleTitle(task),
     timeMinutes: newMin,
     endMinutes: newEndMin,
-    ...(task.startTime ? { startTime: formatHHMM(newMin), endTime: formatHHMM(newEndMin) } : {}),
+    startTime: formatHHMM(newMin),
+    endTime: keepExplicitEnd ? formatHHMM(newEndMin) : undefined,
     isPostMidnight: newMin >= 1440,
   };
 }
 
 /**
- * Moves any task (timed or untimed) to a specific minute slot (`targetStartMinutes`),
- * preserving its original duration when available.
+ * Moves any task (timed or untimed) to a specific minute slot (`targetStartMinutes`) without
+ * injecting AM/PM timestamps into `title`, persisting the clock in `startTime`/`endTime`.
  */
 export function moveTaskToMinutes(
   task: PendingTaskItem,
   targetStartMinutes: number,
   defaultDurationMinutes = 30
-): { title: string; timeMinutes: number; endMinutes: number; startTime?: string; endTime?: string; isPostMidnight: boolean } {
+): { title: string; timeMinutes: number; endMinutes: number; startTime: string; endTime?: string; isPostMidnight: boolean } {
   const parsed = parseTaskTime(task, defaultDurationMinutes);
+  const keepExplicitEnd = taskHasExplicitRange(task);
   const duration = parsed.hasTime ? Math.max(15, parsed.endMinutes - parsed.timeMinutes) : defaultDurationMinutes;
   const clampedStart = Math.max(0, Math.min(1680, targetStartMinutes));
   const clampedEnd = clampedStart + duration;
 
   return {
-    title: rewriteTitleWithTime(task.title, clampedStart, clampedEnd),
+    title: cleanScheduleTitle(task),
     timeMinutes: clampedStart,
     endMinutes: clampedEnd,
-    ...(task.startTime ? { startTime: formatHHMM(clampedStart), endTime: formatHHMM(clampedEnd) } : {}),
+    startTime: formatHHMM(clampedStart),
+    endTime: keepExplicitEnd ? formatHHMM(clampedEnd) : undefined,
     isPostMidnight: clampedStart >= 1440,
   };
 }
@@ -239,7 +301,7 @@ export function moveTaskToMinutes(
 /**
  * Collects unfinished overdue timed tasks (`endMinutes <= nowMinutes`) and reschedules either
  * all of them (`mode: 'all'`) or only the latest overdue task (`mode: 'last'`) consecutively into
- * the next free blocks starting from `nowMinutes`.
+ * the next free blocks starting from `nowMinutes`, storing the new time in `startTime` instead of `title`.
  */
 export function computeCatchUpSchedule(
   tasks: PendingTaskItem[],
@@ -251,7 +313,7 @@ export function computeCatchUpSchedule(
   newTitle: string;
   newStartMinutes: number;
   newEndMinutes: number;
-  startTime?: string;
+  startTime: string;
   endTime?: string;
   isPostMidnight: boolean;
 }> {
@@ -290,15 +352,17 @@ export function computeCatchUpSchedule(
   const targets = options?.mode === "last" ? [overdue[overdue.length - 1]] : overdue;
   return targets.map((task) => {
     const parsed = parseTaskTime(task, stepMinutes);
+    const keepExplicitEnd = taskHasExplicitRange(task);
     const duration = Math.max(stepMinutes, parsed.endMinutes - parsed.timeMinutes);
     const slotMin = allocateNextSlot();
     const slotEnd = slotMin + duration;
     return {
       task,
-      newTitle: rewriteTitleWithTime(task.title, slotMin, slotEnd),
+      newTitle: cleanScheduleTitle(task),
       newStartMinutes: slotMin,
       newEndMinutes: slotEnd,
-      ...(task.startTime ? { startTime: formatHHMM(slotMin), endTime: formatHHMM(slotEnd) } : {}),
+      startTime: formatHHMM(slotMin),
+      endTime: keepExplicitEnd ? formatHHMM(slotEnd) : undefined,
       isPostMidnight: slotMin >= 1440,
     };
   });

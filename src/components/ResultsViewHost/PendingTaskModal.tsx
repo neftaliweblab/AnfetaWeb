@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { PendingTaskItem } from "@/types/anfeta";
+import { stripLeadingScheduleTime } from "@/lib/scheduleHelpers";
 
 interface PendingTaskModalProps {
   isOpen: boolean;
@@ -43,7 +44,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
   React.useEffect(() => {
     if (isOpen) {
       if (taskToEdit) {
-        setTitle(taskToEdit.title || "");
+        const cleanedTitle = stripLeadingScheduleTime(taskToEdit.title || "");
+        setTitle(cleanedTitle || taskToEdit.title || "");
         setNote(taskToEdit.note || "");
         setDescription(taskToEdit.description || "");
         setUrl(taskToEdit.url || "");
@@ -51,37 +53,50 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         setScheduledDate(taskToEdit.scheduledDate || "");
         setQuery(taskToEdit.query || "");
 
-        // Extraer hora si ya viene en el título o startTime
-        const timeMatch = (taskToEdit.title || "").match(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/i);
-        if (timeMatch) {
-          const h = parseInt(timeMatch[1], 10);
-          const m = timeMatch[2] || "00";
-          const mer = timeMatch[3]?.toUpperCase() as ("AM" | "PM" | undefined);
-          setTimeHour(`${String(h).padStart(2, "0")}:${m}`);
-          setTimeMeridian(mer || ((h >= 1 && h <= 6) || h === 12 ? "PM" : "AM"));
+        // Preferir campo dedicado startTime; si no existe, extraer de título heredado
+        if (taskToEdit.startTime && /^\d{1,2}:\d{2}$/.test(taskToEdit.startTime.trim())) {
+          const [sh, sm] = taskToEdit.startTime.trim().split(":").map((v) => parseInt(v || "0", 10));
+          const mer: "AM" | "PM" = sh >= 12 ? "PM" : "AM";
+          const dispH = sh % 12 || 12;
+          setTimeHour(`${String(dispH).padStart(2, "0")}:${String(sm).padStart(2, "0")}`);
+          setTimeMeridian(mer);
         } else {
-          setTimeHour("");
-          setTimeMeridian("AM");
+          const timeMatch = (taskToEdit.title || "").match(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/i);
+          if (timeMatch) {
+            const hRaw = parseInt(timeMatch[1], 10);
+            const m = timeMatch[2] || "00";
+            const mer = timeMatch[3]?.toUpperCase() as ("AM" | "PM" | undefined);
+            const inferredMer = mer || ((hRaw >= 1 && hRaw <= 6) || hRaw >= 12 ? "PM" : "AM");
+            const dispH = hRaw > 12 ? hRaw % 12 || 12 : hRaw;
+            setTimeHour(`${String(dispH).padStart(2, "0")}:${m}`);
+            setTimeMeridian(inferredMer);
+          } else {
+            setTimeHour("");
+            setTimeMeridian("AM");
+          }
         }
       } else {
         const domInput = typeof document !== "undefined"
           ? (document.querySelector('input[placeholder*="Buscar"], input[type="search"], input[data-search-input]') as HTMLInputElement)?.value
           : "";
-        const defaultText = (initialTitle || initialQuery || domInput || "").trim();
+        const cleanInitial = stripLeadingScheduleTime(initialTitle || "");
+        const defaultText = (cleanInitial || initialQuery || domInput || "").trim();
         setTitle(defaultText);
         setNote("");
         setDescription("");
         setUrl("");
         setAssignedTo("");
         setScheduledDate(new Date().toISOString().split("T")[0]);
-        setQuery(initialQuery || (initialTitle ? "" : defaultText));
+        setQuery(initialQuery || cleanInitial || defaultText);
 
-        // Si viene con hora inicial (ej. al dar clic en slot libre como "09:00 - 10:00")
+        // Si viene con hora inicial (ej. al dar clic en slot libre como "09:00" o "18:00")
         const slotMatch = (initialTitle || "").match(/(\d{1,2}):(\d{2})/);
         if (slotMatch) {
           const h = parseInt(slotMatch[1], 10);
-          setTimeHour(`${String(h).padStart(2, "0")}:${slotMatch[2]}`);
-          setTimeMeridian((h >= 1 && h <= 6) || h === 12 ? "PM" : "AM");
+          const mer: "AM" | "PM" = h >= 12 ? "PM" : h >= 1 && h <= 6 ? "PM" : "AM";
+          const dispH = h > 12 ? h % 12 || 12 : h === 0 ? 12 : h;
+          setTimeHour(`${String(dispH).padStart(2, "0")}:${slotMatch[2]}`);
+          setTimeMeridian(mer);
         } else {
           setTimeHour("");
           setTimeMeridian("AM");
@@ -117,19 +132,35 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
     e.preventDefault();
     if (!title.trim() || !query.trim()) return;
 
-    // Si especificó hora explícita y no está en el título, prefijar
-    let finalTitle = title.trim();
-    if (timeHour.trim() && !finalTitle.includes(timeHour.trim())) {
-      finalTitle = `${timeHour.trim()} ${timeMeridian} · ${finalTitle}`;
+    // Guardar la hora en campo dedicado startTime sin contaminar el título con AM/PM
+    let computedStartTime: string | undefined;
+    const rawTime = timeHour.trim();
+    if (rawTime) {
+      const m = rawTime.match(/^(\d{1,2})(?:[:.](\d{2}))?/);
+      if (m) {
+        let h = parseInt(m[1], 10);
+        const min = Math.min(59, Math.max(0, parseInt(m[2] || "0", 10)));
+        if (h >= 0 && h <= 23) {
+          if (h <= 12) {
+            if (timeMeridian === "PM" && h < 12) h += 12;
+            else if (timeMeridian === "AM" && h === 12) h = 0;
+          }
+          computedStartTime = `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+        }
+      }
     }
+    const cleanTitle = stripLeadingScheduleTime(title.trim()) || title.trim();
 
     onSave(
       {
-        title: finalTitle,
+        title: cleanTitle,
         note: note.trim() || undefined,
         description: description.trim() || undefined,
         url: url.trim() || undefined,
         scheduledDate,
+        startTime: computedStartTime,
+        endTime: computedStartTime === taskToEdit?.startTime ? taskToEdit?.endTime : undefined,
+        isPostMidnight: taskToEdit?.isPostMidnight,
         query: query.trim(),
         isCompleted: taskToEdit ? taskToEdit.isCompleted : false,
         isAttended: taskToEdit ? taskToEdit.isAttended : false,

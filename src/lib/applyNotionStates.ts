@@ -3,6 +3,7 @@ import {staleActivity} from './activityRevision';
 import {pageIdentity} from './deletedPages';
 import {workflowState} from '../services/activityWorkflow';
 import {normalizePerson} from '../services/identityNormalizer';
+import {fixedReviewColumnPerson} from './retainedReviewFlow';
 export function applyNotionStates<T extends Record<string,any>>(rows:T[],states:any[]):T[]{
  const byId=new Map(states.map(state=>[pageIdentity(state.id),state]));let changed=false;
  const next=rows.flatMap(row=>{
@@ -12,7 +13,11 @@ export function applyNotionStates<T extends Record<string,any>>(rows:T[],states:
   const flow=state.calendarActivity?.reviewFlow||state.reviewFlow;
   if(row.isReviewMirror&&((state.updateStatus&&workflowState(state.updateStatus,state.name)==='completed')||flow?.State==='returned'||flow?.LeaveVisualCopy===false)){changed=true;return [];}
   const calendar=!!row.pageId;
-  const values:Record<string,unknown>=calendar?{title:state.name===undefined?undefined:row.isReviewMirror?'[COPIA REVISIÓN] '+state.name:state.name,person:row.isReviewMirror?undefined:state.assignedPerson===undefined?undefined:normalizePerson(state.assignedPerson),status:state.updateStatus,start:state.scheduledDate,end:state.scheduledEnd,ftfVerified:state.ftfVerified,ftfAvailable:state.ftfAvailable,reviewFlow:state.calendarActivity?.reviewFlow||state.reviewFlow,serverModified:state.serverModified}:{name:state.name,assignedPerson:state.assignedPerson,updateStatus:state.updateStatus,statusLabel:state.updateStatus,status:state.updateStatus,serverModified:state.serverModified,modifiedLocalDate:state.serverModified?String(state.serverModified).slice(0,10):undefined,scheduledDate:state.scheduledDate,scheduledEnd:state.scheduledEnd,ftfVerified:state.ftfVerified,ftfAvailable:state.ftfAvailable};
+  const effectiveFlow=flow||row.reviewFlow;
+  const incomingTitle=state.name===undefined?row.title:(row.isReviewMirror?'[COPIA REVISIÓN] '+state.name:state.name);
+  const incomingStatus=state.updateStatus===undefined?row.status:state.updateStatus;
+  const resolvedPerson=row.isReviewMirror?undefined:(state.assignedPerson!==undefined||effectiveFlow?fixedReviewColumnPerson(state.assignedPerson??row.person,incomingStatus||'',incomingTitle||'',effectiveFlow,false):undefined);
+  const values:Record<string,unknown>=calendar?{title:state.name===undefined?undefined:row.isReviewMirror?'[COPIA REVISIÓN] '+state.name:state.name,person:resolvedPerson,status:state.updateStatus,start:state.scheduledDate,end:state.scheduledEnd,ftfVerified:state.ftfVerified,ftfAvailable:state.ftfAvailable,reviewFlow:flow,serverModified:state.serverModified}:{name:state.name,assignedPerson:state.assignedPerson,updateStatus:state.updateStatus,statusLabel:state.updateStatus,status:state.updateStatus,serverModified:state.serverModified,modifiedLocalDate:state.serverModified?String(state.serverModified).slice(0,10):undefined,scheduledDate:state.scheduledDate,scheduledEnd:state.scheduledEnd,ftfVerified:state.ftfVerified,ftfAvailable:state.ftfAvailable};
   if (typeof state.aiContent === 'string') Object.assign(values, replaceNotionContentProperty(row, state.aiContent));
   // Sparse events must never erase fields omitted by the publisher.
   const update=Object.fromEntries(Object.entries(values).filter(([,value])=>value!==undefined));

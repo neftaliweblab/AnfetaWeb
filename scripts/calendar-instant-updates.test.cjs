@@ -22,6 +22,12 @@ assert.equal(applyCalendarStates([base],[{id,serverModified:'2026-10-21T00:00:00
 assert.deepEqual(applyCalendarStates([base],[{id,deleted:true,serverModified:'2026-10-23T00:00:00Z'}],day),[]);
 assert.equal(mergeCalendarSnapshot([{...base,localConfirmedAt:Date.now()}],[],day).length,1,'Slow initial read cannot erase a just-confirmed task');
 assert.equal(mergeCalendarSnapshot([changed],[{...base,checklistScanned:false}],day)[0].checklistCompleted,1);
+const ownedReview={...base,title:'rtuzR Trabajo ne11 jjo000',person:'Neftali',status:'EN REVISIÓN',reviewFlow:{State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'John',LeaveVisualCopy:false},reviewFlowScanned:true};
+const afterPartialPoll=applyCalendarStates([ownedReview],[{id,serverModified:'2026-10-22T16:02:00Z',name:ownedReview.title,assignedPerson:'John',updateStatus:'EN REVISIÓN'}],day);
+assert.equal(afterPartialPoll[0].person,'Neftali','Polled review event must keep card fixed in creator column');
+const afterSnapshotPoll=mergeCalendarSnapshot([ownedReview],[{...ownedReview,person:'John',reviewFlow:undefined,reviewFlowScanned:false}],day);
+assert.equal(afterSnapshotPoll[0].person,'Neftali','Un-enriched snapshot must keep pending review card fixed in creator column');
+assert.equal(afterSnapshotPoll[0].reviewFlow?.ReviewAssignee,'John');
 
 const storage=new Map(),timers=new Map();let timerId=0;const realInterval=global.setInterval,realClear=global.clearInterval;
 global.setInterval=(fn,ms)=>{const key=++timerId;timers.set(key,{fn,ms});return key;};global.clearInterval=id=>timers.delete(id);
