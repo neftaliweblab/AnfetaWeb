@@ -16,11 +16,11 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles, Database,
+  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles, Layers,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
-import { openNotionPage } from "@/services/windowsIntegration";
+import { NotionQuickAccessChips } from "@/components/NotionQuickAccessChips";
 import { personWorkQuery } from "@/components/ResultsViewHost/PersistentSearchAccess";
 
 interface CalendarTopControlsProps {
@@ -47,6 +47,8 @@ interface CalendarTopControlsProps {
   onToggleCobros: () => void;
   filterPagos: boolean;
   onTogglePagos: () => void;
+  filterSecondary?: boolean;
+  onToggleSecondary?: () => void;
   onOpenTemplates: () => void;
   onOpenReport: () => void;
   onBackToSearch: () => void;
@@ -84,6 +86,8 @@ export function CalendarTopControls({
   onToggleCobros,
   filterPagos,
   onTogglePagos,
+  filterSecondary = false,
+  onToggleSecondary,
   onOpenTemplates,
   onOpenReport,
   onBackToSearch,
@@ -105,35 +109,6 @@ export function CalendarTopControls({
   const calendarHeader = formatLongCalendarDate(currentDate);
   const isTodayActive = calendarHeader.relativeBadge === "Hoy";
   const zoomPercent = Math.round((pixelsPerHour / 72) * 100);
-
-  const [baseLinks, setBaseLinks] = React.useState([
-    { id: 'Revisiones', name: 'Revisiones', url: 'https://www.notion.so/2eeabd7d91b781348ed5c537ec14962e' },
-    { id: 'Clientes', name: 'Clientes', url: 'https://www.notion.so/2f0abd7d91b781a0993ed4d3129ea46f' },
-    { id: 'Dominios', name: 'Dominios', url: 'https://www.notion.so/2f0abd7d91b781948d43d2627adf2212' },
-    { id: 'Cobrar y pagar', name: 'Cobros/Pagos', url: 'https://www.notion.so/2eeabd7d91b781a5a2eec9a20d3d656a' },
-    { id: 'Programas y proyectos', name: 'Proyectos', url: 'https://www.notion.so/3cdabd7d91b7835caf8781ca85181639' },
-    { id: 'Correos Contraseñas', name: 'Correos', url: 'https://www.notion.so/2f1abd7d91b781f5bd6ef2b1ecad4838' },
-  ]);
-
-  React.useEffect(() => {
-    let active = true;
-    fetch('/api/data?type=notion-base-links', { signal: AbortSignal.timeout(15000) })
-      .then(res => res.json())
-      .then(data => {
-        if (!active || !Array.isArray(data?.items) || data.items.length === 0) return;
-        setBaseLinks(prev => {
-          return prev.map(base => {
-            const found = data.items.find((it: any) =>
-              it.name?.toLowerCase().includes(base.name.toLowerCase()) ||
-              it.id === base.id
-            );
-            return found ? { ...base, url: found.url } : base;
-          });
-        });
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
 
   return (
     <div className="min-h-11 h-auto min-w-0 max-w-full bg-[#0F141A] border-b border-[#26323E] px-2 py-1.5 flex flex-wrap items-center gap-1 text-[11px] select-none flex-shrink-0">
@@ -258,7 +233,7 @@ export function CalendarTopControls({
       {reviewNotifications}
       {/* 3. Action Toggles and Buttons */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {/* Toggle Cobros */}
+        {/* Toggle Ingresos */}
         <button
           onClick={onToggleCobros}
           className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors ${
@@ -266,12 +241,12 @@ export function CalendarTopControls({
               ? "bg-[#18212B] text-[#4ADE80] border-[#4ADE80]/50 shadow-[0_0_8px_rgba(74,222,128,0.2)]"
               : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#E2E8F0]"
           }`}
-          aria-label="Mostrar columna de cobros" aria-pressed={filterCobros} title="Mostrar columna de cobros"
+          aria-label="Mostrar columna de ingresos" aria-pressed={filterCobros} title="Mostrar columna de ingresos (cobros)"
         >
-          <Banknote className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Cobros</span>
+          <Banknote className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Ingresos</span>
         </button>
 
-        {/* Toggle Pagos */}
+        {/* Toggle Egresos */}
         <button
           onClick={onTogglePagos}
           className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors ${
@@ -279,10 +254,28 @@ export function CalendarTopControls({
               ? "bg-[#18212B] text-[#FB923C] border-[#FB923C]/50 shadow-[0_0_8px_rgba(251,146,60,0.2)]"
               : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#E2E8F0]"
           }`}
-          aria-label="Mostrar columna de pagos" aria-pressed={filterPagos} title="Mostrar columna de pagos"
+          aria-label="Mostrar columna de egresos" aria-pressed={filterPagos} title="Mostrar columna de egresos (pagos)"
         >
-          <CreditCard className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Pagos</span>
+          <CreditCard className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Egresos</span>
         </button>
+
+        {/* Toggle Secundarias (22) */}
+        {onToggleSecondary && (
+          <button
+            type="button"
+            onClick={onToggleSecondary}
+            className={`px-2 py-1 rounded border text-[11px] font-medium transition-colors cursor-pointer ${
+              filterSecondary
+                ? "bg-[#18212B] text-[#38BDF8] border-[#38BDF8]/60 shadow-[0_0_8px_rgba(56,189,248,0.25)]"
+                : "bg-[#131A22] text-[#94A3B8] border-[#223848] hover:text-[#E2E8F0]"
+            }`}
+            aria-label="Separar actividades secundarias (22) en columna"
+            aria-pressed={filterSecondary}
+            title="Separar actividades secundarias (22) en su propia columna para dejar limpia la agenda principal"
+          >
+            <Layers className="w-3.5 h-3.5 inline"/><span className="hidden xl:inline ml-1">Secundarias</span>
+          </button>
+        )}
 
         {/* Toggle Paleta Web / Escritorio */}
         {onTogglePalette && (
@@ -470,28 +463,8 @@ export function CalendarTopControls({
         {/* Separador vertical */}
         <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block shrink-0" />
 
-        {/* Accesos rápidos a Bases de Notion en Chips directos (ubicados en el espacio derecho de controles) */}
-        <div className="flex items-center gap-1 flex-wrap shrink-0" title="Bases originales de Notion (Abre Notion directamente)">
-          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mr-0.5">
-            <Database className="w-3 h-3 text-cyan-400" />
-            <span className="hidden xl:inline">Bases:</span>
-          </span>
-          {baseLinks.map((base) => (
-            <button
-              key={base.id}
-              type="button"
-              onClick={() => openNotionPage(base.url)}
-              title={`Abrir base de Notion «${base.name}» (Abre Notion directamente)`}
-              className="flex items-center gap-1 rounded border border-cyan-900/80 bg-cyan-950/40 hover:bg-cyan-900/60 hover:border-cyan-400 px-1.5 py-0.5 text-[10px] font-medium text-cyan-200 transition-colors cursor-pointer shadow-sm"
-            >
-              <Database className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
-              <span>{base.name}</span>
-              <span className="rounded bg-cyan-900/90 px-1 py-0.2 text-[8px] font-bold text-cyan-300 border border-cyan-700/60">
-                BD
-              </span>
-            </button>
-          ))}
-        </div>
+        {/* Accesos rápidos a Bases y Vistas de Notion en Chips directos */}
+        <NotionQuickAccessChips compact />
       </div>
     </div>
   );

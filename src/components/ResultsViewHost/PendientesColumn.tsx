@@ -29,10 +29,14 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Repeat,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { normalizePerson } from "@/services/identityNormalizer";
+import { calendarTime } from "@/services/calendarPresentation";
+import { buildAttendedStatePatch, isFtfPendingBlock, isRecurringPendingTask } from "@/lib/pendingRecurrence";
+import { isReviewOrSentPending, isVideoPendingTask } from "@/lib/pendingAlerts";
 import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
 import {
   parseTaskTime,
@@ -447,6 +451,12 @@ function PendientesColumnComponent({
     );
   }, [activeTasks, currentUser]);
 
+  // Pendientes enviados / con video / que requieren revisión para completar
+  const reviewPendingTasks = useMemo(
+    () => activeTasks.filter((t) => !t.isCompleted && !t.isAttended && isReviewOrSentPending(t)),
+    [activeTasks]
+  );
+
   const handleDuplicateTask = (task: PendingTaskItem) => {
     if (onDuplicateTask) {
       onDuplicateTask(task);
@@ -712,12 +722,23 @@ function PendientesColumnComponent({
   };
 
   const toggleAttendedState = (task: PendingTaskItem) => {
+    const nextAttended = !task.isAttended;
+    const patch = buildAttendedStatePatch(task, nextAttended, new Date());
     if (onToggleAttended) {
       onToggleAttended(task.id);
+    } else if (onUpdateTask) {
+      onUpdateTask(task.id, patch);
     } else if (onEditTask) {
-      onEditTask({ ...task, isAttended: !task.isAttended });
+      onEditTask({ ...task, ...patch });
     }
-    setFeedback(task.isAttended ? "Marcado como pendiente" : "✓ Marcado como atendido");
+    const timeLabel = nextAttended && patch.completedAt ? calendarTime(patch.completedAt) : "";
+    setFeedback(
+      nextAttended
+        ? isRecurringPendingTask(task)
+          ? `✓ Atendido (${timeLabel || "hoy"}) · Se reinicia mañana`
+          : `✓ Marcado como atendido${timeLabel ? ` (${timeLabel})` : ""}`
+        : "Marcado como pendiente"
+    );
   };
 
   // Render para Pendiente Normal (Arriba)
@@ -727,6 +748,8 @@ function PendientesColumnComponent({
     const isDimmed = isAttended || isCompleted;
     const isDraggedOver = dragOverTaskId === task.id;
     const isDirect = isDirectlyAssignedToMe(task);
+    const isReviewPending = !isAttended && !isCompleted && isReviewOrSentPending(task);
+    const isVideoPending = isVideoPendingTask(task);
     const isStarActive = task.isStarred ?? isDirect;
 
     return (
@@ -748,16 +771,27 @@ function PendientesColumnComponent({
         className={`p-2 rounded-lg border transition-all relative group flex flex-col gap-1.5 cursor-pointer ${
           isDraggedOver
             ? "border-cyan-400 bg-cyan-950/40"
+            : isReviewPending
+            ? "border-amber-400/85 bg-gradient-to-r from-amber-500/20 via-rose-500/10 to-[#141B26] shadow-[0_0_14px_rgba(245,158,11,0.25)] ring-1 ring-amber-400/50 hover:from-amber-500/25"
             : isDirect
             ? "border-sky-300/85 bg-gradient-to-r from-sky-400/20 via-sky-500/10 to-[#141B26] shadow-[0_0_14px_rgba(125,211,252,0.22)] ring-1 ring-sky-300/50 hover:from-sky-400/25"
             : "border-[#1E2836] bg-[#141B26] hover:bg-[#1A2332] hover:border-cyan-500/40"
         } ${isDimmed ? "opacity-40 bg-[#0C121A] grayscale-[30%]" : ""}`}
         title="Clic: filtrar en buscador · Doble clic: editar · Clic derecho: opciones · Arrastra para reordenar"
       >
-        {/* Badge distintivo de Asignado Directo + Estrella removible */}
-        {(isDirect || task.isStarred) && (
-          <div className="flex items-center justify-between gap-1 mb-0.5">
-            {isDirect ? (
+        {/* Badge distintivo de Asignado Directo / Por Revisar + Estrella removible */}
+        {(isDirect || isReviewPending || task.isStarred) && (
+          <div className="flex items-center justify-between gap-1 mb-0.5 flex-wrap">
+            {isReviewPending ? (
+              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/25 text-amber-100 border border-amber-400/80 flex items-center gap-1 shadow-xs">
+                <Bell className="w-2.5 h-2.5 text-amber-300 animate-bounce shrink-0" />
+                <span>
+                  {isVideoPending
+                    ? `🎥 VIDEO${task.assignedBy ? ` DE ${task.assignedBy.toUpperCase()}` : ""} · REVISAR PARA COMPLETAR`
+                    : `ENVIADO${task.assignedBy ? ` POR ${task.assignedBy.toUpperCase()}` : ""} · REVISAR PARA COMPLETAR`}
+                </span>
+              </span>
+            ) : isDirect ? (
               <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-sky-400/25 text-sky-100 border border-sky-300/70 flex items-center gap-1 shadow-xs">
                 <Sparkles className="w-2.5 h-2.5 text-sky-200 animate-pulse" />
                 <span>ASIGNADO DIRECTO POR {task.assignedBy || "COMPAÑERO"}</span>
@@ -849,8 +883,22 @@ function PendientesColumnComponent({
               </div>
             )}
 
-            {/* Badges de Asignación y Fecha */}
+            {/* Badges de Asignación, Recurrencia y Fecha */}
             <div className="flex flex-wrap items-center gap-1 mt-1">
+              {isRecurringPendingTask(task) && (
+                <span
+                  className="px-1.5 py-0.2 rounded text-[8.5px] font-bold bg-cyan-950/90 text-cyan-200 border border-cyan-500/50 flex items-center gap-0.5"
+                  title="Bloque recurrente diario: al palomearlo hoy, mañana se reinicia automáticamente"
+                >
+                  <Repeat className="w-2.5 h-2.5 text-cyan-300" />
+                  <span>{isFtfPendingBlock(task) ? "FTF Diario" : "Diario"}</span>
+                </span>
+              )}
+              {isAttended && task.completedAt && (
+                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/50">
+                  ✓ {calendarTime(task.completedAt)}
+                </span>
+              )}
               {task.assignedTo && (
                 <span
                   className="px-1.5 py-0.2 rounded text-[8.5px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 flex items-center gap-0.5"
@@ -938,6 +986,29 @@ function PendientesColumnComponent({
           >
             📋
           </button>
+          {(onUpdateTask || onEditTask) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextReview = !task.needsReview && !task.isReviewNotice;
+                const patch: Partial<PendingTaskItem> = {
+                  needsReview: nextReview,
+                  isReviewNotice: nextReview,
+                  ...(nextReview ? { color: "amber" } : {}),
+                };
+                if (onUpdateTask) onUpdateTask(task.id, patch);
+                else onEditTask?.({ ...task, ...patch });
+                setFeedback(nextReview ? "🔔 Marcado: Revisar para completar" : "Alerta de revisión quitada");
+              }}
+              className={`p-1 cursor-pointer transition-colors ${
+                isReviewPending ? "text-amber-300 hover:text-amber-100" : "text-slate-400 hover:text-amber-300"
+              }`}
+              title={isReviewPending ? "Quitar campana / alerta de revisión" : "Marcar con campana: Revisar para completar"}
+            >
+              <Bell className="w-3 h-3" />
+            </button>
+          )}
           {onEditTask && (
             <button
               type="button"
@@ -1000,6 +1071,7 @@ function PendientesColumnComponent({
     const isCompleted = Boolean(task.isCompleted);
     const isPassed = timeInfo.isPassed;
     const isActive = timeInfo.isActive;
+    const isReviewPending = !isAttended && !isCompleted && isReviewOrSentPending(task);
 
     // Regla de transparencia:
     // Si ya pasó la hora -> se transparenta
@@ -1021,7 +1093,9 @@ function PendientesColumnComponent({
         }}
         onContextMenu={(e) => handleContextMenu(e, task)}
         className={`p-2.5 rounded-xl border transition-all relative group cursor-pointer ${colorStyle.bg} ${
-          isActive
+          isReviewPending
+            ? "border-amber-400/85 shadow-[0_0_12px_rgba(245,158,11,0.3)] ring-1 ring-amber-400/50"
+            : isActive
             ? "border-cyan-400 shadow-[0_0_12px_rgba(0,229,255,0.35)] ring-1 ring-cyan-400/50"
             : colorStyle.border
         } ${isTransparent ? "opacity-35 grayscale-[20%]" : "opacity-95 hover:opacity-100 shadow-sm"} ${
@@ -1042,6 +1116,19 @@ function PendientesColumnComponent({
             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border shrink-0 ${colorStyle.badge}`}>
               ⏱️ {timeInfo.timeBadge}
             </span>
+            {isRecurringPendingTask(task) && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[8.5px] font-bold border shrink-0 flex items-center gap-0.5 ${
+                  isFtfPendingBlock(task)
+                    ? "bg-emerald-950/80 text-emerald-200 border-emerald-500/60"
+                    : "bg-cyan-950/80 text-cyan-200 border-cyan-500/50"
+                }`}
+                title="Bloque recurrente diario: mañana vuelve a desmarcarse solo"
+              >
+                <Repeat className="w-2.5 h-2.5" />
+                <span>{isFtfPendingBlock(task) ? "FTF" : "Diario"}</span>
+              </span>
+            )}
             {isActive && !isAttended && (
               <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-bold bg-cyan-400 text-black animate-pulse shrink-0">
                 ● En curso
@@ -1083,10 +1170,28 @@ function PendientesColumnComponent({
               title={isAttended ? "Atendido (clic para desmarcar)" : "Marcar como atendido"}
             >
               <CheckCircle2 className={`w-3 h-3 ${isAttended ? "text-emerald-400" : "text-slate-400"}`} />
-              <span>{isAttended ? "Atendido" : "Marcar atendido"}</span>
+              <span>
+                {isAttended
+                  ? `Atendido${task.completedAt ? ` ${calendarTime(task.completedAt)}` : ""}`
+                  : "Marcar atendido"}
+              </span>
             </button>
           </div>
         </div>
+        {isAttended && isRecurringPendingTask(task) && (
+          <div className="mb-1 text-[9px] font-mono text-emerald-300/90 flex items-center gap-1">
+            <Repeat className="w-2.5 h-2.5" />
+            <span>Completado hoy{task.completedAt ? ` a las ${calendarTime(task.completedAt)}` : ""} · Mañana se reactiva solo</span>
+          </div>
+        )}
+        {isReviewPending && (
+          <div className="mb-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/70 text-[9px] font-bold text-amber-200 flex items-center gap-1">
+            <Bell className="w-2.5 h-2.5 text-amber-300 animate-bounce shrink-0" />
+            <span>
+              {isVideoPendingTask(task) ? "🎥 Video enviado · Revisar para completar" : "Enviado · Revisar para completar"}
+            </span>
+          </div>
+        )}
 
         {/* Título del Bloque (sin prefijo redundante de hora/AM/PM; la hora se muestra en el badge) */}
         <div className="font-bold text-[11.5px] text-white tracking-wide mb-1 leading-snug">
@@ -1154,7 +1259,30 @@ function PendientesColumnComponent({
             >
               📋
             </button>
-            {onEditTask && (
+            {(onUpdateTask || onEditTask) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextReview = !task.needsReview && !task.isReviewNotice;
+                const patch: Partial<PendingTaskItem> = {
+                  needsReview: nextReview,
+                  isReviewNotice: nextReview,
+                  ...(nextReview ? { color: "amber" } : {}),
+                };
+                if (onUpdateTask) onUpdateTask(task.id, patch);
+                else onEditTask?.({ ...task, ...patch });
+                setFeedback(nextReview ? "🔔 Marcado: Revisar para completar" : "Alerta de revisión quitada");
+              }}
+              className={`p-1 cursor-pointer transition-colors ${
+                isReviewPending ? "text-amber-300 hover:text-amber-100" : "text-slate-400 hover:text-amber-300"
+              }`}
+              title={isReviewPending ? "Quitar campana / alerta de revisión" : "Marcar con campana: Revisar para completar"}
+            >
+              <Bell className="w-3 h-3" />
+            </button>
+          )}
+          {onEditTask && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -1633,6 +1761,15 @@ function PendientesColumnComponent({
           <span className="font-bold text-[11px] text-[#F59E0B] tracking-wide">📋 PENDIENTES</span>
         </div>
         <div className="flex items-center gap-1.5">
+          {reviewPendingTasks.length + visibleIncomingReviews.length > 0 && (
+            <span
+              className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/25 text-amber-200 border border-amber-400/70 font-mono flex items-center gap-0.5 animate-pulse"
+              title="Pendientes enviados o con video que requieren revisión para completar"
+            >
+              <Bell className="w-2.5 h-2.5 text-amber-300" />
+              <span>{reviewPendingTasks.length + visibleIncomingReviews.length} rev</span>
+            </span>
+          )}
           <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#78350F] text-[#FDE68A] border border-[#F59E0B]/50 font-mono">
             {pendingCount}
           </span>
@@ -1694,6 +1831,34 @@ function PendientesColumnComponent({
               title="Quitar / Descartar aviso"
             >
               <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de Revisiones / Videos pendientes por revisar para completar */}
+      {reviewPendingTasks.length > 0 && (
+        <div className="mb-2 p-2 rounded-lg bg-gradient-to-r from-amber-950/90 to-rose-950/75 border border-amber-400/80 shadow-[0_0_12px_rgba(245,158,11,0.2)] shrink-0">
+          <div className="flex items-start gap-2">
+            <Bell className="w-4 h-4 text-amber-300 animate-bounce shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="text-[10.5px] font-bold text-amber-200 block">
+                {reviewPendingTasks.length} pendiente{reviewPendingTasks.length > 1 ? "s" : ""} enviado{reviewPendingTasks.length > 1 ? "s" : ""} por revisar
+              </span>
+              <p className="text-[9.5px] text-amber-100/80 truncate">
+                {reviewPendingTasks[0].title}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const first = reviewPendingTasks[0];
+                if (first?.query || first?.title) onSelectTaskQuery?.(first.query || first.title);
+              }}
+              className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 text-[9.5px] font-bold shrink-0 cursor-pointer"
+              title="Buscar pendiente por revisar"
+            >
+              Revisar
             </button>
           </div>
         </div>
@@ -2151,6 +2316,28 @@ function PendientesColumnComponent({
             >
               <Edit2 className="w-3 h-3 text-[#38BDF8]" />
               <span>Editar</span>
+            </button>
+          )}
+
+          {(onUpdateTask || onEditTask) && (
+            <button
+              type="button"
+              onClick={() => {
+                const task = contextMenu.task;
+                const nextReview = !task.needsReview && !task.isReviewNotice;
+                const patch: Partial<PendingTaskItem> = {
+                  needsReview: nextReview,
+                  isReviewNotice: nextReview,
+                  ...(nextReview ? { color: "amber" } : {}),
+                };
+                if (onUpdateTask) onUpdateTask(task.id, patch);
+                else onEditTask?.({ ...task, ...patch });
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-2 py-1.5 rounded hover:bg-[#1E2836] text-amber-300 text-[10.5px] flex items-center gap-1.5 cursor-pointer"
+            >
+              <Bell className="w-3 h-3 text-amber-300" />
+              <span>{contextMenu.task.needsReview || contextMenu.task.isReviewNotice ? "Quitar alerta revisión" : "Marcar por revisar 🔔"}</span>
             </button>
           )}
 

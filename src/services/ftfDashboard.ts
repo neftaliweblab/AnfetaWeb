@@ -209,7 +209,7 @@ export function buildFtfWeek(
   return {start, end: shiftFtfDate(start, 6), days};
 }
 
-export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date(),presence: FtfPresenceDay[] = [], mealBreaksByPerson?: Record<string, MealBreakWindow>) {
+export function buildFtfDashboard(actor:string,day:string,people:{name:string;alias?:string;role?:string}[],activities:NotionCalendarActivity[],records:Record<string,any>,now=new Date(),presence: FtfPresenceDay[] = [], mealBreaksByPerson?: Record<string, MealBreakWindow>, ftfBlockTimesByPerson?: Record<string, string>) {
   if(!canViewFtfDashboard(actor))throw Error('Inicia sesión para consultar la bitácora del equipo.');
   const cutoff=Date.parse(day+'T18:00:00-06:00');
   const team=[...new Map(people.map(p=>[normalizePerson(p.name),p])).values()];
@@ -303,6 +303,16 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       ? ftfRecordedTime(record, day, now)
       : null;
 
+    const directBlockTime = ftfBlockTimesByPerson?.[name];
+    const ftfBlockCompletedAt =
+      (directBlockTime && Number.isFinite(Date.parse(directBlockTime)) && mexicoDate(directBlockTime) === day
+        ? directBlockTime
+        : null) ||
+      (validRecord && typeof record?.ftfBlockCompletedAt === 'string' && mexicoDate(record.ftfBlockCompletedAt) === day
+        ? record.ftfBlockCompletedAt
+        : null) ||
+      (validRecord && record?.source === 'pending-ftf-block' ? completedAt : null);
+
     const lateStamp = completedAt ? Date.parse(completedAt) : stamp;
     const late = !!completedAt && Number.isFinite(lateStamp) && lateStamp > cutoff;
     const hasOpenWork = inProgressActivities.length > 0;
@@ -321,6 +331,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       expiredUnfinishedCount: expiredUnfinishedActivities.length,
       suspendedActivities,
       completedAt,
+      ftfBlockCompletedAt,
       late,
       timeKind:record?.timeKind||'observed',
       status,

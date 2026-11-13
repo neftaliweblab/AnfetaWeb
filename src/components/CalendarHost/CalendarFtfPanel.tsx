@@ -350,8 +350,17 @@ export function CalendarFtfPanel({
       const data = await res.json();
       if (data.success && data.scores) {
         setScoresMap(data.scores);
-        setPublishNotice('✓ Corte 18:30 publicado y enviado al equipo');
-        setTimeout(() => setPublishNotice(''), 4000);
+        const d = data.delivery;
+        const parts = ['✓ Corte publicado'];
+        if (d?.notionJournal?.ok) parts.push('Journal Notion ✓');
+        else if (d?.notionJournal?.skipped) parts.push('Journal Notion: falta URL/ID en Ajustes');
+        else if (d?.notionJournal?.reason) parts.push(`Journal Notion ✕`);
+        if (d?.email?.ok) parts.push(`Correo → ${Array.isArray(d.email.to) ? d.email.to.join(', ') : 'John'} ✓`);
+        else if (d?.email?.skipped) parts.push('Correo: falta Resend API Key o email en Ajustes');
+        else if (d?.email?.reason) parts.push(`Correo ✕`);
+        if (d?.push?.sentCount > 0) parts.push(`Push (${d.push.sentCount}) ✓`);
+        setPublishNotice(parts.join(' · '));
+        setTimeout(() => setPublishNotice(''), 7000);
       }
     } catch {
       setPublishNotice('No se pudo publicar el corte');
@@ -487,6 +496,7 @@ export function CalendarFtfPanel({
     const reviewOnlyPct = assigned > 0 ? Math.min(100 - workOnlyPct, Math.round((reviewHours / Math.max(0.5, assigned)) * 100)) : 0;
 
     const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
+    const ftfBlockCompletionTime = (person as any).ftfBlockCompletedAt ? calendarTime((person as any).ftfBlockCompletedAt) : null;
     const isScorerOpen = openScorerFor === person.name;
     const isOnlineNow = !!presenceMap[person.name]?.isOnline;
     const firstSeenIso = (person as any).firstSeen || null;
@@ -583,6 +593,8 @@ export function CalendarFtfPanel({
                 <p className={`${scale.subText} text-slate-400 mt-0.5`}>
                   {scoreInfo.absent
                     ? 'Sin conexión registrada'
+                    : ftfBlockCompletionTime
+                    ? `FTF terminado ${ftfBlockCompletionTime}${isComplete ? '' : ' · jornada en curso'}`
                     : isComplete
                     ? `FTF completado (${completionTime || 'al día'})`
                     : expiredUnfinishedCount > 0
@@ -591,6 +603,14 @@ export function CalendarFtfPanel({
                     ? 'Jornada en curso'
                     : 'Sin horario hoy'}
                 </p>
+                {ftfBlockCompletionTime && (
+                  <span
+                    className="inline-flex items-center gap-1 mt-1 rounded-md border border-emerald-500/60 bg-emerald-950/70 px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300"
+                    title="Hora exacta en que marcó como terminado su bloque fijo FTF de hoy"
+                  >
+                    ✓ FTF terminado {ftfBlockCompletionTime}
+                  </span>
+                )}
               </div>
             </div>
 

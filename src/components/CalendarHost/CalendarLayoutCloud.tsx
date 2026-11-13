@@ -32,21 +32,32 @@ export function CalendarLayoutCloud({
   const [message, setMessage] = useState('');
   const alive = useRef(true);
   const pending = useRef(false);
+  const hydratedRef = useRef(false);
+  const lastSyncedRef = useRef('');
 
   useEffect(() => {
     alive.current = true;
+    hydratedRef.current = false;
     const before = JSON.stringify(latest.current);
     loadAccountPreferences()
       .then((state) => {
         if (!alive.current) return;
         const saved = state.values?.calendarLayouts?.primary;
-        if (saved && allowAutomaticRestore.current && JSON.stringify(latest.current) === before) {
+        const localUpdatedAt = Number(latest.current?.updatedAt || 0);
+        const cloudUpdatedAt = Number(saved?.updatedAt || 0);
+        const localIsNewer = localUpdatedAt > 0 && localUpdatedAt > cloudUpdatedAt;
+        if (saved && allowAutomaticRestore.current && !localIsNewer && JSON.stringify(latest.current) === before) {
+          lastSyncedRef.current = JSON.stringify({ ...saved, updatedAt: 0 });
           restore.current(saved);
           setMessage('Configuración recuperada de tu cuenta.');
+        } else {
+          lastSyncedRef.current = JSON.stringify({ ...latest.current, updatedAt: 0 });
         }
+        hydratedRef.current = true;
       })
       .catch((error) => {
         if (alive.current) {
+          hydratedRef.current = true;
           setMessage(error.message || 'No se pudo recuperar la configuración.');
         }
       });
@@ -54,6 +65,32 @@ export function CalendarLayoutCloud({
       alive.current = false;
     };
   }, []);
+
+  // Auto-persistir cambios de columnas (Cobros, Pagos, Secundarias, etc.) hacia la cuenta en segundo plano
+  const comparableValue = JSON.stringify({ ...value, updatedAt: 0 });
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (comparableValue === lastSyncedRef.current) return;
+    const timer = setTimeout(async () => {
+      if (!alive.current || pending.current) return;
+      try {
+        const state = await loadAccountPreferences();
+        const layouts = state.values?.calendarLayouts;
+        const payload = { ...latest.current, updatedAt: Date.now() };
+        await saveAccountPreferences(
+          {
+            calendarLayouts: {
+              ...(layouts && typeof layouts === 'object' && !Array.isArray(layouts) ? layouts : {}),
+              primary: payload,
+            },
+          },
+          state.revision
+        );
+        lastSyncedRef.current = comparableValue;
+      } catch {}
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [comparableValue]);
 
   async function transfer(load = false) {
     if (pending.current) return;

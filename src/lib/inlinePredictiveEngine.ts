@@ -77,8 +77,9 @@ export const STRUCTURED_TYPE_DEFINITIONS: Record<string, { regex: RegExp; icon: 
 export function itemMatchesStructuredType(item:any,typeName:string):boolean {
  if(!item||!typeName)return false;
  const area=parseVisualParts(String(item.name||item.title||item.Name||''),String(item.updateStatus||item.status||'')).area.toUpperCase();
- const aliases:Record<string,string>={PROG:'PROGRAMAS',SOFTWARE:'PROGRAMAS',WEB:'WEBS',APLICACIÓN:'APP',COBRO:'COBROS',PAGO:'PAGOS'};
- const canonical=typeName.trim().toUpperCase();
+ const aliases:Record<string,string>={PROG:'PROGRAMAS',SOFTWARE:'PROGRAMAS',WEB:'WEBS',APLICACIÓN:'APP',COBRO:'COBROS',INGRESO:'COBROS',INGRESOS:'COBROS',PAGO:'PAGOS',EGRESO:'PAGOS',EGRESOS:'PAGOS'};
+ const rawCanonical=typeName.trim().toUpperCase();
+ const canonical=aliases[rawCanonical]||rawCanonical;
  return (aliases[area]||area)===canonical;
 }
 
@@ -152,13 +153,18 @@ export function computeInlineSuggestions(
   const suggestions: InlineSearchSuggestion[] = [];
 
   // Add areas / types
+  const displayTypeLabels: Record<string, string> = {
+    PROGRAMAS: "SOFTWARE",
+    COBROS: "INGRESOS",
+    PAGOS: "EGRESOS",
+  };
   for (const [area, count] of areaCounts.entries()) {
     if (!existingCriterionKeys.has(`type:${area.toLowerCase()}`) && count > 0) {
       const def = STRUCTURED_TYPE_DEFINITIONS[area];
       suggestions.push({
         id: `type_${area}`,
         type: "type",
-        label: area,
+        label: displayTypeLabels[area] || area,
         value: area,
         count,
         icon: def?.icon || "⚙",

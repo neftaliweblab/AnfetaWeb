@@ -84,7 +84,7 @@ export function buildQuickTitle(
 export const QUICK_NOTION_DESTINATIONS = Object.entries(ACTIVITY_TAGS).map(([person, entry]) => ({
   person, code: entry.active + '00', label: entry.active + '00 notion',
 }));
-export type RecordingUploadOptions = {person?: string; domain?: string; attach?: boolean};
+export type RecordingUploadOptions = {person?: string; domain?: string; attach?: boolean; addToPending?: boolean};
 const DIRECT_NOTION_MAX_BYTES = 2500000;
 
 export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDetailed?:()=>void;onReady:(file:GlobalPasteImagePayload,target:RecordingTarget|null,options?:RecordingUploadOptions)=>Promise<boolean>;disabled?:boolean}){
@@ -98,6 +98,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const [video,setVideo]=useState<Blob|null>(null),[url,setUrl]=useState(''),[notice,setNotice]=useState(''),[seconds,setSeconds]=useState(0),[sending,setSending]=useState(false);
   const [customDomain,setCustomDomain]=useState('');
   const [quickSavingCode,setQuickSavingCode]=useState<string|null>(null);
+  const [addToPending,setAddToPending]=useState(true);
   const [clipboardOpen,setClipboardOpen]=useState(false);
   const [clipboardText,setClipboardText]=useState('');
   const [clipboardImage,setClipboardImage]=useState<{base64:string;preview:string;name:string}|null>(null);
@@ -162,7 +163,7 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       if (video.size > DIRECT_NOTION_MAX_BYTES) {
         // Large base64 bodies exceed Vercel's request limit. Hand off before reading the blob.
         const file={filename:'Grabacion_'+destCode+(video.type.includes('mp4')?'.mp4':'.webm'),contentType:video.type,sizeBytes:video.size,blob:video,base64:'',dataUrl:''};
-        if (await onReady(file,targetRef.current,{person:targetPerson,domain:customDomain})) {
+        if (await onReady(file,targetRef.current,{person:targetPerson,domain:customDomain,addToPending})) {
           setVideo(null);setPhase('idle');setNotice('');setCustomDomain('');
           setRecordingCustomTitle('');setIsRecordingTitleEdited(false);
         }
@@ -188,6 +189,9 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
             start,
             end,
             calendarEntryKind:'recording',
+            isVideoTask: true,
+            addToPending,
+            sourceQuickFloating: true,
             files: [{
               filename: `Grabacion_${destCode}_${today}_${Date.now()}${video.type.includes('mp4')?'.mp4':'.webm'}`,
               contentType: video.type || 'video/webm',
@@ -201,11 +205,15 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se confirmó el guardado. Tu grabación se conserva; verifica Notion antes de repetir.');
       }
       playCheckChime();
-      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${targetPerson} (${destCode}) en el horario confirmado`);
+      sendWindowsNotification('Grabación guardada en Notion', `Se asignó a ${targetPerson} (${destCode})${data.pendingSynced ? ' y se agregó a Pendientes' : ''}`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
+      if(data.pendingSynced){
+        window.dispatchEvent(new Event('anfeta_retry_pending'));
+        window.dispatchEvent(new Event('anfeta_review_saved'));
+      }
       
       showCreationResult(true, `Grabación asignada a ${targetPerson}`, title, data.activity?.pageUrl, data.pageId);
-      setNotice(`✅ Actividad creada en Notion con éxito para ${targetPerson} (${destCode})`);
+      setNotice(`✅ Creada para ${targetPerson} (${destCode})${data.pendingSynced ? ' + agregada a barra de Pendientes' : ''}`);
       setVideo(null);setPhase('idle');setCustomDomain('');
       setRecordingCustomTitle('');setIsRecordingTitleEdited(false);
     } catch (err: any) {
@@ -288,6 +296,8 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
             person: targetPerson,
             start,
             end,
+            addToPending,
+            sourceQuickFloating: true,
             files
           }
         })
@@ -297,11 +307,15 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
       }
       playCheckChime();
-      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${targetPerson} (${destCode}) en el horario confirmado`);
+      sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${targetPerson} (${destCode})${data.pendingSynced ? ' y se agregó a Pendientes' : ''}`);
       if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_CREATED',confirmed:true,activity:data.activity});
+      if(data.pendingSynced){
+        window.dispatchEvent(new Event('anfeta_retry_pending'));
+        window.dispatchEvent(new Event('anfeta_review_saved'));
+      }
       
       showCreationResult(true, `Actividad creada para ${targetPerson}`, title, data.activity?.pageUrl, data.pageId);
-      setNotice(`✅ Creada en Notion para ${targetPerson} (${destCode}) en el horario confirmado`);
+      setNotice(`✅ Creada para ${targetPerson} (${destCode})${data.pendingSynced ? ' + agregada a barra de Pendientes' : ''}`);
       setTimeout(() => {
         if (mounted.current) {
           setClipboardOpen(false);
@@ -475,6 +489,17 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
               placeholder="Título estructurado..."
             />
           </div>
+
+          <label className="flex items-center gap-2 text-[11px] text-cyan-200 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToPending}
+              onChange={(e) => setAddToPending(e.target.checked)}
+              disabled={sending || !!quickSavingCode}
+              className="accent-cyan-400"
+            />
+            <span>📌 Agregar también a barra de Pendientes de {targetPerson}</span>
+          </label>
 
           <button
             type="button"
@@ -680,6 +705,17 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
             placeholder="Título estructurado..."
           />
         </div>
+
+        <label className="flex items-center gap-2 text-[11px] text-amber-200 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={addToPending}
+            onChange={(e) => setAddToPending(e.target.checked)}
+            disabled={!!clipboardSavingCode}
+            className="accent-amber-400"
+          />
+          <span>📌 Agregar también a barra de Pendientes de {targetPerson}</span>
+        </label>
 
         {/* Botón Guardar en Notion */}
         <button

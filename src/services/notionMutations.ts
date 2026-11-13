@@ -516,20 +516,23 @@ export async function validateNotionCreationTarget(settings:Settings,payload:any
 async function createActivityUnlocked(settings: Settings, actor: string, payload: any) {
   const { start, end, domain } = payload;
   const title=recordingCalendarTitle(payload);
-  const person=payload.quickRevision?payload.person||actor:payload.person;
+  const rawPerson=payload.quickRevision?payload.person||actor:payload.person;
+  const trimmedPerson=String(rawPerson||'').trim();
+  const isUnassigned=!trimmedPerson||normalizePerson(trimmedPerson)==='Sin asignar';
+  const person=isUnassigned?'':trimmedPerson;
   if (!settings?.notionToken?.trim()) throw new Error('Falta configurar el token de Notion (NOTION_TOKEN en el servidor o en Ajustes).');
   if (start) validateSchedule(start, end);
   if (!title?.trim()) throw new Error('Escribe un título.');
-  if (person && !PERSON_ALIASES[normalizePerson(person)] && normalizePerson(person) !== 'Sin asignar') throw new Error('Selecciona un responsable válido del equipo.');
-  if (start) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person||actor),start,end},payload.allowOverlap===true);
+  if (person && !PERSON_ALIASES[normalizePerson(person)]) throw new Error('Selecciona un responsable válido del equipo.');
+  if (start && person) await assertFreeCalendarSchedule(settings,{pageId:'',title,person:normalizePerson(person),start,end},payload.allowOverlap===true);
   const {database,databaseId,sourceId}=await validateNotionCreationTarget(settings,payload.quickRevision?{...payload,useCalendarSource:true}:payload);
   const fields = Object.entries(database.properties || {}) as [string, Property][];
   const titleField = fields.find(([,p]) => p.type === 'title');
   if (!titleField) throw new Error('La base no tiene propiedad de título.');
-  const canonicalPerson = normalizePerson(person || actor);
+  const canonicalPerson = person ? normalizePerson(person) : '';
   const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
-  const personTag=scanActivityTags(description).some(tag=>tag.person===canonicalPerson&&tag.role==='active')?'':activePersonTag(canonicalPerson);
-  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson,domain,description:payload.quickDescription,month:payload.quickMonth}):start ? revisionPhaseTitle([domain,personTag,description].filter(Boolean).join(' '),'pending') : [domain, person, title.trim()].filter(Boolean).join(' ');
+  const personTag=canonicalPerson?(scanActivityTags(description).some(tag=>tag.person===canonicalPerson&&tag.role==='active')?'':activePersonTag(canonicalPerson)):'';
+  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson||normalizePerson(actor),domain,description:payload.quickDescription,month:payload.quickMonth}):start ? revisionPhaseTitle([domain,personTag,description].filter(Boolean).join(' '),'pending') : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
     const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));
@@ -564,7 +567,7 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   } catch (linkError) {
     console.warn('No se pudo guardar el enlace inicial "Abrir en ANFETA":', linkError);
   }
-  return { page, activity: normalizeActivity({ serverModified:page.last_edited_time||page.created_time,pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || actor), domain, start, end }, 0) };
+  return { page, activity: normalizeActivity({ serverModified:page.last_edited_time||page.created_time,pageId: page.id, pageUrl: page.url, title: composed, person: normalizePerson(person || 'Sin asignar'), domain, start, end }, 0) };
 }
 
 export async function notionFileBlocks(settings:Settings,files:any[]){

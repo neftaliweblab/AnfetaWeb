@@ -28,6 +28,8 @@ import {CalendarLayoutCloud} from './CalendarLayoutCloud';
 import {calendarLayoutPreference} from '@/lib/calendarLayoutPreferences';
 import {CalendarRemindersColumn} from './CalendarRemindersColumn';
 import {CalendarFinanceColumn} from './CalendarFinanceColumn';
+import {CalendarSecondaryColumn} from './CalendarSecondaryColumn';
+import {titlePriority} from '@/services/activityTags';
 import {readApiJson} from '@/lib/readApiJson';
 import {showCreationResult} from '@/components/CreationFeedback';
 import {mexicoDate} from '@/services/calendarPresentation';
@@ -324,6 +326,8 @@ export function CalendarHost({
   const [showReminders,setShowReminders]=useState(false);
   const [financeLoading,setFinanceLoading]=useState(false);const [filterCobros, setFilterCobros] = useState(false);
   const [filterPagos, setFilterPagos] = useState(false);
+  const [filterSecondary, setFilterSecondary] = useState(false);
+  const [layoutUpdatedAt, setLayoutUpdatedAt] = useState(0);
   const [visiblePeople, setVisiblePeople] = useState<string[]>(DEFAULT_COLLABORATORS);
   const [peopleOrder, setPeopleOrder] = useState<string[]>(DEFAULT_COLLABORATORS);
   const [columnWidth, setColumnWidth] = useState(260);
@@ -343,16 +347,16 @@ export function CalendarHost({
         if (Number.isFinite(saved.height)) height = calendarDisplayHeight(saved.height);
       }
     } catch { /* Invalid or unavailable storage falls back to defaults. */ }
-    try {const saved=JSON.parse(sessionStorage.getItem(preferencesKey+':window')||localStorage.getItem(preferencesKey)||'null');setGridInterval(calendarGridInterval(saved?.gridInterval));setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
+    try {const saved=JSON.parse(sessionStorage.getItem(preferencesKey+':window')||localStorage.getItem(preferencesKey)||'null');setGridInterval(calendarGridInterval(saved?.gridInterval));setPhaseFilter(typeof saved?.phase==='string'?saved.phase:'');setExtraHours(saved?.extraHours===true);setShowReminders(saved?.reminders===true);setFilterCobros(saved?.cobros===true);setFilterPagos(saved?.pagos===true);setFilterSecondary(saved?.secondary===true);setLayoutUpdatedAt(Number.isFinite(saved?.updatedAt)?Number(saved.updatedAt):0);setFinancePosition(saved?.financePosition==='before'?'before':'after');setFinanceSlots({cobro:financeSlot(saved?.financeSlots?.cobro,DEFAULT_COLLABORATORS.length,saved?.financePosition),pago:financeSlot(saved?.financeSlots?.pago,DEFAULT_COLLABORATORS.length,saved?.financePosition)});}catch{}
     setPeopleOrder(order); setVisiblePeople(visible); setColumnWidth(width); setPixelsPerHour(height);
     try{setHasWindowLayout(!!sessionStorage.getItem(preferencesKey+':window'));}catch{setHasWindowLayout(false);}
     setPreferencesLoaded(preferencesKey);
   }, [preferencesKey]);
   useEffect(() => {
     if (preferencesLoaded !== preferencesKey) return;
-    try { const snapshot=JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders});sessionStorage.setItem(preferencesKey+':window',snapshot);localStorage.setItem(preferencesKey,snapshot); }
+    try { const nowTs = Date.now(); const snapshot=JSON.stringify({order:peopleOrder, visible:visiblePeople, width:columnWidth, height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,secondary:filterSecondary,financePosition,financeSlots,reminders:showReminders,updatedAt:nowTs});sessionStorage.setItem(preferencesKey+':window',snapshot);localStorage.setItem(preferencesKey,snapshot); }
     catch { /* Layout remains usable when browser storage is unavailable. */ }
-  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, gridInterval, phaseFilter, extraHours, filterCobros, filterPagos, financePosition,financeSlots,showReminders]);
+  }, [preferencesKey, preferencesLoaded, peopleOrder, visiblePeople, columnWidth, pixelsPerHour, gridInterval, phaseFilter, extraHours, filterCobros, filterPagos, filterSecondary, financePosition,financeSlots,showReminders]);
   const movePerson = (person: string, direction: number) => setPeopleOrder(prev => {
     const index = prev.indexOf(person), target = index + direction;
     if (index < 0 || target < 0 || target >= prev.length) return prev;
@@ -710,19 +714,28 @@ export function CalendarHost({
   }, [activitiesList, searchFilterQuery, phaseFilter,currentDate,currentUser,showCopies]);
 
   useEffect(()=>{const available=filteredActivities.filter(a=>visiblePeople.includes(normalizePerson(a.person)));setSelectedActivity(old=>(old&&available.find(a=>a.pageId===old.pageId))||available[0]||null);},[filteredActivities,visiblePeople]);
-  const activitiesByPerson = useMemo(() => {
+  const secondaryActivities = useMemo(() => {
+    if (!filterSecondary) return [];
+    return filteredActivities.filter(
+      (act) => !act.isReviewMirror && titlePriority(act.title, act.person) === '22'
+    );
+  }, [filteredActivities, filterSecondary]);
 
+  const activitiesByPerson = useMemo(() => {
     const map: Record<string, NotionCalendarActivity[]> = {};
     visiblePeople.forEach((p) => {
       map[p] = [];
     });
     filteredActivities.forEach((act) => {
+      if (filterSecondary && !act.isReviewMirror && titlePriority(act.title, act.person) === '22') {
+        return;
+      }
       const canonical = normalizePerson(act.person);
       if (!map[canonical]) map[canonical] = [];
       map[canonical].push(act);
     });
     return map;
-  }, [filteredActivities, visiblePeople]);
+  }, [filteredActivities, visiblePeople, filterSecondary]);
 
   const positionedByPerson=useMemo(()=>Object.fromEntries(Object.entries(activitiesByPerson).map(([person,rows])=>[person,computeActivityOverlaps(rows,currentDate)])),[activitiesByPerson,currentDate]);
 
@@ -826,13 +839,13 @@ export function CalendarHost({
     : null;
 
   const displayedPeople=peopleOrder.filter(person=>visiblePeople.includes(person));
-  const currentLayout={order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,financePosition,financeSlots,reminders:showReminders};
+  const currentLayout={order:peopleOrder,visible:visiblePeople,width:columnWidth,height:pixelsPerHour,gridInterval,phase:phaseFilter,extraHours,cobros:filterCobros,pagos:filterPagos,secondary:filterSecondary,financePosition,financeSlots,reminders:showReminders,updatedAt:layoutUpdatedAt};
   const applyCalendarLayout=(raw:any)=>{
     const saved=calendarLayoutPreference(raw,DEFAULT_COLLABORATORS);if(!saved)return;
     setHasWindowLayout(true);
     setPeopleOrder(saved.order as string[]);setVisiblePeople(saved.visible as string[]);
     setColumnWidth(saved.width);setPixelsPerHour(saved.height);setGridInterval(saved.gridInterval);
-    setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);
+    setPhaseFilter(saved.phase);setExtraHours(saved.extraHours);setFilterCobros(saved.cobros);setFilterPagos(saved.pagos);setFilterSecondary(saved.secondary);setLayoutUpdatedAt(saved.updatedAt||Date.now());
     setFinancePosition(saved.financePosition as 'before'|'after');setFinanceSlots(saved.financeSlots);setShowReminders(saved.reminders);
   };
   const financeColumns=<>{(['cobro','pago'] as const).filter(kind=>kind==='cobro'?filterCobros:filterPagos).map(kind=><CalendarFinanceColumn key={kind} kind={kind} items={financeItems.filter(item=>item.kind===kind)} warning={financeWarning} loading={financeLoading} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} date={currentDate} order={financeSlot(financeSlots[kind],displayedPeople.length)*3+(kind==='cobro'?0:1)} slot={financeSlot(financeSlots[kind],displayedPeople.length)} people={displayedPeople} onPosition={slot=>setFinanceSlots(prev=>({...prev,[kind]:slot}))} onWidth={setColumnWidth} onRefresh={()=>window.dispatchEvent(new Event('anfeta_finance_refresh'))} onClose={()=>kind==='cobro'?setFilterCobros(false):setFilterPagos(false)} />)}</>;
@@ -928,6 +941,8 @@ export function CalendarHost({
         onToggleCobros={() => setFilterCobros(!filterCobros)}
         filterPagos={filterPagos}
         onTogglePagos={() => setFilterPagos(!filterPagos)}
+        filterSecondary={filterSecondary}
+        onToggleSecondary={() => setFilterSecondary(!filterSecondary)}
         onOpenReorder={() => {
           setReorderPerson(displayedPeople[0] || 'Neftali');
           setShowReorderModal(true);
@@ -1024,7 +1039,7 @@ export function CalendarHost({
           </div>
 
           {/* Collaborators Columns - Fluid and Auto-expanding with min width guarantee */}
-          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos)+Number(showReminders)) * columnWidth }}>
+          <div className="flex flex-1 relative" style={{ minWidth: Math.max(1, visiblePeople.length + Number(filterCobros) + Number(filterPagos) + Number(filterSecondary) + Number(showReminders)) * columnWidth }}>
             {/* Zona de revisión reciente (1 a 2 horas previas a la hora actual) */}
             {currentTimeTop !== null && (
               <div
@@ -1185,6 +1200,24 @@ export function CalendarHost({
                   </div>
                 );
               })
+            )}
+            {filterSecondary && (
+              <CalendarSecondaryColumn
+                items={secondaryActivities}
+                width={columnWidth}
+                height={canvasHeight}
+                pixelsPerHour={pixelsPerHour}
+                gridInterval={gridInterval}
+                date={currentDate}
+                currentUser={currentUser}
+                palette={calendarPalette}
+                selectedPageId={selectedActivity?.pageId}
+                pendingIds={pending.current}
+                onSelectActivity={handleCardSelectActivity}
+                onUpdateActivity={handleUpdateActivity}
+                onChecklistUpdated={handleCardChecklistUpdated}
+                onClose={() => setFilterSecondary(false)}
+              />
             )}
             {showReminders&&<div style={{order:999}} className="flex"><CalendarRemindersColumn date={currentDate} width={columnWidth} height={canvasHeight} pixelsPerHour={pixelsPerHour} onClose={()=>setShowReminders(false)}/></div>}
           </div>

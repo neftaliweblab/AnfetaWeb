@@ -88,7 +88,12 @@ export function SettingsModal({
   const [loadingCloudFolders, setLoadingCloudFolders] = useState(false);
   const [cloudFolderError, setCloudFolderError] = useState("");
   const [notionToken, setNotionToken] = useState("");
-  const [notionDatabaseId, setNotionDatabaseId] = useState("");
+  const [notionDatabaseId, setNotionDatabaseId] = useState("");
+  const [ftfJournalPageId, setFtfJournalPageId] = useState("");
+  const [ftfEmailTo, setFtfEmailTo] = useState("");
+  const [ftfEmailFrom, setFtfEmailFrom] = useState("");
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [hasResendApiKey, setHasResendApiKey] = useState(false);
   const [notionOpenMode,setNotionOpenMode]=useState('web');
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -116,7 +121,10 @@ export function SettingsModal({
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.notionToken) setNotionToken(parsed.notionToken);
-          if (parsed.notionDatabaseId) setNotionDatabaseId(parsed.notionDatabaseId);
+          if (parsed.notionDatabaseId) setNotionDatabaseId(parsed.notionDatabaseId);
+          if (parsed.ftfJournalPageId) setFtfJournalPageId(parsed.ftfJournalPageId);
+          if (parsed.ftfEmailTo) setFtfEmailTo(parsed.ftfEmailTo);
+          if (parsed.ftfEmailFrom) setFtfEmailFrom(parsed.ftfEmailFrom);
           if (parsed.dropboxToken) setDropboxToken(parsed.dropboxToken);
           if (parsed.cloudFolder) setCloudFolder(parsed.cloudFolder);
           if (parsed.dropboxPath) setDropboxPath(parsed.dropboxPath);
@@ -129,7 +137,7 @@ export function SettingsModal({
       // 2. Complementar con datos del backend solo si no existen en localStorage
       fetch("/api/data?type=settings")
         .then((res) => res.json())
-        .then((data) => {
+        .then((data) => { setHasResendApiKey(Boolean(data.hasResendApiKey)); if (data.ftfJournalPageId) setFtfJournalPageId((p) => p || data.ftfJournalPageId); if (data.ftfEmailTo) setFtfEmailTo((p) => p || data.ftfEmailTo); if (data.ftfEmailFrom) setFtfEmailFrom((p) => p || data.ftfEmailFrom);
           try {
             const stored = localStorage.getItem("anfeta_settings");
             if (stored) return; // Si el usuario ya tiene configuración guardada en su cliente, respetarla
@@ -336,7 +344,7 @@ export function SettingsModal({
     try{if(normalizePerson(userTag)!==normalizePerson(currentUser))await onSaveCurrentUser(userTag);}catch(e){setSaveError(e instanceof Error?e.message:'No se pudo cambiar la persona.');setSaving(false);return;}
     const savedConfig = {
       notionToken: notionToken.trim(),
-      notionDatabaseId: notionDatabaseId.trim(),
+      notionDatabaseId: notionDatabaseId.trim(), ftfJournalPageId: ftfJournalPageId.trim(), ftfEmailTo: ftfEmailTo.trim(), ftfEmailFrom: ftfEmailFrom.trim(),
       dropboxToken: dropboxToken.trim(),
       cloudFolder: cloudFolder.trim() || "/DRX",
       dropboxPath: dropboxPath.trim(),
@@ -360,7 +368,7 @@ export function SettingsModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "save-settings",
-        payload: savedConfig,
+        payload: { ...savedConfig, ...(resendApiKey.trim() ? { resendApiKey: resendApiKey.trim() } : {}) },
       }),
     }).catch(() => {});
 
@@ -649,6 +657,70 @@ export function SettingsModal({
               </div>
             </div>
 
+              {/* Calificaciones FTF: Journal Notion + Correo */}
+              <div className="pt-2 border-t border-[#1C2735] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-[#F1F5F9]">
+                    📊 Calificaciones FTF · Journal Notion & Correo (Corte 18:30)
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${hasResendApiKey && ftfEmailTo ? 'text-emerald-300 bg-emerald-950/50 border-emerald-700/60' : 'text-amber-300 bg-amber-950/50 border-amber-700/60'}`}>
+                    {hasResendApiKey && ftfEmailTo ? 'Correo listo ✓' : 'Falta clave/correo'}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <div>
+                    <label className="text-[10.5px] text-[#94A3B8] block">
+                      Página Journal Notion para toggles diarios (URL o ID):
+                    </label>
+                    <input
+                      type="text"
+                      value={ftfJournalPageId}
+                      onChange={(e) => setFtfJournalPageId(e.target.value)}
+                      placeholder="https://www.notion.so/... o 32 caracteres hex (NOTION_FTF_JOURNAL_PAGE_ID)"
+                      className="w-full h-7 px-2.5 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10.5px] text-[#94A3B8] block">
+                        Correo de John / destino (FTF_REPORT_EMAIL_TO):
+                      </label>
+                      <input
+                        type="email"
+                        value={ftfEmailTo}
+                        onChange={(e) => setFtfEmailTo(e.target.value)}
+                        placeholder="john@empresa.com"
+                        className="w-full h-7 px-2.5 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10.5px] text-[#94A3B8] block">
+                        Remitente Resend opcional (FTF_REPORT_EMAIL_FROM):
+                      </label>
+                      <input
+                        type="text"
+                        value={ftfEmailFrom}
+                        onChange={(e) => setFtfEmailFrom(e.target.value)}
+                        placeholder="ANFETA FTF <onboarding@resend.dev>"
+                        className="w-full h-7 px-2.5 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10.5px] text-[#94A3B8] block">
+                      Resend API Key {hasResendApiKey ? '(✓ guardada en servidor — deja vacío para conservar)' : '(re_...)'}:
+                    </label>
+                    <input
+                      type="password"
+                      value={resendApiKey}
+                      onChange={(e) => setResendApiKey(e.target.value)}
+                      placeholder={hasResendApiKey ? "•••••••••••••••• (ya configurada)" : "re_xxxxxxxxx (RESEND_API_KEY)"}
+                      className="w-full h-7 px-2.5 bg-[#080B0F] border border-[#26323E] rounded text-[#F1F5F9] font-mono text-[11px] focus:outline-none focus:border-[#38BDF8] mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
             {/* Dropbox Cloud API (Predeterminado) */}
             <div className="space-y-2 pt-2 border-t border-[#1C2735]">
               <div className="flex items-center justify-between">

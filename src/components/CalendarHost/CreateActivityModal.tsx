@@ -304,7 +304,7 @@ export function CreateActivityModal({
               }
               const createdActivity = hasTemplate ? data.createdActivities?.[0] : data.activity;
               const url = createdActivity?.pageUrl || (createdActivity?.pageId ? `https://www.notion.so/${createdActivity.pageId.replace(/-/g, '')}` : undefined);
-              showCreationResult(true, `Actividad creada para ${person}`, title, url, createdActivity?.pageId);
+              showCreationResult(true, person ? `Actividad creada para ${person}` : 'Actividad creada (Sin asignar)', title, url, createdActivity?.pageId);
               if (createdActivity) onCreated(createdActivity);
             } catch (err) {
               showCreationResult(false, 'No se confirmó la creación', 'Revisa el detalle en el formulario.');
@@ -499,6 +499,7 @@ export function CreateActivityModal({
                 onChange={(e) => setPerson(e.target.value)}
                 className="w-full rounded-lg bg-[#111823] border border-[#1E2A3A] px-3 py-3 text-sm text-white focus:outline-none focus:border-[#38BDF8] transition-colors cursor-pointer"
               >
+                <option value="">— Sin asignar —</option>
                 {people.map((p) => (
                   <option key={p} value={p}>
                     {p}

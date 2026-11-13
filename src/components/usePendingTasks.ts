@@ -1,6 +1,8 @@
 "use client";
 import {useEffect,useRef,useState,useCallback} from 'react';
 import {applyPendingJournal,applyPendingOperation,type PendingOperation} from '@/lib/pendingOperations';
+import {buildAttendedStatePatch,isFtfPendingBlock,normalizeRecurringPendingTasks} from '@/lib/pendingRecurrence';
+import {mexicoDate} from '@/services/calendarPresentation';
 import type {PendingTaskItem} from '@/types/anfeta';
 
 const sanitizeTask = (t: any): PendingTaskItem => ({
@@ -9,11 +11,25 @@ const sanitizeTask = (t: any): PendingTaskItem => ({
   query: typeof t?.query === 'string' ? t.query : (typeof t?.title === 'string' ? t.title : ''),
   scheduledDate: typeof t?.scheduledDate === 'string' ? t.scheduledDate : '',
   description: typeof t?.description === 'string' ? t.description : undefined,
+  note: typeof t?.note === 'string' && t.note.trim() ? t.note : undefined,
+  url: typeof t?.url === 'string' && t.url.trim() ? t.url : undefined,
   isCompleted: Boolean(t?.isCompleted),
   isArchived: Boolean(t?.isArchived),
   isAttended: Boolean(t?.isAttended),
+  isRecurringDaily: Boolean(t?.isRecurringDaily),
+  isFtfBlock: Boolean(t?.isFtfBlock),
+  lastCompletedDate: typeof t?.lastCompletedDate === 'string' && t.lastCompletedDate.trim() ? t.lastCompletedDate.trim() : undefined,
+  completedAt: typeof t?.completedAt === 'string' && t.completedAt.trim() ? t.completedAt.trim() : undefined,
+  recurrenceCompletions: Array.isArray(t?.recurrenceCompletions)
+    ? t.recurrenceCompletions.filter((e: any) => e && typeof e.date === 'string' && typeof e.completedAt === 'string').slice(-30)
+    : undefined,
   isStarred: Boolean(t?.isStarred),
   isPostMidnight: Boolean(t?.isPostMidnight),
+  isReviewNotice: Boolean(t?.isReviewNotice),
+  needsReview: Boolean(t?.needsReview),
+  isVideoTask: Boolean(t?.isVideoTask),
+  reviewPageId: typeof t?.reviewPageId === 'string' && t.reviewPageId.trim() ? t.reviewPageId.trim() : undefined,
+  reviewSentBy: typeof t?.reviewSentBy === 'string' && t.reviewSentBy.trim() ? t.reviewSentBy.trim() : undefined,
   assignedTo: typeof t?.assignedTo === 'string' ? t.assignedTo : undefined,
   assignedBy: typeof t?.assignedBy === 'string' ? t.assignedBy : undefined,
   assignedAt: typeof t?.assignedAt === 'string' ? t.assignedAt : undefined,
@@ -24,6 +40,15 @@ const sanitizeTask = (t: any): PendingTaskItem => ({
   ...(t?.updatedAt && typeof t.updatedAt === 'string' ? { updatedAt: t.updatedAt } : {}),
 });
 
+const patchMatchesItem = (item: any, patch: Record<string, any>) =>
+  Boolean(item) && Object.entries(patch).every(([key, value]) => {
+    const actual = item[key];
+    if (value === undefined || value === '') return actual === undefined || actual === null || actual === '';
+    if (Array.isArray(value)) return JSON.stringify(actual || []) === JSON.stringify(value);
+    if (typeof value === 'object' && value !== null) return JSON.stringify(actual || null) === JSON.stringify(value);
+    return actual === value;
+  });
+
 export function usePendingTasks(user:string,authenticated:boolean){
   const [tasks,setTasks]=useState<PendingTaskItem[]>([]),[error,setError]=useState('');
   const current=useRef<PendingTaskItem[]>([]),enqueue=useRef<(op:PendingOperation)=>void>(()=>{});
@@ -32,7 +57,12 @@ export function usePendingTasks(user:string,authenticated:boolean){
     const key='anfeta-pending-v2:'+user;
     current.current=[];setTasks([]);setError('');
     if(!authenticated||!user){enqueue.current=()=>{};return;}
-    const publish=(items:PendingTaskItem[])=>{if(!active)return;const clean=items.map(sanitizeTask);current.current=clean;setTasks(clean);};
+    const publish=(items:PendingTaskItem[])=>{
+      if(!active)return;
+      const clean=normalizeRecurringPendingTasks(items.map(sanitizeTask),mexicoDate()).items;
+      current.current=clean;
+      setTasks(clean);
+    };
     const persist=()=>{try{localStorage.setItem(key,JSON.stringify({items:current.current,confirmedRevision}));for(const op of journal)localStorage.setItem(key+':op:'+op.key,JSON.stringify(op));}catch{setError('No se pudo conservar la copia local de pendientes. Mantén abierta esta ventana hasta confirmar el guardado.');}};
     try{
       const saved=JSON.parse(localStorage.getItem(key)||'null');
@@ -73,9 +103,14 @@ export function usePendingTasks(user:string,authenticated:boolean){
             if(!Array.isArray(data.items)||!Number.isSafeInteger(data.revision)||data.revision<=remote.revision)throw Error('El servidor no confirmó la versión guardada.');
             if(op.item&&!data.items.some((item:any)=>item.id===op.item.id))throw Error('El servidor no devolvió el pendiente guardado.');
             if(op.remove?.some(id=>data.items.some((item:any)=>item.id===id)))throw Error('El servidor no confirmó el borrado.');
-            if(op.patch&&!data.items.some((item:any)=>item.id===op.id&&Object.entries(op.patch).every(([key,value])=>item[key]===value)))throw Error('El servidor no confirmó la edición.');
-            if(op.patches?.length&&!op.patches.every(entry=>data.items.some((item:any)=>item.id===entry.id&&Object.entries(entry.patch).every(([key,value])=>item[key]===value))))throw Error('El servidor no confirmó los cambios en lote.');
+            if(op.patch&&!data.items.some((item:any)=>item.id===op.id&&patchMatchesItem(item,op.patch)))throw Error('El servidor no confirmó la edición.');
+            if(op.patches?.length&&!op.patches.every(entry=>data.items.some((item:any)=>item.id===entry.id&&patchMatchesItem(item,entry.patch))))throw Error('El servidor no confirmó los cambios en lote.');
             confirmedRevision=data.revision;remote={items:data.items,revision:data.revision};confirmed=true;
+            const touchedFtf = (op.id && data.items.some((it:any) => it.id === op.id && isFtfPendingBlock(it)))
+              || (op.item && isFtfPendingBlock(op.item));
+            if(touchedFtf) {
+              try { window.dispatchEvent(new Event('anfeta_review_saved')); } catch {}
+            }
           }
           if(!confirmed)throw Error('Los pendientes cambiaron en otra ventana. Vuelve a intentar.');
           try{localStorage.removeItem(key+':op:'+op.key);}catch{}
@@ -92,7 +127,8 @@ export function usePendingTasks(user:string,authenticated:boolean){
       finally{busy=false;}
     };
     enqueue.current=op=>{journal.push(op);publish(applyPendingOperation(current.current,op));persist();void sync();};
-    const retry=()=>void sync();
+    const retry=()=>{if(typeof document==='undefined'||!document.hidden)void sync();};
+    const timer=setInterval(retry,45000);
     window.addEventListener('focus',retry);
     window.addEventListener('online',retry);
     window.addEventListener('anfeta_retry_pending',retry);
@@ -100,6 +136,7 @@ export function usePendingTasks(user:string,authenticated:boolean){
     return()=>{
       active=false;
       enqueue.current=()=>{};
+      clearInterval(timer);
       window.removeEventListener('focus',retry);
       window.removeEventListener('online',retry);
       window.removeEventListener('anfeta_retry_pending',retry);
@@ -113,7 +150,16 @@ export function usePendingTasks(user:string,authenticated:boolean){
     handleAddPendingTask:useCallback((task:Omit<PendingTaskItem,'id'>)=>send({item:{...task,id:crypto.randomUUID(),createdAt:new Date().toISOString()}}),[send]),
     handleEditPendingTask:useCallback((id:string,patch:Partial<PendingTaskItem>)=>send({id,patch}),[send]),
     handleBatchEditPendingTasks:useCallback((patches:Array<{id:string;patch:Partial<PendingTaskItem>}>)=>{if(patches.length)send({patches});},[send]),
-    handleTogglePendingTask:useCallback((id:string)=>{const task=current.current.find(t=>t.id===id);if(task)send({id,patch:{isCompleted:!task.isCompleted}});},[send]),
+    handleTogglePendingTask:useCallback((id:string)=>{
+      const task=current.current.find(t=>t.id===id);
+      if(!task)return;
+      const nextDone=!task.isCompleted;
+      if(task.isRecurringDaily||task.isFtfBlock){
+        send({id,patch:buildAttendedStatePatch(task,nextDone,new Date(),true)});
+      }else{
+        send({id,patch:{isCompleted:nextDone}});
+      }
+    },[send]),
     handleDeletePendingTask:useCallback((id:string)=>send({remove:[id]}),[send]),
     handleDeleteAllPendingTasks:useCallback(()=>send({remove:current.current.map(t=>t.id)}),[send]),
     handleReorderPendingTasks:useCallback((orderIds:string[])=>send({reorder:orderIds}),[send])

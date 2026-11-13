@@ -36,6 +36,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
   const [timeHour, setTimeHour] = useState("");
   const [timeMeridian, setTimeMeridian] = useState<"AM" | "PM">("AM");
   const [assignedTo, setAssignedTo] = useState("");
+  const [isRecurringDaily, setIsRecurringDaily] = useState(false);
+  const [isFtfBlock, setIsFtfBlock] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
   });
@@ -50,6 +52,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         setDescription(taskToEdit.description || "");
         setUrl(taskToEdit.url || "");
         setAssignedTo(taskToEdit.assignedTo || "");
+        setIsRecurringDaily(Boolean(taskToEdit.isRecurringDaily || taskToEdit.isFtfBlock));
+        setIsFtfBlock(Boolean(taskToEdit.isFtfBlock));
         setScheduledDate(taskToEdit.scheduledDate || "");
         setQuery(taskToEdit.query || "");
 
@@ -86,6 +90,8 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         setDescription("");
         setUrl("");
         setAssignedTo("");
+        setIsRecurringDaily(false);
+        setIsFtfBlock(false);
         setScheduledDate(new Date().toISOString().split("T")[0]);
         setQuery(initialQuery || cleanInitial || defaultText);
 
@@ -165,6 +171,11 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
         isCompleted: taskToEdit ? taskToEdit.isCompleted : false,
         isAttended: taskToEdit ? taskToEdit.isAttended : false,
         isArchived: taskToEdit ? taskToEdit.isArchived : false,
+        isRecurringDaily: isRecurringDaily || isFtfBlock,
+        isFtfBlock,
+        lastCompletedDate: taskToEdit?.lastCompletedDate,
+        completedAt: taskToEdit?.completedAt,
+        recurrenceCompletions: taskToEdit?.recurrenceCompletions,
         isStarred: assignedTo.trim() ? (taskToEdit?.isStarred ?? true) : taskToEdit?.isStarred,
         assignedTo: assignedTo.trim() || undefined,
         assignedBy: assignedTo.trim() ? (taskToEdit?.assignedBy || currentUser || "Neftali") : undefined,
@@ -374,6 +385,41 @@ export function PendingTaskModal({ isOpen, onClose, onSave, taskToEdit, initialQ
               placeholder="Detalles sobre el pendiente, fase o contexto..."
               className="w-full p-2 bg-[#141B26] text-[#F8FAFC] border border-[#26354A] rounded text-xs focus:border-[#38BDF8] focus:outline-none resize-none"
             />
+          </div>
+
+          {/* Bloque recurrente diario (reinicio automático al día siguiente) */}
+          <div className="rounded-lg border border-cyan-500/35 bg-cyan-950/20 p-2.5 space-y-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isRecurringDaily}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsRecurringDaily(checked);
+                  if (!checked) setIsFtfBlock(false);
+                }}
+                className="mt-0.5 rounded border-cyan-500 bg-[#141B26] text-cyan-400 focus:ring-cyan-400"
+              />
+              <span className="text-[11px] leading-snug text-cyan-100">
+                <strong className="font-semibold text-cyan-300">🔁 Bloque recurrente diario</strong>
+                <span className="block text-[9.5px] text-slate-400 mt-0.5">
+                  Si lo palomeas hoy, queda registrado con su hora y mañana se desactiva solo para volverlo a hacer.
+                </span>
+              </span>
+            </label>
+            {isRecurringDaily && (
+              <label className="flex items-start gap-2 cursor-pointer pl-5 border-t border-cyan-900/50 pt-1.5">
+                <input
+                  type="checkbox"
+                  checked={isFtfBlock}
+                  onChange={(e) => setIsFtfBlock(e.target.checked)}
+                  className="mt-0.5 rounded border-emerald-500 bg-[#141B26] text-emerald-400 focus:ring-emerald-400"
+                />
+                <span className="text-[10.5px] leading-snug text-emerald-200">
+                  ⚡ Bloque FTF (reportar hora exacta de término en Bitácora)
+                </span>
+              </label>
+            )}
           </div>
 
           {/* Campo Fecha Programada + Chips Rápidos */}

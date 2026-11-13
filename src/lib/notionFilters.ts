@@ -1,5 +1,6 @@
 import { indexedContentText } from '../services/advancedQuery';
 import {matchesSearchDatabase} from './searchDatabase';
+import { isNotionViewItem, isTemplateItem } from './notionViewsCatalog';
 import { ResultItem } from "@/components/ResultsViewHost/ResultsVirtualTable";
 
 export function isNotionItem(x: ResultItem): boolean {
@@ -130,11 +131,9 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
       });
 
     case "plantillas":
-      return items.filter(x => {
-        if (!isNotionItem(x)) return false;
-        const name = String(x.name || '').toLowerCase();
-        return /(?:plantilla|#ffase00|aaprtuzs|\beed11\b|\bee-d11\b)/i.test(name);
-      });
+      return items.filter(x => isNotionItem(x) && isTemplateItem(x));
+    case "vistas":
+      return items.filter(x => isNotionItem(x) && isNotionViewItem(x));
 
     case "zpagar":
       return items.filter((x) => {

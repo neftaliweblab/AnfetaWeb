@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Columns,
+  Bell,
 } from "lucide-react";
 
 export interface UserOption {
@@ -75,6 +76,7 @@ interface SearchConfigRowProps {
   isPendientesOpen: boolean;
   onTogglePendientes: () => void;
   pendingCount: number;
+  reviewAlertCount?: number;
   isFiltersOpen: boolean;
   onToggleFilters: () => void;
   isDetailsOpen: boolean;
@@ -169,6 +171,7 @@ function SearchConfigRowComponent({
   isPendientesOpen,
   onTogglePendientes,
   pendingCount,
+  reviewAlertCount = 0,
   isFiltersOpen,
   onToggleFilters,
   isDetailsOpen,
@@ -476,12 +479,12 @@ function SearchConfigRowComponent({
           </button>
         )}
 
-        {/* 6. Controles Cobros y Pagos Independientes (3 Estados) */}
+        {/* 6. Controles Ingresos y Egresos Independientes (3 Estados) */}
         {onChangeBillingFilter && onChangePaymentFilter && (
           <div className="flex items-center gap-1 bg-[#101722] p-0.5 rounded border border-[#202E42] shrink-0">
-            {/* Cobros */}
+            {/* Ingresos */}
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-slate-400 font-medium px-1">Cobros:</span>
+              <span className="text-[10px] text-slate-400 font-medium px-1">Ingresos:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -495,7 +498,7 @@ function SearchConfigRowComponent({
                     ? "bg-rose-950 text-rose-300 border-rose-800"
                     : "bg-[#16202E] text-emerald-300 border-[#22354A] hover:bg-[#1D2B3E]"
                 }`}
-                title="Alternar filtro de cobros: Incluir -> Solo -> Excluir"
+                title="Alternar filtro de ingresos (cobros): Incluir -> Solo -> Excluir"
               >
                 {billingFilter === "only" ? "Solo" : billingFilter === "exclude" ? "Excluir" : "Incluir"}
               </button>
@@ -503,9 +506,9 @@ function SearchConfigRowComponent({
 
             <div className="h-3 w-px bg-[#26354A] mx-0.5" />
 
-            {/* Pagos */}
+            {/* Egresos */}
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-slate-400 font-medium px-1">Pagos:</span>
+              <span className="text-[10px] text-slate-400 font-medium px-1">Egresos:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -519,7 +522,7 @@ function SearchConfigRowComponent({
                     ? "bg-rose-950 text-rose-300 border-rose-800"
                     : "bg-[#16202E] text-amber-300 border-[#22354A] hover:bg-[#1D2B3E]"
                 }`}
-                title="Alternar filtro de pagos: Incluir -> Solo -> Excluir"
+                title="Alternar filtro de egresos (pagos): Incluir -> Solo -> Excluir"
               >
                 {paymentFilter === "only" ? "Solo" : paymentFilter === "exclude" ? "Excluir" : "Incluir"}
               </button>
@@ -735,16 +738,36 @@ function SearchConfigRowComponent({
             padding: `0 ${Math.round(6 * scale)}px`,
           }}
           className={`flex items-center gap-1 rounded font-medium border transition cursor-pointer ${
-            isPendientesOpen
+            reviewAlertCount > 0
+              ? isPendientesOpen
+                ? "bg-amber-950/90 text-amber-200 border-amber-400/80 shadow-[0_0_12px_rgba(245,158,11,0.28)]"
+                : "bg-amber-950/75 text-amber-200 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse"
+              : isPendientesOpen
               ? "bg-cyan-950 text-cyan-300 border-cyan-800 shadow-sm"
               : "bg-[#121822] text-slate-400 hover:text-white border-[#202E42]"
           }`}
-          title="Abrir o cerrar panel de Pendientes"
+          title={
+            reviewAlertCount > 0
+              ? `${reviewAlertCount} pendiente(s) o video(s) por revisar para completar`
+              : "Abrir o cerrar panel de Pendientes"
+          }
         >
+          {reviewAlertCount > 0 && <Bell className="w-3 h-3 text-amber-300 animate-bounce shrink-0" />}
           <span>📌 Pendientes</span>
-          <span className="text-[10px] font-bold bg-[#1C283A] text-slate-300 px-1 rounded font-mono">
+          <span
+            className={`text-[10px] font-bold px-1 rounded font-mono ${
+              reviewAlertCount > 0
+                ? "bg-amber-400 text-slate-950"
+                : "bg-[#1C283A] text-slate-300"
+            }`}
+          >
             {pendingCount}
           </span>
+          {reviewAlertCount > 0 && (
+            <span className="text-[9px] font-bold text-amber-300 font-mono">
+              · {reviewAlertCount} rev
+            </span>
+          )}
         </button>
 
         {/* Toggle Filtros Rápidos */}

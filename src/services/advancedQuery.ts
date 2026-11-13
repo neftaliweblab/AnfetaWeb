@@ -1,6 +1,7 @@
 import {groupedSearch,evaluateGroupedSearch,type SearchExpression} from './groupedSearch';
 import { SearchResultRow } from '@/types/anfeta';
 import {matchesActivityTagQuery} from './activityTags';
+import { isNotionViewItem, isTemplateItem } from '@/lib/notionViewsCatalog';
 
 export interface QueryPlan {
   sorts: Array<{ field: string; desc: boolean }>;
@@ -852,6 +853,22 @@ function checkSingleToken(
         has = searchable.includes("pagar") || srcName.includes("pagar");
       } else if (cleanSp === "zcobrar" || cleanSp === "cobrar") {
         has = searchable.includes("cobrar") || srcName.includes("cobrar");
+      } else if (
+        cleanSp === "plantilla" ||
+        cleanSp === "plantillas" ||
+        cleanSp === "ffase00" ||
+        cleanSp === "#ffase00"
+      ) {
+        has = isTemplateItem(item);
+      } else if (
+        cleanSp === "vista" ||
+        cleanSp === "vistas" ||
+        cleanSp === "vvist" ||
+        cleanSp === "vvsz" ||
+        cleanSp === "vvszvszu" ||
+        cleanSp === "ttabl"
+      ) {
+        has = isNotionViewItem(item);
       } else if (cleanSp === "revisiones" || cleanSp === "revision" || cleanSp === "prtuzrevision" || cleanSp === "rtuzrevision" || cleanSp === "zrevision") {
         has =
           srcName.includes("revision") ||

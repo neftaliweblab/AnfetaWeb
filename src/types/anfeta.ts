@@ -140,10 +140,18 @@ export interface PendingTaskItem {
   isCompleted?: boolean;
   isArchived?: boolean;
   isAttended?: boolean;
+  isRecurringDaily?: boolean;
+  isFtfBlock?: boolean;
+  lastCompletedDate?: string;
+  completedAt?: string;
+  recurrenceCompletions?: Array<{ date: string; completedAt: string }>;
   isStarred?: boolean;
   isPostMidnight?: boolean;
   isReviewNotice?: boolean;
+  needsReview?: boolean;
+  isVideoTask?: boolean;
   reviewPageId?: string;
+  reviewSentBy?: string;
   assignedTo?: string;
   assignedBy?: string;
   assignedAt?: string;

@@ -48,6 +48,10 @@ export function getSettings() {
     dropboxPath: process.env.DROPBOX_PATH || "C:\\Users\\nanoc\\Dropbox",
     currentUser: "nneft",
     notionDataSourceId: process.env.NOTION_CALENDAR_DATA_SOURCE_ID || "2eeabd7d-91b7-8193-a131-000b08cd54e2",
+    ftfJournalPageId: process.env.NOTION_FTF_JOURNAL_PAGE_ID || "",
+    ftfEmailTo: process.env.FTF_REPORT_EMAIL_TO || "",
+    ftfEmailFrom: process.env.FTF_REPORT_EMAIL_FROM || "",
+    resendApiKey: process.env.RESEND_API_KEY || "",
     isDryRun: true,
   };
   try {
@@ -70,6 +74,10 @@ export function getSettings() {
   }
   if (process.env.NOTION_DATABASE_ID) settings.notionDatabaseId = process.env.NOTION_DATABASE_ID;
   if (process.env.DROPBOX_ACCESS_TOKEN) settings.dropboxToken = process.env.DROPBOX_ACCESS_TOKEN;
+  if (process.env.NOTION_FTF_JOURNAL_PAGE_ID?.trim()) settings.ftfJournalPageId = process.env.NOTION_FTF_JOURNAL_PAGE_ID.trim();
+  if (process.env.FTF_REPORT_EMAIL_TO?.trim()) settings.ftfEmailTo = process.env.FTF_REPORT_EMAIL_TO.trim();
+  if (process.env.FTF_REPORT_EMAIL_FROM?.trim()) settings.ftfEmailFrom = process.env.FTF_REPORT_EMAIL_FROM.trim();
+  if (process.env.RESEND_API_KEY?.trim()) settings.resendApiKey = cleanToken(process.env.RESEND_API_KEY);
   return settings;
 }
 

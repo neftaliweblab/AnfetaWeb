@@ -55,6 +55,8 @@ import { ResultsVirtualTable } from "./ResultsVirtualTable";
 import { DetailsPane } from "./DetailsPane";
 import { SearchBottomBar } from "./SearchBottomBar";
 import { PendingTaskModal } from "./PendingTaskModal";
+import { buildAttendedStatePatch } from "@/lib/pendingRecurrence";
+import { isReviewOrSentPending } from "@/lib/pendingAlerts";
 import { NotionTemplatesModal } from "./NotionTemplatesModal";
 import {detectUpload} from '@/lib/drxUploadPlan';
 import { DropboxUploadModal } from "./DropboxUploadModal";
@@ -383,7 +385,7 @@ export function ResultsViewHost({
   const [isResponseCleanupOpen, setIsResponseCleanupOpen] = useState(false);
   const [globalFiles, setGlobalFiles] = useState<GlobalPasteImagePayload[]>([]);
   const [recordingUpload,setRecordingUpload]=useState(false);
-  const [recordingOptions,setRecordingOptions]=useState<{person?:string;domain?:string;attach?:boolean}>({});
+  const [recordingOptions,setRecordingOptions]=useState<{person?:string;domain?:string;attach?:boolean;addToPending?:boolean}>({});
   const [recordingDestination,setRecordingDestination]=useState<SearchResultRow|null>(null);
   const resultsRoot=useRef<HTMLDivElement>(null),keyboardStart=useRef(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -2013,16 +2015,15 @@ export function ResultsViewHost({
       <ScopePillsRow
         selectedScope={selectedScope}
         onSelectScope={(scope) => {
-          if (scope === "Plantillas") {
-            setSelectedScope("Notion");
-            handleQueryChange("eed11");
-            focusSearch();
-            return;
-          }
           setSelectedScope(scope);
           focusSearch();
+          if (scope === "Plantillas") {
+            setResultPerson("__all__");
+          }
           const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
-          if (userTags.includes(query.trim().toLowerCase())) {
+          if (scope === "Plantillas" && query.trim().toLowerCase() === "eed11") {
+            handleQueryChange("");
+          } else if (userTags.includes(query.trim().toLowerCase())) {
             handleQueryChange("");
           }
         }}
@@ -2197,6 +2198,7 @@ export function ResultsViewHost({
         isPendientesOpen={isPendientesOpen}
         onTogglePendientes={() => setIsPendientesOpen(!isPendientesOpen)}
         pendingCount={pendingTasks.filter((t) => !t.isCompleted).length}
+        reviewAlertCount={pendingTasks.filter((t) => !t.isCompleted && !t.isAttended && !t.isArchived && (isReviewOrSentPending(t) || (t.assignedTo && normalizePerson(t.assignedTo) === normalizePerson(currentUser || "") && t.assignedBy && normalizePerson(t.assignedBy) !== normalizePerson(currentUser || "")))).length}
         isFiltersOpen={isFiltersOpen}
         onToggleFilters={() => setIsFiltersOpen(!isFiltersOpen)}
         isDetailsOpen={isDetailsOpen}
@@ -2222,7 +2224,7 @@ export function ResultsViewHost({
             onToggleAttended={(id) => {
               const t = pendingTasks.find((x) => x.id === id);
               if (t && onEditPendingTask) {
-                onEditPendingTask(id, { isAttended: !t.isAttended });
+                onEditPendingTask(id, buildAttendedStatePatch(t, !t.isAttended, new Date()));
               }
             }}
             onOpenNewTaskModal={() => {
@@ -2679,6 +2681,7 @@ export function ResultsViewHost({
         initialDomain={recordingUpload?recordingOptions.domain:undefined}
         initialPerson={recordingUpload?recordingOptions.person:undefined}
         initialAction={recordingUpload&&recordingOptions.attach?'attach':undefined}
+        initialAddToPending={recordingUpload ? recordingOptions.addToPending !== false : false}
         initialText={globalPasteText}
         initialImage={globalPasteImage}
         attachmentOnly={recordingUpload&&!!recordingDestination}

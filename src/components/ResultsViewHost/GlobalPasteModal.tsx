@@ -39,6 +39,7 @@ interface Props {
   initialDomain?: string;
   initialPerson?: string;
   initialAction?: 'create' | 'attach';
+  initialAddToPending?: boolean;
   attachmentOnly?: boolean;
   suggestedTarget?: SearchResultRow | null;
 }
@@ -77,6 +78,7 @@ export function GlobalPasteModal({
   initialDomain,
   initialPerson,
   initialAction,
+  initialAddToPending = false,
   attachmentOnly=false,
   suggestedTarget
 }: Props) {
@@ -476,6 +478,8 @@ export function GlobalPasteModal({
             uploadId: recovery.current.id,
             person: frozen.assignedPerson||reviewers.find(p => p.tag === frozen.personTag)?.person || activityPerson(frozen.personTag||'') || normalizePerson(frozen.personTag||'') || (frozen.quickRevision?currentUser:''),
             targetPageId: frozen.targetPageId||(actionType === 'attach' && selectedCard ? selectedCard.id : undefined),
+            addToPending: initialAddToPending || Boolean(files.some((f: any) => /^video\//i.test(String(f?.contentType || '')))),
+            isVideoTask: Boolean(files.some((f: any) => /^video\//i.test(String(f?.contentType || '')))),
             currentUser
           }
         })
@@ -544,6 +548,10 @@ export function GlobalPasteModal({
       } catch {}
 
       const recording=files.find(f=>f.blob&&/^video\//.test(f.contentType||f.blob.type));
+      if(data.pendingSynced){
+        window.dispatchEvent(new Event('anfeta_retry_pending'));
+        window.dispatchEvent(new Event('anfeta_review_saved'));
+      }
       if(recording)setTranscription({file:recording,pageIds:[...new Set<string>(allReceipts.filter((r:any)=>r.kind==='notion'||r.kind==='notion_attachment').map((r:any)=>r.pageId).filter(Boolean))],folder:dbxPaths[0]?.replace(/\/[^/]+$/,'')||''});
       if (!warnings.length&&!recording) {
         setTimeout(() => onClose(), 1200);

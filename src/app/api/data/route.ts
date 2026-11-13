@@ -58,6 +58,16 @@ import {requireActor,assertSameOrigin} from '@/services/serverAuth';
 import {isReviewer} from '@/services/activityPermissions';
 import {loadLiveFinance} from '@/services/notionFinance';
 import {financeRowsForDay} from '@/services/calendarFinance';
+import {
+  FIXED_FTF_BLOCK_ID,
+  buildFixedFtfBlock,
+  isFtfPendingBlock,
+  mergeDeletedPendingIds,
+  normalizeRecurringPendingTasks,
+  resolveFtfBlockCompletionForDay,
+} from '@/lib/pendingRecurrence';
+import { buildQuickPendingFromActivity } from '@/lib/pendingAlerts';
+import { appendDailyFtfJournalToggle, sendFtfScoreEmail } from '@/services/ftfScoreDelivery';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
@@ -85,6 +95,53 @@ const WIN_SETTINGS_DIR = path.join(
   "AnfetaCalendarLab"
 );
 const WIN_SETTINGS_FILE = path.join(WIN_SETTINGS_DIR, "settings.json");
+
+async function upsertCrossPendingTask(
+  settings: any,
+  actor: string,
+  targetPersonRaw: string,
+  pendingTask: PendingTaskItem,
+  pushTitle = 'Nuevo pendiente asignado'
+): Promise<boolean> {
+  const targetPerson = normalizePerson(targetPersonRaw);
+  const normActor = normalizePerson(actor || '');
+  if (!targetPerson || targetPerson === 'Sin asignar') return false;
+  try {
+    const targetState = await readUserState(settings, targetPerson);
+    const targetDeleted = new Set<string>(
+      Array.isArray(targetState.values?.receipts?.deletedPendingIds)
+        ? targetState.values.receipts.deletedPendingIds
+        : []
+    );
+    if (targetDeleted.has(pendingTask.id)) return false;
+
+    const currentList = Array.isArray(targetState.values.pendingTasks)
+      ? [...targetState.values.pendingTasks]
+      : [];
+    const existingIdx = currentList.findIndex((x: any) => x.id === pendingTask.id);
+    if (existingIdx >= 0) {
+      currentList[existingIdx] = { ...currentList[existingIdx], ...pendingTask };
+    } else {
+      currentList.unshift({ ...pendingTask });
+    }
+    await updateUserState(settings, targetPerson, { pendingTasks: currentList }, targetState.revision);
+
+    if (normActor !== targetPerson) {
+      try {
+        await sendPwaPush(settings, targetPerson, {
+          title: pushTitle,
+          body: `${actor} te asignó: ${pendingTask.title}`,
+          tag: 'assigned-task-' + pendingTask.id,
+          url: '/',
+        });
+      } catch {}
+    }
+    return true;
+  } catch (err) {
+    console.warn('Advertencia: no se pudo sincronizar pendiente para', targetPerson, err);
+    return false;
+  }
+}
 
 
 function readLocalJson<T>(filename: string, defaultValue: T): T {
@@ -414,13 +471,23 @@ async function duplicateNotionPageWithoutBody({
     }};
   }
 
-  if (overridePerson) {
-    const person = normalizePerson(overridePerson), field = assignedField(sourcePage);
+  const trimmedOverridePerson = String(overridePerson || '').trim();
+  const isUnassignedOverride = !trimmedOverridePerson || normalizePerson(trimmedOverridePerson) === 'Sin asignar';
+  const field = assignedField(sourcePage);
+  if (isUnassignedOverride) {
+    if (field) {
+      const [name, prop] = field;
+      if (prop.type === 'people') duplicateProperties[name] = { people: [] };
+      else if (prop.type === 'select') duplicateProperties[name] = { select: null };
+      else duplicateProperties[name] = { rich_text: [] };
+    }
+  } else {
+    const person = normalizePerson(trimmedOverridePerson);
     if (!field) throw new Error('La plantilla no tiene responsable editable.');
     const [name, prop] = field;
     if (prop.type === 'people') {
       const mapping = JSON.parse(process.env.NOTION_PERSON_IDS || '{}');
-      const id = mapping[person] || mapping[overridePerson] || await resolveTeamPersonId({...bodySettings,currentUser:person},person);
+      const id = mapping[person] || mapping[trimmedOverridePerson] || await resolveTeamPersonId({...bodySettings,currentUser:person},person);
       if (!id) throw new Error('No se encontró la cuenta real de ' + person);
       duplicateProperties[name] = {people:[{id}]};
     } else duplicateProperties[name] = prop.type === 'select' ? {select:{name:person}} : {rich_text:[{text:{content:person}}]};
@@ -543,11 +610,29 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }
         if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
-        const [state, presence]=await Promise.all([
+        const [state, presence, blockEntries]=await Promise.all([
           readUserState(settings,'John'),
           readFtfPresenceHistory(day, shiftFtfDate(day, 1)).catch(()=>{return [];}),
+          Promise.all(
+            people.map(async (p) => {
+              try {
+                const pState = p.name === 'John' ? null : await readUserState(settings, p.name);
+                return [p.name, pState] as const;
+              } catch {
+                return [p.name, null] as const;
+              }
+            })
+          ),
         ]);
-        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
+        const ftfBlockTimesByPerson: Record<string, string> = {};
+        for (const [personName, pState] of blockEntries) {
+          const resolved = resolveFtfBlockCompletionForDay(
+            (personName === 'John' ? state : pState)?.values?.pendingTasks,
+            day
+          );
+          if (resolved) ftfBlockTimesByPerson[normalizePerson(personName)] = resolved;
+        }
+        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks,ftfBlockTimesByPerson),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
     }
     if (type === 'review-notifications') {
@@ -792,13 +877,15 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "settings") {
-      const {notionToken,...publicSettings}=getSettings();
+      const {notionToken, resendApiKey, ...publicSettings}=getSettings();
       const hasDropbox = Boolean(publicSettings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || process.env.DROPBOX_REFRESH_TOKEN);
+      const hasResendApiKey = Boolean(resendApiKey || process.env.RESEND_API_KEY);
       return NextResponse.json({
         ...publicSettings,
         currentUser: actor,
         notionConfigured: !!notionToken,
         hasDropboxToken: hasDropbox,
+        hasResendApiKey,
         dropboxAccountName: (publicSettings as any).dropboxAccountName || "",
         dropboxAccountEmail: (publicSettings as any).dropboxAccountEmail || "",
       });
@@ -1389,23 +1476,39 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
 
     if (type === "pendientes") {
       const actor = verifiedActor || await requireActor(req);
-      const state = await readUserState(getSettings(), actor);
+      const settings = getSettings();
+      const state = await readUserState(settings, actor);
+      const deletedIds = new Set<string>(
+        Array.isArray(state.values?.receipts?.deletedPendingIds)
+          ? state.values.receipts.deletedPendingIds.filter((id: any) => typeof id === 'string')
+          : []
+      );
+      const today = mexicoDate();
       let items: any[] = Array.isArray(state.values.pendingTasks) ? [...state.values.pendingTasks] : [];
+      let shouldPersist = false;
 
-      // Limpiar cualquier semilla previa con el nombre del video
-      items = items.filter((t: any) => t && t.id !== 'task-seed-john-video-check' && !(typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv')));
+      // Filtrar elementos eliminados definitivamente o semillas obsoletas
+      const beforeFilterCount = items.length;
+      items = items.filter(
+        (t: any) =>
+          t &&
+          t.id !== 'task-seed-john-video-check' &&
+          !deletedIds.has(t.id) &&
+          !(typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv'))
+      );
+      if (items.length !== beforeFilterCount) shouldPersist = true;
 
-      // Semilla única solicitada: Pasar el nombre de las vistas que van a ser las bases de datos
+      // Semilla única (solo si el usuario no la eliminó explícitamente)
       const SEED_TASK_ID = 'task-seed-john-vistas-bd';
       const normActor = normalizePerson(actor).toLowerCase();
-      if (normActor === 'neftali' || normActor === 'john') {
+      if ((normActor === 'neftali' || normActor === 'john') && !deletedIds.has(SEED_TASK_ID)) {
         const hasTask = items.some((t: any) => t.id === SEED_TASK_ID || (typeof t.title === 'string' && t.title.includes('nombre de las vistas que van a ser las bases de datos')));
         if (!hasTask) {
           const initialSeed = {
             id: SEED_TASK_ID,
             title: 'Pasar los nombres de las vistas que van a ser las bases de datos',
             description: 'Vistas de Notion acordadas para integración directa con ANFETA.',
-            scheduledDate: new Date().toISOString().split('T')[0],
+            scheduledDate: today,
             query: 'Revisiones',
             isCompleted: false,
             isAttended: false,
@@ -1416,10 +1519,39 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
             createdAt: new Date().toISOString(),
           };
           items = [initialSeed, ...items];
+          shouldPersist = true;
         }
       }
 
-      return NextResponse.json({items, revision: state.revision}, {headers: {'Cache-Control': 'no-store'}});
+      // Bloque fijo diario FTF (08:00 - 08:30) para todos los colaboradores
+      const canonicalActor = normalizePerson(actor);
+      if (
+        canonicalActor &&
+        canonicalActor !== 'Sin asignar' &&
+        !deletedIds.has(FIXED_FTF_BLOCK_ID) &&
+        !items.some((t: any) => t.id === FIXED_FTF_BLOCK_ID || isFtfPendingBlock(t))
+      ) {
+        items = [buildFixedFtfBlock(today), ...items];
+        shouldPersist = true;
+      }
+
+      // Reiniciar bloques recurrentes diarios marcados en días anteriores
+      const normalized = normalizeRecurringPendingTasks(items, today);
+      if (normalized.changed) {
+        items = normalized.items;
+        shouldPersist = true;
+      }
+
+      let revision = state.revision;
+      if (shouldPersist) {
+        try {
+          const updated = await updateUserState(settings, actor, { pendingTasks: items }, state.revision);
+          revision = updated.revision;
+          if (Array.isArray(updated.values?.pendingTasks)) items = updated.values.pendingTasks;
+        } catch {}
+      }
+
+      return NextResponse.json({items, revision}, {headers: {'Cache-Control': 'no-store'}});
     }
 
     if (type === "dropbox-folders") {
@@ -1959,7 +2091,33 @@ async function POSTLive(req: NextRequest) {
         if(mode==='both'&&!input.targetPageId&&!input.quickRevision){
           try{const now=new Date(),day=mexicoDate(now.toISOString());const minutes=Math.min(1305,Math.max(480,Math.ceil((Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}).format(now))*60+now.getMinutes())/15)*15));const at=(m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';const person=input.person?normalizePerson(input.person):actor;const event=await durableStep(operationKey(batchKey,'event'),()=>createActivity(getSettings(),actor,{title:input.title||batch[0].filename,domain:input.domain,person,start:at(minutes),end:at(minutes+15),body:receipts.map(r=>r.pageUrl||r.path).filter(Boolean).join('\n')}));receipts.push({kind:'event',pageId:event.page.id,pageUrl:event.page.url});}catch(error){warnings.push('Los archivos se guardaron, pero no se creó la actividad temporal: '+(error instanceof Error?error.message:''));}
         }
-        return NextResponse.json({success:true,receipts,warnings});
+        let pendingSynced = false;
+        const hasVideoFile = batch.some((f: any) => /^video\//i.test(String(f?.contentType || '')) || /\.(mp4|webm|mov|m4v)$/i.test(String(f?.filename || '')));
+        if (input?.addToPending !== false && (input?.addToPending === true || input?.isVideoTask === true || hasVideoFile)) {
+          const targetOwner = normalizePerson(String(input.person || actor));
+          const notionReceipt = receipts.find((r: any) => r.kind === 'notion' || r.kind === 'notion_attachment' || r.kind === 'event');
+          if (targetOwner && targetOwner !== 'Sin asignar' && notionReceipt?.pageId) {
+            const quickPending = buildQuickPendingFromActivity({
+              pageId: notionReceipt.pageId,
+              pageUrl: notionReceipt.pageUrl,
+              title: input.title || input.quickTitle || batch[0]?.filename || 'Grabación ANFETA',
+              assignedTo: targetOwner,
+              assignedBy: actor,
+              scheduledDate: mexicoDate(),
+              domain: input.domain,
+              isVideoTask: Boolean(input.isVideoTask || hasVideoFile),
+              needsReview: true,
+            });
+            pendingSynced = await upsertCrossPendingTask(
+              getSettings(),
+              actor,
+              targetOwner,
+              quickPending,
+              quickPending.isVideoTask ? 'Nuevo video en Pendientes' : 'Nuevo pendiente rápido'
+            );
+          }
+        }
+        return NextResponse.json({success:true,receipts,warnings,pendingSynced});
       }catch(error){return NextResponse.json({success:false,receipts,error:error instanceof Error?error.message:'La subida no se completó.'},{status:502});}
     }
 
@@ -2097,7 +2255,34 @@ async function POSTLive(req: NextRequest) {
       } catch (linkErr) {
         console.warn('[CREATE_ACTIVITY] No se pudo guardar enlace en Notion:', linkErr);
       }
-      return NextResponse.json({ success: true, pageId: result.page.id, pageUrl: result.page.url, activity: result.activity, linkSaved });
+      let pendingSynced = false;
+      const shouldAddPending =
+        payload?.addToPending !== false &&
+        (payload?.calendarEntryKind === 'recording' || payload?.addToPending === true || Boolean(payload?.isVideoTask));
+      if (shouldAddPending) {
+        const targetOwner = normalizePerson(result.activity?.person || payload?.person || actor);
+        if (targetOwner && targetOwner !== 'Sin asignar') {
+          const quickPending = buildQuickPendingFromActivity({
+            pageId: result.page.id,
+            pageUrl: result.page.url,
+            title: result.activity?.title || payload?.title || 'Pendiente rápido',
+            assignedTo: targetOwner,
+            assignedBy: actor,
+            scheduledDate: (result.activity?.start || '').slice(0, 10) || mexicoDate(),
+            domain: payload?.domain,
+            isVideoTask: payload?.calendarEntryKind === 'recording' || Boolean(payload?.isVideoTask),
+            needsReview: true,
+          });
+          pendingSynced = await upsertCrossPendingTask(
+            settings,
+            actor,
+            targetOwner,
+            quickPending,
+            quickPending.isVideoTask ? 'Nuevo video en Pendientes' : 'Nuevo pendiente rápido'
+          );
+        }
+      }
+      return NextResponse.json({ success: true, pageId: result.page.id, pageUrl: result.page.url, activity: result.activity, linkSaved, pendingSynced });
     }
 
     if (action === 'attach-to-notion-page') {
@@ -2314,10 +2499,17 @@ async function POSTLive(req: NextRequest) {
     }
 
     if (action === "save-settings") {
-      saveSettings(payload);
-      const res = NextResponse.json({ success: true, settings: payload });
-      if (payload?.notionToken) {
-        res.cookies.set("anfeta_notion_token", payload.notionToken.trim(), {
+      const existing = getSettings();
+      const nextSettings = { ...(payload || {}) };
+      if (!nextSettings.resendApiKey && !nextSettings.clearResendApiKey && existing.resendApiKey) {
+        nextSettings.resendApiKey = existing.resendApiKey;
+      }
+      delete nextSettings.clearResendApiKey;
+      saveSettings(nextSettings);
+      const { resendApiKey: savedResend, notionToken: _tok, ...safeSettings } = { ...existing, ...nextSettings };
+      const res = NextResponse.json({ success: true, settings: { ...safeSettings, hasResendApiKey: Boolean(savedResend || process.env.RESEND_API_KEY) } });
+      if (nextSettings?.notionToken) {
+        res.cookies.set("anfeta_notion_token", nextSettings.notionToken.trim(), {
           path: "/",
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -2807,18 +2999,37 @@ async function POSTLive(req: NextRequest) {
 
     if (action === "save-pendientes") {
       if (!Array.isArray(payload) || payload.length > 500) throw new Error('Lista de pendientes inválida.');
+      const settings = getSettings();
       const actor = await requireActor(req);
+      const normActor = normalizePerson(actor);
+      const today = mexicoDate();
       const sanitized = payload.filter((t: any) => t && (t.id || t.title || t.query) && t.id !== 'task-seed-john-video-check' && !(typeof t.title === 'string' && t.title.includes('2026-11-11 16-57-01.mkv'))).map((t: any) => ({
         id: typeof t.id === 'string' && t.id.trim() ? t.id.slice(0, 100) : crypto.randomUUID(),
         title: typeof t.title === 'string' ? t.title.slice(0, 500) : (typeof t.query === 'string' ? t.query.slice(0, 500) : ''),
+        note: typeof t.note === 'string' && t.note.trim() ? t.note.slice(0, 500) : undefined,
         description: typeof t.description === 'string' && t.description.trim() ? t.description.slice(0, 2000) : undefined,
+        url: typeof t.url === 'string' && t.url.trim() ? t.url.slice(0, 1000) : undefined,
         query: typeof t.query === 'string' ? t.query.slice(0, 4000) : (typeof t.title === 'string' ? t.title.slice(0, 4000) : ''),
         scheduledDate: typeof t.scheduledDate === 'string' ? t.scheduledDate.slice(0, 50) : '',
         isCompleted: Boolean(t.isCompleted),
         isArchived: Boolean(t.isArchived),
         isAttended: Boolean(t.isAttended),
+        isRecurringDaily: Boolean(t.isRecurringDaily),
+        isFtfBlock: Boolean(t.isFtfBlock),
+        lastCompletedDate: typeof t.lastCompletedDate === 'string' && t.lastCompletedDate.trim() ? t.lastCompletedDate.trim().slice(0, 20) : undefined,
+        completedAt: typeof t.completedAt === 'string' && t.completedAt.trim() ? t.completedAt.trim().slice(0, 50) : undefined,
+        recurrenceCompletions: Array.isArray(t.recurrenceCompletions)
+          ? t.recurrenceCompletions
+              .filter((e: any) => e && typeof e.date === 'string' && typeof e.completedAt === 'string')
+              .slice(-30)
+          : undefined,
         isStarred: Boolean(t.isStarred),
         isPostMidnight: Boolean(t.isPostMidnight),
+        isReviewNotice: Boolean(t.isReviewNotice),
+        needsReview: Boolean(t.needsReview),
+        isVideoTask: Boolean(t.isVideoTask),
+        reviewPageId: typeof t.reviewPageId === 'string' && t.reviewPageId.trim() ? t.reviewPageId.trim().slice(0, 100) : undefined,
+        reviewSentBy: typeof t.reviewSentBy === 'string' && t.reviewSentBy.trim() ? t.reviewSentBy.trim().slice(0, 50) : undefined,
         assignedTo: typeof t.assignedTo === 'string' && t.assignedTo.trim() ? t.assignedTo.trim().slice(0, 50) : undefined,
         assignedBy: typeof t.assignedBy === 'string' && t.assignedBy.trim() ? t.assignedBy.trim().slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? actor : undefined),
         assignedAt: typeof t.assignedAt === 'string' ? t.assignedAt.slice(0, 50) : (typeof t.assignedTo === 'string' && t.assignedTo.trim() ? new Date().toISOString() : undefined),
@@ -2829,30 +3040,87 @@ async function POSTLive(req: NextRequest) {
         ...(t.updatedAt && typeof t.updatedAt === 'string' ? { updatedAt: t.updatedAt.slice(0, 50) } : {}),
       }));
       if (!Number.isSafeInteger(body.expectedRevision)) throw new Error('Actualiza la lista antes de guardar.');
-      const state = await updateUserState(getSettings(), actor, { pendingTasks: sanitized }, body.expectedRevision);
 
-      // Sincronización cruzada: Si una tarea fue asignada a otro compañero, sincronizarla en sus pendientes
+      // Registrar IDs eliminados definitivamente para que semillas o tareas cruzadas no se restauren solas
+      const previousState = await readUserState(settings, actor);
+      const previousTasks: any[] = Array.isArray(previousState.values?.pendingTasks) ? previousState.values.pendingTasks : [];
+      const currentIds = new Set(sanitized.map((t: any) => t.id));
+      const newlyRemovedIds = [
+        ...previousTasks.map((t: any) => t?.id).filter((id: any) => typeof id === 'string' && !currentIds.has(id)),
+        ...(Array.isArray(body.removedIds) ? body.removedIds.filter((id: any) => typeof id === 'string') : []),
+      ];
+      const nextReceipts: Record<string, any> = {
+        ...(previousState.values?.receipts || {}),
+        deletedPendingIds: mergeDeletedPendingIds(
+          previousState.values?.receipts?.deletedPendingIds,
+          newlyRemovedIds,
+          currentIds
+        ),
+      };
+
+      const state = await updateUserState(settings, actor, { pendingTasks: sanitized, receipts: nextReceipts }, body.expectedRevision);
+
+      // Si el usuario marcó/desmarcó su bloque fijo diario de FTF hoy, registrar la hora exacta para Bitácora (John)
       try {
-        const assignedCrossTasks = sanitized.filter((t: any) => t.assignedTo && normalizePerson(t.assignedTo) !== normalizePerson(actor));
-        for (const assignedTask of assignedCrossTasks) {
-          const targetPerson = normalizePerson(assignedTask.assignedTo);
-          const targetState = await readUserState(getSettings(), targetPerson);
-          const currentList = Array.isArray(targetState.values.pendingTasks) ? [...targetState.values.pendingTasks] : [];
-          const existingIdx = currentList.findIndex((x: any) => x.id === assignedTask.id);
-          if (existingIdx >= 0) {
-            currentList[existingIdx] = { ...currentList[existingIdx], ...assignedTask };
-          } else {
-            currentList.unshift({ ...assignedTask });
+        const ftfBlockCompletedAt = resolveFtfBlockCompletionForDay(sanitized, today);
+        const hadFtfBlock = sanitized.some((t: any) => isFtfPendingBlock(t));
+        if (hadFtfBlock && normActor && normActor !== 'Sin asignar') {
+          const johnState = await readUserState(settings, 'John');
+          const johnReceipts = johnState.values?.receipts || {};
+          const ftfRecords: Record<string, any> = { ...(johnReceipts.ftfCompletions || {}) };
+          const recId = `ftf:${today}:${normActor}`;
+          const existingRec = ftfRecords[recId];
+          let ftfChanged = false;
+
+          if (ftfBlockCompletedAt) {
+            if (existingRec?.ftfBlockCompletedAt !== ftfBlockCompletedAt) {
+              ftfRecords[recId] = {
+                ...(existingRec || {}),
+                id: recId,
+                kind: 'ftf',
+                person: normActor,
+                date: today,
+                updated: existingRec?.updated || ftfBlockCompletedAt,
+                completedAt: existingRec?.completedAt || ftfBlockCompletedAt,
+                observedAt: existingRec?.observedAt || ftfBlockCompletedAt,
+                ftfBlockCompletedAt,
+                timeKind: 'confirmed',
+                source: existingRec?.source || 'pending-ftf-block',
+                late: Date.parse(ftfBlockCompletedAt) > Date.parse(`${today}T18:00:00-06:00`),
+                actionLabel: 'FTF completado (bloque diario)',
+                title: `${normActor} terminó su FTF de hoy`,
+                activityTitle: `${normActor} terminó su FTF de hoy`,
+              };
+              ftfChanged = true;
+            }
+          } else if (existingRec?.ftfBlockCompletedAt) {
+            if (existingRec.source === 'pending-ftf-block') {
+              delete ftfRecords[recId];
+            } else {
+              const { ftfBlockCompletedAt: _removed, ...restRec } = existingRec;
+              ftfRecords[recId] = restRec;
+            }
+            ftfChanged = true;
           }
-          await updateUserState(getSettings(), targetPerson, { pendingTasks: currentList }, targetState.revision);
-          try {
-            await sendPwaPush(getSettings(), targetPerson, {
-              title: 'Nuevo pendiente asignado',
-              body: `${actor} te asignó: ${assignedTask.title}`,
-              tag: 'assigned-task-' + assignedTask.id,
-              url: '/',
-            });
-          } catch {}
+
+          if (ftfChanged) {
+            await updateUserState(
+              settings,
+              'John',
+              { receipts: { ...johnReceipts, ftfCompletions: Object.fromEntries(Object.entries(ftfRecords).slice(-300)) } },
+              johnState.revision
+            );
+          }
+        }
+      } catch (ftfSyncErr) {
+        console.warn('Advertencia al sincronizar hora exacta de bloque FTF:', ftfSyncErr);
+      }
+
+      // Sincronización cruzada: Si una tarea fue asignada a otro compañero, sincronizarla en sus pendientes (respetando borrados)
+      try {
+        const assignedCrossTasks = sanitized.filter((t: any) => t.assignedTo && normalizePerson(t.assignedTo) !== normActor);
+        for (const assignedTask of assignedCrossTasks) {
+          await upsertCrossPendingTask(settings, actor, assignedTask.assignedTo, assignedTask);
         }
       } catch (crossErr) {
         console.warn('Advertencia: no se pudo sincronizar tarea cruzada:', crossErr);
@@ -3330,10 +3598,12 @@ async function POSTLive(req: NextRequest) {
       const deadline=Date.now()+110000;
       for (const [index, item] of requests.entries()) {
         try {
-          if (!item.sourcePageId || !item.person || !item.title) throw new Error('Completa plantilla, título y responsable.');
-          if (!PERSON_ALIASES[normalizePerson(item.person)] && normalizePerson(item.person) !== 'Sin asignar') throw new Error('Selecciona un responsable válido del equipo.');
-          validateSchedule(item.start,item.end);
-          const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:{start:item.start,end:item.end},overridePerson:item.person,copyBody:true,deadline});
+          if (!item.sourcePageId || !item.title) throw new Error('Completa plantilla y título.');
+          const requestedPerson = String(item.person || '').trim();
+          const isUnassigned = !requestedPerson || normalizePerson(requestedPerson) === 'Sin asignar';
+          if (!isUnassigned && !PERSON_ALIASES[normalizePerson(requestedPerson)]) throw new Error('Selecciona un responsable válido del equipo.');
+          if (item.start) validateSchedule(item.start, item.end);
+          const result = await duplicateNotionPageWithoutBody({token:settings.notionToken,sourcePageId:item.sourcePageId,overrideTitle:item.title,overrideDate:item.start?{start:item.start,end:item.end}:undefined,overridePerson:isUnassigned?'Sin asignar':requestedPerson,copyBody:true,deadline});
           const created = result.page;
           const live = extractNotionPageData(created);
           const activity = normalizeActivity({pageId:created.id,pageUrl:created.url,title:live.title,person:live.person,start:live.dateStart,end:live.dateEnd,domain:calendarDomain(live.title,item.domain),status:live.status},0);
@@ -3457,7 +3727,72 @@ async function POSTLive(req: NextRequest) {
       }
       store[date] = dayMap;
       writeLocalJson('ftf_daily_scores.json', store);
-      return NextResponse.json({ success: true, date, publishedAt, count: Object.keys(dayMap).length, scores: dayMap }, { headers: { 'Cache-Control': 'no-store' } });
+
+      const deliverySettings = getSettings();
+      const effectiveNotionToken = resolveNotionToken(req) || deliverySettings.notionToken;
+      const publishedEntries = Object.values(dayMap);
+
+      const [journalSettled, emailSettled, pushSettled] = await Promise.allSettled([
+        appendDailyFtfJournalToggle({
+          notionToken: effectiveNotionToken,
+          journalPageId: deliverySettings.ftfJournalPageId,
+          date,
+          entries: publishedEntries,
+          actor: normActor,
+          publishedAt,
+        }),
+        sendFtfScoreEmail({
+          apiKey: deliverySettings.resendApiKey,
+          from: deliverySettings.ftfEmailFrom,
+          to: deliverySettings.ftfEmailTo,
+          date,
+          entries: publishedEntries,
+          actor: normActor,
+          publishedAt,
+        }),
+        (async () => {
+          const targets = Array.from(new Set(['John', ...publishedEntries.map((e: any) => normalizePerson(e.person)).filter(Boolean)]));
+          let sentCount = 0;
+          for (const target of targets) {
+            try {
+              const entry = dayMap[target];
+              const bodyMsg = target === 'John'
+                ? `Corte FTF ${date} publicado por ${normActor} (${publishedEntries.length} personas evaluadas).`
+                : `Tu calificación FTF de ${date}: ${entry?.finalScore ?? 0}/100 (${entry?.stars ?? 1}★).`;
+              const ok = await sendPwaPush(deliverySettings, target, {
+                title: `Calificaciones FTF · ${date}`,
+                body: bodyMsg,
+                tag: `ftf-score-${date}-${target}`,
+                url: '/',
+              });
+              if (ok) sentCount++;
+            } catch {}
+          }
+          return { ok: sentCount > 0, sentCount };
+        })(),
+      ]);
+
+      const notionJournal = journalSettled.status === 'fulfilled'
+        ? journalSettled.value
+        : { ok: false, reason: String(journalSettled.reason?.message || journalSettled.reason || 'Error en Notion Journal') };
+      const email = emailSettled.status === 'fulfilled'
+        ? emailSettled.value
+        : { ok: false, reason: String(emailSettled.reason?.message || emailSettled.reason || 'Error enviando correo') };
+      const push = pushSettled.status === 'fulfilled'
+        ? pushSettled.value
+        : { ok: false, sentCount: 0 };
+
+      return NextResponse.json(
+        {
+          success: true,
+          date,
+          publishedAt,
+          count: Object.keys(dayMap).length,
+          scores: dayMap,
+          delivery: { notionJournal, email, push },
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     if (action === 'get-my-ftf-score') {

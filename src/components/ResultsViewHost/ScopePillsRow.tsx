@@ -2,7 +2,7 @@
 
 import {createPortal} from "react-dom";
 import React, { useState, useRef, useEffect } from "react";
-import { Star, Globe, Folder, FileText, Database, Search, Layers, ChevronDown } from "lucide-react";
+import { Star, Globe, Folder, FileText, Database, Search, Layers, ChevronDown, LayoutGrid } from "lucide-react";
 
 interface ScopePillsRowProps {
   selectedScope: string;
@@ -45,7 +45,8 @@ const DATABASE_SCOPES: ScopeItem[] = [
 // 3. Búsquedas especiales dentro de bases (identificadas con FILTRO)
 const FILTER_SCOPES: ScopeItem[] = [
   { id: "Programas", label: "Software", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de Software / Desarrollo dentro de base Revisiones" },
-  { id: "Plantillas", label: "Plantillas", category: "filter", icon: FileText, badge: "FILTRO", tooltip: "Filtro rápido de Plantillas con código eed11 (Edwin)" },
+  { id: "Plantillas", label: "Plantillas", category: "filter", icon: FileText, badge: "FILTRO", tooltip: "Plantillas operativas en Revisiones (#ffase00, aaprtuz, ee-d11 / nn-e11)" },
+  { id: "Vistas", label: "Vistas", category: "filter", icon: LayoutGrid, badge: "FILTRO", tooltip: "Vistas y tableros de Notion (vvist, vvsz, ttabl, Egresos / Ingresos)" },
   { id: "zPAGAR", label: "zPAGAR", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de cuentas y actividades de pago por realizar" },
   { id: "zCOBRAR", label: "zCOBRAR", category: "filter", icon: Search, badge: "FILTRO", tooltip: "Filtro de cobranzas y cobros pendientes" },
 ];
