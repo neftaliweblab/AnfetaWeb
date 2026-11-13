@@ -26,6 +26,9 @@ import {
   Utensils,
   Star,
   StickyNote,
+  Eye,
+  EyeOff,
+  GripVertical,
 } from "lucide-react";
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
@@ -34,6 +37,7 @@ import { playCheckChime, sendWindowsNotification } from "@/services/windowsInteg
 import {
   parseTaskTime,
   shiftTaskSchedule,
+  moveTaskToMinutes,
   computeCatchUpSchedule,
   simplifyReviewSearchQuery,
 } from "@/lib/scheduleHelpers";
@@ -83,7 +87,10 @@ export function formatSlotRange(startMin: number, endMin: number): string {
   return `${formatSlotHour(startMin)} - ${formatSlotHour(endMin)}`;
 }
 
-export function extractTaskTime(task: PendingTaskItem): {
+export function extractTaskTime(
+  task: PendingTaskItem,
+  defaultDurationMinutes = 60
+): {
   hasTime: boolean;
   timeMinutes: number;
   endMinutes: number;
@@ -92,7 +99,7 @@ export function extractTaskTime(task: PendingTaskItem): {
   isActive: boolean;
 } {
   const currentMin = getCurrentMexicoMinutes();
-  const parsed = parseTaskTime(task);
+  const parsed = parseTaskTime(task, defaultDurationMinutes);
   if (!parsed.hasTime) {
     return { hasTime: false, timeMinutes: 99999, endMinutes: 99999, timeBadge: "", isPassed: false, isActive: false };
   }
@@ -215,6 +222,17 @@ function PendientesColumnComponent({
   const [feedback, setFeedback] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [dragOverSlotStart, setDragOverSlotStart] = useState<number | null>(null);
+  const [hideEmptySlots, setHideEmptySlots] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_hide_empty");
+        if (saved === "0") return false;
+        if (saved === "1") return true;
+      } catch {}
+    }
+    return true;
+  });
   const [isResizing, setIsResizing] = useState(false);
   const [currentTimeMinutes, setCurrentTimeMinutes] = useState<number>(getCurrentMexicoMinutes());
 
@@ -290,6 +308,17 @@ function PendientesColumnComponent({
     try {
       localStorage.setItem("anfeta_pendientes_grid_interval", String(interval));
     } catch {}
+  };
+
+  const handleToggleHideEmptySlots = () => {
+    setHideEmptySlots((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("anfeta_pendientes_hide_empty", next ? "1" : "0");
+      } catch {}
+      setFeedback(next ? "Huecos vacíos ocultos" : "Mostrando todos los horarios");
+      return next;
+    });
   };
 
   // Actualizar hora cada 30 segundos para animar la línea de tiempo y transparencias en vivo
@@ -384,24 +413,24 @@ function PendientesColumnComponent({
 
   // Timed tasks: Bloques de horario (Siempre ordenados cronológicamente por hora)
   const timedTasks = useMemo(() => {
-    const raw = pendingTasks.filter((t) => extractTaskTime(t).hasTime && !t.isArchived);
+    const raw = pendingTasks.filter((t) => extractTaskTime(t, gridInterval).hasTime && !t.isArchived);
     return [...raw].sort((a, b) => {
-      const aInfo = extractTaskTime(a);
-      const bInfo = extractTaskTime(b);
+      const aInfo = extractTaskTime(a, gridInterval);
+      const bInfo = extractTaskTime(b, gridInterval);
       return aInfo.timeMinutes - bInfo.timeMinutes;
     });
-  }, [pendingTasks]);
+  }, [pendingTasks, gridInterval]);
 
   // Free tasks: Pendientes libres / normales (Asignados directos hasta arriba)
   const freeTasks = useMemo(() => {
-    const raw = pendingTasks.filter((t) => !extractTaskTime(t).hasTime && !t.isArchived);
+    const raw = pendingTasks.filter((t) => !extractTaskTime(t, gridInterval).hasTime && !t.isArchived);
     return [...raw].sort((a, b) => {
       const aDirect = isDirectlyAssignedToMe(a) ? 1 : 0;
       const bDirect = isDirectlyAssignedToMe(b) ? 1 : 0;
       if (aDirect !== bDirect) return bDirect - aDirect;
       return 0;
     });
-  }, [pendingTasks, currentUser]);
+  }, [pendingTasks, currentUser, gridInterval]);
 
   // Tareas asignadas a mí por otro compañero no atendidas (con normalización canónica robusta)
   const assignedToMeUnattended = useMemo(() => {
@@ -515,8 +544,8 @@ function PendientesColumnComponent({
 
   const handleSortTimedByHour = () => {
     if (!onReorderTasks) return;
-    const timed = [...timedTasks].sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
-    const others = pendingTasks.filter((t) => !extractTaskTime(t).hasTime || t.isArchived);
+    const timed = [...timedTasks].sort((a, b) => extractTaskTime(a, gridInterval).timeMinutes - extractTaskTime(b, gridInterval).timeMinutes);
+    const others = pendingTasks.filter((t) => !extractTaskTime(t, gridInterval).hasTime || t.isArchived);
     onReorderTasks([...others, ...timed].map((t) => t.id));
     setFeedback("✓ Ordenado por hora");
   };
@@ -525,7 +554,7 @@ function PendientesColumnComponent({
   const handleShiftSchedule = (deltaMinutes: number) => {
     const patches: Array<{ id: string; patch: Partial<PendingTaskItem> }> = [];
     timedTasks.forEach((t) => {
-      const shifted = shiftTaskSchedule(t, deltaMinutes);
+      const shifted = shiftTaskSchedule(t, deltaMinutes, gridInterval);
       if (shifted) {
         patches.push({
           id: t.id,
@@ -555,11 +584,41 @@ function PendientesColumnComponent({
     () =>
       timedTasks.filter((t) => {
         if (t.isCompleted || t.isAttended || t.isArchived) return false;
-        const info = extractTaskTime(t);
+        const info = extractTaskTime(t, gridInterval);
         return info.hasTime && info.endMinutes <= currentTimeMinutes;
       }).length,
-    [timedTasks, currentTimeMinutes]
+    [timedTasks, currentTimeMinutes, gridInterval]
   );
+
+  // Mover una tarjeta específica a una hora destino (Drag & Drop o botón rápido)
+  const applyTaskScheduleMove = (task: PendingTaskItem, targetStartMinutes: number) => {
+    const moved = moveTaskToMinutes(task, targetStartMinutes, gridInterval);
+    const patch: Partial<PendingTaskItem> = {
+      title: moved.title,
+      isPostMidnight: moved.isPostMidnight,
+      ...(moved.startTime ? { startTime: moved.startTime, endTime: moved.endTime } : {}),
+    };
+    if (onUpdateTask) {
+      onUpdateTask(task.id, patch);
+    } else if (onBatchUpdateTasks) {
+      onBatchUpdateTasks([{ id: task.id, patch }]);
+    } else if (onEditTask) {
+      onEditTask({ ...task, ...patch });
+    }
+    setFeedback(`✓ Movido a ${formatTimeMinutes(moved.timeMinutes)}`);
+  };
+
+  const handleDropOnSlot = (e: React.DragEvent, targetStartMinutes: number) => {
+    e.preventDefault();
+    const sourceId = draggedTaskId || e.dataTransfer.getData("text/plain");
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+    setDragOverSlotStart(null);
+    if (!sourceId) return;
+    const task = pendingTasks.find((t) => t.id === sourceId);
+    if (!task) return;
+    applyTaskScheduleMove(task, targetStartMinutes);
+  };
 
   // Recoger bloques atrasados: mode 'all' mueve todos juntos en lote; mode 'last' mueve solo el último atrasado al siguiente hueco libre
   const handleCatchUpOverdue = (mode: "all" | "last" = "all") => {
@@ -616,7 +675,14 @@ function PendientesColumnComponent({
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
     setDraggedTaskId(id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverTaskId(null);
+    setDragOverSlotStart(null);
   };
 
   const handleDragOver = (e: React.DragEvent, id: string) => {
@@ -925,7 +991,7 @@ function PendientesColumnComponent({
 
   // Render para Tarjeta de Bloque de Horario (Bento Style) con Transparencia
   const renderTimedScheduleCard = (task: PendingTaskItem, index: number) => {
-    const timeInfo = extractTaskTime(task);
+    const timeInfo = extractTaskTime(task, gridInterval);
     const isAttended = Boolean(task.isAttended);
     const isCompleted = Boolean(task.isCompleted);
     const isPassed = timeInfo.isPassed;
@@ -941,6 +1007,9 @@ function PendientesColumnComponent({
     return (
       <div
         key={task.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, task.id)}
+        onDragEnd={handleDragEnd}
         onClick={() => {
           if (task.query || task.title) {
             onSelectTaskQuery?.(task.query || task.title);
@@ -951,42 +1020,68 @@ function PendientesColumnComponent({
           isActive
             ? "border-cyan-400 shadow-[0_0_12px_rgba(0,229,255,0.35)] ring-1 ring-cyan-400/50"
             : colorStyle.border
-        } ${isTransparent ? "opacity-35 grayscale-[20%]" : "opacity-95 hover:opacity-100 shadow-sm"}`}
-        title={`Horario: ${timeInfo.timeBadge} · Clic para buscar · Clic derecho para opciones`}
+        } ${isTransparent ? "opacity-35 grayscale-[20%]" : "opacity-95 hover:opacity-100 shadow-sm"} ${
+          draggedTaskId === task.id ? "opacity-40 ring-1 ring-cyan-400/60" : ""
+        }`}
+        title={`Horario: ${timeInfo.timeBadge} · Arrastra a otro horario para mover · Clic para buscar · Clic derecho para opciones`}
       >
         {/* Cabecera del Bloque: Hora + Estado */}
         <div className="flex items-center justify-between gap-1.5 mb-1.5">
-          <div className="flex items-center gap-1.5">
-            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${colorStyle.badge}`}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-cyan-300 shrink-0"
+              title="Arrastrar a otra hora"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="w-3 h-3" />
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border shrink-0 ${colorStyle.badge}`}>
               ⏱️ {timeInfo.timeBadge}
             </span>
             {isActive && !isAttended && (
-              <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-bold bg-cyan-400 text-black animate-pulse">
+              <span className="px-1.5 py-0.2 rounded-full text-[8.5px] font-bold bg-cyan-400 text-black animate-pulse shrink-0">
                 ● En curso
               </span>
             )}
             {isPassed && !isAttended && (
-              <span className="text-[8.5px] text-slate-400 font-medium">Pasado</span>
+              <span className="text-[8.5px] text-slate-400 font-medium shrink-0">Pasado</span>
             )}
           </div>
 
-          {/* Botón Atendido específico de horario */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleAttendedState(task);
-            }}
-            className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              isAttended
-                ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 shadow-sm"
-                : "bg-black/40 text-slate-300 hover:text-white hover:bg-black/60 border border-slate-700/60"
-            }`}
-            title={isAttended ? "Atendido (clic para desmarcar)" : "Marcar como atendido"}
-          >
-            <CheckCircle2 className={`w-3 h-3 ${isAttended ? "text-emerald-400" : "text-slate-400"}`} />
-            <span>{isAttended ? "Atendido" : "Marcar atendido"}</span>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Mover este bloque individual hacia adelante */}
+            {timeInfo.hasTime && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  applyTaskScheduleMove(task, timeInfo.timeMinutes + gridInterval);
+                }}
+                className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-slate-900/70 text-cyan-300 hover:bg-cyan-950 hover:text-cyan-200 border border-cyan-700/50 transition-colors cursor-pointer"
+                title={`Mover solo esta tarjeta +${gridInterval} min adelante`}
+              >
+                +{gridInterval}m
+              </button>
+            )}
+
+            {/* Botón Atendido específico de horario */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleAttendedState(task);
+              }}
+              className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                isAttended
+                  ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/50 shadow-sm"
+                  : "bg-black/40 text-slate-300 hover:text-white hover:bg-black/60 border border-slate-700/60"
+              }`}
+              title={isAttended ? "Atendido (clic para desmarcar)" : "Marcar como atendido"}
+            >
+              <CheckCircle2 className={`w-3 h-3 ${isAttended ? "text-emerald-400" : "text-slate-400"}`} />
+              <span>{isAttended ? "Atendido" : "Marcar atendido"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Título del Bloque */}
@@ -1121,7 +1216,7 @@ function PendientesColumnComponent({
 
     // Asegurar que si hay tareas programadas fuera de las horas elegidas (incluyendo post-medianoche hasta 04:00 +1d), se incluyan para no ocultarlas
     timedTasks.forEach((t) => {
-      const info = extractTaskTime(t);
+      const info = extractTaskTime(t, gridInterval);
       if (info.hasTime) {
         const h1 = Math.floor(info.timeMinutes / 60);
         const h2 = Math.ceil(info.endMinutes / 60);
@@ -1146,11 +1241,11 @@ function PendientesColumnComponent({
       const sEnd = m + step;
       const slotTasks = timedTasks
         .filter((t) => {
-          const info = extractTaskTime(t);
+          const info = extractTaskTime(t, gridInterval);
           if (!info.hasTime) return false;
           return info.timeMinutes >= sStart && info.timeMinutes < sEnd;
         })
-        .sort((a, b) => extractTaskTime(a).timeMinutes - extractTaskTime(b).timeMinutes);
+        .sort((a, b) => extractTaskTime(a, gridInterval).timeMinutes - extractTaskTime(b, gridInterval).timeMinutes);
 
       const isPassed = currentTimeMinutes >= sEnd;
       const isActive = currentTimeMinutes >= sStart && currentTimeMinutes < sEnd;
@@ -1290,24 +1385,68 @@ function PendientesColumnComponent({
   const renderScheduleGrid = () => {
     const isEarlierThanGrid = gridSlots.length > 0 && currentTimeMinutes < gridSlots[0].slotStart;
     const isLaterThanGrid = gridSlots.length > 0 && currentTimeMinutes >= gridSlots[gridSlots.length - 1].slotEnd;
+    const currentBucketStart = Math.floor(currentTimeMinutes / gridInterval) * gridInterval;
+
+    const slotsWithMeta = gridSlots.map((slot) => {
+      const isMealBreakSlot = isNeftali && mealBreak.enabled && (() => {
+        const mealStart = mealBreak.startHour * 60 + (mealBreak.startMinute || 0);
+        const mealEnd = mealBreak.endHour * 60 + (mealBreak.endMinute || 0);
+        return slot.slotStart >= mealStart && slot.slotStart < mealEnd;
+      })();
+      const hasContent = slot.tasks.length > 0 || slot.isActive || isMealBreakSlot;
+      const allowAsDragTarget = draggedTaskId !== null && slot.slotStart >= currentBucketStart;
+      const isVisible = !hideEmptySlots || hasContent || allowAsDragTarget;
+      return { slot, isMealBreakSlot, isVisible };
+    });
+
+    const visibleSlots = slotsWithMeta.filter((s) => s.isVisible);
+    const hiddenEmptyCount = slotsWithMeta.length - visibleSlots.length;
 
     return (
       <div className="space-y-1.5 pt-1">
         {/* Panel de Configuración Personalizable si está abierto */}
         {renderGridConfigPanel()}
 
+        {hiddenEmptyCount > 0 && (
+          <button
+            type="button"
+            onClick={handleToggleHideEmptySlots}
+            className="w-full py-1 px-2 rounded-lg border border-dashed border-slate-700/70 bg-slate-900/40 hover:bg-slate-800/60 hover:border-cyan-500/40 text-[9px] text-slate-400 hover:text-cyan-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            title="Mostrar todos los bloques de horas vacíos"
+          >
+            <Eye className="w-3 h-3" />
+            <span>{hiddenEmptyCount} {hiddenEmptyCount === 1 ? "bloque vacío oculto" : "bloques vacíos ocultos"} · Mostrar todos</span>
+          </button>
+        )}
+
         {/* Si la hora actual es anterior a la primera hora del grid */}
         {isEarlierThanGrid && renderLiveTimelineBar()}
 
-        {gridSlots.map((slot) => {
+        {visibleSlots.map(({ slot, isMealBreakSlot }) => {
+          const isDropTarget = dragOverSlotStart === slot.slotStart;
           return (
             <div key={slot.slotStart} className="space-y-1">
               {/* Si la hora en vivo cae dentro de este intervalo */}
               {slot.isActive && renderLiveTimelineBar()}
 
               <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverSlotStart !== slot.slotStart) {
+                    setDragOverSlotStart(slot.slotStart);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverSlotStart === slot.slotStart) {
+                    setDragOverSlotStart(null);
+                  }
+                }}
+                onDrop={(e) => handleDropOnSlot(e, slot.slotStart)}
                 className={`flex items-start gap-2 p-1.5 rounded-xl border transition-all ${
-                  slot.isActive
+                  isDropTarget
+                    ? "border-cyan-400 bg-cyan-950/40 shadow-[0_0_12px_rgba(0,229,255,0.28)] ring-1 ring-cyan-400/70"
+                    : slot.isActive
                     ? "border-cyan-500/50 bg-cyan-950/20 shadow-[0_0_10px_rgba(0,229,255,0.15)] ring-1 ring-cyan-500/30"
                     : slot.isPassed
                     ? "border-slate-800/40 bg-black/20 opacity-45"
@@ -1318,7 +1457,7 @@ function PendientesColumnComponent({
                 <div className="w-10 shrink-0 pt-1 flex flex-col items-center select-none">
                   <span
                     className={`font-mono text-[9.5px] font-bold ${
-                      slot.isActive
+                      isDropTarget || slot.isActive
                         ? "text-[#00E5FF]"
                         : slot.isPassed
                         ? "text-slate-500"
@@ -1334,7 +1473,7 @@ function PendientesColumnComponent({
                   )}
                   <div
                     className={`w-0.5 flex-1 min-h-[20px] my-1 rounded-full ${
-                      slot.isActive ? "bg-cyan-500/60" : "bg-slate-800/70"
+                      isDropTarget || slot.isActive ? "bg-cyan-500/60" : "bg-slate-800/70"
                     }`}
                   />
                   <span className="font-mono text-[8px] text-slate-600">
@@ -1345,12 +1484,6 @@ function PendientesColumnComponent({
                 {/* Carril de Actividades de la Cuadrícula (Derecha) */}
                 <div className="flex-1 min-w-0 space-y-1.5">
                   {(() => {
-                    const isMealBreakSlot = isNeftali && mealBreak.enabled && (() => {
-                      const mealStart = mealBreak.startHour * 60 + (mealBreak.startMinute || 0);
-                      const mealEnd = mealBreak.endHour * 60 + (mealBreak.endMinute || 0);
-                      return slot.slotStart >= mealStart && slot.slotStart < mealEnd;
-                    })();
-
                     if (slot.tasks.length > 0) {
                       return (
                         <>
@@ -1358,6 +1491,11 @@ function PendientesColumnComponent({
                             <div className="flex items-center gap-1 text-[8.5px] text-amber-300 bg-amber-950/50 border border-amber-600/40 px-1.5 py-0.5 rounded font-mono">
                               <Utensils className="w-2.5 h-2.5 text-amber-400" />
                               <span>{mealBreak.label} ({slot.rangeLabel})</span>
+                            </div>
+                          )}
+                          {isDropTarget && (
+                            <div className="text-[9px] font-mono text-cyan-300 bg-cyan-950/60 border border-dashed border-cyan-400/60 rounded px-2 py-1 text-center">
+                              Soltar aquí para mover a {slot.label}
                             </div>
                           )}
                           {slot.tasks.map((task, idx) => renderTimedScheduleCard(task, idx))}
@@ -1709,6 +1847,20 @@ function PendientesColumnComponent({
                       30m
                     </button>
                   </div>
+                  {/* Botón Ocultar / Ver vacíos */}
+                  <button
+                    type="button"
+                    onClick={handleToggleHideEmptySlots}
+                    className={`px-1.5 py-0.5 rounded border text-[8.5px] font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                      hideEmptySlots
+                        ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                    }`}
+                    title={hideEmptySlots ? "Mostrando solo horarios con actividad (clic para ver huecos vacíos)" : "Ocultar horarios vacíos sin actividad"}
+                  >
+                    {hideEmptySlots ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{hideEmptySlots ? "Sin vacíos" : "Ver todos"}</span>
+                  </button>
                   {/* Botón de Ajustes de Rango */}
                   <button
                     type="button"
@@ -1865,6 +2017,20 @@ function PendientesColumnComponent({
                         30m
                       </button>
                     </div>
+                    {/* Botón Ocultar / Ver vacíos */}
+                    <button
+                      type="button"
+                      onClick={handleToggleHideEmptySlots}
+                      className={`px-1.5 py-0.5 rounded border text-[8.5px] font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                        hideEmptySlots
+                          ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                          : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                      }`}
+                      title={hideEmptySlots ? "Mostrando solo horarios con actividad (clic para ver huecos vacíos)" : "Ocultar horarios vacíos sin actividad"}
+                    >
+                      {hideEmptySlots ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      <span>{hideEmptySlots ? "Sin vacíos" : "Ver todos"}</span>
+                    </button>
                     {/* Botón de Ajustes de Rango */}
                     <button
                       type="button"

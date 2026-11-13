@@ -28,6 +28,7 @@ for (const ext of ['.ts', '.tsx']) {
 const {
   parseTaskTime,
   shiftTaskSchedule,
+  moveTaskToMinutes,
   computeCatchUpSchedule,
   simplifyReviewSearchQuery,
 } = require(root + '/src/lib/scheduleHelpers.ts');
@@ -153,4 +154,75 @@ test('advancedQuery: preserva el operador "!" exclusivamente como negación/excl
     matchesFlexibleOrQuotedQuery({ name: 'anfeta.com Encontrarlos Aquí', path: '', extension: '', searchText: 'anfeta.com Encontrarlos Aquí' }, 'anfeta.com !Encontrarlos'),
     false
   );
+});
+
+test('scheduleHelpers: hora explícita inicial no es sobreescrita por rango entre paréntesis ni dura 1h en modo 30m', () => {
+  const withParens = parseTaskTime({
+    id: 'p1',
+    title: '5:00 AM FTF JOHN (5-15?)',
+    scheduledDate: '2026-11-12',
+    query: 'ftf',
+    isCompleted: false,
+  });
+  assert.equal(withParens.hasTime, true);
+  assert.equal(withParens.timeMinutes, 5 * 60);
+
+  // Con cuadrícula de 30m, "5:00 PM" termina a las 5:30 PM -> a las 5:37 PM ya venció y debe recogerse
+  const stuck5pm = {
+    id: 's5',
+    title: '5:00 PM Prueba',
+    scheduledDate: '2026-11-12',
+    query: 'prueba',
+    isCompleted: false,
+  };
+  const parsed30 = parseTaskTime(stuck5pm, 30);
+  assert.equal(parsed30.timeMinutes, 17 * 60);
+  assert.equal(parsed30.endMinutes, 17 * 60 + 30);
+
+  const catchUp = computeCatchUpSchedule([stuck5pm], 17 * 60 + 37, 30);
+  assert.equal(catchUp.length, 1);
+  assert.equal(catchUp[0].task.id, 's5');
+  assert.equal(catchUp[0].newStartMinutes, 18 * 60); // 6:00 PM
+  assert.equal(catchUp[0].newTitle, '6:00 PM Prueba');
+});
+
+test('scheduleHelpers: moveTaskToMinutes mueve tarjeta al bloque destino conservando duración y AM/PM único', () => {
+  const single = {
+    id: 'm1',
+    title: '5:30 PM · Revisar bitácora',
+    scheduledDate: '2026-11-12',
+    query: 'bitacora',
+    isCompleted: false,
+  };
+  const movedSingle = moveTaskToMinutes(single, 19 * 60 + 30, 30); // 7:30 PM
+  assert.equal(movedSingle.timeMinutes, 19 * 60 + 30);
+  assert.equal(movedSingle.endMinutes, 20 * 60);
+  assert.equal(movedSingle.startTime, undefined);
+  assert.equal(movedSingle.title, '7:30 PM · Revisar bitácora');
+
+  const withExplicitFields = {
+    id: 'm1b',
+    title: '5:30 PM - 6:00 PM · En curso',
+    scheduledDate: '2026-11-12',
+    startTime: '17:30',
+    endTime: '18:00',
+    query: 'curso',
+    isCompleted: false,
+  };
+  const movedExplicit = moveTaskToMinutes(withExplicitFields, 19 * 60 + 30, 30);
+  assert.equal(movedExplicit.startTime, '19:30');
+  assert.equal(movedExplicit.endTime, '20:00');
+  assert.equal(movedExplicit.title, '7:30 PM - 8:00 PM · En curso');
+
+  const untimed = {
+    id: 'm2',
+    title: 'Revisar pendientes sueltos',
+    scheduledDate: '2026-11-12',
+    query: 'sueltos',
+    isCompleted: false,
+  };
+  const movedUntimed = moveTaskToMinutes(untimed, 18 * 60, 30);
+  assert.equal(movedUntimed.timeMinutes, 18 * 60);
+  assert.equal(movedUntimed.endMinutes, 18 * 60 + 30);
+  assert.equal(movedUntimed.title, '6:00 PM · Revisar pendientes sueltos');
 });

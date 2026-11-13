@@ -24,7 +24,7 @@ export function formatMinutes12h(totalMinutes: number, includeNextDaySuffix = fa
 /**
  * Parses start/end minutes from task title or metadata, keeping post-midnight shifts (>= 1440) in extended coordinates.
  */
-export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
+export function parseTaskTime(task: PendingTaskItem, defaultDurationMinutes = 60): ParsedTaskTime {
   const title = (task.title || "").trim();
   const applyPostMidnight = (tMin: number) =>
     task.isPostMidnight && tMin < 360 ? tMin + 1440 : tMin;
@@ -32,7 +32,17 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
   const rangeMatch = title.match(
     /(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?\s*(?:-|a|al|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm)(?:[.\s]*(?:am|pm))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i
   );
-  if (rangeMatch) {
+  const singleMatch = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm|hrs?|h)(?:\s*(?:am|pm|hrs?|h))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i);
+  const rangeHasExplicitClock = Boolean(
+    rangeMatch && (rangeMatch[2] || rangeMatch[3] || rangeMatch[5] || rangeMatch[6])
+  );
+  const singlePrecedesBareRange = Boolean(
+    rangeMatch &&
+      !rangeHasExplicitClock &&
+      singleMatch &&
+      (singleMatch.index ?? 9999) < (rangeMatch.index ?? 9999)
+  );
+  if (rangeMatch && !singlePrecedesBareRange && (rangeHasExplicitClock || !/\([^)]*\)/.test(rangeMatch[0]))) {
     let h1 = parseInt(rangeMatch[1], 10);
     const m1 = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : 0;
     const mer1 = rangeMatch[3]?.toLowerCase();
@@ -51,7 +61,7 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
 
     const t1 = applyPostMidnight(h1 * 60 + m1);
     let t2 = applyPostMidnight(h2 * 60 + m2);
-    if (t2 <= t1) t2 = t1 + 60;
+    if (t2 <= t1) t2 = t1 + defaultDurationMinutes;
 
     const w1 = ((t1 % 1440) + 1440) % 1440;
     const wh1 = Math.floor(w1 / 60);
@@ -66,7 +76,6 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
     };
   }
 
-  const singleMatch = title.match(/(?:^|\b)(\d{1,2})(?:[:.](\d{2}))?\s*(?:(am|pm|hrs?|h)(?:\s*(?:am|pm|hrs?|h))*)?(?=\s|[·•\-A-Za-zÀ-ÿ]|$)/i);
   if (singleMatch) {
     let hours = parseInt(singleMatch[1], 10);
     const minutes = singleMatch[2] ? parseInt(singleMatch[2], 10) : 0;
@@ -78,7 +87,7 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
       else if (!meridian && hours >= 1 && hours <= 6) hours += 12;
 
       const timeMinutes = applyPostMidnight(hours * 60 + minutes);
-      const endMinutes = timeMinutes + 60;
+      const endMinutes = timeMinutes + defaultDurationMinutes;
       return {
         hasTime: true,
         timeMinutes,
@@ -91,11 +100,11 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
   if (task.startTime) {
     const [sh, sm] = task.startTime.split(":").map((v) => parseInt(v || "0", 10));
     const startM = applyPostMidnight(sh * 60 + sm);
-    let endM = startM + 60;
+    let endM = startM + defaultDurationMinutes;
     if (task.endTime) {
       const [eh, em] = task.endTime.split(":").map((v) => parseInt(v || "0", 10));
       endM = applyPostMidnight(eh * 60 + em);
-      if (endM <= startM) endM = startM + 60;
+      if (endM <= startM) endM = startM + defaultDurationMinutes;
     }
     return {
       hasTime: true,
@@ -114,7 +123,7 @@ export function parseTaskTime(task: PendingTaskItem): ParsedTaskTime {
       return {
         hasTime: true,
         timeMinutes: tMin,
-        endMinutes: tMin + 60,
+        endMinutes: tMin + defaultDurationMinutes,
         timeBadge: formatMinutes12h(tMin, tMin >= 1440),
       };
     }
@@ -181,9 +190,10 @@ export function rewriteTitleWithTime(title: string, targetMinutes: number, targe
  */
 export function shiftTaskSchedule(
   task: PendingTaskItem,
-  deltaMinutes: number
+  deltaMinutes: number,
+  defaultDurationMinutes = 60
 ): { title: string; timeMinutes: number; endMinutes: number; startTime?: string; endTime?: string; isPostMidnight: boolean } | null {
-  const parsed = parseTaskTime(task);
+  const parsed = parseTaskTime(task, defaultDurationMinutes);
   if (!parsed.hasTime) return null;
 
   const duration = Math.max(15, parsed.endMinutes - parsed.timeMinutes);
@@ -200,6 +210,29 @@ export function shiftTaskSchedule(
     endMinutes: newEndMin,
     ...(task.startTime ? { startTime: formatHHMM(newMin), endTime: formatHHMM(newEndMin) } : {}),
     isPostMidnight: newMin >= 1440,
+  };
+}
+
+/**
+ * Moves any task (timed or untimed) to a specific minute slot (`targetStartMinutes`),
+ * preserving its original duration when available.
+ */
+export function moveTaskToMinutes(
+  task: PendingTaskItem,
+  targetStartMinutes: number,
+  defaultDurationMinutes = 30
+): { title: string; timeMinutes: number; endMinutes: number; startTime?: string; endTime?: string; isPostMidnight: boolean } {
+  const parsed = parseTaskTime(task, defaultDurationMinutes);
+  const duration = parsed.hasTime ? Math.max(15, parsed.endMinutes - parsed.timeMinutes) : defaultDurationMinutes;
+  const clampedStart = Math.max(0, Math.min(1680, targetStartMinutes));
+  const clampedEnd = clampedStart + duration;
+
+  return {
+    title: rewriteTitleWithTime(task.title, clampedStart, clampedEnd),
+    timeMinutes: clampedStart,
+    endMinutes: clampedEnd,
+    ...(task.startTime ? { startTime: formatHHMM(clampedStart), endTime: formatHHMM(clampedEnd) } : {}),
+    isPostMidnight: clampedStart >= 1440,
   };
 }
 
@@ -225,10 +258,10 @@ export function computeCatchUpSchedule(
   const overdue = tasks
     .filter((t) => {
       if (t.isCompleted || t.isAttended || t.isArchived) return false;
-      const parsed = parseTaskTime(t);
+      const parsed = parseTaskTime(t, stepMinutes);
       return parsed.hasTime && parsed.endMinutes <= nowMinutes;
     })
-    .sort((a, b) => parseTaskTime(a).timeMinutes - parseTaskTime(b).timeMinutes);
+    .sort((a, b) => parseTaskTime(a, stepMinutes).timeMinutes - parseTaskTime(b, stepMinutes).timeMinutes);
 
   if (overdue.length === 0) return [];
 
@@ -237,7 +270,7 @@ export function computeCatchUpSchedule(
   const occupiedSlots = new Set<number>();
   for (const t of tasks) {
     if (overdueIds.has(t.id) || t.isArchived || t.isCompleted) continue;
-    const parsed = parseTaskTime(t);
+    const parsed = parseTaskTime(t, stepMinutes);
     if (!parsed.hasTime || parsed.timeMinutes < anchorStart) continue;
     const bucket = Math.floor(parsed.timeMinutes / stepMinutes) * stepMinutes;
     occupiedSlots.add(bucket);
@@ -256,8 +289,8 @@ export function computeCatchUpSchedule(
 
   const targets = options?.mode === "last" ? [overdue[overdue.length - 1]] : overdue;
   return targets.map((task) => {
-    const parsed = parseTaskTime(task);
-    const duration = Math.max(30, parsed.endMinutes - parsed.timeMinutes);
+    const parsed = parseTaskTime(task, stepMinutes);
+    const duration = Math.max(stepMinutes, parsed.endMinutes - parsed.timeMinutes);
     const slotMin = allocateNextSlot();
     const slotEnd = slotMin + duration;
     return {
