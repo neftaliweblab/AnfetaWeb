@@ -34,7 +34,8 @@ import {
 import { PendingTaskItem } from "@/types/anfeta";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { normalizePerson } from "@/services/identityNormalizer";
-import { calendarTime } from "@/services/calendarPresentation";
+import { calendarTime, mexicoDate } from "@/services/calendarPresentation";
+import { shiftMexicoDay } from "@/lib/dailyChecklist";
 import { buildAttendedStatePatch, isFtfPendingBlock, isRecurringPendingTask } from "@/lib/pendingRecurrence";
 import { isReviewOrSentPending, isVideoPendingTask } from "@/lib/pendingAlerts";
 import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
@@ -90,6 +91,13 @@ export function formatSlotHour(minutes: number): string {
 
 export function formatSlotRange(startMin: number, endMin: number): string {
   return `${formatSlotHour(startMin)} - ${formatSlotHour(endMin)}`;
+}
+
+export function formatRelativePriorityHour(rankOneBased: number): string {
+  const hour24 = ((rankOneBased - 1) % 24) + 1;
+  if (hour24 === 24) return "12:00 AM";
+  if (hour24 === 12) return "12:00 PM";
+  return hour24 > 12 ? `${hour24 - 12}:00 PM` : `${hour24}:00 AM`;
 }
 
 export function extractTaskTime(
@@ -526,17 +534,43 @@ function PendientesColumnComponent({
   const visibleIncomingReviews = incomingReviews.filter((r) => !dismissedReviewIds[r.id]);
 
   const [pendingSubTab, setPendingSubTab] = useState<"all" | "free" | "timed" | "archived">("all");
+  const [allViewMode, setAllViewMode] = useState<"strip" | "grid">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("anfeta_pendientes_all_view");
+        if (saved === "grid" || saved === "strip") return saved;
+      } catch {}
+    }
+    return "strip";
+  });
+  const handleToggleAllViewMode = (mode: "strip" | "grid") => {
+    setAllViewMode(mode);
+    try {
+      localStorage.setItem("anfeta_pendientes_all_view", mode);
+    } catch {}
+  };
 
-  const moveTask = (taskId: string, direction: "up" | "down") => {
+  const todayDateStr = mexicoDate();
+  const tomorrowDateStr = shiftMexicoDay(todayDateStr, 1);
+
+  const orderedStripTasks = useMemo(
+    () => pendingTasks.filter((t) => !t.isArchived),
+    [pendingTasks]
+  );
+
+  const moveTask = (taskId: string, direction: "up" | "down", customList?: PendingTaskItem[]) => {
     if (!onReorderTasks) return;
     const currentList =
-      pendingSubTab === "timed"
+      customList ||
+      (pendingSubTab === "timed"
         ? timedTasks
         : pendingSubTab === "free"
         ? freeTasks
         : pendingSubTab === "archived"
         ? archivedTasks
-        : activeTasks;
+        : allViewMode === "strip"
+        ? orderedStripTasks
+        : activeTasks);
     const idx = currentList.findIndex((t) => t.id === taskId);
     if (idx === -1) return;
     const targetIdx = direction === "up" ? idx - 1 : idx + 1;
@@ -741,8 +775,11 @@ function PendientesColumnComponent({
     );
   };
 
-  // Render para Pendiente Normal (Arriba)
-  const renderNormalTaskCard = (task: PendingTaskItem) => {
+  // Render para Pendiente Normal (Arriba o en Ristra Única por Prioridad)
+  const renderNormalTaskCard = (
+    task: PendingTaskItem,
+    options?: { priorityRank?: number; stripList?: PendingTaskItem[] }
+  ) => {
     const isAttended = Boolean(task.isAttended);
     const isCompleted = Boolean(task.isCompleted);
     const isDimmed = isAttended || isCompleted;
@@ -751,12 +788,19 @@ function PendientesColumnComponent({
     const isReviewPending = !isAttended && !isCompleted && isReviewOrSentPending(task);
     const isVideoPending = isVideoPendingTask(task);
     const isStarActive = task.isStarred ?? isDirect;
+    const timeInfo = extractTaskTime(task, gridInterval);
+    const cleanTaskTitle = timeInfo.hasTime
+      ? stripLeadingScheduleTime(task.title) || task.title
+      : task.title;
+    const rank = options?.priorityRank;
+    const taskDay = task.scheduledDate ? String(task.scheduledDate).slice(0, 10) : "";
 
     return (
       <div
         key={task.id}
         draggable
         onDragStart={(e) => handleDragStart(e, task.id)}
+        onDragEnd={handleDragEnd}
         onDragOver={(e) => handleDragOver(e, task.id)}
         onDrop={(e) => handleDrop(e, task.id)}
         onClick={() => {
@@ -770,36 +814,54 @@ function PendientesColumnComponent({
         onContextMenu={(e) => handleContextMenu(e, task)}
         className={`p-2 rounded-lg border transition-all relative group flex flex-col gap-1.5 cursor-pointer ${
           isDraggedOver
-            ? "border-cyan-400 bg-cyan-950/40"
+            ? "border-cyan-400 bg-cyan-950/40 ring-1 ring-cyan-400/60"
             : isReviewPending
             ? "border-amber-400/85 bg-gradient-to-r from-amber-500/20 via-rose-500/10 to-[#141B26] shadow-[0_0_14px_rgba(245,158,11,0.25)] ring-1 ring-amber-400/50 hover:from-amber-500/25"
             : isDirect
             ? "border-sky-300/85 bg-gradient-to-r from-sky-400/20 via-sky-500/10 to-[#141B26] shadow-[0_0_14px_rgba(125,211,252,0.22)] ring-1 ring-sky-300/50 hover:from-sky-400/25"
             : "border-[#1E2836] bg-[#141B26] hover:bg-[#1A2332] hover:border-cyan-500/40"
         } ${isDimmed ? "opacity-40 bg-[#0C121A] grayscale-[30%]" : ""}`}
-        title="Clic: filtrar en buscador · Doble clic: editar · Clic derecho: opciones · Arrastra para reordenar"
+        title="Clic: filtrar en buscador · Doble clic: editar · Clic derecho: opciones · Arrastra para mover de prioridad"
       >
-        {/* Badge distintivo de Asignado Directo / Por Revisar + Estrella removible */}
-        {(isDirect || isReviewPending || task.isStarred) && (
+        {/* Franja superior: Prioridad relativa (#1 · 1:00 AM) + Hora real (si aplica) + Badges */}
+        {(rank !== undefined || timeInfo.hasTime || isDirect || isReviewPending || task.isStarred) && (
           <div className="flex items-center justify-between gap-1 mb-0.5 flex-wrap">
-            {isReviewPending ? (
-              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/25 text-amber-100 border border-amber-400/80 flex items-center gap-1 shadow-xs">
-                <Bell className="w-2.5 h-2.5 text-amber-300 animate-bounce shrink-0" />
-                <span>
-                  {isVideoPending
-                    ? `🎥 VIDEO${task.assignedBy ? ` DE ${task.assignedBy.toUpperCase()}` : ""} · REVISAR PARA COMPLETAR`
-                    : `ENVIADO${task.assignedBy ? ` POR ${task.assignedBy.toUpperCase()}` : ""} · REVISAR PARA COMPLETAR`}
+            <div className="flex items-center gap-1 flex-wrap min-w-0">
+              {rank !== undefined && !isDimmed && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-950/90 text-cyan-200 border border-cyan-500/60 flex items-center gap-1 shadow-xs"
+                  title={`Prioridad #${rank} en tu ristra (hora relativa simulada ${formatRelativePriorityHour(rank)})`}
+                >
+                  <span>#{rank}</span>
+                  <span className="text-cyan-400/80">·</span>
+                  <span>{formatRelativePriorityHour(rank)}</span>
                 </span>
-              </span>
-            ) : isDirect ? (
-              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-sky-400/25 text-sky-100 border border-sky-300/70 flex items-center gap-1 shadow-xs">
-                <Sparkles className="w-2.5 h-2.5 text-sky-200 animate-pulse" />
-                <span>ASIGNADO DIRECTO POR {task.assignedBy || "COMPAÑERO"}</span>
-              </span>
-            ) : (
-              <span />
-            )}
-            {(onUpdateTask || onEditTask) && (
+              )}
+              {timeInfo.hasTime && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-semibold bg-indigo-950/80 text-indigo-200 border border-indigo-500/50"
+                  title={`Horario programado: ${timeInfo.timeBadge}`}
+                >
+                  🕒 {timeInfo.timeBadge}
+                </span>
+              )}
+              {isReviewPending ? (
+                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/25 text-amber-100 border border-amber-400/80 flex items-center gap-1 shadow-xs">
+                  <Bell className="w-2.5 h-2.5 text-amber-300 animate-bounce shrink-0" />
+                  <span>
+                    {isVideoPending
+                      ? `🎥 VIDEO${task.assignedBy ? ` DE ${task.assignedBy.toUpperCase()}` : ""} · REVISAR`
+                      : `ENVIADO${task.assignedBy ? ` POR ${task.assignedBy.toUpperCase()}` : ""} · REVISAR`}
+                  </span>
+                </span>
+              ) : isDirect ? (
+                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-sky-400/25 text-sky-100 border border-sky-300/70 flex items-center gap-1 shadow-xs">
+                  <Sparkles className="w-2.5 h-2.5 text-sky-200 animate-pulse" />
+                  <span>DE {task.assignedBy || "COMPAÑERO"}</span>
+                </span>
+              ) : null}
+            </div>
+            {(onUpdateTask || onEditTask) && (isDirect || isReviewPending || task.isStarred) && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -808,7 +870,7 @@ function PendientesColumnComponent({
                   else onEditTask?.({ ...task, isStarred: !isStarActive });
                   setFeedback(!isStarActive ? "★ Destacado" : "Estrella quitada");
                 }}
-                className={`p-0.5 rounded transition-colors cursor-pointer ${
+                className={`p-0.5 rounded transition-colors cursor-pointer shrink-0 ${
                   isStarActive ? "text-amber-300 hover:text-amber-100" : "text-slate-500 hover:text-amber-300"
                 }`}
                 title={isStarActive ? "Quitar estrella una vez revisado" : "Destacar con estrella"}
@@ -847,7 +909,7 @@ function PendientesColumnComponent({
                   isCompleted ? "line-through !text-emerald-400" : isAttended ? "line-through !text-cyan-300" : ""
                 }`}
               >
-                {task.title}
+                {cleanTaskTitle}
               </span>
             </div>
 
@@ -941,18 +1003,18 @@ function PendientesColumnComponent({
           </button>
         </div>
 
-        {/* Acciones Rápidas en Hover */}
-        <div className="flex items-center justify-end gap-1 opacity-40 group-hover:opacity-100 transition-opacity border-t border-[#1C2634] pt-1">
+        {/* Acciones Rápidas (Prioridad + Hoy/Mañana + Acciones) */}
+        <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity border-t border-[#1C2634] pt-1">
           {onReorderTasks && (
             <div className="flex items-center gap-0.5 mr-auto">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  moveTask(task.id, "up");
+                  moveTask(task.id, "up", options?.stripList);
                 }}
-                className="text-[9px] text-slate-400 hover:text-cyan-300 px-1 py-0.5 cursor-pointer"
-                title="Subir"
+                className="text-[9px] text-slate-300 hover:text-cyan-300 px-1 py-0.5 rounded hover:bg-cyan-950/60 cursor-pointer"
+                title="Subir prioridad"
               >
                 ▲
               </button>
@@ -960,13 +1022,53 @@ function PendientesColumnComponent({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  moveTask(task.id, "down");
+                  moveTask(task.id, "down", options?.stripList);
                 }}
-                className="text-[9px] text-slate-400 hover:text-cyan-300 px-1 py-0.5 cursor-pointer"
-                title="Bajar"
+                className="text-[9px] text-slate-300 hover:text-cyan-300 px-1 py-0.5 rounded hover:bg-cyan-950/60 cursor-pointer"
+                title="Bajar prioridad"
               >
                 ▼
               </button>
+              {(onUpdateTask || onEditTask) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const patch = { scheduledDate: todayDateStr };
+                      if (onUpdateTask) onUpdateTask(task.id, patch);
+                      else onEditTask?.({ ...task, ...patch });
+                      setFeedback("Movido a Hoy");
+                    }}
+                    className={`ml-1 px-1 py-0.2 rounded text-[8.5px] font-mono border cursor-pointer transition-colors ${
+                      taskDay === todayDateStr
+                        ? "border-cyan-400/70 bg-cyan-950/70 text-cyan-200 font-bold"
+                        : "border-slate-700 bg-slate-900/70 text-slate-400 hover:text-cyan-200 hover:border-cyan-600"
+                    }`}
+                    title="Mover a Hoy"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const patch = { scheduledDate: tomorrowDateStr };
+                      if (onUpdateTask) onUpdateTask(task.id, patch);
+                      else onEditTask?.({ ...task, ...patch });
+                      setFeedback("Movido a Mañana");
+                    }}
+                    className={`px-1 py-0.2 rounded text-[8.5px] font-mono border cursor-pointer transition-colors ${
+                      taskDay === tomorrowDateStr
+                        ? "border-indigo-400/70 bg-indigo-950/70 text-indigo-200 font-bold"
+                        : "border-slate-700 bg-slate-900/70 text-slate-400 hover:text-indigo-200 hover:border-indigo-600"
+                    }`}
+                    title="Mover a Mañana"
+                  >
+                    Mañ.
+                  </button>
+                </>
+              )}
             </div>
           )}
           <button
@@ -1808,6 +1910,7 @@ function PendientesColumnComponent({
                   type="button"
                   onClick={() => {
                     const first = assignedToMeUnattended[0];
+                    setDismissedNotification(true);
                     if (first) {
                       if (first.query) onSelectTaskQuery?.(first.query);
                       onEditTask?.(first);
@@ -2077,8 +2180,102 @@ function PendientesColumnComponent({
           </div>
         )}
 
-        {/* VISTA COMPLETA (ALL): ARRIBA PENDIENTES LIBRES, ABAJO CUADRÍCULA DE HORARIO Y LÍNEA DE TIEMPO */}
+        {/* VISTA COMPLETA (ALL): UNA SOLA RISTRA PRIORIZADA (HOY · MAÑANA · PRÓXIMOS) O CUADRÍCULA CLÁSICA */}
         {pendingSubTab === "all" && (
+          <>
+            <div className="flex items-center justify-between gap-1 px-1 pb-1 border-b border-[#1C2634]">
+              <div className="flex items-center gap-1 bg-[#101722] p-0.5 rounded-md border border-[#1E2A38] text-[9.5px]">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAllViewMode("strip")}
+                  className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                    allViewMode === "strip"
+                      ? "bg-cyan-950/90 text-cyan-200 border border-cyan-500/60"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                  title="Ver todos los pendientes en una sola ristra por prioridad y orden relativo (1am, 2am...)"
+                >
+                  🔢 Una ristra ({orderedStripTasks.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAllViewMode("grid")}
+                  className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                    allViewMode === "grid"
+                      ? "bg-[#1E293B] text-amber-200 border border-amber-500/60"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                  title="Ver libres arriba y cuadrícula de horas abajo"
+                >
+                  ⏱️ Cuadrícula
+                </button>
+              </div>
+              {allViewMode === "strip" && (
+                <span className="text-[9px] font-mono text-slate-400" title="Arrastra o usa ▲/▼ para cambiar prioridad">
+                  Arrastra / ▲▼
+                </span>
+              )}
+            </div>
+
+            {allViewMode === "strip" ? (
+              orderedStripTasks.length > 0 ? (() => {
+                const overdueStrip = orderedStripTasks.filter((t) => {
+                  const d = t.scheduledDate ? String(t.scheduledDate).slice(0, 10) : "";
+                  return Boolean(d && d < todayDateStr && !t.isCompleted && !t.isAttended);
+                });
+                const todayStrip = orderedStripTasks.filter((t) => {
+                  const d = t.scheduledDate ? String(t.scheduledDate).slice(0, 10) : "";
+                  return (!d || d === todayDateStr || (d < todayDateStr && (t.isCompleted || t.isAttended)));
+                });
+                const tomorrowStrip = orderedStripTasks.filter((t) => {
+                  const d = t.scheduledDate ? String(t.scheduledDate).slice(0, 10) : "";
+                  return d === tomorrowDateStr;
+                });
+                const laterStrip = orderedStripTasks.filter((t) => {
+                  const d = t.scheduledDate ? String(t.scheduledDate).slice(0, 10) : "";
+                  return Boolean(d && d > tomorrowDateStr);
+                });
+
+                const sections = [
+                  ...(overdueStrip.length > 0 ? [{ key: "overdue", label: "⚠️ ATRASADOS", badge: "border-rose-500/60 bg-rose-950/70 text-rose-200", headerBorder: "border-rose-500/40", tasks: overdueStrip }] : []),
+                  ...(todayStrip.length > 0 ? [{ key: "today", label: `🔥 HOY · ${todayDateStr.slice(8, 10)}/${todayDateStr.slice(5, 7)}`, badge: "border-cyan-500/60 bg-cyan-950/70 text-cyan-200", headerBorder: "border-cyan-500/40", tasks: todayStrip }] : []),
+                  ...(tomorrowStrip.length > 0 ? [{ key: "tomorrow", label: `📆 MAÑANA · ${tomorrowDateStr.slice(8, 10)}/${tomorrowDateStr.slice(5, 7)}`, badge: "border-indigo-500/60 bg-indigo-950/70 text-indigo-200", headerBorder: "border-indigo-500/40", tasks: tomorrowStrip }] : []),
+                  ...(laterStrip.length > 0 ? [{ key: "later", label: "🗓️ PRÓXIMOS DÍAS", badge: "border-amber-500/60 bg-amber-950/70 text-amber-200", headerBorder: "border-amber-500/40", tasks: laterStrip }] : []),
+                ];
+
+                let runningRank = 0;
+                return (
+                  <div className="space-y-3">
+                    {sections.map((sec) => (
+                      <div key={sec.key} className="space-y-1.5">
+                        <div className={`flex items-center justify-between px-2 py-1 rounded-md border-l-2 bg-[#0E1622] ${sec.headerBorder}`}>
+                          <span className="text-[10px] font-bold tracking-wide text-slate-200">
+                            {sec.label}
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded border text-[9px] font-mono font-bold ${sec.badge}`}>
+                            {sec.tasks.length}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {sec.tasks.map((task) => {
+                            const isDimmed = Boolean(task.isAttended || task.isCompleted);
+                            const rank = isDimmed ? undefined : ++runningRank;
+                            return renderNormalTaskCard(task, {
+                              priorityRank: rank,
+                              stripList: sec.tasks,
+                            });
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : (
+                <div className="p-3 text-center text-slate-500 text-[10px] bg-slate-900/30 rounded-lg border border-slate-800/40">
+                  Sin pendientes activos. Presiona &apos;+&apos; para crear uno.
+                </div>
+              )
+            ) : (
           <>
             {/* 1. SECCIÓN SUPERIOR: LISTA DE PENDIENTES LIBRES Y ASIGNACIONES */}
             <div className="space-y-1.5">
@@ -2237,6 +2434,8 @@ function PendientesColumnComponent({
               {/* Cuadrícula de horas estructurada */}
               {renderScheduleGrid()}
             </div>
+          </>
+            )}
           </>
         )}
 

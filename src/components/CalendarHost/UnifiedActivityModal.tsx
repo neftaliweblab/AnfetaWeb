@@ -371,6 +371,7 @@ export function UnifiedActivityModal({
   // Checklist Data State
   const [showAllChecks, setShowAllChecks] = useState(false);
   const [checkFilter, setCheckFilter] = useState<"all" | "today" | "upcoming" | "backlog">("all");
+  const [collapsedCheckGroups, setCollapsedCheckGroups] = useState<Record<string, boolean>>({});
   const [checkSaving, setCheckSaving] = useState(false);
   const [advancingPhase, setAdvancingPhase] = useState(false);
   const [checkMessage, setCheckMessage] = useState("");
@@ -1184,189 +1185,338 @@ export function UnifiedActivityModal({
 
                   {checkMessage && <p className="text-xs text-amber-200">{checkMessage}</p>}
 
-                  {/* List of Checklist items */}
+                  {/* List of Checklist items (Agrupado visual por fecha en 'Todos') */}
                   {(() => {
-                    const baseItems =
-                      checkFilter === "today"
-                        ? effectiveItems.filter((i: any) => i.plannedDate === checklistDay)
-                        : checkFilter === "upcoming"
-                          ? daily.upcomingPending
-                          : checkFilter === "backlog"
-                            ? daily.backlogPending
-                            : showAllChecks || size === "xl"
-                              ? [
-                                  ...effectiveItems.filter((i: any) => i.plannedDate === checklistDay),
-                                  ...daily.upcomingPending,
-                                  ...daily.backlogPending,
-                                  ...effectiveItems.filter(
-                                    (i: any) =>
-                                      Boolean(i.isChecked) &&
-                                      i.plannedDate !== checklistDay &&
-                                      !(i.plannedDate && i.plannedDate > checklistDay)
-                                  ),
-                                ]
-                              : daily.items;
-                    const visibleItems =
-                      checkFilter !== "all" || showAllChecks || size === "xl"
-                        ? baseItems
-                        : baseItems.slice(0, 6);
+                    const formatGroupShort = (isoDate: string) => {
+                      const [, mm, dd] = String(isoDate || "").split("-");
+                      if (!mm || !dd) return isoDate;
+                      return `${dd}/${mm}`;
+                    };
+
+                    const renderCheckItemRow = (chk: any, idx: number) => {
+                      const isDone = Boolean(chk.isChecked);
+                      const bid = chk.blockId || chk.id || "";
+                      const planned = chk.plannedDate ? String(chk.plannedDate).slice(0, 10) : "";
+                      const isTodayPlan = planned === checklistDay;
+                      const isTomorrowPlan = planned === tomorrowDay;
+                      const isCustomPlan = Boolean(planned && !isTodayPlan && !isTomorrowPlan);
+                      const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
+                      const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
+
+                      return (
+                        <div
+                          key={bid || idx}
+                          className={`flex items-start justify-between gap-2 p-1.5 rounded-lg border text-[11px] transition-colors ${
+                            isTodayPlan
+                              ? "bg-[#0F1E2E]/95 border-cyan-600/50 hover:border-cyan-400/70"
+                              : "bg-[#0D1520]/85 border-[#1E2A38]/80 hover:border-[#2C3F54]"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2 min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              aria-label={`Completar ${chk.text || "tarea"}`}
+                              checked={isDone}
+                              disabled={!editable || checkSaving}
+                              onChange={() => void toggleCheckItem(chk)}
+                              className="mt-0.5 shrink-0 accent-emerald-400 cursor-pointer"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <span
+                                className={`leading-tight block ${
+                                  isDone ? "text-slate-400 line-through opacity-80" : "text-slate-100"
+                                }`}
+                              >
+                                {chk.text || "Tarea sin título"}
+                              </span>
+                              {(planned || (isDone && doneDate) || addedDate) && (
+                                <span className="mt-0.5 inline-flex flex-wrap items-center gap-1.5 font-mono text-[9px] text-slate-400">
+                                  {planned && (
+                                    <span
+                                      className={`px-1 rounded border ${
+                                        isTodayPlan
+                                          ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
+                                          : isTomorrowPlan
+                                            ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
+                                            : "border-amber-500/50 bg-amber-950/60 text-amber-200"
+                                      }`}
+                                    >
+                                      {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : formatGroupShort(planned)}
+                                    </span>
+                                  )}
+                                  {isDone && doneDate ? (
+                                    <span className="text-emerald-400 font-medium">✓ {doneDate}</span>
+                                  ) : addedDate ? (
+                                    <span className="text-slate-500">+{addedDate}</span>
+                                  ) : null}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {editable && !activity.isDaySnapshot && bid && (
+                            <div className="shrink-0 flex items-center gap-1 font-mono text-[9px]">
+                              <button
+                                type="button"
+                                disabled={checkSaving}
+                                onClick={() => void planChecklistItems([bid], isTodayPlan ? null : checklistDay)}
+                                className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                  isTodayPlan
+                                    ? "border-cyan-400 bg-cyan-900/80 text-cyan-100 font-bold"
+                                    : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-cyan-500"
+                                }`}
+                                title="Planear este check para hoy"
+                              >
+                                Hoy
+                              </button>
+                              <button
+                                type="button"
+                                disabled={checkSaving}
+                                onClick={() => void planChecklistItems([bid], isTomorrowPlan ? null : tomorrowDay)}
+                                className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                  isTomorrowPlan
+                                    ? "border-indigo-400 bg-indigo-900/80 text-indigo-100 font-bold"
+                                    : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-indigo-500"
+                                }`}
+                                title="Planear este check para mañana"
+                              >
+                                Mañ.
+                              </button>
+                              <label
+                                className={`relative px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                  isCustomPlan
+                                    ? "border-amber-400 bg-amber-950/70 text-amber-200 font-bold"
+                                    : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-slate-400"
+                                }`}
+                                title="Elegir fecha específica para este check"
+                              >
+                                <span>{isCustomPlan ? formatGroupShort(planned) : "📅"}</span>
+                                <input
+                                  type="date"
+                                  value={planned || checklistDay}
+                                  disabled={checkSaving}
+                                  onChange={(e) => {
+                                    if (e.target.value) void planChecklistItems([bid], e.target.value);
+                                  }}
+                                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                />
+                              </label>
+                              {planned && (
+                                <button
+                                  type="button"
+                                  disabled={checkSaving}
+                                  onClick={() => void planChecklistItems([bid], null)}
+                                  className="px-1 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-rose-300 hover:border-rose-500/60 cursor-pointer"
+                                  title="Quitar fecha programada"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    if (checkFilter !== "all") {
+                      const filteredItems =
+                        checkFilter === "today"
+                          ? effectiveItems.filter((i: any) => String(i.plannedDate || "").slice(0, 10) === checklistDay)
+                          : checkFilter === "upcoming"
+                            ? daily.upcomingPending
+                            : daily.backlogPending;
+                      return (
+                        <div className="space-y-1 overflow-y-auto pr-0.5 scrollbar-thin max-h-72">
+                          {filteredItems.length === 0 ? (
+                            <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono">
+                              No hay checks en esta vista.
+                            </div>
+                          ) : (
+                            filteredItems.map((chk: any, idx: number) => renderCheckItemRow(chk, idx))
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // Vista 'Todos': Agrupado visual por Hoy, Mañana, cada Fecha específica (ej. 15/11), Sin fecha y Completados previos
+                    const todayGroupItems = effectiveItems.filter(
+                      (i: any) => String(i.plannedDate || "").slice(0, 10) === checklistDay
+                    );
+                    const tomorrowGroupItems = effectiveItems.filter(
+                      (i: any) => String(i.plannedDate || "").slice(0, 10) === tomorrowDay
+                    );
+                    const futureDateMap = new Map<string, any[]>();
+                    for (const i of effectiveItems) {
+                      const d = i.plannedDate ? String(i.plannedDate).slice(0, 10) : "";
+                      if (d && d > tomorrowDay) {
+                        const list = futureDateMap.get(d) || [];
+                        list.push(i);
+                        futureDateMap.set(d, list);
+                      }
+                    }
+                    const futureDatesSorted = Array.from(futureDateMap.keys()).sort();
+                    const backlogGroupItems = effectiveItems.filter(
+                      (i: any) => !i.isChecked && !i.plannedDate
+                    );
+                    const prevDoneGroupItems = effectiveItems.filter(
+                      (i: any) =>
+                        Boolean(i.isChecked) &&
+                        String(i.plannedDate || "").slice(0, 10) !== checklistDay &&
+                        !(i.plannedDate && String(i.plannedDate).slice(0, 10) > checklistDay)
+                    );
+
+                    type CheckGroup = {
+                      key: string;
+                      title: string;
+                      subtitle: string;
+                      accentClass: string;
+                      headerBgClass: string;
+                      badgeClass: string;
+                      items: any[];
+                      defaultCollapsed?: boolean;
+                    };
+
+                    const groups: CheckGroup[] = [];
+                    if (todayGroupItems.length > 0) {
+                      const todayDoneCount = todayGroupItems.filter((i: any) => i.isChecked).length;
+                      const todayComplete = todayDoneCount === todayGroupItems.length;
+                      groups.push({
+                        key: "today",
+                        title: `Para hoy · ${formatGroupShort(checklistDay)}`,
+                        subtitle: todayComplete ? "Meta del día completada" : `${todayDoneCount}/${todayGroupItems.length} completados`,
+                        accentClass: todayComplete ? "border-emerald-500/60" : "border-cyan-500/60",
+                        headerBgClass: todayComplete
+                          ? "bg-gradient-to-r from-emerald-950/75 via-[#0E1E24] to-[#0B1420]"
+                          : "bg-gradient-to-r from-cyan-950/75 via-[#0E1B2B] to-[#0B1420]",
+                        badgeClass: todayComplete
+                          ? "border-emerald-400/70 bg-emerald-900/70 text-emerald-100"
+                          : "border-cyan-400/70 bg-cyan-900/70 text-cyan-100",
+                        items: todayGroupItems,
+                      });
+                    }
+                    if (tomorrowGroupItems.length > 0) {
+                      groups.push({
+                        key: "tomorrow",
+                        title: `Mañana · ${formatGroupShort(tomorrowDay)}`,
+                        subtitle: "Planeados / movidos",
+                        accentClass: "border-indigo-500/50",
+                        headerBgClass: "bg-gradient-to-r from-indigo-950/70 via-[#12192E] to-[#0B1420]",
+                        badgeClass: "border-indigo-400/60 bg-indigo-900/70 text-indigo-100",
+                        items: tomorrowGroupItems,
+                      });
+                    }
+                    for (const fDate of futureDatesSorted) {
+                      const fItems = futureDateMap.get(fDate) || [];
+                      groups.push({
+                        key: `date:${fDate}`,
+                        title: `Para el ${formatGroupShort(fDate)}`,
+                        subtitle: "Planeados / movidos a esta fecha",
+                        accentClass: "border-amber-500/50",
+                        headerBgClass: "bg-gradient-to-r from-amber-950/60 via-[#1D1814] to-[#0B1420]",
+                        badgeClass: "border-amber-400/60 bg-amber-900/70 text-amber-100",
+                        items: fItems,
+                      });
+                    }
+                    if (backlogGroupItems.length > 0) {
+                      groups.push({
+                        key: "backlog",
+                        title: "Sin fecha asignada",
+                        subtitle: "Pendientes por programar",
+                        accentClass: "border-slate-700/80",
+                        headerBgClass: "bg-[#0F1824]",
+                        badgeClass: "border-slate-600 bg-slate-800 text-slate-200",
+                        items: backlogGroupItems,
+                      });
+                    }
+                    if (prevDoneGroupItems.length > 0) {
+                      const hasPendingGroups = todayGroupItems.length > 0 || tomorrowGroupItems.length > 0 || futureDatesSorted.length > 0 || backlogGroupItems.length > 0;
+                      groups.push({
+                        key: "completed_prev",
+                        title: "Completados",
+                        subtitle: "Checks cerrados",
+                        accentClass: "border-emerald-800/60",
+                        headerBgClass: "bg-emerald-950/30",
+                        badgeClass: "border-emerald-700/60 bg-emerald-950 text-emerald-300",
+                        items: prevDoneGroupItems,
+                        defaultCollapsed: hasPendingGroups && prevDoneGroupItems.length > 4,
+                      });
+                    }
+
+                    const toggleGroupCollapsed = (key: string, currentVal: boolean) => {
+                      setCollapsedCheckGroups((prev) => ({ ...prev, [key]: !currentVal }));
+                    };
 
                     return (
                       <div
-                        className={`space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
-                          showAllChecks || size === "xl" || checkFilter !== "all" ? "max-h-72" : "max-h-48"
+                        className={`space-y-2.5 overflow-y-auto pr-0.5 scrollbar-thin ${
+                          size === "xl" ? "max-h-96" : "max-h-72"
                         }`}
                       >
-                        {visibleItems.length === 0 ? (
-                          <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono">
-                            No hay checks en esta vista.
-                          </div>
-                        ) : (
-                          visibleItems.map((chk: any, idx: number) => {
-                            const isDone = Boolean(chk.isChecked);
-                            const bid = chk.blockId || chk.id || "";
-                            const planned = chk.plannedDate ? String(chk.plannedDate).slice(0, 10) : "";
-                            const isTodayPlan = planned === checklistDay;
-                            const isTomorrowPlan = planned === tomorrowDay;
-                            const isCustomPlan = Boolean(planned && !isTodayPlan && !isTomorrowPlan);
-                            const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
-                            const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
+                        {groups.map((grp) => {
+                          const isCollapsed = collapsedCheckGroups[grp.key] ?? Boolean(grp.defaultCollapsed);
+                          const isBacklogLimited = grp.key === "backlog" && !showAllChecks && size !== "xl" && grp.items.length > 6;
+                          const shownItems = isBacklogLimited ? grp.items.slice(0, 6) : grp.items;
 
-                            return (
-                              <div
-                                key={bid || idx}
-                                className={`flex items-start justify-between gap-2 p-1.5 rounded border text-[11px] ${
-                                  isTodayPlan
-                                    ? "bg-[#0F1E2E]/90 border-cyan-700/60"
-                                    : "bg-[#0D1520]/80 border-[#1E2A38]/70"
-                                }`}
+                          return (
+                            <div
+                              key={grp.key}
+                              className={`rounded-xl border ${grp.accentClass} bg-[#091019]/90 overflow-hidden shadow-sm`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleGroupCollapsed(grp.key, isCollapsed)}
+                                className={`w-full px-2.5 py-1.5 ${grp.headerBgClass} flex items-center justify-between gap-2 text-left cursor-pointer hover:brightness-110 transition-all`}
                               >
-                                <div className="flex items-start gap-2 min-w-0 flex-1">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`Completar ${chk.text || "tarea"}`}
-                                    checked={isDone}
-                                    disabled={!editable || checkSaving}
-                                    onChange={() => void toggleCheckItem(chk)}
-                                    className="mt-0.5 shrink-0 accent-emerald-400 cursor-pointer"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <span
-                                      className={`leading-tight block ${
-                                        isDone ? "text-slate-400 line-through opacity-80" : "text-slate-100"
-                                      }`}
-                                    >
-                                      {chk.text || "Tarea sin título"}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Calendar className="w-3.5 h-3.5 shrink-0 text-slate-200/80" />
+                                  <div className="min-w-0">
+                                    <span className="text-[11px] font-bold text-slate-100 block leading-tight truncate">
+                                      {grp.title}
                                     </span>
-                                    {(planned || (isDone && doneDate) || addedDate) && (
-                                      <span className="mt-0.5 inline-flex flex-wrap items-center gap-1.5 font-mono text-[9px] text-slate-400">
-                                        {planned && (
-                                          <span
-                                            className={`px-1 rounded border ${
-                                              isTodayPlan
-                                                ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
-                                                : isTomorrowPlan
-                                                  ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
-                                                  : "border-slate-600 bg-slate-900 text-slate-300"
-                                            }`}
-                                          >
-                                            {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : planned}
-                                          </span>
-                                        )}
-                                        {isDone && doneDate ? (
-                                          <span className="text-emerald-400 font-medium">✓ {doneDate}</span>
-                                        ) : addedDate ? (
-                                          <span className="text-slate-500">+{addedDate}</span>
-                                        ) : null}
-                                      </span>
-                                    )}
+                                    <span className="text-[9.5px] text-slate-400 font-mono block leading-tight">
+                                      {grp.subtitle}
+                                    </span>
                                   </div>
                                 </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`px-1.5 py-0.5 rounded-md border text-[9.5px] font-mono font-bold ${grp.badgeClass}`}>
+                                    {grp.items.length}
+                                  </span>
+                                  {isCollapsed ? (
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                                  ) : (
+                                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                </div>
+                              </button>
 
-                                {editable && !activity.isDaySnapshot && bid && (
-                                  <div className="shrink-0 flex items-center gap-1 font-mono text-[9px]">
+                              {!isCollapsed && (
+                                <div className="p-1.5 space-y-1">
+                                  {shownItems.map((chk: any, idx: number) => renderCheckItemRow(chk, idx))}
+                                  {grp.key === "backlog" && grp.items.length > 6 && size !== "xl" && (
                                     <button
                                       type="button"
-                                      disabled={checkSaving}
-                                      onClick={() => void planChecklistItems([bid], isTodayPlan ? null : checklistDay)}
-                                      className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
-                                        isTodayPlan
-                                          ? "border-cyan-400 bg-cyan-900/80 text-cyan-100 font-bold"
-                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-cyan-500"
-                                      }`}
-                                      title="Planear este check para hoy"
+                                      onClick={() => setShowAllChecks((prev) => !prev)}
+                                      className="w-full py-1 text-[10px] text-cyan-300 bg-[#122132] hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
                                     >
-                                      Hoy
+                                      {showAllChecks ? (
+                                        <>
+                                          <ChevronUp className="w-3 h-3" />
+                                          <span>Mostrar menos sin fecha</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="w-3 h-3" />
+                                          <span>Ver todos los sin fecha ({grp.items.length})</span>
+                                        </>
+                                      )}
                                     </button>
-                                    <button
-                                      type="button"
-                                      disabled={checkSaving}
-                                      onClick={() => void planChecklistItems([bid], isTomorrowPlan ? null : tomorrowDay)}
-                                      className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
-                                        isTomorrowPlan
-                                          ? "border-indigo-400 bg-indigo-900/80 text-indigo-100 font-bold"
-                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-indigo-500"
-                                      }`}
-                                      title="Planear este check para mañana"
-                                    >
-                                      Mañ.
-                                    </button>
-                                    <label
-                                      className={`relative px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
-                                        isCustomPlan
-                                          ? "border-amber-400 bg-amber-950/70 text-amber-200 font-bold"
-                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-slate-400"
-                                      }`}
-                                      title="Elegir fecha específica para este check"
-                                    >
-                                      <span>{isCustomPlan ? planned.slice(5) : "📅"}</span>
-                                      <input
-                                        type="date"
-                                        value={planned || checklistDay}
-                                        disabled={checkSaving}
-                                        onChange={(e) => {
-                                          if (e.target.value) void planChecklistItems([bid], e.target.value);
-                                        }}
-                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                      />
-                                    </label>
-                                    {planned && (
-                                      <button
-                                        type="button"
-                                        disabled={checkSaving}
-                                        onClick={() => void planChecklistItems([bid], null)}
-                                        className="px-1 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-rose-300 hover:border-rose-500/60 cursor-pointer"
-                                        title="Quitar fecha programada"
-                                      >
-                                        ×
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-
-                        {checkFilter === "all" && totalChecks > 6 && size !== "xl" && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllChecks((prev) => !prev)}
-                            className="w-full py-1 text-[10px] text-cyan-300 bg-[#122132] hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
-                          >
-                            {showAllChecks ? (
-                              <>
-                                <ChevronUp className="w-3 h-3" />
-                                <span>Mostrar menos checks</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-3 h-3" />
-                                <span>Ver todos los checks ({totalChecks})</span>
-                              </>
-                            )}
-                          </button>
-                        )}
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })()}

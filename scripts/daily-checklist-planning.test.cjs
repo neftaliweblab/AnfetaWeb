@@ -396,5 +396,66 @@ async function test(name, fn) {
     assert.equal(cleared.pendingFutureChecksCount, 0);
   });
 
-  console.log(`\nPassed ${passed}/3 daily checklist planning tests.`);
+  await test('PendientesColumn muestra ristra unificada Hoy/Mañana con prioridad y hora relativa 1:00 AM / 2:00 AM', async () => {
+    const React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { PendientesColumn, formatRelativePriorityHour } = require(root + '/src/components/ResultsViewHost/PendientesColumn.tsx');
+    const { mexicoDate } = require(root + '/src/services/calendarPresentation.ts');
+    const { shiftMexicoDay } = require(root + '/src/lib/dailyChecklist.ts');
+
+    assert.equal(formatRelativePriorityHour(1), '1:00 AM');
+    assert.equal(formatRelativePriorityHour(2), '2:00 AM');
+    assert.equal(formatRelativePriorityHour(13), '1:00 PM');
+
+    const today = mexicoDate();
+    const tomorrow = shiftMexicoDay(today, 1);
+    const html = renderToStaticMarkup(
+      React.createElement(PendientesColumn, {
+        pendingTasks: [
+          { id: 't1', title: 'Revisar campaña ADS', query: 'ADS', scheduledDate: today },
+          { id: 't2', title: '19:00 Llamada cliente', query: 'cliente', scheduledDate: tomorrow, startTime: '19:00' },
+        ],
+        currentUser: 'Neftali',
+        onToggleTask: () => {},
+        onOpenNewTaskModal: () => {},
+        onDeleteTask: () => {},
+        onReorderTasks: () => {},
+        onUpdateTask: () => {},
+      })
+    );
+    assert.match(html, /Una ristra/);
+    assert.match(html, /#1/);
+    assert.match(html, /1:00 AM/);
+    assert.match(html, /#2/);
+    assert.match(html, /2:00 AM/);
+    assert.match(html, /HOY/);
+    assert.match(html, /MAÑANA/);
+    assert.match(html, /Subir prioridad/);
+
+    const emptyHtml = renderToStaticMarkup(
+      React.createElement(PendientesColumn, {
+        pendingTasks: [],
+        currentUser: 'Neftali',
+        onToggleTask: () => {},
+        onOpenNewTaskModal: () => {},
+        onDeleteTask: () => {},
+      })
+    );
+    assert.match(emptyHtml, /Sin pendientes activos/);
+  });
+
+  await test('UnifiedActivityModal incluye agrupado visual de checklist por fechas en pestaña Todos', async () => {
+    const fs = require('node:fs');
+    const modalSrc = fs.readFileSync(
+      path.join(root, 'src/components/CalendarHost/UnifiedActivityModal.tsx'),
+      'utf8'
+    );
+    assert.match(modalSrc, /Para hoy ·/);
+    assert.match(modalSrc, /Mañana ·/);
+    assert.match(modalSrc, /Para el /);
+    assert.match(modalSrc, /Sin fecha asignada/);
+    assert.match(modalSrc, /Completados/);
+  });
+
+  console.log(`\nPassed ${passed}/${passed} daily checklist planning tests.`);
 })();
