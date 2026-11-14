@@ -421,7 +421,18 @@ export function UnifiedActivityModal({
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Notion rechazó el check.");
       }
-      const nextItems = data.stats?.checklistItems || effectiveItems.map((i: any) => (i.id || i.blockId) === (chk.id || chk.blockId) ? { ...i, isChecked: !chk.isChecked } : i);
+      const nextItems =
+        data.stats?.checklistItems ||
+        effectiveItems.map((i: any) =>
+          (i.id || i.blockId) === (chk.id || chk.blockId)
+            ? {
+                ...i,
+                isChecked: !chk.isChecked,
+                markedAt: !chk.isChecked ? new Date().toISOString() : undefined,
+                markingSource: !chk.isChecked ? "verified" : undefined,
+              }
+            : i
+        );
       const nextSummary = dailyChecklist(nextItems, checklistDay);
       const updates = {
         checklistScanned: true,
@@ -1138,11 +1149,22 @@ export function UnifiedActivityModal({
                   )}
 
                   {/* Filtros y ayuda rápida para planificar checks largos */}
+                  {(() => {
+                    const isItemCompletedOrPlannedToday = (item: any) => {
+                      const p = item.plannedDate ? String(item.plannedDate).slice(0, 10) : "";
+                      if (p === checklistDay) return true;
+                      if (!item.isChecked) return false;
+                      const m = item.markedAt ? mexicoDate(item.markedAt) : "";
+                      const c = item.createdAt ? mexicoDate(item.createdAt) : "";
+                      return m === checklistDay || c === checklistDay;
+                    };
+                    const todayFilterCount = effectiveItems.filter(isItemCompletedOrPlannedToday).length;
+                    return (
                   <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
                     <div className="flex flex-wrap items-center gap-1">
                       {([
                         { id: "all", label: `Todos (${effectiveItems.length})` },
-                        { id: "today", label: `Para hoy (${daily.plannedTotal})` },
+                        { id: "today", label: `Para hoy (${todayFilterCount})` },
                         { id: "upcoming", label: `Próximas (${daily.upcomingPending.length})` },
                         { id: "backlog", label: `Sin fecha (${daily.backlogPending.length})` },
                       ] as const).map((tab) => (
@@ -1178,6 +1200,8 @@ export function UnifiedActivityModal({
                       </button>
                     )}
                   </div>
+                    );
+                  })()}
 
                   <p className="text-[10px] text-slate-400 font-mono">
                     Confirmados para hoy: {daily.done} de {daily.total}.
@@ -1193,13 +1217,39 @@ export function UnifiedActivityModal({
                       return `${dd}/${mm}`;
                     };
 
-                    const renderCheckItemRow = (chk: any, idx: number) => {
-                      const isDone = Boolean(chk.isChecked);
-                      const bid = chk.blockId || chk.id || "";
+                    const getCheckDayFlags = (chk: any) => {
                       const planned = chk.plannedDate ? String(chk.plannedDate).slice(0, 10) : "";
+                      const isDone = Boolean(chk.isChecked);
                       const isTodayPlan = planned === checklistDay;
                       const isTomorrowPlan = planned === tomorrowDay;
                       const isCustomPlan = Boolean(planned && !isTodayPlan && !isTomorrowPlan);
+                      const markedDay = chk.markedAt ? mexicoDate(chk.markedAt) : "";
+                      const createdDay = chk.createdAt ? mexicoDate(chk.createdAt) : "";
+                      const isCompletedToday =
+                        isDone && (isTodayPlan || markedDay === checklistDay || createdDay === checklistDay);
+                      const belongsToTodayGroup = isTodayPlan || isCompletedToday;
+                      return {
+                        planned,
+                        isDone,
+                        isTodayPlan,
+                        isTomorrowPlan,
+                        isCustomPlan,
+                        markedDay,
+                        isCompletedToday,
+                        belongsToTodayGroup,
+                      };
+                    };
+
+                    const renderCheckItemRow = (chk: any, idx: number) => {
+                      const {
+                        planned,
+                        isDone,
+                        isTodayPlan,
+                        isTomorrowPlan,
+                        isCustomPlan,
+                        isCompletedToday,
+                      } = getCheckDayFlags(chk);
+                      const bid = chk.blockId || chk.id || "";
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
                       const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
 
@@ -1207,9 +1257,11 @@ export function UnifiedActivityModal({
                         <div
                           key={bid || idx}
                           className={`flex items-start justify-between gap-2 p-1.5 rounded-lg border text-[11px] transition-colors ${
-                            isTodayPlan
-                              ? "bg-[#0F1E2E]/95 border-cyan-600/50 hover:border-cyan-400/70"
-                              : "bg-[#0D1520]/85 border-[#1E2A38]/80 hover:border-[#2C3F54]"
+                            isCompletedToday
+                              ? "bg-[#0D1D1A]/90 border-emerald-600/50 hover:border-emerald-400/70"
+                              : isTodayPlan
+                                ? "bg-[#0F1E2E]/95 border-cyan-600/50 hover:border-cyan-400/70"
+                                : "bg-[#0D1520]/85 border-[#1E2A38]/80 hover:border-[#2C3F54]"
                           }`}
                         >
                           <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -1229,26 +1281,37 @@ export function UnifiedActivityModal({
                               >
                                 {chk.text || "Tarea sin título"}
                               </span>
-                              {(planned || (isDone && doneDate) || addedDate) && (
+                              {(planned || isCompletedToday || (isDone && doneDate) || addedDate) && (
                                 <span className="mt-0.5 inline-flex flex-wrap items-center gap-1.5 font-mono text-[9px] text-slate-400">
-                                  {planned && (
-                                    <span
-                                      className={`px-1 rounded border ${
-                                        isTodayPlan
-                                          ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
-                                          : isTomorrowPlan
-                                            ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
-                                            : "border-amber-500/50 bg-amber-950/60 text-amber-200"
-                                      }`}
-                                    >
-                                      {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : formatGroupShort(planned)}
+                                  {isCompletedToday ? (
+                                    <span className="px-1.5 rounded border border-emerald-500/60 bg-emerald-950/80 text-emerald-200 font-semibold">
+                                      ✓ Completado hoy{doneDate ? ` · ${doneDate}` : ""}
                                     </span>
+                                  ) : (
+                                    <>
+                                      {planned && (
+                                        <span
+                                          className={`px-1 rounded border ${
+                                            isTodayPlan
+                                              ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
+                                              : isTomorrowPlan
+                                                ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
+                                                : "border-amber-500/50 bg-amber-950/60 text-amber-200"
+                                          }`}
+                                        >
+                                          {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : formatGroupShort(planned)}
+                                        </span>
+                                      )}
+                                      {isDone && doneDate ? (
+                                        <span className="text-emerald-400 font-medium">✓ {doneDate}</span>
+                                      ) : addedDate ? (
+                                        <span className="text-slate-500">+{addedDate}</span>
+                                      ) : null}
+                                    </>
                                   )}
-                                  {isDone && doneDate ? (
-                                    <span className="text-emerald-400 font-medium">✓ {doneDate}</span>
-                                  ) : addedDate ? (
+                                  {isCompletedToday && addedDate && !doneDate && (
                                     <span className="text-slate-500">+{addedDate}</span>
-                                  ) : null}
+                                  )}
                                 </span>
                               )}
                             </div>
@@ -1321,7 +1384,7 @@ export function UnifiedActivityModal({
                     if (checkFilter !== "all") {
                       const filteredItems =
                         checkFilter === "today"
-                          ? effectiveItems.filter((i: any) => String(i.plannedDate || "").slice(0, 10) === checklistDay)
+                          ? effectiveItems.filter((i: any) => getCheckDayFlags(i).belongsToTodayGroup)
                           : checkFilter === "upcoming"
                             ? daily.upcomingPending
                             : daily.backlogPending;
@@ -1338,32 +1401,31 @@ export function UnifiedActivityModal({
                       );
                     }
 
-                    // Vista 'Todos': Agrupado visual por Hoy, Mañana, cada Fecha específica (ej. 15/11), Sin fecha y Completados previos
+                    // Vista 'Todos': Agrupado visual por Hoy (incl. completados hoy), Mañana, cada Fecha específica (ej. 15/11), Sin fecha y Completados previos
                     const todayGroupItems = effectiveItems.filter(
-                      (i: any) => String(i.plannedDate || "").slice(0, 10) === checklistDay
+                      (i: any) => getCheckDayFlags(i).belongsToTodayGroup
                     );
-                    const tomorrowGroupItems = effectiveItems.filter(
-                      (i: any) => String(i.plannedDate || "").slice(0, 10) === tomorrowDay
-                    );
+                    const tomorrowGroupItems = effectiveItems.filter((i: any) => {
+                      const f = getCheckDayFlags(i);
+                      return f.isTomorrowPlan && !f.belongsToTodayGroup;
+                    });
                     const futureDateMap = new Map<string, any[]>();
                     for (const i of effectiveItems) {
-                      const d = i.plannedDate ? String(i.plannedDate).slice(0, 10) : "";
-                      if (d && d > tomorrowDay) {
-                        const list = futureDateMap.get(d) || [];
+                      const f = getCheckDayFlags(i);
+                      if (f.planned && f.planned > tomorrowDay && !f.belongsToTodayGroup) {
+                        const list = futureDateMap.get(f.planned) || [];
                         list.push(i);
-                        futureDateMap.set(d, list);
+                        futureDateMap.set(f.planned, list);
                       }
                     }
                     const futureDatesSorted = Array.from(futureDateMap.keys()).sort();
                     const backlogGroupItems = effectiveItems.filter(
                       (i: any) => !i.isChecked && !i.plannedDate
                     );
-                    const prevDoneGroupItems = effectiveItems.filter(
-                      (i: any) =>
-                        Boolean(i.isChecked) &&
-                        String(i.plannedDate || "").slice(0, 10) !== checklistDay &&
-                        !(i.plannedDate && String(i.plannedDate).slice(0, 10) > checklistDay)
-                    );
+                    const prevDoneGroupItems = effectiveItems.filter((i: any) => {
+                      const f = getCheckDayFlags(i);
+                      return f.isDone && !f.belongsToTodayGroup && !(f.planned && f.planned > checklistDay);
+                    });
 
                     type CheckGroup = {
                       key: string;
@@ -1383,7 +1445,11 @@ export function UnifiedActivityModal({
                       groups.push({
                         key: "today",
                         title: `Para hoy · ${formatGroupShort(checklistDay)}`,
-                        subtitle: todayComplete ? "Meta del día completada" : `${todayDoneCount}/${todayGroupItems.length} completados`,
+                        subtitle: todayComplete
+                          ? `✓ Completado hoy (${todayDoneCount}/${todayGroupItems.length})`
+                          : todayDoneCount > 0
+                            ? `${todayDoneCount}/${todayGroupItems.length} · Completado hoy`
+                            : `${todayDoneCount}/${todayGroupItems.length} completados`,
                         accentClass: todayComplete ? "border-emerald-500/60" : "border-cyan-500/60",
                         headerBgClass: todayComplete
                           ? "bg-gradient-to-r from-emerald-950/75 via-[#0E1E24] to-[#0B1420]"

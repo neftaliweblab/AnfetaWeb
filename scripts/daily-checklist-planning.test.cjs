@@ -444,17 +444,54 @@ async function test(name, fn) {
     assert.match(emptyHtml, /Sin pendientes activos/);
   });
 
-  await test('UnifiedActivityModal incluye agrupado visual de checklist por fechas en pestaña Todos', async () => {
+  await test('PendientesColumn incluye calendario relativo 1am/2am tanto en lista como en cuadrícula/horario', async () => {
     const fs = require('node:fs');
-    const modalSrc = fs.readFileSync(
-      path.join(root, 'src/components/CalendarHost/UnifiedActivityModal.tsx'),
+    const colSrc = fs.readFileSync(
+      path.join(root, 'src/components/ResultsViewHost/PendientesColumn.tsx'),
       'utf8'
     );
-    assert.match(modalSrc, /Para hoy ·/);
-    assert.match(modalSrc, /Mañana ·/);
-    assert.match(modalSrc, /Para el /);
-    assert.match(modalSrc, /Sin fecha asignada/);
-    assert.match(modalSrc, /Completados/);
+    assert.match(colSrc, /renderRelativeCalendarGrid/);
+    assert.match(colSrc, /renderScheduleToolbar/);
+    assert.match(colSrc, /1am, 2am/);
+    assert.match(colSrc, /CALENDARIO DE PENDIENTES/);
+  });
+
+  await test('UnifiedActivityModal incluye agrupado visual de checklist y etiqueta Completado hoy', async () => {
+    const React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const { UnifiedActivityModal } = require(root + '/src/components/CalendarHost/UnifiedActivityModal.tsx');
+    const { mexicoDate } = require(root + '/src/services/calendarPresentation.ts');
+    const { shiftMexicoDay } = require(root + '/src/lib/dailyChecklist.ts');
+
+    const today = mexicoDate();
+    const tomorrow = shiftMexicoDay(today, 1);
+
+    const html = renderToStaticMarkup(
+      React.createElement(UnifiedActivityModal, {
+        activity: {
+          pageId: 'act-ui-1',
+          title: 'PRTUZ POR HACER | SEO | anfeta.com | Test',
+          person: 'Neftali',
+          status: 'PRTUZ POR HACER',
+          start: `${today}T10:00:00-06:00`,
+          end: `${today}T12:00:00-06:00`,
+          checklistScanned: true,
+          checklistTotal: 3,
+          checklistCompleted: 2,
+          checklistItems: [
+            { id: 'c1', blockId: 'c1', text: 'Bugs / Estabilidad', isChecked: true, createdAt: `${today}T10:01:00-06:00` },
+            { id: 'c2', blockId: 'c2', text: 'Planeado para hoy ya listo', isChecked: true, plannedDate: today },
+            { id: 'c3', blockId: 'c3', text: 'Pendiente mañana', isChecked: false, plannedDate: tomorrow },
+          ],
+        },
+        currentUser: 'Neftali',
+        onClose: () => {},
+      })
+    );
+    assert.match(html, /Para hoy ·/);
+    assert.match(html, /Para hoy \(2\)/);
+    assert.match(html, /Completado hoy/);
+    assert.match(html, /Mañana ·/);
   });
 
   console.log(`\nPassed ${passed}/${passed} daily checklist planning tests.`);
