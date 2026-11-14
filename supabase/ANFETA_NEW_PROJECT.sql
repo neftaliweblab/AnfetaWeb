@@ -1092,4 +1092,41 @@ grant execute on function public.record_notion_page_event(text,text,text,text,ti
 revoke all on function public.get_recent_notion_page_events(text,timestamptz,integer) from public, anon, authenticated;
 grant execute on function public.get_recent_notion_page_events(text,timestamptz,integer) to service_role, authenticated;
 
+-- ==========================================
+-- Daily checklist planning & historical phase snapshots
+-- ==========================================
+alter table public.checklist_marks
+  add column if not exists planned_date date,
+  add column if not exists planned_by text,
+  add column if not exists planned_updated_at timestamptz;
+
+create table if not exists public.daily_activity_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  source_key text not null,
+  page_id text not null,
+  work_date date not null,
+  person text not null,
+  title text not null,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  phase_label text,
+  day_summary text,
+  planned_total integer not null default 0,
+  completed_total integer not null default 0,
+  pending_future_count integer not null default 0,
+  snapshot jsonb not null,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source_key, page_id, work_date)
+);
+
+alter table public.daily_activity_snapshots enable row level security;
+grant select on public.daily_activity_snapshots to authenticated;
+grant all on public.daily_activity_snapshots to service_role;
+
+create policy daily_snapshots_read on public.daily_activity_snapshots
+  for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and active));
+
 commit;

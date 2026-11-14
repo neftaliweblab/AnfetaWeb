@@ -62,7 +62,7 @@ import {
   titlePriority,
   currentReviewTagPerson
 } from "@/services/activityTags";
-import { dailyChecklist, checklistTotals } from "@/lib/dailyChecklist";
+import { dailyChecklist, checklistTotals, shiftMexicoDay } from "@/lib/dailyChecklist";
 import { detectActivityConflict } from "@/services/activityConflict";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { anfetaSync } from "@/lib/anfetaBroadcastSync";
@@ -78,6 +78,11 @@ export interface UnifiedActivityModalProps {
   onPin?: () => void;
   onUpdateActivity?: (pageId: string, updates: any) => Promise<boolean | any> | void;
   onChecklistUpdated?: (pageId: string, updates: any) => void;
+  onDayPhaseCompleted?: (result: {
+    movedActivity: NotionCalendarActivity;
+    snapshotActivity: NotionCalendarActivity | null;
+    originalPageId: string;
+  }) => void;
   displayDate?: string;
   overlapIndex?: number;
   overlapTotal?: number;
@@ -94,13 +99,14 @@ export function UnifiedActivityModal({
   onPin,
   onUpdateActivity,
   onChecklistUpdated,
+  onDayPhaseCompleted,
   displayDate,
   overlapIndex = 0,
   overlapTotal = 1,
   onMouseEnter,
   onMouseLeave,
 }: UnifiedActivityModalProps) {
-  const editable = canEditActivity(currentUser, activity);
+  const editable = canEditActivity(currentUser, activity) && !activity.isDaySnapshot;
   const isPinned = mode === "pinned";
 
   // Tab selection in modal
@@ -364,7 +370,9 @@ export function UnifiedActivityModal({
 
   // Checklist Data State
   const [showAllChecks, setShowAllChecks] = useState(false);
+  const [checkFilter, setCheckFilter] = useState<"all" | "today" | "upcoming" | "backlog">("all");
   const [checkSaving, setCheckSaving] = useState(false);
+  const [advancingPhase, setAdvancingPhase] = useState(false);
   const [checkMessage, setCheckMessage] = useState("");
   const checkBusy = useRef(false);
 
@@ -374,6 +382,7 @@ export function UnifiedActivityModal({
   const effectiveItems = activity.checklistItems || [];
 
   const checklistDay = displayDate || (activity.start ? mexicoDate(activity.start) : mexicoDate());
+  const tomorrowDay = shiftMexicoDay(checklistDay, 1);
   const daily = dailyChecklist(effectiveItems, checklistDay);
   const cumulative = checklistTotals({
     checklistItems: effectiveItems,
@@ -382,7 +391,9 @@ export function UnifiedActivityModal({
   });
   const totalChecks = cumulative.total;
   const completedChecks = cumulative.done;
+  const remainingGlobalChecks = Math.max(0, totalChecks - completedChecks);
   const pct = totalChecks > 0 ? Math.round((completedChecks / totalChecks) * 100) : 0;
+  const todayPlanPct = daily.plannedTotal > 0 ? Math.round((daily.plannedDone / daily.plannedTotal) * 100) : 0;
 
   const toggleCheckItem = async (chk: any) => {
     if (!editable || checkBusy.current || !(chk.blockId || chk.id)) return;
@@ -397,6 +408,7 @@ export function UnifiedActivityModal({
           blockId: chk.blockId || chk.id,
           checked: !chk.isChecked,
           expectedChecked: !!chk.isChecked,
+          workDate: checklistDay,
           currentUser,
         },
       });
@@ -408,13 +420,19 @@ export function UnifiedActivityModal({
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Notion rechazó el check.");
       }
+      const nextItems = data.stats?.checklistItems || effectiveItems.map((i: any) => (i.id || i.blockId) === (chk.id || chk.blockId) ? { ...i, isChecked: !chk.isChecked } : i);
+      const nextSummary = dailyChecklist(nextItems, checklistDay);
       const updates = {
         checklistScanned: true,
         checklistTotal: data.stats?.checklistTotal ?? effectiveTotal,
         checklistCompleted: data.stats?.checklistCompleted ?? (effectiveCompleted + (chk.isChecked ? -1 : 1)),
-        checklistItems: data.stats?.checklistItems || effectiveItems.map((i: any) => (i.id || i.blockId) === (chk.id || chk.blockId) ? { ...i, isChecked: !chk.isChecked } : i),
+        checklistItems: nextItems,
         todayChecklistCompleted: data.stats?.todayChecklistCompleted ?? effectiveToday,
         completedChecks: data.stats?.completedChecks || activity.completedChecks || [],
+        completedForDay: data.stats?.completedForDay ?? nextSummary.completedForDay,
+        pendingFutureChecksCount: data.stats?.pendingFutureChecksCount ?? nextSummary.pendingFutureCount,
+        pendingCheckValidation: data.stats?.pendingCheckValidation ?? nextSummary.pendingCheckValidation,
+        nextPlannedChecklistDate: data.stats?.nextPlannedChecklistDate ?? nextSummary.nextPlannedDate,
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
@@ -423,6 +441,111 @@ export function UnifiedActivityModal({
     } finally {
       checkBusy.current = false;
       setCheckSaving(false);
+    }
+  };
+
+  const planChecklistItems = async (blockIds: string[], plannedDate: string | null) => {
+    const cleanIds = blockIds.filter(Boolean);
+    if (!editable || checkBusy.current || cleanIds.length === 0) return;
+    checkBusy.current = true;
+    setCheckSaving(true);
+    setCheckMessage("");
+    try {
+      const response = await offlineAwareFetch("/api/data", {
+        action: "plan-checklist-item",
+        payload: {
+          pageId: activity.pageId,
+          blockIds: cleanIds,
+          plannedDate,
+          workDate: checklistDay,
+          currentUser,
+        },
+      });
+      const data = await response.json();
+      if (data.queued) {
+        setCheckMessage("Planificación guardada localmente; se sincronizará al conectar.");
+        return;
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "No se pudo guardar la fecha del check.");
+      }
+      const nextItems = Array.isArray(data.items)
+        ? data.items
+        : effectiveItems.map((i: any) =>
+            cleanIds.includes(i.blockId || i.id) ? { ...i, plannedDate: plannedDate || undefined } : i
+          );
+      const nextSummary = dailyChecklist(nextItems, checklistDay);
+      const updates = {
+        checklistScanned: true,
+        checklistTotal: data.stats?.checklistTotal ?? effectiveTotal,
+        checklistCompleted: data.stats?.checklistCompleted ?? effectiveCompleted,
+        todayChecklistCompleted: data.stats?.todayChecklistCompleted ?? effectiveToday,
+        checklistItems: nextItems,
+        completedForDay: data.stats?.completedForDay ?? nextSummary.completedForDay,
+        pendingFutureChecksCount: data.stats?.pendingFutureChecksCount ?? nextSummary.pendingFutureCount,
+        pendingCheckValidation: data.stats?.pendingCheckValidation ?? nextSummary.pendingCheckValidation,
+        nextPlannedChecklistDate: data.stats?.nextPlannedChecklistDate ?? nextSummary.nextPlannedDate,
+      };
+      onChecklistUpdated?.(activity.pageId, updates);
+      anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
+      setCheckMessage(
+        plannedDate
+          ? `Programado ${cleanIds.length > 1 ? `${cleanIds.length} checks` : "check"} para ${plannedDate}.`
+          : "Fecha del check limpiada."
+      );
+    } catch (e) {
+      setCheckMessage(e instanceof Error ? e.message : "No se pudo programar el check.");
+    } finally {
+      checkBusy.current = false;
+      setCheckSaving(false);
+    }
+  };
+
+  const handleCompleteDayAndAdvance = async () => {
+    if (!editable || checkBusy.current || advancingPhase) return;
+    checkBusy.current = true;
+    setAdvancingPhase(true);
+    setCheckMessage("");
+    try {
+      const targetDate = daily.nextPlannedDate || tomorrowDay;
+      const response = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete-day-and-advance",
+          payload: {
+            pageId: activity.pageId,
+            workDate: checklistDay,
+            targetDate,
+            currentUser,
+          },
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "No se pudo cerrar la fase de hoy.");
+      }
+      if (data.movedActivity) {
+        anfetaSync.broadcast({
+          type: "ACTIVITY_UPDATED",
+          confirmed: true,
+          pageId: activity.pageId,
+          updates: data.movedActivity,
+        });
+        onDayPhaseCompleted?.({
+          movedActivity: data.movedActivity,
+          snapshotActivity: data.snapshotActivity || null,
+          originalPageId: activity.pageId,
+        });
+      }
+      setCheckMessage(
+        `Fase guardada en ${checklistDay} y actividad movida al ${data.targetDate || targetDate}.`
+      );
+    } catch (e) {
+      setCheckMessage(e instanceof Error ? e.message : "No se pudo cerrar la fase de hoy.");
+    } finally {
+      checkBusy.current = false;
+      setAdvancingPhase(false);
     }
   };
 
@@ -626,12 +749,24 @@ export function UnifiedActivityModal({
           )}
 
                     {activity.isReviewMirror && (
-            <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/70 text-cyan-200 text-xs shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-bold px-1.5 py-0.5 rounded bg-cyan-900 border border-cyan-500 text-[10px] uppercase">
-                  {activity.isHandoffMirror ? 'Transferida' : 'Copia Revisión'}
+            <div className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-xs shadow-sm ${
+              activity.isDaySnapshot
+                ? "bg-emerald-950/60 border-emerald-600/70 text-emerald-100"
+                : "bg-cyan-950/60 border-cyan-600/70 text-cyan-200"
+            }`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded border text-[10px] uppercase ${
+                  activity.isDaySnapshot
+                    ? "bg-emerald-900 border-emerald-500 text-emerald-100"
+                    : "bg-cyan-900 border-cyan-500 text-cyan-100"
+                }`}>
+                  {activity.isDaySnapshot ? "Fase del día" : activity.isHandoffMirror ? "Transferida" : "Copia Revisión"}
                 </span>
-                <span>Copia visual de seguimiento. La actividad original está con su revisor.</span>
+                <span className="truncate">
+                  {activity.isDaySnapshot
+                    ? activity.daySnapshotSummary || `Copia visual de solo lectura (${activity.daySnapshotDate || checklistDay}).`
+                    : "Copia visual de seguimiento. La actividad original está con su revisor."}
+                </span>
               </div>
               {activity.pageUrl && (
                 <a
@@ -967,6 +1102,82 @@ export function UnifiedActivityModal({
                     />
                   </div>
 
+                  {/* Meta de hoy + Advertencia de checks futuros */}
+                  {(daily.hasDailyPlan || activity.completedForDay || activity.isDaySnapshot) && (
+                    <div className="rounded-lg border border-[#1E3448] bg-[#0B1420] p-2 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-[10.5px]">
+                        <span className="font-semibold text-cyan-200">
+                          Meta de hoy ({checklistDay}): {daily.plannedDone} / {daily.plannedTotal || daily.done} ({daily.hasDailyPlan ? `${todayPlanPct}%` : '100%'})
+                        </span>
+                        {(daily.completedForDay || activity.completedForDay || activity.isDaySnapshot) && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${
+                              (daily.pendingFutureCount > 0 || activity.pendingCheckValidation)
+                                ? "border-amber-500/60 bg-amber-950/70 text-amber-200"
+                                : "border-emerald-500/60 bg-emerald-950/70 text-emerald-200"
+                            }`}
+                          >
+                            {(daily.pendingFutureCount > 0 || activity.pendingCheckValidation)
+                              ? `✓ Terminado por hoy · Pendiente validar ${daily.pendingFutureCount || activity.pendingFutureChecksCount || remainingGlobalChecks} futuros`
+                              : "✓ Terminado por hoy"}
+                          </span>
+                        )}
+                      </div>
+                      {daily.hasDailyPlan && (
+                        <div className="h-1 w-full overflow-hidden rounded-full bg-[#132030]">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              daily.completedForDay ? "bg-emerald-400" : "bg-cyan-400"
+                            }`}
+                            style={{ width: `${todayPlanPct}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Filtros y ayuda rápida para planificar checks largos */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {([
+                        { id: "all", label: `Todos (${effectiveItems.length})` },
+                        { id: "today", label: `Para hoy (${daily.plannedTotal})` },
+                        { id: "upcoming", label: `Próximas (${daily.upcomingPending.length})` },
+                        { id: "backlog", label: `Sin fecha (${daily.backlogPending.length})` },
+                      ] as const).map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setCheckFilter(tab.id)}
+                          className={`px-2 py-0.5 rounded border font-mono transition-colors cursor-pointer ${
+                            checkFilter === tab.id
+                              ? "border-cyan-400 bg-cyan-950/80 text-cyan-200 font-semibold"
+                              : "border-[#223549] bg-[#0D1622] text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {editable && !activity.isDaySnapshot && daily.backlogPending.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={checkSaving}
+                        onClick={() =>
+                          void planChecklistItems(
+                            daily.backlogPending.slice(0, 5).map((i) => i.blockId),
+                            checklistDay
+                          )
+                        }
+                        className="px-2 py-0.5 rounded border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 font-mono transition-colors cursor-pointer disabled:opacity-40"
+                        title="Asignar para hoy los primeros 5 checks pendientes sin fecha"
+                      >
+                        +5 a Hoy
+                      </button>
+                    )}
+                  </div>
+
                   <p className="text-[10px] text-slate-400 font-mono">
                     Confirmados para hoy: {daily.done} de {daily.total}.
                   </p>
@@ -974,71 +1185,211 @@ export function UnifiedActivityModal({
                   {checkMessage && <p className="text-xs text-amber-200">{checkMessage}</p>}
 
                   {/* List of Checklist items */}
-                  <div className={`space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
-                    showAllChecks || size === "xl" ? "max-h-72" : "max-h-48"
-                  }`}>
-                    {(showAllChecks || size === "xl" ? effectiveItems : daily.items).slice(
-                      0,
-                      showAllChecks || size === "xl" ? undefined : 6
-                    ).map((chk: any, idx: number) => {
-                      const isDone = Boolean(chk.isChecked);
-                      const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
-                      const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
+                  {(() => {
+                    const baseItems =
+                      checkFilter === "today"
+                        ? effectiveItems.filter((i: any) => i.plannedDate === checklistDay)
+                        : checkFilter === "upcoming"
+                          ? daily.upcomingPending
+                          : checkFilter === "backlog"
+                            ? daily.backlogPending
+                            : showAllChecks || size === "xl"
+                              ? [
+                                  ...effectiveItems.filter((i: any) => i.plannedDate === checklistDay),
+                                  ...daily.upcomingPending,
+                                  ...daily.backlogPending,
+                                  ...effectiveItems.filter(
+                                    (i: any) =>
+                                      Boolean(i.isChecked) &&
+                                      i.plannedDate !== checklistDay &&
+                                      !(i.plannedDate && i.plannedDate > checklistDay)
+                                  ),
+                                ]
+                              : daily.items;
+                    const visibleItems =
+                      checkFilter !== "all" || showAllChecks || size === "xl"
+                        ? baseItems
+                        : baseItems.slice(0, 6);
 
-                      return (
-                        <div
-                          key={chk.id || chk.blockId || idx}
-                          className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#0D1520]/80 border border-[#1E2A38]/70 text-[11px]"
-                        >
-                          <div className="flex items-start gap-2 min-w-0 flex-1">
-                            <input
-                              type="checkbox"
-                              aria-label={`Completar ${chk.text || "tarea"}`}
-                              checked={isDone}
-                              disabled={!editable || checkSaving}
-                              onChange={() => void toggleCheckItem(chk)}
-                              className="mt-0.5 shrink-0 accent-emerald-400 cursor-pointer"
-                            />
-                            <span
-                              className={`leading-tight ${
-                                isDone ? "text-slate-400 line-through opacity-80" : "text-slate-100"
-                              }`}
-                            >
-                              {chk.text || "Tarea sin título"}
-                            </span>
+                    return (
+                      <div
+                        className={`space-y-1 overflow-y-auto pr-0.5 scrollbar-thin ${
+                          showAllChecks || size === "xl" || checkFilter !== "all" ? "max-h-72" : "max-h-48"
+                        }`}
+                      >
+                        {visibleItems.length === 0 ? (
+                          <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono">
+                            No hay checks en esta vista.
                           </div>
+                        ) : (
+                          visibleItems.map((chk: any, idx: number) => {
+                            const isDone = Boolean(chk.isChecked);
+                            const bid = chk.blockId || chk.id || "";
+                            const planned = chk.plannedDate ? String(chk.plannedDate).slice(0, 10) : "";
+                            const isTodayPlan = planned === checklistDay;
+                            const isTomorrowPlan = planned === tomorrowDay;
+                            const isCustomPlan = Boolean(planned && !isTodayPlan && !isTomorrowPlan);
+                            const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
+                            const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
 
-                          <div className="shrink-0 text-right font-mono text-[9px] pl-2">
-                            {isDone && doneDate ? (
-                              <span className="text-emerald-400 block font-medium">✓ {doneDate}</span>
-                            ) : addedDate ? (
-                              <span className="text-slate-500 block">+{addedDate}</span>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
+                            return (
+                              <div
+                                key={bid || idx}
+                                className={`flex items-start justify-between gap-2 p-1.5 rounded border text-[11px] ${
+                                  isTodayPlan
+                                    ? "bg-[#0F1E2E]/90 border-cyan-700/60"
+                                    : "bg-[#0D1520]/80 border-[#1E2A38]/70"
+                                }`}
+                              >
+                                <div className="flex items-start gap-2 min-w-0 flex-1">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Completar ${chk.text || "tarea"}`}
+                                    checked={isDone}
+                                    disabled={!editable || checkSaving}
+                                    onChange={() => void toggleCheckItem(chk)}
+                                    className="mt-0.5 shrink-0 accent-emerald-400 cursor-pointer"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <span
+                                      className={`leading-tight block ${
+                                        isDone ? "text-slate-400 line-through opacity-80" : "text-slate-100"
+                                      }`}
+                                    >
+                                      {chk.text || "Tarea sin título"}
+                                    </span>
+                                    {(planned || (isDone && doneDate) || addedDate) && (
+                                      <span className="mt-0.5 inline-flex flex-wrap items-center gap-1.5 font-mono text-[9px] text-slate-400">
+                                        {planned && (
+                                          <span
+                                            className={`px-1 rounded border ${
+                                              isTodayPlan
+                                                ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
+                                                : isTomorrowPlan
+                                                  ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
+                                                  : "border-slate-600 bg-slate-900 text-slate-300"
+                                            }`}
+                                          >
+                                            {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : planned}
+                                          </span>
+                                        )}
+                                        {isDone && doneDate ? (
+                                          <span className="text-emerald-400 font-medium">✓ {doneDate}</span>
+                                        ) : addedDate ? (
+                                          <span className="text-slate-500">+{addedDate}</span>
+                                        ) : null}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
 
-                    {totalChecks > 6 && size !== "xl" && (
+                                {editable && !activity.isDaySnapshot && bid && (
+                                  <div className="shrink-0 flex items-center gap-1 font-mono text-[9px]">
+                                    <button
+                                      type="button"
+                                      disabled={checkSaving}
+                                      onClick={() => void planChecklistItems([bid], isTodayPlan ? null : checklistDay)}
+                                      className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                        isTodayPlan
+                                          ? "border-cyan-400 bg-cyan-900/80 text-cyan-100 font-bold"
+                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-cyan-500"
+                                      }`}
+                                      title="Planear este check para hoy"
+                                    >
+                                      Hoy
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={checkSaving}
+                                      onClick={() => void planChecklistItems([bid], isTomorrowPlan ? null : tomorrowDay)}
+                                      className={`px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                        isTomorrowPlan
+                                          ? "border-indigo-400 bg-indigo-900/80 text-indigo-100 font-bold"
+                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-indigo-500"
+                                      }`}
+                                      title="Planear este check para mañana"
+                                    >
+                                      Mañ.
+                                    </button>
+                                    <label
+                                      className={`relative px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                        isCustomPlan
+                                          ? "border-amber-400 bg-amber-950/70 text-amber-200 font-bold"
+                                          : "border-[#25384B] bg-[#0B131E] text-slate-300 hover:border-slate-400"
+                                      }`}
+                                      title="Elegir fecha específica para este check"
+                                    >
+                                      <span>{isCustomPlan ? planned.slice(5) : "📅"}</span>
+                                      <input
+                                        type="date"
+                                        value={planned || checklistDay}
+                                        disabled={checkSaving}
+                                        onChange={(e) => {
+                                          if (e.target.value) void planChecklistItems([bid], e.target.value);
+                                        }}
+                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                      />
+                                    </label>
+                                    {planned && (
+                                      <button
+                                        type="button"
+                                        disabled={checkSaving}
+                                        onClick={() => void planChecklistItems([bid], null)}
+                                        className="px-1 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-400 hover:text-rose-300 hover:border-rose-500/60 cursor-pointer"
+                                        title="Quitar fecha programada"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+
+                        {checkFilter === "all" && totalChecks > 6 && size !== "xl" && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllChecks((prev) => !prev)}
+                            className="w-full py-1 text-[10px] text-cyan-300 bg-[#122132] hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
+                          >
+                            {showAllChecks ? (
+                              <>
+                                <ChevronUp className="w-3 h-3" />
+                                <span>Mostrar menos checks</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3 h-3" />
+                                <span>Ver todos los checks ({totalChecks})</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {editable && !activity.isDaySnapshot && remainingGlobalChecks > 0 && (daily.completedForDay || (!daily.hasDailyPlan && daily.done > 0)) && (
+                    <div className="pt-1.5 border-t border-[#1D2D3E]">
                       <button
                         type="button"
-                        onClick={() => setShowAllChecks((prev) => !prev)}
-                        className="w-full py-1 text-[10px] text-cyan-300 bg-[#122132] hover:bg-[#182C42] border border-[#234360] rounded flex items-center justify-center gap-1 font-mono transition-colors cursor-pointer"
+                        disabled={advancingPhase || checkSaving}
+                        onClick={() => void handleCompleteDayAndAdvance()}
+                        className="w-full py-2 px-3 rounded-lg border border-emerald-500/70 bg-emerald-950/75 hover:bg-emerald-900/80 text-emerald-100 text-xs font-semibold flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        {showAllChecks ? (
-                          <>
-                            <ChevronUp className="w-3 h-3" />
-                            <span>Mostrar menos checks</span>
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="w-3 h-3" />
-                            <span>Ver todos los checks ({totalChecks})</span>
-                          </>
-                        )}
+                        <span>
+                          {advancingPhase
+                            ? "Guardando fase y moviendo al siguiente día…"
+                            : `✓ Guardar fase de hoy y pasar a ${daily.nextPlannedDate || tomorrowDay}`}
+                        </span>
+                        <span className="text-[10px] font-normal text-emerald-300/90">
+                          Deja copia visual de solo lectura hoy y conserva el horario (permite empalme)
+                        </span>
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="py-4 text-center text-slate-400 font-mono text-xs">
@@ -1047,18 +1398,20 @@ export function UnifiedActivityModal({
               )}
 
               {/* Quick Entry to add checks */}
-              <ActivityQuickEntry
-                pageId={activity.pageId}
-                disabled={!editable}
-                onChecklistAdded={(newItem) => {
-                  if (onChecklistUpdated) {
-                    onChecklistUpdated(activity.pageId, {
-                      checklistTotal: (activity.checklistTotal || 0) + 1,
-                      checklistItems: [...(activity.checklistItems || []), newItem],
-                    });
-                  }
-                }}
-              />
+              {!activity.isDaySnapshot && (
+                <ActivityQuickEntry
+                  pageId={activity.pageId}
+                  disabled={!editable}
+                  onChecklistAdded={(newItem) => {
+                    if (onChecklistUpdated) {
+                      onChecklistUpdated(activity.pageId, {
+                        checklistTotal: (activity.checklistTotal || 0) + 1,
+                        checklistItems: [...(activity.checklistItems || []), newItem],
+                      });
+                    }
+                  }}
+                />
+              )}
             </div>
           )}
 

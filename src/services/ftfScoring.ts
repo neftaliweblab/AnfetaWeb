@@ -34,6 +34,8 @@ export interface FtfPersonInput {
   lastSignalAt?: string | null;
   isOnline?: boolean;
   afterCutoffHours?: number;
+  pendingCheckValidationCount?: number;
+  pendingCheckValidationSummary?: string;
 }
 
 export interface FtfStars {
@@ -64,6 +66,8 @@ export interface SavedFtfScoreEntry {
     ftfFinal: number;   // max 25
   };
   pendingItemsSummary?: string;
+  pendingCheckValidationCount?: number;
+  pendingCheckValidationSummary?: string;
 }
 
 export interface ComputedFtfScore extends SavedFtfScoreEntry {
@@ -277,6 +281,8 @@ export function computeHybridFtfScore(
       ftfFinal: ftfFinalPts,
     },
     pendingItemsSummary: saved?.pendingItemsSummary || (options?.pendingTitles?.slice(0, 3).join(' · ') || ''),
+    pendingCheckValidationCount: Math.max(0, Number(person.pendingCheckValidationCount ?? saved?.pendingCheckValidationCount ?? 0)),
+    pendingCheckValidationSummary: person.pendingCheckValidationSummary || saved?.pendingCheckValidationSummary || '',
   };
 }
 

@@ -82,8 +82,8 @@ export interface NotionCalendarActivity {
   checklistScanned: boolean;
   checklistTotal: number;
   checklistCompleted: number;
-  completedChecks?: {id:string;blockId:string;text:string;editedAt?:string;createdAt?:string;markedAt?:string;isChecked:boolean}[];
-  checklistItems?: {id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt?:string;markedAt?:string;markingSource?:string}[];
+  completedChecks?: {id:string;blockId:string;text:string;editedAt?:string;createdAt?:string;markedAt?:string;plannedDate?:string;isChecked:boolean}[];
+  checklistItems?: {id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt?:string;markedAt?:string;markingSource?:string;plannedDate?:string;plannedBy?:string}[];
   todayChecklistCompleted: number;
   dailyChecklistTotal?:number;
   dailyChecklistCompleted?:number;
@@ -91,6 +91,10 @@ export interface NotionCalendarActivity {
   checklistUnknownCompleted?:number;
   checklistTimingEstimated?:boolean;
   checklistTimingWarning?:string;
+  completedForDay?: boolean;
+  pendingFutureChecksCount?: number;
+  pendingCheckValidation?: boolean;
+  nextPlannedChecklistDate?: string;
   isUrgent: boolean; // Tag '00'
   isCompletedForReview: boolean; // Tag 'rtuzREVISION'
   isFinalized: boolean; // Tag 'zREVISION'
@@ -101,6 +105,9 @@ export interface NotionCalendarActivity {
   expectedFtfVerified?: boolean;
   isReviewMirror?: boolean;
   isHandoffMirror?: boolean;
+  isDaySnapshot?: boolean;
+  daySnapshotDate?: string;
+  daySnapshotSummary?: string;
   originalPageId?: string;
   handoffNote?: string;
   reviewFlowScanned?: boolean;

@@ -4,6 +4,7 @@ import {normalizePerson} from './identityNormalizer';
 import {isFtfReminder} from './progressKpis';
 import {workflowState} from './activityWorkflow';
 import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
+import {dailyActivityChecks} from '../lib/dailyChecklist';
 
 export function canViewFtfDashboard(user:string){
   const norm = normalizePerson(user);
@@ -26,13 +27,20 @@ function effectiveActivityOwner(a: NotionCalendarActivity): string {
 function isEligibleDayActivity(a: NotionCalendarActivity, name: string, day: string): boolean {
   return Boolean(
     a.start &&
-      !a.isReviewMirror &&
-      !a.isHandoffMirror &&
+      ((!a.isReviewMirror && !a.isHandoffMirror) || Boolean(a.isDaySnapshot)) &&
       !isFtfReminder(a) &&
       !isTemporaryCalendarResponse(a) &&
       effectiveActivityOwner(a) === name &&
       mexicoDate(a.start) === day
   );
+}
+
+function isCompletedForDayActivity(a: NotionCalendarActivity, day: string): boolean {
+  if (a.isDaySnapshot || a.completedForDay) return true;
+  if (a.checklistTotal > 0) {
+    return dailyActivityChecks(a, day).completedForDay;
+  }
+  return false;
 }
 
 function activityHours(a: NotionCalendarActivity): number {
@@ -225,22 +233,45 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     const name=normalizePerson(person.name),unique=new Map<string,NotionCalendarActivity>(),suspendedMap=new Map<string,NotionCalendarActivity>();
     for(const activity of activities){
       if(!isEligibleDayActivity(activity,name,day)||mexicoMinutes(activity.start)>=1080)continue;
+      const dedupeKey = String(activity.originalPageId || activity.pageId).replace(/-/g, '').toLowerCase();
       if(isSuspendedActivity(activity)){
-        suspendedMap.set(activity.pageId,activity);
+        suspendedMap.set(dedupeKey,activity);
         continue;
       }
-      unique.set(activity.pageId,activity);
+      const existing = unique.get(dedupeKey);
+      if(!existing || (existing.isDaySnapshot && !activity.isDaySnapshot)){
+        unique.set(dedupeKey,activity);
+      }
     }
     const all=[...unique.values()].sort((a,b)=>a.start.localeCompare(b.start));
     const suspendedActivities=[...suspendedMap.values()].sort((a,b)=>a.start.localeCompare(b.start));
-    const pending=all.filter(a=>!a.ftfAvailable||!a.ftfVerified);
-    const verifiedActivities = all.filter(a => a.ftfAvailable && a.ftfVerified);
-    const completedWorkActivities = all.filter(a => workflowState(a.status, a.title) === 'completed');
-    const reviewActivities = all.filter(a => workflowState(a.status, a.title) === 'review');
+    const pending=all.filter(a=>!a.isDaySnapshot&&(!a.ftfAvailable||!a.ftfVerified));
+    const verifiedActivities = all.filter(a => a.isDaySnapshot || (a.ftfAvailable && a.ftfVerified));
+    const completedWorkActivities = all.filter(
+      a =>
+        workflowState(a.status, a.title) === 'completed' ||
+        (workflowState(a.status, a.title) !== 'review' && isCompletedForDayActivity(a, day))
+    );
+    const reviewActivities = all.filter(a => !a.isDaySnapshot && workflowState(a.status, a.title) === 'review');
     const inProgressActivities = all.filter(a => {
+      if (isCompletedForDayActivity(a, day)) return false;
       const wf = workflowState(a.status, a.title);
       return wf === 'pending' || wf === 'unknown';
     });
+    const pendingCheckValidationActivities = all.filter(a => {
+      if (workflowState(a.status, a.title) === 'completed') return false;
+      if (!isCompletedForDayActivity(a, day)) return false;
+      const daily = dailyActivityChecks(a, day);
+      const pendingFuture = Number(a.pendingFutureChecksCount ?? daily.pendingFutureCount ?? 0);
+      return Boolean(a.pendingCheckValidation) || pendingFuture > 0;
+    });
+    const pendingCheckValidationSummary = pendingCheckValidationActivities
+      .map(a => {
+        const future = Number(a.pendingFutureChecksCount ?? dailyActivityChecks(a, day).pendingFutureCount ?? 0);
+        const label = a.domain || a.shortTitle || 'Actividad';
+        return future > 0 ? `${label} (${future} checks futuros)` : label;
+      })
+      .join(' · ');
     const expiredUnfinishedActivities = inProgressActivities.filter(a => {
       const endMs = Date.parse(a.end || a.start);
       return Number.isFinite(endMs) && endMs <= now.getTime();
@@ -349,6 +380,8 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
         : null,
       completedHours,
       workCompletedHours,
+      pendingCheckValidationCount: pendingCheckValidationActivities.length,
+      pendingCheckValidationSummary,
       reviewHours,
       inProgressHours,
       ftfVerifiedHours,

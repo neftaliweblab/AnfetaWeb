@@ -3,6 +3,7 @@ import {inferActivityPerson,currentReviewTagPerson} from './activityTags';
 import {workflowState} from './activityWorkflow';
 import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
+import {mergeChecklistItemPlans} from './checklistPlanning';
 import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
@@ -195,7 +196,9 @@ export async function readChecklist(settings: CalendarSettings, pageId: string) 
       if(block.has_children)await walk(block.id,depth+1);
     }
   }
-  await walk(pageId,0);return checklistTiming(settings,pageId,items,observedAt);
+  await walk(pageId,0);
+  const timed = await checklistTiming(settings,pageId,items,observedAt);
+  return mergeChecklistItemPlans(settings,pageId,timed);
 }
 export async function readReviewFlow(settings: CalendarSettings, pageId: string) {
   let latest: any;
@@ -264,21 +267,26 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     if (checklistCache.size > 512) checklistCache.delete(checklistCache.keys().next().value!);
     checklistCache.set(key,cached);
   }
-  const daily=dailyChecklist(cached.items,day);
+  const plannedItems = await mergeChecklistItemPlans(settings, page.id, cached.items);
+  const daily=dailyChecklist(plannedItems,day);
   const completedChecks=daily.completed;
   return {
     checklistScanned:true,
-    checklistTotal:cached.items.length,
-    checklistCompleted:cached.items.filter(item=>item.isChecked).length,
+    checklistTotal:plannedItems.length,
+    checklistCompleted:plannedItems.filter(item=>item.isChecked).length,
     todayChecklistCompleted:daily.done,
     dailyChecklistTotal:daily.total,
     dailyChecklistCompleted:daily.done,
     historicalChecklistCompleted:daily.history.length,
     completedChecks,
-    checklistItems:cached.items,
-    checklistUnknownCompleted:cached.items.filter(item=>item.isChecked&&item.markingSource==='unknown').length,
-    checklistTimingEstimated:cached.items.some(item=>item.markingSource==='estimated'),
-    checklistTimingWarning:cached.items.find(item=>item.timingWarning)?.timingWarning
+    checklistItems:plannedItems,
+    checklistUnknownCompleted:plannedItems.filter(item=>item.isChecked&&item.markingSource==='unknown').length,
+    checklistTimingEstimated:plannedItems.some(item=>item.markingSource==='estimated'),
+    checklistTimingWarning:plannedItems.find(item=>item.timingWarning)?.timingWarning,
+    completedForDay: daily.completedForDay,
+    pendingFutureChecksCount: daily.pendingFutureCount,
+    pendingCheckValidation: daily.pendingCheckValidation,
+    nextPlannedChecklistDate: daily.nextPlannedDate || undefined,
   };
 }
 export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}

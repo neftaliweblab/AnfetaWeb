@@ -190,7 +190,7 @@ function ActivityCardComponent({
   }, [activity.pageId, activity.checklistScanned, activity.checklistTotal, activity.checklistCompleted, activity.todayChecklistCompleted, activity.checklistItems, activity.completedChecks]);
 
   const fetchChecklistIfNeeded = React.useCallback(async (force = false) => {
-    if(activity.isHandoffMirror||checkBusy.current)return;
+    if(activity.isHandoffMirror||activity.isDaySnapshot||checkBusy.current)return;
     const rawId = activity.isReviewMirror ? activity.pageId.replace(/^review-mirror-/, "") : activity.pageId;
     if (!rawId || rawId.startsWith("act-")) return;
     const key = cleanCardId(rawId);
@@ -699,11 +699,45 @@ function ActivityCardComponent({
         {/* Título de la actividad limpio y legible */}
         <div className="my-auto py-0.5 min-w-0">
           <h5 className={`text-[11px] leading-[13px] break-words line-clamp-2 ${isCompleted ? "text-slate-400/70 font-normal" : "font-medium text-[#E2E8F0]"}`}>
-            {activity.isReviewMirror && <span className="mr-1 rounded border border-cyan-800 bg-cyan-950/50 px-1 text-[9px] font-semibold text-cyan-200" title="Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.">{activity.isHandoffMirror?'TRANSFERIDA':'COPIA REVISIÓN'}</span>}
+            {activity.isReviewMirror && (
+              <span
+                className={`mr-1 rounded border px-1 text-[9px] font-semibold ${
+                  activity.isDaySnapshot
+                    ? 'border-emerald-700 bg-emerald-950/70 text-emerald-200'
+                    : 'border-cyan-800 bg-cyan-950/50 text-cyan-200'
+                }`}
+                title={
+                  activity.isDaySnapshot
+                    ? activity.daySnapshotSummary || 'Copia visual de la fase trabajada en este día. Solo lectura; la actividad original continúa en su próxima fecha.'
+                    : 'Copia visual de seguimiento. La actividad original está con otro responsable; esta copia no se puede mover ni editar.'
+                }
+              >
+                {activity.isDaySnapshot ? 'FASE HOY' : activity.isHandoffMirror ? 'TRANSFERIDA' : 'COPIA REVISIÓN'}
+              </span>
+            )}
             {isFtfReminder(activity)&&<span className="mr-1 rounded border border-cyan-800 px-1 text-[9px] text-cyan-200" title="Recordatorio FTF: visible, sin sumar actividades ni carga de trabajo">FTF · Recordatorio</span>}
             <span className={wf==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':''}>{cleanTitle}</span>
           </h5>
         </div>
+
+        {(activity.completedForDay || activity.isDaySnapshot) && (
+          <span
+            title={
+              activity.pendingCheckValidation
+                ? `Terminada por hoy · Pendiente de validar ${activity.pendingFutureChecksCount || 0} checks futuros en días posteriores`
+                : 'Meta de checks de hoy completada al 100%'
+            }
+            className={`mb-1 inline-flex max-w-full items-center gap-1 self-start truncate rounded border px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${
+              activity.pendingCheckValidation
+                ? 'border-amber-500/60 bg-amber-950/70 text-amber-200'
+                : 'border-emerald-500/60 bg-emerald-950/70 text-emerald-200'
+            }`}
+          >
+            <span className="truncate">
+              {activity.pendingCheckValidation ? '✓ Hoy · Validar futuros' : '✓ Terminada por hoy'}
+            </span>
+          </span>
+        )}
 
         {conflict && (
           <span

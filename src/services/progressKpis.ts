@@ -8,11 +8,12 @@ import { normalizePerson } from "./identityNormalizer";
 export function isFtfActivity(title: string) { return /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ccale)(?![\p{L}\p{Nd}_])/iu.test(title || ''); }
 export function isFtfReminder(activity:Pick<NotionCalendarActivity,'title'|'shortTitle'>){return isFtfActivity(activity.title)||isFtfActivity(activity.shortTitle);}
 /** Reminders stay visible; this helper is only for workload and progress. */
-export function countedCalendarActivities(activities:NotionCalendarActivity[]){return activities.filter(a=>!isTemporaryCalendarResponse(a)&&!a.isReviewMirror&&!a.isHandoffMirror&&!isFtfReminder(a));}
+export function countedCalendarActivities(activities:NotionCalendarActivity[]){return activities.filter(a=>!isTemporaryCalendarResponse(a)&&((!a.isReviewMirror&&!a.isHandoffMirror)||Boolean(a.isDaySnapshot))&&!isFtfReminder(a));}
 export function executiveActivities(activities: NotionCalendarActivity[], day: string) {
   return countedCalendarActivities(activities).filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
 }
 export function currentActivityRatio(a: NotionCalendarActivity,day=mexicoDate(a.start)) {
+  if(a.isDaySnapshot||a.completedForDay)return 1;
   if(a.checklistScanned&&a.checklistTotal>0){const daily=dailyActivityChecks(a,day);return daily.total?Math.max(0,Math.min(1,daily.done/daily.total)):0;}
   if(a.estimatedWorkMinutes>0)return Math.max(0,Math.min(1,(a.workedMinutes||0)/a.estimatedWorkMinutes));
   return ['review','completed'].includes(workflowState(a.status,a.title))?1:0;
@@ -27,6 +28,9 @@ export function evaluateLagStatus(
   activity: NotionCalendarActivity,
   currentTime: Date = new Date()
 ): ActivityLagStatus {
+  if (activity.completedForDay || activity.isDaySnapshot) {
+    return { isLagging: false, isMissingChecklist: false };
+  }
   const isPendingStatus = workflowState(activity.status, activity.title) === "pending";
 
   if (!isPendingStatus) {
@@ -90,12 +94,19 @@ export function computeDailyKPIs(
     if (workflowState(act.status, act.title) === "review" || (workflowState(act.status, act.title) === "unknown" && act.isCompletedForReview)) {
       reviewCount++;
     }
-    if (workflowState(act.status, act.title) === "completed" || (workflowState(act.status, act.title) === "unknown" && act.isFinalized)) {
+    const dailyChecks = dailyActivityChecks(act, dateStr);
+    const completedTodayFlag = Boolean(act.completedForDay || act.isDaySnapshot || dailyChecks.completedForDay);
+    if (workflowState(act.status, act.title) === "completed" || completedTodayFlag || (workflowState(act.status, act.title) === "unknown" && act.isFinalized)) {
       completedCount++;
     }
 
-    const dailyChecks = dailyActivityChecks(act, dateStr);
-    const pctToday = act.checklistTotal > 0 ? (dailyChecks.total > 0 ? (dailyChecks.done / dailyChecks.total) * 100 : 0) : act.isFinalized ? 100 : 0;
+    const pctToday = completedTodayFlag
+      ? 100
+      : act.checklistTotal > 0
+      ? (dailyChecks.total > 0 ? (dailyChecks.done / dailyChecks.total) * 100 : 0)
+      : act.isFinalized
+      ? 100
+      : 0;
 
     progressMinutes += durMin * (pctToday / 100);
   }

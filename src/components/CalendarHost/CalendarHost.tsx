@@ -276,9 +276,9 @@ export function CalendarHost({
     };
   }, [stopAutoScroll]);
   const protectSaved=(incoming:NotionCalendarActivity[])=>{
-    const historical=new Map(incoming.filter(a=>a.isHandoffMirror).map(a=>[a.pageId,a]));
+    const historical=new Map(incoming.filter(a=>a.isHandoffMirror||a.isDaySnapshot).map(a=>[a.pageId,a]));
     for(const [id,saved] of recentHandoffs.current){if(saved.until<Date.now()){recentHandoffs.current.delete(id);continue;}if(mexicoDate(saved.activity.start)===currentDate)historical.set(id,saved.activity);}
-    const originals=incoming.filter(a=>!a.isReviewMirror).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
+    const originals=incoming.filter(a=>!a.isReviewMirror&&!a.isDaySnapshot).map(a=>{const saved=recentSaves.current.get(a.pageId);if(!saved)return a;if(saved.until<Date.now()){recentSaves.current.delete(a.pageId);return a;}return confirmedCalendarActivity(a,saved.activity);});
     for(const saved of recentSaves.current.values())if(saved.until>Date.now()&&mexicoDate(saved.activity.start)===currentDate&&!originals.some(a=>pageIdentity(a)===pageIdentity(saved.activity)))originals.push(saved.activity);
     const mirrors=originals.filter(a=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map(a=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));return [...originals,...mirrors,...historical.values()];
   };
@@ -479,7 +479,7 @@ export function CalendarHost({
         // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
         if(requestSequence<appliedSequence){
           if(!light){
-            setActivitiesList(prev=>prev.map(old=>{const read=(data.activities||[]).find((a:NotionCalendarActivity)=>a.pageId===old.pageId);if(!read?.checklistScanned||confirmedCalendarActivity(read,old)!==read)return old;return {...old,checklistScanned:read.checklistScanned,checklistTotal:read.checklistTotal,checklistCompleted:read.checklistCompleted,todayChecklistCompleted:read.todayChecklistCompleted,completedChecks:read.completedChecks,checklistItems:read.checklistItems};}));
+            setActivitiesList(prev=>prev.map(old=>{const read=(data.activities||[]).find((a:NotionCalendarActivity)=>a.pageId===old.pageId);if(!read?.checklistScanned||confirmedCalendarActivity(read,old)!==read)return old;return {...old,checklistScanned:read.checklistScanned,checklistTotal:read.checklistTotal,checklistCompleted:read.checklistCompleted,todayChecklistCompleted:read.todayChecklistCompleted,completedForDay:read.completedForDay,pendingFutureChecksCount:read.pendingFutureChecksCount,pendingCheckValidation:read.pendingCheckValidation,nextPlannedChecklistDate:read.nextPlannedChecklistDate,completedChecks:read.completedChecks,checklistItems:read.checklistItems};}));
             const wasBasic=basic;basic=false;enrichOffset=data.nextEnrichOffset||0;
             if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
           }
@@ -492,14 +492,15 @@ export function CalendarHost({
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{
             const old=oldById.get(activity.pageId);
             const rf=retainedReviewFlow(activity,old);
-            const person=fixedReviewColumnPerson(activity.person,activity.status,activity.title,rf,Boolean(activity.isReviewMirror||activity.isHandoffMirror));
+            const person=fixedReviewColumnPerson(activity.person,activity.status,activity.title,rf,Boolean(activity.isReviewMirror||activity.isHandoffMirror||activity.isDaySnapshot));
             return !activity.checklistScanned && old?.checklistScanned
-              ? {...activity,person,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:rf}
+              ? {...activity,person,checklistScanned:old.checklistScanned,checklistTotal:old.checklistTotal,checklistCompleted:old.checklistCompleted,todayChecklistCompleted:old.todayChecklistCompleted,completedForDay:old.completedForDay,pendingFutureChecksCount:old.pendingFutureChecksCount,pendingCheckValidation:old.pendingCheckValidation,nextPlannedChecklistDate:old.nextPlannedChecklistDate,completedChecks:old.completedChecks,checklistItems:old.checklistItems,reviewFlow:rf}
               : {...activity,person,reviewFlow:rf};
           });
-          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror);
+          const historicalMirrors=merged.filter((a:NotionCalendarActivity)=>a.isHandoffMirror||a.isDaySnapshot);
+          const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror&&!a.isHandoffMirror&&!a.isDaySnapshot);
           const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));
-          const combined=[...originals,...mirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
+          const combined=[...originals,...mirrors,...historicalMirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;
@@ -1237,6 +1238,18 @@ export function CalendarHost({
             onChecklistUpdated={(pageId, updates) => {
               setActivitiesList(prev => prev.map(a => a.pageId === pageId ? { ...a, ...updates } : a));
               setSelectedActivity(prev => prev ? { ...prev, ...updates } : prev);
+            }}
+            onDayPhaseCompleted={({ movedActivity, snapshotActivity, originalPageId }) => {
+              mutationVersion.current++;
+              recentSaves.current.set(movedActivity.pageId, { until: Date.now() + 90000, activity: movedActivity });
+              if (snapshotActivity) {
+                recentHandoffs.current.set(snapshotActivity.pageId, { until: Date.now() + 90000, activity: snapshotActivity });
+              }
+              setActivitiesList(prev => {
+                const withoutMoved = prev.filter(a => pageIdentity(a) !== pageIdentity(originalPageId) && a.pageId !== snapshotActivity?.pageId);
+                return snapshotActivity ? [...withoutMoved, movedActivity, snapshotActivity] : [...withoutMoved, movedActivity];
+              });
+              setSelectedActivity(snapshotActivity || movedActivity);
             }}
             displayDate={currentDate}
           />

@@ -23,7 +23,7 @@ export function isReviewer(user: string) {
 }
 
 export function isActivityLocked(activity: Partial<NotionCalendarActivity> & { IsAutomationLocked?: boolean }) {
-  return !!(activity.isReviewMirror || activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
+  return !!(activity.isReviewMirror || activity.isDaySnapshot || activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
 }
 export function canEditActivity(user: string, activity: Partial<NotionCalendarActivity>) {
   const actor = user.trim().toLowerCase();

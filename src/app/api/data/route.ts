@@ -27,6 +27,8 @@ import {lookupNotionContent, fetchRecentNotionEdits} from '@/services/notionCont
 import {buildFtfDashboard,buildFtfWeek,canViewFtfDashboard,ftfWeekStart,MealBreakWindow,shiftFtfDate} from '@/services/ftfDashboard';
 import {notionFileBlocks} from '@/services/notionMutations';
 import {handoffMirrors} from '@/services/activityHandoffs';
+import { readDailySnapshotMirrors, saveDailyActivitySnapshot, setChecklistItemPlans } from '@/services/checklistPlanning';
+import { dailyChecklist, shiftMexicoDay } from '@/lib/dailyChecklist';
 import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
 import {browserDropboxUpload,verifiedDropboxReceipt} from '@/services/dropboxBrowserUpload';
@@ -592,12 +594,30 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const settings=getSettings();
         const {activeTeam}=await import('@/services/teamDirectory');
         const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,!weekly),activeTeam()]);
+        const cachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+        const cachedByCleanId = new Map(cachedFlat.map(a => [cleanPageId(a.pageId), a]));
         const activities=await Promise.all(pages.map(async(page:any)=>{
           const live=extractNotionPageData(page);
           const wf=workflowState(live.status,live.title);
           const rf=knownReviewFlow(settings,page)||(wf==='review'?await cachedReviewFlow(settings,page).catch(()=>undefined):undefined);
-          return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page),...(rf?{reviewFlow:rf}:{})},0);
+          const cachedAct = cachedByCleanId.get(cleanPageId(page.id));
+          const sameInstant = cachedAct && cachedAct.serverModified === page.last_edited_time;
+          const cachedPlanFields = cachedAct && (sameInstant || mexicoDate(cachedAct.start) === mexicoDate(live.dateStart))
+            ? {
+                checklistScanned: cachedAct.checklistScanned,
+                checklistTotal: cachedAct.checklistTotal,
+                checklistCompleted: cachedAct.checklistCompleted,
+                todayChecklistCompleted: cachedAct.todayChecklistCompleted,
+                completedForDay: cachedAct.completedForDay,
+                pendingFutureChecksCount: cachedAct.pendingFutureChecksCount,
+                pendingCheckValidation: cachedAct.pendingCheckValidation,
+                nextPlannedChecklistDate: cachedAct.nextPlannedChecklistDate,
+              }
+            : {};
+          return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page),...cachedPlanFields,...(rf?{reviewFlow:rf}:{})},0);
         }));
+        const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(() => []);
+        const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
         let warning='';
         const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
         if(weekly){
@@ -606,9 +626,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
             readUserState(settings,'John'),
             readFtfPresenceHistory(start,end).catch(()=>{warning='Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';return [];}),
           ]);
-          return NextResponse.json({...buildFtfWeek(actor,start,people,activities,state.values?.receipts?.ftfCompletions||{},presence,new Date(),mealBreaks),warning},{headers:{'Cache-Control':'no-store'}});
+          return NextResponse.json({...buildFtfWeek(actor,start,people,combinedActivities,state.values?.receipts?.ftfCompletions||{},presence,new Date(),mealBreaks),warning},{headers:{'Cache-Control':'no-store'}});
         }
-        if(day===mexicoDate())try{await recordFtfCompletions(settings,activities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
+        if(day===mexicoDate())try{await recordFtfCompletions(settings,combinedActivities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
         const [state, presence, blockEntries]=await Promise.all([
           readUserState(settings,'John'),
@@ -632,7 +652,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           );
           if (resolved) ftfBlockTimesByPerson[normalizePerson(personName)] = resolved;
         }
-        return NextResponse.json({...buildFtfDashboard(actor,day,people,activities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks,ftfBlockTimesByPerson),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
+        return NextResponse.json({...buildFtfDashboard(actor,day,people,combinedActivities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks,ftfBlockTimesByPerson),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
     }
     if (type === 'review-notifications') {
@@ -1452,7 +1472,16 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         pageId:'review-mirror-' + a.pageId, person:normalizePerson(a.reviewFlow.OriginalPerson), isReviewMirror:true,
         title:'[COPIA REVISIÓN] ' + a.title, shortTitle:a.title,
       }));
-      let historical:any[]=[];try{historical=await handoffMirrors({...settings,notionToken:token},type==='calendar-project'?'0000':first,type==='calendar-project'?'9999':shift(first,days.length));if(type==='calendar-project')historical=historical.filter(a=>a.domain===(searchParams.get('domain')||''));}catch(e){warning=[warning,e instanceof Error?e.message:'No se pudo leer el historial.'].filter(Boolean).join(' · ');}
+      let historical:any[]=[];try{
+        const rangeStart = type==='calendar-project'?'0000':first;
+        const rangeEnd = type==='calendar-project'?'9999':shift(first,days.length);
+        const [handoffList, daySnapshotList] = await Promise.all([
+          handoffMirrors({...settings,notionToken:token},rangeStart,rangeEnd),
+          readDailySnapshotMirrors({...settings,notionToken:token},rangeStart,rangeEnd,[...Object.values(snapshot).flat(),...unique]),
+        ]);
+        historical = [...handoffList, ...daySnapshotList];
+        if(type==='calendar-project')historical=historical.filter(a=>a.domain===(searchParams.get('domain')||''));
+      }catch(e){warning=[warning,e instanceof Error?e.message:'No se pudo leer el historial.'].filter(Boolean).join(' · ');}
       return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, activities:[...unique,...mirrors,...historical], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
     }
 
@@ -3360,7 +3389,9 @@ async function POSTLive(req: NextRequest) {
             invalidateChecklist(settings, pageId);
             clearReadBlocksCache(settings);
           }
-          return NextResponse.json({ success:true, items:await readChecklist(settings, pageId) });
+          const workDay = typeof input.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.workDate) ? input.workDate : mexicoDate();
+          const items = await readChecklist(settings, pageId);
+          return NextResponse.json({ success:true, items, summary: dailyChecklist(items, workDay) });
         }
         return await withActivityLease(operationKey(settings.notionToken,cleanPageId(pageId)),async()=>{
         const actor = input.currentUser || settings.currentUser;
@@ -3375,13 +3406,246 @@ async function POSTLive(req: NextRequest) {
         if (checked !== input.checked) throw new Error('Notion no confirmó el cambio del checklist.');
         let warning:string|undefined;try{await recordChecklistMark(settings,pageId,item.blockId,actor,item.isChecked,checked);}catch(e){warning=e instanceof Error?e.message:'No se registró el historial.';}
         invalidateChecklist(settings,pageId);
-        let stats:any;try{stats=await checklistSnapshot(settings,currentPage,mexicoDate());}catch{warning=[warning,'El check se guardó, pero no se confirmaron los contadores.'].filter(Boolean).join(' ');}
-        const checklistUpdate={blockId:item.blockId,checked,checklistTotal:stats?.checklistTotal,checklistCompleted:stats?.checklistCompleted,todayChecklistCompleted:stats?.todayChecklistCompleted};
+        const livePage = extractNotionPageData(currentPage);
+        const workDay = typeof input.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.workDate)
+          ? input.workDate
+          : (/^\d{4}-\d{2}-\d{2}/.test(livePage.dateStart || '') ? mexicoDate(livePage.dateStart) : mexicoDate());
+        let stats:any;try{stats=await checklistSnapshot(settings,currentPage,workDay);}catch{warning=[warning,'El check se guardó, pero no se confirmaron los contadores.'].filter(Boolean).join(' ');}
+        const checklistUpdate={
+          blockId:item.blockId,
+          checked,
+          checklistTotal:stats?.checklistTotal,
+          checklistCompleted:stats?.checklistCompleted,
+          todayChecklistCompleted:stats?.todayChecklistCompleted,
+          completedForDay:stats?.completedForDay,
+          pendingFutureChecksCount:stats?.pendingFutureChecksCount,
+          pendingCheckValidation:stats?.pendingCheckValidation,
+          nextPlannedChecklistDate:stats?.nextPlannedChecklistDate,
+          checklistItems:stats?.checklistItems,
+        };
         const hydratedCurrent=await hydratePageReviewFlow(settings,currentPage);
-        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:block.last_edited_time||currentPage.last_edited_time,properties:{calendarActivity:calendarActivityFromPage(hydratedCurrent,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId),checklistUpdate}});
+        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:block.last_edited_time||currentPage.last_edited_time,properties:{calendarActivity:{...calendarActivityFromPage(hydratedCurrent,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId),...stats},checklistUpdate}});
         return NextResponse.json({success:true, blockId:item.blockId, checked,warning,stats});
         });
       } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }
+    }
+
+    if (action === 'plan-checklist-item') {
+      const input = payload || body;
+      const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
+      const pageId = input.pageId;
+      try {
+        if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
+        return await withActivityLease(operationKey(settings.notionToken, cleanPageId(pageId)), async () => {
+          const actor = input.currentUser || settings.currentUser;
+          const currentPage = await assertChecklistAccess(settings, actor, pageId);
+          const updates: Array<{ blockId: string; plannedDate: string | null }> = Array.isArray(input.updates)
+            ? input.updates.map((u: any) => ({ blockId: String(u.blockId || ''), plannedDate: u.plannedDate ?? null }))
+            : Array.isArray(input.blockIds)
+              ? input.blockIds.map((blockId: string) => ({ blockId: String(blockId), plannedDate: input.plannedDate ?? null }))
+              : [{ blockId: String(input.blockId || ''), plannedDate: input.plannedDate ?? null }];
+          if (!updates.some(u => cleanPageId(u.blockId))) throw new Error('Selecciona al menos un check para programar.');
+          await setChecklistItemPlans(settings, pageId, updates, actor);
+          invalidateChecklist(settings, pageId);
+          const livePage = extractNotionPageData(currentPage);
+          const workDay = typeof input.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.workDate)
+            ? input.workDate
+            : (/^\d{4}-\d{2}-\d{2}/.test(livePage.dateStart || '') ? mexicoDate(livePage.dateStart) : mexicoDate());
+          const items = await readChecklist(settings, pageId);
+          const stats = await checklistSnapshot(settings, currentPage, workDay);
+          const hydratedCurrent = await hydratePageReviewFlow(settings, currentPage);
+          await recordPageEvent({
+            sourceKey: notionSourceKey(settings),
+            pageId,
+            state: 'active',
+            eventType: 'page.content_updated',
+            serverModified: currentPage.last_edited_time,
+            properties: {
+              calendarActivity: {
+                ...calendarActivityFromPage(hydratedCurrent, process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId),
+                ...stats,
+              },
+            },
+          });
+          return NextResponse.json({ success: true, items, stats, plannedDate: input.plannedDate ?? null });
+        });
+      } catch (error) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo programar el checklist.' }, { status: 400 });
+      }
+    }
+
+    if (action === 'complete-day-and-advance') {
+      const input = payload || body;
+      const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
+      const pageId = input.id || input.pageId;
+      const actor = input.currentUser || settings.currentUser;
+      try {
+        if (!/^[a-f0-9-]{32,36}$/i.test(pageId || '')) throw new Error('Página de Notion inválida.');
+        const currentPage = await assertChecklistAccess(settings, actor, pageId);
+        const liveOrig = extractNotionPageData(currentPage);
+        if (!liveOrig.dateStart) throw new Error('La actividad no tiene fecha programada en Notion.');
+
+        const origStart = liveOrig.dateStart.length === 10 ? liveOrig.dateStart + 'T08:00:00-06:00' : liveOrig.dateStart;
+        const origEnd = liveOrig.dateEnd || new Date(Date.parse(origStart) + 3600000).toISOString();
+        const workDay = typeof input.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.workDate)
+          ? input.workDate
+          : mexicoDate(origStart);
+
+        invalidateChecklist(settings, pageId);
+        const items = await readChecklist(settings, pageId);
+        const summary = dailyChecklist(items, workDay);
+        const globalCompletedCount = items.filter(i => i.isChecked).length;
+        const remainingGlobal = Math.max(0, items.length - globalCompletedCount);
+        if (remainingGlobal <= 0) {
+          throw new Error('Todos los checks ya están al 100%; puedes finalizar la actividad o enviarla a revisión.');
+        }
+        if (summary.hasDailyPlan && !summary.completedForDay) {
+          throw new Error(`Aún faltan ${summary.plannedTotal - summary.plannedDone} checks planeados para hoy por completar.`);
+        }
+        if (!summary.hasDailyPlan && summary.done === 0) {
+          throw new Error('Asigna al menos un check para hoy o completa los checks trabajados hoy antes de guardar la fase.');
+        }
+
+        const requestedTarget = typeof input.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.targetDate) && input.targetDate > workDay
+          ? input.targetDate
+          : '';
+        const targetDate = requestedTarget || summary.nextPlannedDate || shiftMexicoDay(workDay, 1);
+
+        const nextStart = origStart.length > 10 ? `${targetDate}${origStart.slice(10)}` : `${targetDate}T08:00:00-06:00`;
+        const durationMs = Math.max(15 * 60000, (Date.parse(origEnd) - Date.parse(origStart)) || 3600000);
+        const nextEnd = origEnd.length > 10 && mexicoDate(origEnd) === workDay
+          ? `${targetDate}${origEnd.slice(10)}`
+          : new Date(Date.parse(nextStart) + durationMs).toISOString();
+
+        const cached = Object.values(calendarSnapshot()).flat().map(normalizeActivity).find(a => cleanPageId(a.pageId) === cleanPageId(pageId));
+        const movedPage = await mutateActivity(
+          { ...settings, deferReviewNotice: job => after(job) },
+          actor,
+          pageId,
+          { start: nextStart, end: nextEnd, allowOverlap: true },
+          cached
+        );
+
+        const todayBlockSet = new Set(summary.completed.map((i: any) => cleanPageId(i.blockId || i.id || '')));
+        const workedItems = items.filter(item =>
+          summary.hasDailyPlan
+            ? item.plannedDate === workDay && item.isChecked
+            : item.isChecked && todayBlockSet.has(cleanPageId(item.blockId))
+        );
+        const workedTotal = summary.hasDailyPlan ? summary.plannedTotal : workedItems.length;
+        const workedDone = summary.hasDailyPlan ? summary.plannedDone : workedItems.length;
+        const phaseLabel = String(input.phaseLabel || '').trim() || 'Fase del día';
+        const daySummary = `${phaseLabel} · ${workedDone}/${workedTotal} checks completados (${remainingGlobal} pendientes futuros)`;
+
+        const snapshotPayload = normalizeActivity({
+          ...cached,
+          financialFields: activityFinancialFields(currentPage),
+          pageId: currentPage.id,
+          pageUrl: liveOrig.url,
+          title: liveOrig.title,
+          shortTitle: liveOrig.title,
+          person: liveOrig.person,
+          status: liveOrig.status,
+          start: origStart,
+          end: origEnd,
+          checklistScanned: true,
+          checklistTotal: workedTotal,
+          checklistCompleted: workedDone,
+          todayChecklistCompleted: workedDone,
+          completedForDay: true,
+          pendingFutureChecksCount: remainingGlobal,
+          pendingCheckValidation: remainingGlobal > 0,
+          nextPlannedChecklistDate: targetDate,
+          checklistItems: workedItems.map(i => ({ ...i })),
+          completedChecks: workedItems.map(i => ({
+            blockId: i.blockId,
+            title: i.title,
+            checkedBy: i.lastCheckedBy || actor,
+            checkedAt: i.lastCheckedAt || new Date().toISOString(),
+            plannedDate: i.plannedDate,
+          })),
+        }, 0);
+
+        await saveDailyActivitySnapshot(settings, {
+          pageId: currentPage.id,
+          workDate: workDay,
+          person: liveOrig.person,
+          title: liveOrig.title,
+          startAt: origStart,
+          endAt: origEnd,
+          phaseLabel,
+          daySummary,
+          plannedTotal: workedTotal,
+          completedTotal: workedDone,
+          pendingFutureCount: remainingGlobal,
+          snapshot: snapshotPayload,
+          createdBy: actor,
+        });
+
+        invalidateChecklist(settings, pageId);
+        const movedStats = await checklistSnapshot(settings, movedPage, targetDate).catch(() => ({
+          checklistScanned: true,
+          checklistTotal: items.length,
+          checklistCompleted: globalCompletedCount,
+          todayChecklistCompleted: 0,
+          completedForDay: false,
+          pendingFutureChecksCount: remainingGlobal,
+          pendingCheckValidation: false,
+          nextPlannedChecklistDate: null,
+          checklistItems: items,
+        }));
+        const liveMoved = extractNotionPageData(movedPage);
+        liveNotionOverrides.set(liveMoved.id, liveMoved);
+        const movedActivity = normalizeActivity({
+          ...cached,
+          financialFields: activityFinancialFields(movedPage),
+          pageId: movedPage.id,
+          pageUrl: liveMoved.url,
+          title: liveMoved.title,
+          shortTitle: liveMoved.title,
+          start: liveMoved.dateStart || nextStart,
+          end: liveMoved.dateEnd || nextEnd,
+          status: liveMoved.status || cached?.status,
+          person: liveMoved.person,
+          ftfVerified: liveMoved.ftfVerified,
+          ftfAvailable: liveMoved.ftfAvailable,
+          originalPerson: movedPage.__reviewFlow?.OriginalPerson || cached?.originalPerson || liveMoved.person,
+          reviewFlow: movedPage.__reviewFlow || cached?.reviewFlow,
+          ...movedStats,
+        }, 0);
+        (movedActivity as any).serverModified = movedPage.last_edited_time;
+        await recordPageEvent({
+          sourceKey: notionSourceKey(settings),
+          pageId: movedPage.id,
+          state: 'active',
+          eventType: 'polled_state',
+          serverModified: movedPage.last_edited_time,
+          properties: {
+            name: liveMoved.title,
+            assignedPerson: movedActivity.person || liveMoved.person,
+            updateStatus: liveMoved.status,
+            scheduledDate: liveMoved.dateStart,
+            scheduledEnd: liveMoved.dateEnd,
+            calendarActivity: movedActivity,
+          },
+        });
+        persistCalendarActivity(movedActivity);
+        previewMemoryCache.clear();
+
+        const snapshotMirrors = await readDailySnapshotMirrors(settings, workDay, shiftMexicoDay(workDay, 1), [movedActivity]);
+        const snapshotActivity = snapshotMirrors.find(m => cleanPageId(m.originalPageId) === cleanPageId(pageId)) || null;
+
+        return NextResponse.json({
+          success: true,
+          workDate: workDay,
+          targetDate,
+          pendingFutureChecksCount: remainingGlobal,
+          movedActivity,
+          snapshotActivity,
+        });
+      } catch (error: any) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo cerrar la fase del día.' }, { status: 400 });
+      }
     }
 
     if (action === "rename-item") {

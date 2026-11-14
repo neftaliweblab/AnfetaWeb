@@ -285,6 +285,8 @@ export function CalendarFtfPanel({
       lastSignalAt: pres?.lastSeen || (person as any).presenceLastSeen || (person as any).lastSignal || null,
       isOnline: pres?.isOnline,
       afterCutoffHours: (person as any).afterCutoffHours || 0,
+      pendingCheckValidationCount: (person as any).pendingCheckValidationCount || 0,
+      pendingCheckValidationSummary: (person as any).pendingCheckValidationSummary || '',
     };
   };
 
@@ -609,6 +611,14 @@ export function CalendarFtfPanel({
                     title="Hora exacta en que marcó como terminado su bloque fijo FTF de hoy"
                   >
                     ✓ FTF terminado {ftfBlockCompletionTime}
+                  </span>
+                )}
+                {Number(scoreInfo.pendingCheckValidationCount || 0) > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 mt-1 rounded-md border border-amber-500/60 bg-amber-950/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+                    title={scoreInfo.pendingCheckValidationSummary || 'Terminado por hoy con checks futuros pendientes. La advertencia se quita al completar el 100% de la actividad.'}
+                  >
+                    ⚠ Pendiente de validar checks futuros ({scoreInfo.pendingCheckValidationCount})
                   </span>
                 )}
               </div>
