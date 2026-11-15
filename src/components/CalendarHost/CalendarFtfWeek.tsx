@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import {readApiJson} from '@/lib/readApiJson';
 import {calendarTime, mexicoDate} from '@/services/calendarPresentation';
 import {buildFtfWeek, ftfWeekStart, shiftFtfDate} from '@/services/ftfDashboard';
-import {buildWeeklyPayrollMatrix, computeHybridFtfScore, SavedFtfScoreEntry, starWeight} from '@/services/ftfScoring';
+import {buildWeeklyPayrollMatrix, computeHybridFtfScore, getMexicoTimeMinutes, SavedFtfScoreEntry, starWeight} from '@/services/ftfScoring';
 
 type WeekReport = ReturnType<typeof buildFtfWeek> & {warning?: string};
 
@@ -60,27 +60,51 @@ export function CalendarFtfWeek({date}: {date: string}) {
   const names = [...new Set(report?.days.flatMap(day => day.people.map(row => row.name)) ?? [])];
   const filteredNames = person ? names.filter(n => n === person) : names;
   const weekDatesMonToFri = [0, 1, 2, 3, 4].map(offset => shiftFtfDate(week, offset));
+  const nowMinutes = getMexicoTimeMinutes();
   // Combinar puntajes guardados con estimación en vivo de días ya transcurridos
   const mergedScoresByDate: Record<string, Record<string, SavedFtfScoreEntry>> = { ...scoresByDate };
   if (report) {
     for (const dayEntry of report.days) {
       if (!weekDatesMonToFri.includes(dayEntry.day) || dayEntry.day > today) continue;
+      const isClosedWorkday = dayEntry.day < today || (dayEntry.day === today && nowMinutes >= 18 * 60 + 30);
       const existingDay = { ...(mergedScoresByDate[dayEntry.day] || {}) };
       for (const p of dayEntry.people) {
         if (!existingDay[p.name] && p.workdayHours !== null) {
-          const hasAnySignal = Boolean(p.firstSeen || p.lastSeen || (p.completedMinutes || 0) > 0 || p.total > 0);
-          if (hasAnySignal) {
+          const completedHrs = typeof p.completedHours === 'number'
+            ? p.completedHours
+            : Number(((p.completedMinutes || 0) / 60).toFixed(1));
+          const assignedHrs = typeof p.assignedHours === 'number'
+            ? p.assignedHours
+            : Number(((p.ftfVerifiedMinutes || 0) / 60 || 0).toFixed(1)) || (p.total > 0 ? 8 : 0);
+          const hasAnySignal = Boolean(
+            p.firstSeen || p.lastSeen || completedHrs > 0 || (p.reviewHours || 0) > 0 || p.total > 0
+          );
+          if (hasAnySignal || isClosedWorkday) {
             existingDay[p.name] = computeHybridFtfScore(
               {
                 name: p.name,
-                assignedHours: Number(((p.ftfVerifiedMinutes || 0) / 60 || 0).toFixed(1)) || (p.total > 0 ? 8 : 0),
-                completedHours: Number(((p.completedMinutes || 0) / 60).toFixed(1)),
+                assignedHours: assignedHrs,
+                completedHours: completedHrs,
+                workCompletedHours: p.workCompletedHours,
+                reviewHours: p.reviewHours,
+                inProgressHours: p.inProgressHours,
+                expiredUnfinishedCount: p.expiredUnfinishedCount,
                 verified: p.verified,
                 total: p.total,
                 ftfPendingAssignmentMinutes: p.pendingAssignmentMinutes ?? 0,
-                status: p.pendingAssignmentMinutes === 0 && p.verified === p.total && p.total > 0 ? 'complete' : p.total > 0 ? 'pending' : 'empty',
+                status:
+                  p.status ||
+                  (p.pendingAssignmentMinutes === 0 && p.verified === p.total && p.total > 0
+                    ? 'complete'
+                    : p.total > 0
+                    ? 'pending'
+                    : 'empty'),
+                late: p.late,
+                completedAt: p.completedAt || p.recordedAt,
+                lastActivityEdited: p.lastActivityEdited,
                 firstSignalAt: p.firstSeen,
                 lastSignalAt: p.lastSeen,
+                afterCutoffHours: p.afterCutoffHours,
               },
               dayEntry.day
             );
@@ -97,7 +121,7 @@ export function CalendarFtfWeek({date}: {date: string}) {
   const pending = rows.reduce((sum, row) => sum + (row.pendingAssignmentMinutes ?? 0), 0);
 
   return (
-    <section aria-label="Historial semanal de la bitácora" className="mt-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-xs">
+    <section aria-label="Historial semanal de la bitácora" className="flex flex-col h-full min-h-0 rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="rounded border border-slate-600 px-2 py-1" onClick={() => setWeek(value => shiftFtfDate(value, -7))}>Semana anterior</button>
         <button type="button" disabled={week >= currentWeek} className="rounded border border-slate-600 px-2 py-1 disabled:opacity-40" onClick={() => setWeek(value => shiftFtfDate(value, 7))}>Semana siguiente</button>
@@ -140,7 +164,7 @@ export function CalendarFtfWeek({date}: {date: string}) {
         </div>
 
         {viewMode === 'matrix' ? (
-          <div className="mt-2 max-h-80 overflow-auto rounded-lg border border-slate-800">
+          <div className="mt-2 flex-1 min-h-[420px] overflow-auto rounded-lg border border-slate-800">
             <table className="w-full min-w-[740px] text-left">
               <thead className="sticky top-0 bg-slate-900 text-slate-300">
                 <tr>
@@ -230,7 +254,7 @@ export function CalendarFtfWeek({date}: {date: string}) {
             {!payrollMatrix.length && <p className="p-2 text-slate-400">Sin registros semanales para esta selección.</p>}
           </div>
         ) : (
-          <div className="mt-2 max-h-72 overflow-auto">
+          <div className="mt-2 flex-1 min-h-[420px] overflow-auto rounded-lg border border-slate-800">
             <table className="w-full min-w-[680px] text-left">
               <thead className="sticky top-0 bg-slate-900 text-slate-300">
                 <tr>{['Día', 'Integrante', 'Primera conexión', 'Última señal', 'Agenda 10:00', 'Registro FTF', 'Checks', 'Por asignar', 'Horas FTF', 'Horas terminadas'].map(label => <th scope="col" key={label} className="px-2 py-1.5">{label}</th>)}</tr>

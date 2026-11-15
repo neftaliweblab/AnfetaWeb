@@ -337,3 +337,76 @@ test('ftfDashboard: excluye suspendidas (inclusive post-18:30), separa Por hacer
   assert.equal(gena.firstSignal, null);
   assert.equal(gena.expiredUnfinishedCount, 1);
 });
+
+test('ftfScoring: valida 100 pts si completó horario y tareas sin marcar FTF o hasta +2h tras cierre (20:30)', () => {
+  const noFtfCheckDone = computeHybridFtfScore(
+    {
+      name: 'Neftali',
+      assignedHours: 7,
+      completedHours: 7,
+      inProgressHours: 0,
+      expiredUnfinishedCount: 0,
+      verified: 0,
+      total: 3,
+      ftfPendingAssignmentMinutes: 0,
+      status: 'pending',
+      isOnline: true,
+      firstSignalAt: '2026-11-10T09:57:00-06:00',
+    },
+    '2026-11-10'
+  );
+  assert.equal(noFtfCheckDone.absent, false);
+  assert.equal(noFtfCheckDone.breakdown.attendance, 20);
+  assert.equal(noFtfCheckDone.breakdown.coverage, 20);
+  assert.equal(noFtfCheckDone.breakdown.progress, 35);
+  assert.equal(noFtfCheckDone.breakdown.ftfFinal, 25);
+  assert.equal(noFtfCheckDone.finalScore, 100);
+  assert.equal(noFtfCheckDone.stars.star3, true);
+
+  // Tareas completadas a las 20:15 CDMX (dentro de las +2h post-cierre 18:30 -> 20:30)
+  const withinGrace = computeHybridFtfScore(
+    {
+      name: 'Neftali',
+      assignedHours: 7,
+      completedHours: 6,
+      inProgressHours: 0,
+      expiredUnfinishedCount: 0,
+      verified: 2,
+      total: 3,
+      ftfPendingAssignmentMinutes: 0,
+      status: 'complete',
+      late: true,
+      completedAt: '2026-11-10T20:15:00-06:00',
+      afterCutoffHours: 1.5,
+      isOnline: true,
+      firstSignalAt: '2026-11-10T10:00:00-06:00',
+    },
+    '2026-11-10'
+  );
+  assert.equal(withinGrace.breakdown.progress, 35);
+  assert.equal(withinGrace.breakdown.ftfFinal, 25);
+  assert.equal(withinGrace.finalScore, 100);
+  assert.equal(withinGrace.stars.star3, true);
+
+  // Fuera de la ventana de +2h (20:45 CDMX)
+  const pastGrace = computeHybridFtfScore(
+    {
+      name: 'Neftali',
+      assignedHours: 7,
+      completedHours: 7,
+      inProgressHours: 0,
+      expiredUnfinishedCount: 0,
+      verified: 3,
+      total: 3,
+      ftfPendingAssignmentMinutes: 0,
+      status: 'complete',
+      late: true,
+      completedAt: '2026-11-10T20:45:00-06:00',
+      isOnline: true,
+      firstSignalAt: '2026-11-10T10:00:00-06:00',
+    },
+    '2026-11-10'
+  );
+  assert.equal(pastGrace.stars.star3, 0.5);
+  assert.equal(pastGrace.breakdown.ftfFinal, 13);
+});

@@ -102,10 +102,29 @@ export function getMexicoTimeMinutes(now: Date = new Date()): number {
     }).formatToParts(now);
     const h = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
     const m = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-    return h * 60 + m;
+    return (h === 24 ? 0 : h) * 60 + m;
   } catch {
     return now.getHours() * 60 + now.getMinutes();
   }
+}
+
+function getMexicoIsoDate(now: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(now);
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+// Tolerancia de +2 horas después del cierre FTF (18:30 -> 20:30 America/Mexico_City)
+const FTF_POST_CUTOFF_GRACE_MINUTES = 20 * 60 + 30;
+
+function isWithinCutoffGrace(timestamp: string | null | undefined, date: string): boolean {
+  if (!timestamp) return false;
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return false;
+  if (getMexicoIsoDate(parsed) !== date) return false;
+  return getMexicoTimeMinutes(parsed) <= FTF_POST_CUTOFF_GRACE_MINUTES;
 }
 
 export function computeHybridFtfScore(
@@ -153,10 +172,19 @@ export function computeHybridFtfScore(
   let progressPts = 0;
   let progressRatio = 0;
   const expiredCount = Math.max(0, Number(person.expiredUnfinishedCount || 0));
+  const noOpenTasksRemaining =
+    person.inProgressHours !== undefined && person.inProgressHours <= 0.25 && expiredCount === 0;
+  const postCutoffCredit =
+    person.completedHours > 0 && person.total > 0 && noOpenTasksRemaining && (person.afterCutoffHours || 0) > 0
+      ? Math.min(2, Number(person.afterCutoffHours || 0))
+      : 0;
+  const effectiveCompletedHours = person.completedHours + postCutoffCredit;
+
   if (!isExplicitlyAbsent) {
     if (person.assignedHours > 0) {
-      const hoursRatio = Math.min(1, person.completedHours / Math.max(0.5, person.assignedHours));
-      const checksRatio = person.total > 0 ? person.verified / person.total : hoursRatio;
+      const hoursRatio = Math.min(1, effectiveCompletedHours / Math.max(0.5, person.assignedHours));
+      const rawChecksRatio = person.total > 0 ? person.verified / person.total : hoursRatio;
+      const checksRatio = noOpenTasksRemaining && hoursRatio >= 0.95 ? 1 : rawChecksRatio;
       const penalty = expiredCount > 0 ? Math.min(0.35, expiredCount * 0.12) : 0;
       progressRatio = Math.max(0, Math.min(1, hoursRatio * 0.7 + checksRatio * 0.3 - penalty));
       progressPts = Math.round(progressRatio * 35);
@@ -192,18 +220,34 @@ export function computeHybridFtfScore(
     ? normalizeStarValue(starWeight(saved!.starsOverride!.star2))
     : normalizeStarValue(computedStar2Weight);
 
+  const scheduleAndTasksFinishedWithoutFtfCheck =
+    person.assignedHours > 0 &&
+    effectiveCompletedHours >= person.assignedHours * 0.85 &&
+    ((fullCoverage && (person.inProgressHours === undefined || person.inProgressHours <= 0.25)) ||
+      (person.total > 0 && noOpenTasksRemaining));
+
   const ftfCompletedCleanly =
     !isExplicitlyAbsent &&
-    (person.status === 'complete' || Boolean(person.completedAt) || (person.total > 0 && person.verified === person.total && person.completedHours >= person.assignedHours * 0.85));
+    (person.status === 'complete' ||
+      Boolean(person.completedAt) ||
+      (person.total > 0 && person.verified === person.total && effectiveCompletedHours >= person.assignedHours * 0.85) ||
+      scheduleAndTasksFinishedWithoutFtfCheck);
+
+  const closingStamp = person.completedAt || person.lastActivityEdited || person.lastSignalAt || null;
+  const withinCutoffGrace =
+    !person.late ||
+    (closingStamp
+      ? isWithinCutoffGrace(closingStamp, date)
+      : (person.afterCutoffHours ?? 0) > 0 && (person.afterCutoffHours ?? 0) <= 2);
 
   const autoStar3: FtfStarValue = isExplicitlyAbsent
     ? false
     : hasStar3Override
     ? normalizeStarValue(starWeight(saved!.starsOverride!.star3))
     : ftfCompletedCleanly
-    ? person.late
-      ? 0.5
-      : true
+    ? withinCutoffGrace
+      ? true
+      : 0.5
     : false;
 
   const w1 = starWeight(autoStar1);

@@ -210,6 +210,18 @@ export function buildFtfWeek(
             productiveGoalHours: weekend ? null : 6.5,
             ftfVerifiedMinutes,
             completedMinutes,
+            assignedHours: person.assignedHours,
+            completedHours: person.completedHours,
+            workCompletedHours: person.workCompletedHours,
+            reviewHours: person.reviewHours,
+            inProgressHours: person.inProgressHours,
+            expiredUnfinishedCount: person.expiredUnfinishedCount,
+            afterCutoffHours: person.afterCutoffHours,
+            status: person.status,
+            late: person.late,
+            completedAt: person.completedAt,
+            ftfBlockCompletedAt: person.ftfBlockCompletedAt,
+            lastActivityEdited: person.lastActivityEdited,
           };
         }),
       };
