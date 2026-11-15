@@ -70,7 +70,7 @@ import {
 } from '@/lib/pendingRecurrence';
 import { buildQuickPendingFromActivity } from '@/lib/pendingAlerts';
 import { appendDailyFtfJournalToggle, sendFtfScoreEmail } from '@/services/ftfScoreDelivery';
-import { buildAndSendWeeklyFtfReport } from '@/services/ftfWeeklyReport';
+import { hydrateWeeklyFtfActivities, sendWeeklyReportFromWeekData } from '@/services/ftfWeeklyReport';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
@@ -552,6 +552,38 @@ function resolveNotionToken(req: Request | NextRequest, searchParams?: URLSearch
   return (fromParam || fromHeader || fromCookie || getSettings().notionToken || "").trim();
 }
 
+async function loadFtfWeekReportInRoute(settings: ReturnType<typeof getSettings>, actor: string, day: string) {
+  const start = ftfWeekStart(day);
+  const end = shiftFtfDate(start, 7);
+  const { activeTeam } = await import('@/services/teamDirectory');
+  const [pages, people] = await Promise.all([queryCalendarPages(settings, start, end, false), activeTeam()]);
+  const cachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+  const activities = await hydrateWeeklyFtfActivities({
+    pages,
+    cachedFlat,
+    extractPage: extractNotionPageData,
+    resolveReviewFlow: async (page, wf) =>
+      knownReviewFlow(settings, page) ||
+      (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
+  });
+  const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(() => []);
+  const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+  let warning = '';
+  const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
+  const { readFtfPresenceHistory } = await import('@/services/ftfPresenceHistory');
+  const [state, presence] = await Promise.all([
+    readUserState(settings, 'John'),
+    readFtfPresenceHistory(start, end).catch(() => {
+      warning = 'Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';
+      return [];
+    }),
+  ]);
+  return {
+    weekReport: buildFtfWeek(actor, start, people, combinedActivities, state.values?.receipts?.ftfCompletions || {}, presence, new Date(), mealBreaks),
+    warning,
+  };
+}
+
 async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifiedActor?:string) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
@@ -590,45 +622,28 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day+'T12:00:00Z')))throw Error('Fecha inválida.');
         const weekly=searchParams.get('scope')==='week';
         if(weekly && day>mexicoDate())return NextResponse.json({error:'La semana solicitada aún no comienza.'},{status:400});
-        const start=weekly?ftfWeekStart(day):day;
-        const end=shiftFtfDate(start,weekly?7:1);
         const settings=getSettings();
+        if(weekly){
+          const {weekReport,warning}=await loadFtfWeekReportInRoute(settings,actor,day);
+          return NextResponse.json({...weekReport,warning},{headers:{'Cache-Control':'no-store'}});
+        }
+        const start=day;
+        const end=shiftFtfDate(start,1);
         const {activeTeam}=await import('@/services/teamDirectory');
-        const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,!weekly),activeTeam()]);
+        const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,true),activeTeam()]);
         const cachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
-        const cachedByCleanId = new Map(cachedFlat.map(a => [cleanPageId(a.pageId), a]));
-        const activities=await Promise.all(pages.map(async(page:any)=>{
-          const live=extractNotionPageData(page);
-          const wf=workflowState(live.status,live.title);
-          const rf=knownReviewFlow(settings,page)||(wf==='review'?await cachedReviewFlow(settings,page).catch(()=>undefined):undefined);
-          const cachedAct = cachedByCleanId.get(cleanPageId(page.id));
-          const sameInstant = cachedAct && cachedAct.serverModified === page.last_edited_time;
-          const cachedPlanFields = cachedAct && (sameInstant || mexicoDate(cachedAct.start) === mexicoDate(live.dateStart))
-            ? {
-                checklistScanned: cachedAct.checklistScanned,
-                checklistTotal: cachedAct.checklistTotal,
-                checklistCompleted: cachedAct.checklistCompleted,
-                todayChecklistCompleted: cachedAct.todayChecklistCompleted,
-                completedForDay: cachedAct.completedForDay,
-                pendingFutureChecksCount: cachedAct.pendingFutureChecksCount,
-                pendingCheckValidation: cachedAct.pendingCheckValidation,
-                nextPlannedChecklistDate: cachedAct.nextPlannedChecklistDate,
-              }
-            : {};
-          return normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,serverModified:page.last_edited_time,...ftfState(page),...cachedPlanFields,...(rf?{reviewFlow:rf}:{})},0);
-        }));
+        const activities = await hydrateWeeklyFtfActivities({
+          pages,
+          cachedFlat,
+          extractPage: extractNotionPageData,
+          resolveReviewFlow: async (page, wf) =>
+            knownReviewFlow(settings, page) ||
+            (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
+        });
         const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(() => []);
         const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
         let warning='';
         const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
-        if(weekly){
-          const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
-          const [state,presence]=await Promise.all([
-            readUserState(settings,'John'),
-            readFtfPresenceHistory(start,end).catch(()=>{warning='Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';return [];}),
-          ]);
-          return NextResponse.json({...buildFtfWeek(actor,start,people,combinedActivities,state.values?.receipts?.ftfCompletions||{},presence,new Date(),mealBreaks),warning},{headers:{'Cache-Control':'no-store'}});
-        }
         if(day===mexicoDate())try{await recordFtfCompletions(settings,combinedActivities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
         const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
         const [state, presence, blockEntries]=await Promise.all([
@@ -4078,14 +4093,20 @@ async function POSTLive(req: NextRequest) {
       if (normActor !== 'John' && normActor !== 'Neftali') {
         throw new Error('Solo John y Neftali pueden enviar el reporte semanal por correo.');
       }
-      const targetDate = payload.weekDate ? String(payload.weekDate).slice(0, 10) : undefined;
+      const targetDate = payload.weekDate ? String(payload.weekDate).slice(0, 10) : mexicoDate();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate) || !Number.isFinite(Date.parse(targetDate + 'T12:00:00Z'))) {
+        throw new Error('Fecha semanal inválida.');
+      }
       const recipientOverride = payload.to ? String(payload.to).trim() : undefined;
-      const effectiveNotionToken = resolveNotionToken(req) || undefined;
-      const result = await buildAndSendWeeklyFtfReport({
-        actor: normActor,
-        targetDate,
+      const effectiveNotionToken = resolveNotionToken(req);
+      const liveSettings = effectiveNotionToken ? { ...getSettings(), notionToken: effectiveNotionToken } : getSettings();
+      const { weekReport } = await loadFtfWeekReportInRoute(liveSettings, normActor, targetDate);
+      const savedScores = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const result = await sendWeeklyReportFromWeekData({
+        settings: liveSettings,
+        weekReport,
+        savedScoresByDate: savedScores,
         recipientOverride,
-        notionTokenOverride: effectiveNotionToken,
       });
       return NextResponse.json(
         {

@@ -155,7 +155,69 @@ assert.ok(weeklyHtml.includes('https://anfeta-web-iota.vercel.app/?ftf=week'));
     assert.equal((await GET(new Request('http://localhost/api/jobs/ftf-weekly'))).status, 503);
     process.env.CRON_SECRET = 'test-weekly-cron-secret-32-chars-ok';
     assert.equal((await GET(new Request('http://localhost/api/jobs/ftf-weekly'))).status, 401);
-    console.log('OK ftfScoreDelivery (Journal toggle + Email HTML + Weekly Matrix + Weekly Cron auth) and pendingAlerts tests passed.');
+
+    // 7. Shared weekly hydration & cutoff snap
+    const {
+      hydrateWeeklyFtfActivities,
+      resolveWeeklyCutoffInstant,
+    } = require('../src/services/ftfWeeklyReport.ts');
+
+    const hydrated = await hydrateWeeklyFtfActivities({
+      pages: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          url: 'https://notion.so/task1',
+          last_edited_time: '2026-11-12T20:00:00.000Z',
+          properties: {},
+        },
+      ],
+      cachedFlat: [
+        {
+          pageId: '11111111-1111-1111-1111-111111111111',
+          title: 'Tarea jueves',
+          person: 'Neftali',
+          status: 'En revision',
+          start: '2026-11-12T09:00:00-06:00',
+          end: '2026-11-12T17:00:00-06:00',
+          serverModified: '2026-11-12T20:00:00.000Z',
+          checklistScanned: true,
+          checklistTotal: 4,
+          checklistCompleted: 4,
+          todayChecklistCompleted: 4,
+          completedForDay: true,
+        },
+      ],
+      extractPage: () => ({
+        id: '11111111111111111111111111111111',
+        url: 'https://notion.so/task1',
+        title: 'Tarea jueves',
+        status: 'En revision',
+        dateStart: '2026-11-12T09:00:00-06:00',
+        dateEnd: '2026-11-12T17:00:00-06:00',
+        person: 'John',
+        domain: '',
+        lastEdited: '2026-11-12T20:00:00.000Z',
+        ftfVerified: false,
+        ftfAvailable: true,
+        isLocked: false,
+      }),
+      resolveReviewFlow: async () => ({ State: 'pending', OriginalPerson: 'Neftali', Reviewer: 'John' }),
+    });
+    assert.equal(hydrated.length, 1);
+    assert.equal(hydrated[0].completedForDay, true);
+    assert.equal(hydrated[0].checklistTotal, 4);
+    assert.equal(hydrated[0].person, 'Neftali');
+
+    const preCutoff = new Date('2026-11-13T18:27:00-06:00');
+    assert.equal(
+      resolveWeeklyCutoffInstant(preCutoff, true).toISOString(),
+      new Date('2026-11-13T18:30:00-06:00').toISOString()
+    );
+    const postCutoff = new Date('2026-11-13T18:35:00-06:00');
+    assert.equal(resolveWeeklyCutoffInstant(postCutoff, true).toISOString(), postCutoff.toISOString());
+    assert.equal(resolveWeeklyCutoffInstant(preCutoff, false).toISOString(), preCutoff.toISOString());
+
+    console.log('OK ftfScoreDelivery (Journal toggle + Email HTML + Weekly Matrix + Weekly Cron auth + Hydration) and pendingAlerts tests passed.');
   } finally {
     if (prevSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = prevSecret;

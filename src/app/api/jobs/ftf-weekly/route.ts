@@ -34,6 +34,7 @@ export async function GET(req: Request) {
       actor,
       targetDate,
       recipientOverride,
+      forceCutoffComplete: !searchParams.get('liveCutoff'),
     });
     return NextResponse.json(
       {
