@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 import {readApiJson} from '@/lib/readApiJson';
 import {calendarTime, mexicoDate} from '@/services/calendarPresentation';
 import {buildFtfWeek, ftfWeekStart, shiftFtfDate} from '@/services/ftfDashboard';
-import {buildWeeklyPayrollMatrix, computeHybridFtfScore, getMexicoTimeMinutes, SavedFtfScoreEntry, starWeight} from '@/services/ftfScoring';
+import {buildWeeklyPayrollMatrix, getMexicoTimeMinutes, mergeWeeklyReportScores, SavedFtfScoreEntry, starWeight} from '@/services/ftfScoring';
 
 type WeekReport = ReturnType<typeof buildFtfWeek> & {warning?: string};
 
@@ -12,7 +12,7 @@ export function ftfHours(minutes: number) {
   return Math.floor(minutes / 60) + ' h' + (minutes % 60 ? ' ' + minutes % 60 + ' min' : '');
 }
 
-export function CalendarFtfWeek({date}: {date: string}) {
+export function CalendarFtfWeek({date, canSendWeekly = false}: {date: string; canSendWeekly?: boolean}) {
   const today = mexicoDate();
   const currentWeek = ftfWeekStart(today);
   const [week, setWeek] = useState(() => ftfWeekStart(date > today ? today : date));
@@ -22,6 +22,8 @@ export function CalendarFtfWeek({date}: {date: string}) {
   const [viewMode, setViewMode] = useState<'matrix' | 'detail'>('matrix');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [sendEmailStatus, setSendEmailStatus] = useState<{ok: boolean; text: string} | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -61,59 +63,46 @@ export function CalendarFtfWeek({date}: {date: string}) {
   const filteredNames = person ? names.filter(n => n === person) : names;
   const weekDatesMonToFri = [0, 1, 2, 3, 4].map(offset => shiftFtfDate(week, offset));
   const nowMinutes = getMexicoTimeMinutes();
-  // Combinar puntajes guardados con estimación en vivo de días ya transcurridos
-  const mergedScoresByDate: Record<string, Record<string, SavedFtfScoreEntry>> = { ...scoresByDate };
-  if (report) {
-    for (const dayEntry of report.days) {
-      if (!weekDatesMonToFri.includes(dayEntry.day) || dayEntry.day > today) continue;
-      const isClosedWorkday = dayEntry.day < today || (dayEntry.day === today && nowMinutes >= 18 * 60 + 30);
-      const existingDay = { ...(mergedScoresByDate[dayEntry.day] || {}) };
-      for (const p of dayEntry.people) {
-        if (!existingDay[p.name] && p.workdayHours !== null) {
-          const completedHrs = typeof p.completedHours === 'number'
-            ? p.completedHours
-            : Number(((p.completedMinutes || 0) / 60).toFixed(1));
-          const assignedHrs = typeof p.assignedHours === 'number'
-            ? p.assignedHours
-            : Number(((p.ftfVerifiedMinutes || 0) / 60 || 0).toFixed(1)) || (p.total > 0 ? 8 : 0);
-          const hasAnySignal = Boolean(
-            p.firstSeen || p.lastSeen || completedHrs > 0 || (p.reviewHours || 0) > 0 || p.total > 0
-          );
-          if (hasAnySignal || isClosedWorkday) {
-            existingDay[p.name] = computeHybridFtfScore(
-              {
-                name: p.name,
-                assignedHours: assignedHrs,
-                completedHours: completedHrs,
-                workCompletedHours: p.workCompletedHours,
-                reviewHours: p.reviewHours,
-                inProgressHours: p.inProgressHours,
-                expiredUnfinishedCount: p.expiredUnfinishedCount,
-                verified: p.verified,
-                total: p.total,
-                ftfPendingAssignmentMinutes: p.pendingAssignmentMinutes ?? 0,
-                status:
-                  p.status ||
-                  (p.pendingAssignmentMinutes === 0 && p.verified === p.total && p.total > 0
-                    ? 'complete'
-                    : p.total > 0
-                    ? 'pending'
-                    : 'empty'),
-                late: p.late,
-                completedAt: p.completedAt || p.recordedAt,
-                lastActivityEdited: p.lastActivityEdited,
-                firstSignalAt: p.firstSeen,
-                lastSignalAt: p.lastSeen,
-                afterCutoffHours: p.afterCutoffHours,
-              },
-              dayEntry.day
-            );
-          }
-        }
+  const mergedScoresByDate = mergeWeeklyReportScores(
+    report?.days,
+    weekDatesMonToFri,
+    scoresByDate,
+    today,
+    nowMinutes
+  );
+
+  const handleSendWeeklyEmail = async () => {
+    if (!canSendWeekly || sendingEmail) return;
+    setSendingEmail(true);
+    setSendEmailStatus(null);
+    try {
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-weekly-ftf-report',
+          payload: { weekDate: week },
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        const toList = Array.isArray(data.email?.to) ? data.email.to.join(', ') : 'destino configurado';
+        setSendEmailStatus({ ok: true, text: `Reporte semanal enviado → ${toList}` });
+      } else {
+        setSendEmailStatus({
+          ok: false,
+          text: data?.email?.reason || data?.error || 'No se pudo enviar el reporte semanal.',
+        });
       }
-      mergedScoresByDate[dayEntry.day] = existingDay;
+    } catch (err) {
+      setSendEmailStatus({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Error de red enviando reporte.',
+      });
+    } finally {
+      setSendingEmail(false);
     }
-  }
+  };
   const payrollMatrix = buildWeeklyPayrollMatrix(weekDatesMonToFri, filteredNames, mergedScoresByDate);
   const rows = report?.days.flatMap(day => day.people
     .filter(row => !person || row.name === person)
@@ -145,23 +134,40 @@ export function CalendarFtfWeek({date}: {date: string}) {
       {report && <>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="font-semibold text-cyan-200">{report.start} al {report.end} · {ftfHours(pending)} por asignar {person ? 'para ' + person : 'en el equipo'}</p>
-          <div className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900 p-0.5">
-            <button
-              type="button"
-              onClick={() => setViewMode('matrix')}
-              className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${viewMode === 'matrix' ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-400/60' : 'text-slate-400 hover:text-white'}`}
-            >
-              Matriz Semanal (Pagos Viernes)
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('detail')}
-              className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${viewMode === 'detail' ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-400/60' : 'text-slate-400 hover:text-white'}`}
-            >
-              Detalle Diario FTF
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canSendWeekly && (
+              <button
+                type="button"
+                disabled={sendingEmail}
+                onClick={handleSendWeeklyEmail}
+                className="rounded border border-emerald-500/70 bg-emerald-950/70 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-900 cursor-pointer disabled:opacity-50"
+              >
+                {sendingEmail ? 'Enviando reporte…' : 'Enviar reporte semanal'}
+              </button>
+            )}
+            <div className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('matrix')}
+                className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${viewMode === 'matrix' ? 'bg-indigo-600/40 text-indigo-200 border border-indigo-400/60' : 'text-slate-400 hover:text-white'}`}
+              >
+                Matriz Semanal (Pagos Viernes)
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('detail')}
+                className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer ${viewMode === 'detail' ? 'bg-cyan-600/30 text-cyan-200 border border-cyan-400/60' : 'text-slate-400 hover:text-white'}`}
+              >
+                Detalle Diario FTF
+              </button>
+            </div>
           </div>
         </div>
+        {sendEmailStatus && (
+          <div role="status" className={`mt-2 rounded border px-2.5 py-1.5 text-[11px] ${sendEmailStatus.ok ? 'border-emerald-600/60 bg-emerald-950/50 text-emerald-200' : 'border-rose-600/60 bg-rose-950/50 text-rose-200'}`}>
+            {sendEmailStatus.text}
+          </div>
+        )}
 
         {viewMode === 'matrix' ? (
           <div className="mt-2 flex-1 min-h-[420px] overflow-auto rounded-lg border border-slate-800">

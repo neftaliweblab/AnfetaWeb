@@ -93,7 +93,8 @@ export function SettingsModal({
   const [ftfEmailTo, setFtfEmailTo] = useState("");
   const [ftfEmailFrom, setFtfEmailFrom] = useState("");
   const [resendApiKey, setResendApiKey] = useState("");
-  const [hasResendApiKey, setHasResendApiKey] = useState(false);
+  const [hasResendApiKey, setHasResendApiKey] = useState(false);
+  const [hasSmtpConfig, setHasSmtpConfig] = useState(false);
   const [notionOpenMode,setNotionOpenMode]=useState('web');
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -137,7 +138,7 @@ export function SettingsModal({
       // 2. Complementar con datos del backend solo si no existen en localStorage
       fetch("/api/data?type=settings")
         .then((res) => res.json())
-        .then((data) => { setHasResendApiKey(Boolean(data.hasResendApiKey)); if (data.ftfJournalPageId) setFtfJournalPageId((p) => p || data.ftfJournalPageId); if (data.ftfEmailTo) setFtfEmailTo((p) => p || data.ftfEmailTo); if (data.ftfEmailFrom) setFtfEmailFrom((p) => p || data.ftfEmailFrom);
+        .then((data) => { setHasResendApiKey(Boolean(data.hasResendApiKey)); setHasSmtpConfig(Boolean(data.hasSmtpConfig)); if (data.ftfJournalPageId) setFtfJournalPageId((p) => p || data.ftfJournalPageId); if (data.ftfEmailTo) setFtfEmailTo((p) => p || data.ftfEmailTo); if (data.ftfEmailFrom) setFtfEmailFrom((p) => p || data.ftfEmailFrom);
           try {
             const stored = localStorage.getItem("anfeta_settings");
             if (stored) return; // Si el usuario ya tiene configuración guardada en su cliente, respetarla
@@ -663,8 +664,8 @@ export function SettingsModal({
                   <span className="text-[11px] font-semibold text-[#F1F5F9]">
                     📊 Calificaciones FTF · Journal Notion & Correo (Corte 18:30)
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${hasResendApiKey && ftfEmailTo ? 'text-emerald-300 bg-emerald-950/50 border-emerald-700/60' : 'text-amber-300 bg-amber-950/50 border-amber-700/60'}`}>
-                    {hasResendApiKey && ftfEmailTo ? 'Correo listo ✓' : 'Falta clave/correo'}
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${(hasSmtpConfig || hasResendApiKey) && ftfEmailTo ? 'text-emerald-300 bg-emerald-950/50 border-emerald-700/60' : 'text-amber-300 bg-amber-950/50 border-amber-700/60'}`}>
+                    {(hasSmtpConfig || hasResendApiKey) && ftfEmailTo ? (hasSmtpConfig ? 'Gmail SMTP listo ✓' : 'Correo listo ✓') : 'Falta clave/correo'}
                   </span>
                 </div>
                 <div className="space-y-1.5">

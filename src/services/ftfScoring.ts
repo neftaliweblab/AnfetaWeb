@@ -389,3 +389,95 @@ export function buildWeeklyPayrollMatrix(
     };
   });
 }
+
+export interface WeekReportDayPersonRow {
+  name: string;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
+  recordedAt?: string | null;
+  verified?: number;
+  total?: number;
+  pendingAssignmentMinutes?: number | null;
+  workdayHours?: number | null;
+  ftfVerifiedMinutes?: number;
+  completedMinutes?: number;
+  assignedHours?: number;
+  completedHours?: number;
+  workCompletedHours?: number;
+  reviewHours?: number;
+  inProgressHours?: number;
+  expiredUnfinishedCount?: number;
+  afterCutoffHours?: number;
+  status?: string;
+  late?: boolean;
+  completedAt?: string | null;
+  lastActivityEdited?: string | null;
+}
+
+export function mergeWeeklyReportScores(
+  reportDays: Array<{ day: string; people: WeekReportDayPersonRow[] }> | undefined,
+  weekDatesMonToFri: string[],
+  savedScoresByDate: Record<string, Record<string, SavedFtfScoreEntry>>,
+  today: string,
+  nowMinutes: number = getMexicoTimeMinutes()
+): Record<string, Record<string, SavedFtfScoreEntry>> {
+  const merged: Record<string, Record<string, SavedFtfScoreEntry>> = { ...savedScoresByDate };
+  if (!reportDays) return merged;
+
+  for (const dayEntry of reportDays) {
+    if (!weekDatesMonToFri.includes(dayEntry.day) || dayEntry.day > today) continue;
+    const isClosedWorkday = dayEntry.day < today || (dayEntry.day === today && nowMinutes >= 18 * 60 + 30);
+    const existingDay = { ...(merged[dayEntry.day] || {}) };
+
+    for (const p of dayEntry.people) {
+      if (existingDay[p.name] || p.workdayHours === null) continue;
+      const completedHrs =
+        typeof p.completedHours === 'number'
+          ? p.completedHours
+          : Number(((p.completedMinutes || 0) / 60).toFixed(1));
+      const total = Number(p.total || 0);
+      const verified = Number(p.verified || 0);
+      const assignedHrs =
+        typeof p.assignedHours === 'number'
+          ? p.assignedHours
+          : Number(((p.ftfVerifiedMinutes || 0) / 60 || 0).toFixed(1)) || (total > 0 ? 8 : 0);
+      const hasAnySignal = Boolean(
+        p.firstSeen || p.lastSeen || completedHrs > 0 || (p.reviewHours || 0) > 0 || total > 0
+      );
+      if (!hasAnySignal && !isClosedWorkday) continue;
+
+      existingDay[p.name] = computeHybridFtfScore(
+        {
+          name: p.name,
+          assignedHours: assignedHrs,
+          completedHours: completedHrs,
+          workCompletedHours: p.workCompletedHours,
+          reviewHours: p.reviewHours,
+          inProgressHours: p.inProgressHours,
+          expiredUnfinishedCount: p.expiredUnfinishedCount,
+          verified,
+          total,
+          ftfPendingAssignmentMinutes: p.pendingAssignmentMinutes ?? 0,
+          status:
+            p.status ||
+            (p.pendingAssignmentMinutes === 0 && verified === total && total > 0
+              ? 'complete'
+              : total > 0
+              ? 'pending'
+              : 'empty'),
+          late: p.late,
+          completedAt: p.completedAt || p.recordedAt,
+          lastActivityEdited: p.lastActivityEdited,
+          firstSignalAt: p.firstSeen,
+          lastSignalAt: p.lastSeen,
+          afterCutoffHours: p.afterCutoffHours,
+        },
+        dayEntry.day
+      );
+    }
+
+    merged[dayEntry.day] = existingDay;
+  }
+
+  return merged;
+}

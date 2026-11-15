@@ -72,6 +72,17 @@ export function CalendarFtfPanel({
   onOpenDailyProgress?: () => void;
 }) {
   const [showWeek, setShowWeek] = useState(false);
+
+  useEffect(() => {
+    try {
+      const ftfParam = new URLSearchParams(window.location.search).get('ftf');
+      if (ftfParam === 'week') {
+        setWindowMode('large');
+        setShowWeek(true);
+        setIsOpen(true);
+      }
+    } catch {}
+  }, []);
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1401,7 +1412,7 @@ export function CalendarFtfPanel({
               <div className="flex-1 min-h-0 p-3.5 overflow-hidden">
                 {showWeek ? (
                   <div className="h-full overflow-auto">
-                    <CalendarFtfWeek date={date} />
+                    <CalendarFtfWeek date={date} canSendWeekly={canMarkReview} />
                   </div>
                 ) : !report ? (
                   <div className="flex h-full items-center justify-center text-sm text-slate-400">

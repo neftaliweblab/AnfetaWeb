@@ -70,6 +70,7 @@ import {
 } from '@/lib/pendingRecurrence';
 import { buildQuickPendingFromActivity } from '@/lib/pendingAlerts';
 import { appendDailyFtfJournalToggle, sendFtfScoreEmail } from '@/services/ftfScoreDelivery';
+import { buildAndSendWeeklyFtfReport } from '@/services/ftfWeeklyReport';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
@@ -897,15 +898,20 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
     }
 
     if (type === "settings") {
-      const {notionToken, resendApiKey, ...publicSettings}=getSettings();
+      const {notionToken, resendApiKey, smtpPass, ...publicSettings}=getSettings();
       const hasDropbox = Boolean(publicSettings.dropboxToken || process.env.DROPBOX_ACCESS_TOKEN || process.env.DROPBOX_REFRESH_TOKEN);
       const hasResendApiKey = Boolean(resendApiKey || process.env.RESEND_API_KEY);
+      const hasSmtpConfig = Boolean(
+        (publicSettings.smtpUser || process.env.SMTP_USER || process.env.GMAIL_USER) &&
+        (smtpPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD)
+      );
       return NextResponse.json({
         ...publicSettings,
         currentUser: actor,
         notionConfigured: !!notionToken,
         hasDropboxToken: hasDropbox,
         hasResendApiKey,
+        hasSmtpConfig,
         dropboxAccountName: (publicSettings as any).dropboxAccountName || "",
         dropboxAccountEmail: (publicSettings as any).dropboxAccountEmail || "",
       });
@@ -2535,8 +2541,12 @@ async function POSTLive(req: NextRequest) {
       }
       delete nextSettings.clearResendApiKey;
       saveSettings(nextSettings);
-      const { resendApiKey: savedResend, notionToken: _tok, ...safeSettings } = { ...existing, ...nextSettings };
-      const res = NextResponse.json({ success: true, settings: { ...safeSettings, hasResendApiKey: Boolean(savedResend || process.env.RESEND_API_KEY) } });
+      const { resendApiKey: savedResend, notionToken: _tok, smtpPass: savedSmtpPass, ...safeSettings } = { ...existing, ...nextSettings };
+      const hasSmtpConfig = Boolean(
+        (safeSettings.smtpUser || process.env.SMTP_USER || process.env.GMAIL_USER) &&
+        (savedSmtpPass || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD)
+      );
+      const res = NextResponse.json({ success: true, settings: { ...safeSettings, hasResendApiKey: Boolean(savedResend || process.env.RESEND_API_KEY), hasSmtpConfig } });
       if (nextSettings?.notionToken) {
         res.cookies.set("anfeta_notion_token", nextSettings.notionToken.trim(), {
           path: "/",
@@ -4007,6 +4017,10 @@ async function POSTLive(req: NextRequest) {
         }),
         sendFtfScoreEmail({
           apiKey: deliverySettings.resendApiKey,
+          smtpUser: deliverySettings.smtpUser,
+          smtpPass: deliverySettings.smtpPass,
+          smtpHost: deliverySettings.smtpHost,
+          smtpPort: deliverySettings.smtpPort,
           from: deliverySettings.ftfEmailFrom,
           to: deliverySettings.ftfEmailTo,
           date,
@@ -4056,6 +4070,34 @@ async function POSTLive(req: NextRequest) {
           delivery: { notionJournal, email, push },
         },
         { headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    if (action === 'send-weekly-ftf-report') {
+      const normActor = normalizePerson(actor || payload.currentUser || '');
+      if (normActor !== 'John' && normActor !== 'Neftali') {
+        throw new Error('Solo John y Neftali pueden enviar el reporte semanal por correo.');
+      }
+      const targetDate = payload.weekDate ? String(payload.weekDate).slice(0, 10) : undefined;
+      const recipientOverride = payload.to ? String(payload.to).trim() : undefined;
+      const effectiveNotionToken = resolveNotionToken(req) || undefined;
+      const result = await buildAndSendWeeklyFtfReport({
+        actor: normActor,
+        targetDate,
+        recipientOverride,
+        notionTokenOverride: effectiveNotionToken,
+      });
+      return NextResponse.json(
+        {
+          success: result.email.ok,
+          weekStart: result.weekStart,
+          weekEnd: result.weekEnd,
+          email: result.email,
+        },
+        {
+          status: result.email.ok ? 200 : 400,
+          headers: { 'Cache-Control': 'no-store' },
+        }
       );
     }
 

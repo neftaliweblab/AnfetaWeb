@@ -17,6 +17,7 @@ for (const ext of ['.ts', '.tsx']) {
           module: ts.ModuleKind.CommonJS,
           jsx: ts.JsxEmit.ReactJSX,
           target: ts.ScriptTarget.ES2022,
+          esModuleInterop: true,
         },
       }).outputText,
       file
@@ -27,7 +28,9 @@ const {
   extractNotionPageId,
   buildJournalToggleBlock,
   buildFtfScoreEmailHtml,
+  buildWeeklyFtfEmailHtml,
 } = require('../src/services/ftfScoreDelivery.ts');
+const { mergeWeeklyReportScores, buildWeeklyPayrollMatrix } = require('../src/services/ftfScoring.ts');
 const {
   isReviewOrSentPending,
   isVideoPendingTask,
@@ -113,4 +116,51 @@ const regularTask = {
 assert.equal(isVideoPendingTask(regularTask), false);
 assert.equal(isReviewOrSentPending(regularTask), false);
 
-console.log('OK ftfScoreDelivery (Journal toggle + Email HTML) and pendingAlerts tests passed.');
+// 5. Weekly FTF Email HTML & closed-day absence merging
+const weekDates = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+const weekReportDays = [
+  {
+    day: '2026-11-09',
+    people: [
+      { name: 'Neftali', firstSeen: '2026-11-09T10:00:00-06:00', assignedHours: 7, completedHours: 7, inProgressHours: 0, expiredUnfinishedCount: 0, verified: 0, total: 3, pendingAssignmentMinutes: 0, workdayHours: 8 },
+      { name: 'Edwin', firstSeen: null, lastSeen: null, assignedHours: 0, completedHours: 0, verified: 0, total: 0, workdayHours: 8 },
+    ],
+  },
+];
+const mergedWeek = mergeWeeklyReportScores(weekReportDays, weekDates, {}, '2026-11-15', 14 * 60);
+assert.equal(mergedWeek['2026-11-09'].Neftali.finalScore, 100);
+assert.equal(mergedWeek['2026-11-09'].Edwin.absent, true);
+assert.equal(mergedWeek['2026-11-09'].Edwin.finalScore, 0);
+
+const weeklyMatrix = buildWeeklyPayrollMatrix(weekDates, ['Neftali', 'Edwin'], mergedWeek);
+const weeklyHtml = buildWeeklyFtfEmailHtml({
+  weekStart: '2026-11-09',
+  weekEnd: '2026-11-13',
+  weekDates,
+  matrix: weeklyMatrix,
+  generatedAt: '2026-11-13T18:30:00-06:00',
+  reportUrl: 'https://anfeta-web-iota.vercel.app/?ftf=week',
+});
+assert.ok(weeklyHtml.includes('Neftali'));
+assert.ok(weeklyHtml.includes('100/100'));
+assert.ok(weeklyHtml.includes('Falta 0'));
+assert.ok(weeklyHtml.includes('https://anfeta-web-iota.vercel.app/?ftf=week'));
+
+// 6. Weekly cron auth guard
+(async () => {
+  const prevSecret = process.env.CRON_SECRET;
+  try {
+    const { GET } = require('../src/app/api/jobs/ftf-weekly/route.ts');
+    delete process.env.CRON_SECRET;
+    assert.equal((await GET(new Request('http://localhost/api/jobs/ftf-weekly'))).status, 503);
+    process.env.CRON_SECRET = 'test-weekly-cron-secret-32-chars-ok';
+    assert.equal((await GET(new Request('http://localhost/api/jobs/ftf-weekly'))).status, 401);
+    console.log('OK ftfScoreDelivery (Journal toggle + Email HTML + Weekly Matrix + Weekly Cron auth) and pendingAlerts tests passed.');
+  } finally {
+    if (prevSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = prevSecret;
+  }
+})().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});

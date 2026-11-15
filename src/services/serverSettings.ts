@@ -52,6 +52,10 @@ export function getSettings() {
     ftfEmailTo: process.env.FTF_REPORT_EMAIL_TO || "",
     ftfEmailFrom: process.env.FTF_REPORT_EMAIL_FROM || "",
     resendApiKey: process.env.RESEND_API_KEY || "",
+    smtpUser: process.env.SMTP_USER || process.env.GMAIL_USER || "",
+    smtpPass: process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "",
+    smtpHost: process.env.SMTP_HOST || "",
+    smtpPort: Number(process.env.SMTP_PORT || 0) || 465,
     isDryRun: true,
   };
   try {
@@ -78,6 +82,15 @@ export function getSettings() {
   if (process.env.FTF_REPORT_EMAIL_TO?.trim()) settings.ftfEmailTo = process.env.FTF_REPORT_EMAIL_TO.trim();
   if (process.env.FTF_REPORT_EMAIL_FROM?.trim()) settings.ftfEmailFrom = process.env.FTF_REPORT_EMAIL_FROM.trim();
   if (process.env.RESEND_API_KEY?.trim()) settings.resendApiKey = cleanToken(process.env.RESEND_API_KEY);
+  const envSmtpUser = process.env.SMTP_USER?.trim() || process.env.GMAIL_USER?.trim();
+  const envSmtpPass = process.env.SMTP_PASS?.trim() || process.env.GMAIL_APP_PASSWORD?.trim();
+  if (envSmtpUser) settings.smtpUser = envSmtpUser;
+  if (envSmtpPass) settings.smtpPass = envSmtpPass;
+  if (process.env.SMTP_HOST?.trim()) settings.smtpHost = process.env.SMTP_HOST.trim();
+  if (process.env.SMTP_PORT?.trim()) {
+    const portNum = Number(process.env.SMTP_PORT.trim());
+    if (Number.isFinite(portNum) && portNum > 0) settings.smtpPort = portNum;
+  }
   return settings;
 }
 

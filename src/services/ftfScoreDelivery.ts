@@ -1,3 +1,6 @@
+import type { WeeklyPayrollRow } from './ftfScoring';
+import { starWeight } from './ftfScoring';
+
 export interface FtfPublishedScoreEntry {
   person: string;
   date: string;
@@ -29,6 +32,17 @@ export interface FtfEmailDeliveryResult {
   reason?: string;
   to?: string[];
   emailId?: string;
+  provider?: 'smtp' | 'resend';
+}
+
+export interface EmailTransportConfig {
+  apiKey?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  from?: string;
+  to?: string;
 }
 
 export function extractNotionPageId(raw: string | undefined | null): string {
@@ -275,35 +289,78 @@ export async function appendDailyFtfJournalToggle(params: {
   };
 }
 
-export async function sendFtfScoreEmail(params: {
-  apiKey?: string;
-  from?: string;
-  to?: string;
-  date: string;
-  entries: Array<Partial<FtfPublishedScoreEntry> & { person?: string }>;
-  actor: string;
-  publishedAt: string;
-}): Promise<FtfEmailDeliveryResult> {
-  const apiKey = String(params.apiKey || '').trim();
-  const recipients = String(params.to || '')
+export function parseRecipients(raw: string | undefined): string[] {
+  return String(raw || '')
     .split(/[,;]+/)
     .map((s) => s.trim())
     .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+}
 
-  if (!apiKey) {
-    return { ok: false, skipped: true, reason: 'Falta RESEND_API_KEY en Ajustes o variables de entorno.' };
-  }
+export async function deliverHtmlEmail(
+  params: EmailTransportConfig & { subject: string; html: string }
+): Promise<FtfEmailDeliveryResult> {
+  const recipients = parseRecipients(params.to);
   if (recipients.length === 0) {
     return {
       ok: false,
       skipped: true,
-      reason: 'Falta correo destino de John (FTF_REPORT_EMAIL_TO) en Ajustes.',
+      reason: 'Falta correo destino (FTF_REPORT_EMAIL_TO) en Ajustes o variables de entorno.',
+    };
+  }
+
+  const smtpUser = String(params.smtpUser || '').trim();
+  const smtpPass = String(params.smtpPass || '').trim();
+  if (smtpUser && smtpPass) {
+    try {
+      const nodemailer = await import('nodemailer');
+      const smtpHost = String(params.smtpHost || '').trim();
+      const smtpPort = Number(params.smtpPort || 0) || 465;
+      const transporter = nodemailer.default.createTransport(
+        smtpHost
+          ? {
+              host: smtpHost,
+              port: smtpPort,
+              secure: smtpPort === 465,
+              auth: { user: smtpUser, pass: smtpPass },
+            }
+          : {
+              service: 'gmail',
+              auth: { user: smtpUser, pass: smtpPass },
+            }
+      );
+      const from = String(params.from || '').trim() || `ANFETA Reportes <${smtpUser}>`;
+      const info = await transporter.sendMail({
+        from,
+        to: recipients.join(', '),
+        subject: params.subject,
+        html: params.html,
+      });
+      return {
+        ok: true,
+        to: recipients,
+        emailId: info?.messageId,
+        provider: 'smtp',
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        to: recipients,
+        provider: 'smtp',
+        reason: err instanceof Error ? err.message : 'Error enviando por SMTP.',
+      };
+    }
+  }
+
+  const apiKey = String(params.apiKey || '').trim();
+  if (!apiKey) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'Falta configurar SMTP_USER/SMTP_PASS (Gmail App Password) o RESEND_API_KEY en Vercel.',
     };
   }
 
   const from = String(params.from || '').trim() || 'ANFETA FTF <onboarding@resend.dev>';
-  const html = buildFtfScoreEmailHtml(params.date, params.entries, params.actor, params.publishedAt);
-
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -313,8 +370,8 @@ export async function sendFtfScoreEmail(params: {
     body: JSON.stringify({
       from,
       to: recipients,
-      subject: `📊 Corte Diario FTF ANFETA · ${params.date}`,
-      html,
+      subject: params.subject,
+      html: params.html,
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -324,6 +381,7 @@ export async function sendFtfScoreEmail(params: {
     return {
       ok: false,
       to: recipients,
+      provider: 'resend',
       reason: data?.message || data?.error || `Resend respondió HTTP ${res.status}`,
     };
   }
@@ -332,5 +390,133 @@ export async function sendFtfScoreEmail(params: {
     ok: true,
     to: recipients,
     emailId: data?.id,
+    provider: 'resend',
   };
+}
+
+export async function sendFtfScoreEmail(
+  params: EmailTransportConfig & {
+    date: string;
+    entries: Array<Partial<FtfPublishedScoreEntry> & { person?: string }>;
+    actor: string;
+    publishedAt: string;
+  }
+): Promise<FtfEmailDeliveryResult> {
+  const html = buildFtfScoreEmailHtml(params.date, params.entries, params.actor, params.publishedAt);
+  return deliverHtmlEmail({
+    ...params,
+    subject: `📊 Corte Diario FTF ANFETA · ${params.date}`,
+    html,
+  });
+}
+
+export function buildWeeklyFtfEmailHtml(params: {
+  weekStart: string;
+  weekEnd: string;
+  weekDates: string[];
+  matrix: WeeklyPayrollRow[];
+  generatedAt: string;
+  reportUrl?: string;
+}): string {
+  const { weekStart, weekEnd, weekDates, matrix, generatedAt, reportUrl } = params;
+  const activeAvg = matrix.length
+    ? Math.round(matrix.reduce((sum, r) => sum + r.weeklyAverage, 0) / matrix.length)
+    : 0;
+  const totalAbsences = matrix.reduce((sum, r) => sum + r.absences, 0);
+  const totalOvertime = Math.round(matrix.reduce((sum, r) => sum + r.overtimeTotalHours, 0) * 10) / 10;
+  const dayLabels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
+
+  const headerDays = dayLabels
+    .map(
+      (lbl, idx) =>
+        `<th style="padding:10px 8px;text-align:center;">${lbl}<br/><span style="font-size:10px;font-weight:400;color:#64748b;">${escapeHtml((weekDates[idx] || '').slice(5))}</span></th>`
+    )
+    .join('');
+
+  const rowsHtml = matrix
+    .map((row) => {
+      const dayCells = row.days
+        .map((d) => {
+          if (d.absent) {
+            return `<td style="padding:8px 6px;border-bottom:1px solid #1e293b;text-align:center;color:#fda4af;font-weight:700;">Falta 0</td>`;
+          }
+          if (d.score === null) {
+            return `<td style="padding:8px 6px;border-bottom:1px solid #1e293b;text-align:center;color:#64748b;">—</td>`;
+          }
+          const scoreColor = d.score >= 85 ? '#34d399' : d.score >= 60 ? '#fbbf24' : '#fb7185';
+          const stars = d.stars
+            .map((s) => {
+              const w = starWeight(s);
+              return w >= 0.99 ? '★' : w >= 0.25 ? '◐' : '☆';
+            })
+            .join('');
+          return `<td style="padding:8px 6px;border-bottom:1px solid #1e293b;text-align:center;font-family:monospace;"><span style="color:${scoreColor};font-weight:700;">${d.score}</span><br/><span style="font-size:10px;color:#fcd34d;">${stars}</span></td>`;
+        })
+        .join('');
+
+      const statusColor =
+        row.payrollStatus === 'Bono / Excelente'
+          ? '#34d399'
+          : row.payrollStatus === 'Revisar / Atención'
+          ? '#fb7185'
+          : '#38bdf8';
+
+      return `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #1e293b;font-weight:600;color:#f8fafc;">${escapeHtml(row.person)}</td>
+          ${dayCells}
+          <td style="padding:10px 8px;border-bottom:1px solid #1e293b;text-align:center;font-weight:700;color:#a5f3fc;font-family:monospace;">${row.weeklyAverage}/100</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #1e293b;text-align:center;font-family:monospace;color:${row.absences > 0 ? '#fb7185' : '#94a3b8'};">${row.absences}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #1e293b;text-align:center;font-family:monospace;color:${row.overtimeTotalHours > 0 ? '#c4b5fd' : '#94a3b8'};">+${row.overtimeTotalHours}h</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #1e293b;font-weight:600;color:${statusColor};">${escapeHtml(row.payrollStatus)}</td>
+        </tr>`;
+    })
+    .join('');
+
+  const linkBlock = reportUrl
+    ? `<p style="margin:18px 0 0 0;"><a href="${escapeHtml(reportUrl)}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;padding:10px 16px;border-radius:8px;">Abrir Matriz Semanal en ANFETA</a></p>`
+    : '';
+
+  return `
+  <div style="background:#0b111a;color:#e2e8f0;font-family:Segoe UI,Arial,sans-serif;padding:24px;border-radius:12px;">
+    <h2 style="margin:0 0 6px 0;color:#38bdf8;">📊 Reporte Semanal de Puntuaciones y Asistencias ANFETA</h2>
+    <p style="margin:0 0 14px 0;font-size:13px;color:#94a3b8;">
+      Semana del <strong>${escapeHtml(weekStart)}</strong> al <strong>${escapeHtml(weekEnd)}</strong> · Generado a las <strong>${escapeHtml(formatMexicoClock(generatedAt))}</strong> (CDMX)
+    </p>
+    <p style="margin:0 0 16px 0;font-size:13px;color:#cbd5e1;">
+      Promedio equipo: <strong>${activeAvg}/100</strong> · Faltas acumuladas: <strong>${totalAbsences}</strong> · Extra bono total: <strong>+${totalOvertime}h</strong>
+    </p>
+    <table style="width:100%;border-collapse:collapse;background:#111827;border:1px solid #1e293b;border-radius:8px;overflow:hidden;font-size:12px;">
+      <thead>
+        <tr style="background:#162032;text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;">
+          <th style="padding:10px 12px;">Integrante</th>
+          ${headerDays}
+          <th style="padding:10px 8px;text-align:center;">Promedio</th>
+          <th style="padding:10px 8px;text-align:center;">Faltas</th>
+          <th style="padding:10px 8px;text-align:center;">Extra</th>
+          <th style="padding:10px 12px;">Estatus Nómina</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${linkBlock}
+  </div>`;
+}
+
+export async function sendWeeklyFtfReportEmail(
+  params: EmailTransportConfig & {
+    weekStart: string;
+    weekEnd: string;
+    weekDates: string[];
+    matrix: WeeklyPayrollRow[];
+    generatedAt: string;
+    reportUrl?: string;
+  }
+): Promise<FtfEmailDeliveryResult> {
+  const html = buildWeeklyFtfEmailHtml(params);
+  return deliverHtmlEmail({
+    ...params,
+    subject: `📊 Reporte Semanal ANFETA (Pagos) · ${params.weekStart} al ${params.weekEnd}`,
+    html,
+  });
 }
