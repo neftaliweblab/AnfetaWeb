@@ -110,7 +110,7 @@ export function FilterChipsBar({
           </button>
 
           {showColsMenu && (
-            <div className="absolute right-0 top-8 z-50 w-56 bg-[#0F141A] border border-[#26323E] rounded-lg shadow-2xl p-2 space-y-1 text-[11px] animate-in fade-in">
+            <div className="absolute left-0 sm:left-auto sm:right-0 top-8 z-50 w-56 max-w-[calc(100vw-16px)] bg-[#0F141A] border border-[#26323E] rounded-lg shadow-2xl p-2 space-y-1 text-[11px] animate-in fade-in">
               <span className="text-[10px] font-mono text-[#64748B] uppercase px-1 block mb-1">
                 Columnas visibles
               </span>

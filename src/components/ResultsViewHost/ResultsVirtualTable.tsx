@@ -705,7 +705,7 @@ function ResultsVirtualTableComponent({
             setContextMenu({ item, x: e.clientX, y: e.clientY });
           }}
           style={{
-            minHeight: `${Math.round(30 * scale)}px`,
+            minHeight: `${Math.round(32 * scale)}px`,
             paddingTop: `${Math.max(2, Math.round(3 * scale))}px`,
             paddingBottom: `${Math.max(2, Math.round(3 * scale))}px`,
           }}
@@ -723,7 +723,7 @@ function ResultsVirtualTableComponent({
           {showPath && (
             <div
               style={{
-                fontSize: `${(10 * scale).toFixed(1)}px`,
+                fontSize: `${(11 * scale).toFixed(1)}px`,
                 width: `${colWidths.path}px`,
               }}
               className="shrink-0 truncate text-[#74808B] font-mono pr-2"
@@ -791,7 +791,7 @@ function ResultsVirtualTableComponent({
           <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
             <span
               style={{
-                fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
+                fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
                 padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
               }}
               className="shrink-0 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
@@ -803,7 +803,7 @@ function ResultsVirtualTableComponent({
           {parsed.monthCode && (
             <span
               style={{
-                fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
+                fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
                 padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
               }}
               className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
@@ -815,7 +815,7 @@ function ResultsVirtualTableComponent({
           {parsed.orderCode && (
             <span
               style={{
-                fontSize: `${Math.max(9.5, 10.5 * scale).toFixed(1)}px`,
+                fontSize: `${Math.max(10.5, 11.5 * scale).toFixed(1)}px`,
                 lineHeight: 1.1,
               }}
               className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
@@ -828,7 +828,7 @@ function ResultsVirtualTableComponent({
             <span
               title={conflict.description}
               style={{
-                fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
+                fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
                 padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
               }}
               className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.2 bg-amber-500/20 border border-amber-400/60 text-amber-300 font-bold cursor-help"
@@ -844,7 +844,7 @@ function ResultsVirtualTableComponent({
               }
             }}
             onMouseLeave={handleTitleMouseLeave}
-            style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
+            style={{ fontSize: `${(12 * scale).toFixed(1)}px` }}
             title={parsed.rawTitle || item.name}
             className={'block truncate font-semibold cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0] hover:text-purple-300')}
           >
@@ -854,7 +854,7 @@ function ResultsVirtualTableComponent({
             {(parsed.domain || item.domainChip || item.domain) && (
               <span
                 style={{
-                  fontSize: `${Math.max(7.5, 8 * scale).toFixed(1)}px`,
+                  fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
                   padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
                 }}
                 className="shrink-0 max-w-[140px] truncate rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
@@ -880,13 +880,13 @@ function ResultsVirtualTableComponent({
         {showScheduledDate && (
           <div
             style={{
-              fontSize: `${(10 * scale).toFixed(1)}px`,
+              fontSize: `${(11 * scale).toFixed(1)}px`,
               width: `${colWidths.scheduledDate}px`,
             }}
             className={'shrink-0 px-1 truncate font-mono whitespace-nowrap '+(upcoming?'text-slate-500':'text-[#CBD5E1]')}
             title={item.scheduledDate ? formatSmartDate(item.scheduledDate) : undefined}
           >
-            {formatSmartDate(item.scheduledDate)}{resultDuration(item)&&<span className="ml-1 text-[9px] text-cyan-400" title="Duración estimada/programada; no cambia el orden">· {resultDuration(item)}</span>}
+            {formatSmartDate(item.scheduledDate)}{resultDuration(item)&&<span className="ml-1 text-[10px] text-cyan-400" title="Duración estimada/programada; no cambia el orden">· {resultDuration(item)}</span>}
           </div>
         )}
 
@@ -894,7 +894,7 @@ function ResultsVirtualTableComponent({
         {showModifiedDate && (
           <div
             style={{
-              fontSize: `${(10 * scale).toFixed(1)}px`,
+              fontSize: `${(11 * scale).toFixed(1)}px`,
               width: `${colWidths.modifiedDate}px`,
             }}
             className="shrink-0 px-1 text-[#94A3B8] truncate font-mono whitespace-nowrap"
@@ -1151,7 +1151,7 @@ function ResultsVirtualTableComponent({
             <span className="shrink-0">{renderIcon(item)}</span>
             <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
               <span
-                style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
+                style={{ fontSize: `${Math.max(8, 8.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
                 title={`Área / tipo: ${formatAreaLabel(parsed.area)}`}
               >
@@ -1160,7 +1160,7 @@ function ResultsVirtualTableComponent({
             )}
             {parsed.monthCode && (
               <span
-                style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
+                style={{ fontSize: `${Math.max(8, 8.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
                 title={`Mes: ${parsed.monthCode}`}
               >
@@ -1169,7 +1169,7 @@ function ResultsVirtualTableComponent({
             )}
             {parsed.orderCode && (
               <span
-                style={{ fontSize: `${Math.max(9.5, 10 * scale).toFixed(1)}px`, lineHeight: 1.1 }}
+                style={{ fontSize: `${Math.max(10.5, 11 * scale).toFixed(1)}px`, lineHeight: 1.1 }}
                 className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
                 title={`Fase / orden: ${parsed.orderCode}`}
               >
@@ -1340,14 +1340,14 @@ function ResultsVirtualTableComponent({
             }
           }}
           onMouseLeave={handleTitleMouseLeave}
-          style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
+          style={{ fontSize: `${(12 * scale).toFixed(1)}px` }}
           className={'font-semibold line-clamp-2 mb-2 cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-500/70 decoration-1':'text-[#E2E8F0] hover:text-purple-300')}
         >
           {highlightMatch(parsed.title)}
         </div>
 
         <div
-          style={{ fontSize: `${(9 * scale).toFixed(1)}px` }}
+          style={{ fontSize: `${(10 * scale).toFixed(1)}px` }}
           className="flex items-center justify-between text-[#94A3B8] pt-1 border-t border-[#1E2836] gap-1"
         >
           {(parsed.domain || item.domainChip || item.domain) ? (
@@ -1737,7 +1737,7 @@ function ResultsVirtualTableComponent({
                   />
                   <div
                     style={{
-                      fontSize: `${(11.5 * scale).toFixed(1)}px`,
+                      fontSize: `${(12.5 * scale).toFixed(1)}px`,
                       padding: `${Math.round(3 * scale)}px ${Math.round(10 * scale)}px`,
                     }}
                     className="font-semibold text-[#E5F1FA] flex items-center justify-between w-full"
@@ -1832,8 +1832,8 @@ function ResultsVirtualTableComponent({
               <React.Fragment key={group.key}>
                 <div
                   style={{
-                    minHeight: `${Math.round(26 * scale)}px`,
-                    fontSize: `${(11.5 * scale).toFixed(1)}px`,
+                    minHeight: `${Math.round(28 * scale)}px`,
+                    fontSize: `${(12.5 * scale).toFixed(1)}px`,
                   }}
                   className="col-span-full flex items-center bg-[#162636]/90 border border-[#3A779B]/40 rounded px-3 py-1 font-semibold text-[#E5F1FA] justify-between"
                 >

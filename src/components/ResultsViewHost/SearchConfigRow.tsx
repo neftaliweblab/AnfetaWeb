@@ -120,6 +120,23 @@ const VIEW_ZOOM_LABELS: Record<string, string> = {
   large: "Grande",
 };
 
+const TEXT_SCALE_LEVELS = ["80%", "90%", "100%", "110%", "120%", "130%", "140%", "150%"];
+
+function computeClampedDropdownLeft(
+  anchorEl: HTMLElement | null,
+  menuWidth: number,
+  preferRight: boolean
+): number | undefined {
+  if (typeof window === "undefined" || !anchorEl) return undefined;
+  const rect = anchorEl.getBoundingClientRect();
+  const margin = 8;
+  const effectiveWidth = Math.min(menuWidth, Math.max(180, window.innerWidth - margin * 2));
+  const preferred = preferRight ? rect.width - effectiveWidth : 0;
+  const minLeft = margin - rect.left;
+  const maxLeft = window.innerWidth - margin - rect.left - effectiveWidth;
+  return Math.round(Math.max(minLeft, Math.min(preferred, Math.max(minLeft, maxLeft))));
+}
+
 // 7 opciones de agrupación limpias, sin variantes híbridas ni exclusiones ocultas
 const CLEAN_GROUP_OPTIONS = [
   { value: "none", label: "Ninguno", desc: "Lista continua ordenada por relevancia y activas primero" },
@@ -186,6 +203,7 @@ function SearchConfigRowComponent({
   const [showAgruparMenu, setShowAgruparMenu] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [showColsMenu, setShowColsMenu] = useState(false);
+  const [menuLeft, setMenuLeft] = useState<{ agrupar?: number; tools?: number; cols?: number }>({});
   const agruparRef = useRef<HTMLDivElement>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
   const colsRef = useRef<HTMLDivElement>(null);
@@ -237,6 +255,20 @@ function SearchConfigRowComponent({
     };
   }, []);
 
+  useEffect(() => {
+    if (!showAgruparMenu && !showToolsMenu && !showColsMenu) return;
+    const updatePositions = () => {
+      setMenuLeft({
+        agrupar: showAgruparMenu ? computeClampedDropdownLeft(agruparRef.current, 256, false) : undefined,
+        tools: showToolsMenu ? computeClampedDropdownLeft(toolsRef.current, 224, true) : undefined,
+        cols: showColsMenu ? computeClampedDropdownLeft(colsRef.current, 240, true) : undefined,
+      });
+    };
+    updatePositions();
+    window.addEventListener("resize", updatePositions);
+    return () => window.removeEventListener("resize", updatePositions);
+  }, [showAgruparMenu, showToolsMenu, showColsMenu]);
+
   useEffect(()=>{if(showAgruparMenu){const frame=requestAnimationFrame(()=>agruparRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus());return()=>cancelAnimationFrame(frame);}},[showAgruparMenu]);
   const handleZoomOut = () => {
     const idx = VIEW_ZOOM_LEVELS.indexOf(viewZoom);
@@ -246,6 +278,16 @@ function SearchConfigRowComponent({
   const handleZoomIn = () => {
     const idx = VIEW_ZOOM_LEVELS.indexOf(viewZoom);
     if (idx < VIEW_ZOOM_LEVELS.length - 1) onChangeViewZoom(VIEW_ZOOM_LEVELS[idx + 1]);
+  };
+
+  const textScaleOptions = TEXT_SCALE_LEVELS.includes(textScale)
+    ? TEXT_SCALE_LEVELS
+    : [...TEXT_SCALE_LEVELS, textScale].sort((a, b) => parseFloat(a) - parseFloat(b));
+  const currentScaleIdx = textScaleOptions.indexOf(textScale);
+  const stepTextScale = (delta: number) => {
+    if (!onChangeTextScale || currentScaleIdx < 0) return;
+    const nextIdx = Math.max(0, Math.min(textScaleOptions.length - 1, currentScaleIdx + delta));
+    if (nextIdx !== currentScaleIdx) onChangeTextScale(textScaleOptions[nextIdx]);
   };
 
   // Label amigable para la opción de agrupación actual
@@ -393,7 +435,10 @@ function SearchConfigRowComponent({
 
           {/* Popover Anclado */}
           {showAgruparMenu && (
-            <div className="absolute left-0 mt-1 w-64 bg-[#111722] border border-cyan-700/90 rounded-lg shadow-2xl z-50 p-1.5 animate-in fade-in select-none">
+            <div
+              style={menuLeft.agrupar !== undefined ? { left: `${menuLeft.agrupar}px` } : undefined}
+              className={`absolute ${menuLeft.agrupar === undefined ? "left-0" : ""} mt-1 w-64 max-w-[calc(100vw-16px)] bg-[#111722] border border-cyan-700/90 rounded-lg shadow-2xl z-50 p-1.5 animate-in fade-in select-none`}
+            >
               <div className="px-2 py-1 text-[10px] font-bold text-cyan-400 uppercase tracking-wider border-b border-[#1E2A3C] mb-1 flex items-center justify-between">
                 <span>Organizar resultados</span>
                 <span className="text-slate-500 font-mono text-[9px]">Esc para cerrar</span>
@@ -550,7 +595,10 @@ function SearchConfigRowComponent({
           </button>
 
           {showToolsMenu && (
-            <div className="absolute right-0 mt-1 w-56 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1.5 text-xs space-y-1">
+            <div
+              style={menuLeft.tools !== undefined ? { left: `${menuLeft.tools}px` } : undefined}
+              className={`absolute ${menuLeft.tools === undefined ? "right-0" : ""} mt-1 w-56 max-w-[calc(100vw-16px)] bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-1.5 text-xs space-y-1`}
+            >
               <div className="px-2 py-1 text-[10px] font-bold uppercase text-cyan-400 border-b border-[#1E293B]">
                 Acciones técnicas
               </div>
@@ -644,7 +692,10 @@ function SearchConfigRowComponent({
             </button>
 
             {showColsMenu && (
-              <div className="absolute right-0 mt-1 w-60 bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-2 space-y-1 text-xs animate-in fade-in">
+              <div
+                style={menuLeft.cols !== undefined ? { left: `${menuLeft.cols}px` } : undefined}
+                className={`absolute ${menuLeft.cols === undefined ? "right-0" : ""} mt-1 w-60 max-w-[calc(100vw-16px)] bg-[#111722] border border-cyan-800 rounded-lg shadow-2xl z-50 p-2 space-y-1 text-xs animate-in fade-in`}
+              >
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-[#1E293B]">
                   <span className="text-[10px] font-mono font-bold uppercase text-cyan-400">
                     Columnas visibles
@@ -727,7 +778,7 @@ function SearchConfigRowComponent({
       </div>
 
       {/* Lado Derecho: Conmutadores de Paneles y Nivel de Vista */}
-      <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center shrink-0">
+      <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex flex-wrap items-center shrink-0">
         {/* Toggle Pendientes */}
         <button
           type="button"
@@ -849,6 +900,77 @@ function SearchConfigRowComponent({
             +
           </button>
         </div>
+
+        {/* Texto rápido: A− [100% ▾] A+ */}
+        {onChangeTextScale && (
+          <>
+            <div className="h-4 w-px bg-[#26354A] mx-0.5 shrink-0" />
+            <div
+              style={{ gap: `${Math.round(3 * scale)}px` }}
+              className="flex items-center shrink-0"
+              title="Configuración rápida de tamaño de texto en buscador y resultados"
+            >
+              <span
+                style={{ fontSize: `${(10 * scale).toFixed(1)}px` }}
+                className="text-slate-400 font-semibold hidden sm:inline"
+              >
+                Texto:
+              </span>
+              <button
+                type="button"
+                onClick={() => stepTextScale(-1)}
+                disabled={currentScaleIdx <= 0}
+                style={{
+                  minWidth: `${Math.round(24 * scale)}px`,
+                  height: `${Math.round(22 * scale)}px`,
+                  fontSize: `${(10.5 * scale).toFixed(1)}px`,
+                  padding: `0 ${Math.round(4 * scale)}px`,
+                }}
+                className="flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] disabled:opacity-40 font-bold cursor-pointer"
+                title="Reducir tamaño de texto"
+              >
+                A−
+              </button>
+              <select
+                aria-label="Tamaño de texto"
+                value={textScaleOptions.includes(textScale) ? textScale : "100%"}
+                onChange={(e) => onChangeTextScale(e.target.value)}
+                style={{
+                  fontSize: `${(10 * scale).toFixed(1)}px`,
+                  height: `${Math.round(22 * scale)}px`,
+                  padding: `0 ${Math.round(4 * scale)}px`,
+                }}
+                className={`rounded border font-semibold text-center focus:outline-none cursor-pointer ${
+                  textScale !== "100%"
+                    ? "bg-cyan-950/70 border-cyan-500/70 text-cyan-200"
+                    : "bg-[#161F2C] border-[#26354A] text-[#FFFFFF]"
+                }`}
+                title="Cambiar escala de texto (80% a 150%)"
+              >
+                {textScaleOptions.map((opt) => (
+                  <option key={opt} value={opt} className="bg-[#0F141C] text-white">
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => stepTextScale(1)}
+                disabled={currentScaleIdx >= textScaleOptions.length - 1}
+                style={{
+                  minWidth: `${Math.round(24 * scale)}px`,
+                  height: `${Math.round(22 * scale)}px`,
+                  fontSize: `${(10.5 * scale).toFixed(1)}px`,
+                  padding: `0 ${Math.round(4 * scale)}px`,
+                }}
+                className="flex items-center justify-center rounded bg-[#161F2C] border border-[#26354A] text-[#CBD5E1] hover:text-[#38BDF8] disabled:opacity-40 font-bold cursor-pointer"
+                title="Aumentar tamaño de texto"
+              >
+                A+
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
