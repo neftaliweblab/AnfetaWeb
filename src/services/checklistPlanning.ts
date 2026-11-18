@@ -124,7 +124,7 @@ export async function getChecklistItemPlans(
 }
 
 /** Merges `plannedDate` and `plannedBy` into checklist items. */
-export async function mergeChecklistItemPlans<T extends { blockId?: string; id?: string }>(
+export async function mergeChecklistItemPlans<T extends { blockId?: string; id?: string; plannedDate?: string }>(
   settings: CalendarSettings,
   pageId: string,
   items: T[]
@@ -134,11 +134,12 @@ export async function mergeChecklistItemPlans<T extends { blockId?: string; id?:
   return items.map((item) => {
     const bid = cleanId(item.blockId || item.id || '');
     const plan = bid ? plans[bid] : undefined;
-    if (!plan) return { ...item };
+    const resolvedDate = item.plannedDate || plan?.plannedDate;
+    if (!resolvedDate && !plan) return { ...item };
     return {
       ...item,
-      plannedDate: plan.plannedDate,
-      plannedBy: plan.plannedBy,
+      ...(resolvedDate ? { plannedDate: resolvedDate } : {}),
+      ...(plan?.plannedBy ? { plannedBy: plan.plannedBy } : {}),
     };
   });
 }

@@ -2,28 +2,48 @@ import type { PendingTaskItem } from '@/types/anfeta';
 import { mexicoDate } from '@/services/calendarPresentation';
 
 export const FIXED_FTF_BLOCK_ID = 'task-fixed-daily-ftf-block';
+export const FIXED_FTF_FINAL_BLOCK_ID = 'task-fixed-daily-ftf-final-block';
 
 /** Returns true when a pending block resets automatically each new day. */
 export function isRecurringPendingTask(task: Partial<PendingTaskItem> | null | undefined): boolean {
-  return Boolean(task?.isRecurringDaily || task?.isFtfBlock || task?.id === FIXED_FTF_BLOCK_ID);
+  return Boolean(
+    task?.isRecurringDaily ||
+      task?.isFtfBlock ||
+      task?.id === FIXED_FTF_BLOCK_ID ||
+      task?.id === FIXED_FTF_FINAL_BLOCK_ID
+  );
 }
 
 /** Returns true when the pending item represents the team daily FTF review block. */
 export function isFtfPendingBlock(task: Partial<PendingTaskItem> | null | undefined): boolean {
   if (!task) return false;
-  if (task.isFtfBlock || task.id === FIXED_FTF_BLOCK_ID) return true;
+  if (task.isFtfBlock || task.id === FIXED_FTF_BLOCK_ID || task.id === FIXED_FTF_FINAL_BLOCK_ID) return true;
   if (!task.isRecurringDaily) return false;
   const text = `${task.title || ''} ${task.query || ''}`;
   return /\bftf\b/i.test(text);
 }
 
-/** Default fixed FTF daily schedule block seeded for every collaborator. */
+/** Returns true when the FTF block represents end-of-day final cierre / avance (e.g. 17:30). */
+export function isFtfFinalPendingBlock(task: Partial<PendingTaskItem> | null | undefined): boolean {
+  if (!task || !isFtfPendingBlock(task)) return false;
+  if (task.id === FIXED_FTF_FINAL_BLOCK_ID) return true;
+  if (task.id === FIXED_FTF_BLOCK_ID) return false;
+  const text = `${task.title || ''} ${task.description || ''}`;
+  if (/\b(?:final|cierre|avance)\b/i.test(text) && !/\binicial\b/i.test(text)) return true;
+  if (typeof task.startTime === 'string' && /^\d{2}:\d{2}/.test(task.startTime)) {
+    return task.startTime >= '16:30';
+  }
+  return false;
+}
+
+/** Default fixed morning FTF daily schedule block seeded for every collaborator. */
 export function buildFixedFtfBlock(today = mexicoDate()): PendingTaskItem {
   const nowIso = new Date().toISOString();
   return {
     id: FIXED_FTF_BLOCK_ID,
-    title: 'FTF · Revisión diaria de agenda',
-    description: 'Bloque fijo diario FTF (08:00 – 08:30). Al palomearlo se registra tu hora exacta de término en Bitácora y se reinicia mañana.',
+    title: 'FTF inicial · Agenda y arranques (08:00 / 09:30)',
+    description:
+      'Bloque fijo matutino FTF para revisar agenda del día (08:00 – 09:30). Marca tu revisión inicial sin contar horas extra ni cerrar la jornada.',
     query: 'ftf',
     scheduledDate: today,
     startTime: '08:00',
@@ -34,6 +54,28 @@ export function buildFixedFtfBlock(today = mexicoDate()): PendingTaskItem {
     isAttended: false,
     isArchived: false,
     color: 'cyan',
+    createdAt: nowIso,
+  };
+}
+
+/** Default fixed end-of-day FTF final / Avance block (17:30) seeded for every collaborator. */
+export function buildFixedFtfFinalBlock(today = mexicoDate()): PendingTaskItem {
+  const nowIso = new Date().toISOString();
+  return {
+    id: FIXED_FTF_FINAL_BLOCK_ID,
+    title: 'FTF final / Avance · Cierre de jornada (17:30)',
+    description:
+      'Bloque fijo diario de avance y cierre FTF antes del corte 18:30. Al completarlo registra tu hora exacta de cierre sin sumar horas calendario.',
+    query: 'ftf',
+    scheduledDate: today,
+    startTime: '17:30',
+    endTime: '18:00',
+    isRecurringDaily: true,
+    isFtfBlock: true,
+    isCompleted: false,
+    isAttended: false,
+    isArchived: false,
+    color: 'emerald',
     createdAt: nowIso,
   };
 }
@@ -65,7 +107,10 @@ export function normalizeRecurringPendingTasks(
   const next = items.map((task) => {
     if (!isRecurringPendingTask(task)) return task;
     const recurringFlag = task.isRecurringDaily ?? true;
-    const ftfFlag = task.isFtfBlock || task.id === FIXED_FTF_BLOCK_ID ? true : task.isFtfBlock;
+    const ftfFlag =
+      task.isFtfBlock || task.id === FIXED_FTF_BLOCK_ID || task.id === FIXED_FTF_FINAL_BLOCK_ID
+        ? true
+        : task.isFtfBlock;
     const wasDone = Boolean(task.isAttended || task.isCompleted);
     const doneDay = completionDayForTask(task);
     const needsReset = wasDone && doneDay !== today;
@@ -142,42 +187,67 @@ export function buildAttendedStatePatch(
   };
 }
 
-/** Looks up the recorded ISO completion timestamp for an FTF pending block on a specific day. */
-export function resolveFtfBlockCompletionForDay(
+/** Distinguishes morning initial FTF agenda check vs end-of-day final FTF closing check on a specific day. */
+export function resolveFtfBlockSplitsForDay(
   tasks: PendingTaskItem[] | unknown,
   day: string
-): string | null {
-  if (!Array.isArray(tasks)) return null;
-  let latestMs = -1;
-  let latestIso: string | null = null;
+): { initialCompletedAt: string | null; finalCompletedAt: string | null; latestCompletedAt: string | null } {
+  if (!Array.isArray(tasks)) {
+    return { initialCompletedAt: null, finalCompletedAt: null, latestCompletedAt: null };
+  }
+  let initialMs = -1;
+  let initialIso: string | null = null;
+  let finalMs = -1;
+  let finalIso: string | null = null;
 
   for (const raw of tasks) {
     if (!raw || typeof raw !== 'object') continue;
     const task = raw as PendingTaskItem;
     if (!isFtfPendingBlock(task)) continue;
+    const isFinal = isFtfFinalPendingBlock(task);
+
+    const recordCandidate = (iso: string) => {
+      const ms = Date.parse(iso);
+      if (!Number.isFinite(ms)) return;
+      if (isFinal) {
+        if (ms > finalMs) {
+          finalMs = ms;
+          finalIso = iso;
+        }
+      } else if (ms > initialMs) {
+        initialMs = ms;
+        initialIso = iso;
+      }
+    };
 
     if ((task.isAttended || task.isCompleted) && task.lastCompletedDate === day && task.completedAt) {
-      const ms = Date.parse(task.completedAt);
-      if (Number.isFinite(ms) && ms > latestMs) {
-        latestMs = ms;
-        latestIso = task.completedAt;
-      }
+      recordCandidate(task.completedAt);
     }
 
     if (Array.isArray(task.recurrenceCompletions)) {
       for (const entry of task.recurrenceCompletions) {
         if (entry?.date === day && entry?.completedAt) {
-          const ms = Date.parse(entry.completedAt);
-          if (Number.isFinite(ms) && ms > latestMs) {
-            latestMs = ms;
-            latestIso = entry.completedAt;
-          }
+          recordCandidate(entry.completedAt);
         }
       }
     }
   }
 
-  return latestIso;
+  const latestCompletedAt =
+    finalMs > initialMs ? finalIso : initialIso || finalIso;
+  return {
+    initialCompletedAt: initialIso,
+    finalCompletedAt: finalIso,
+    latestCompletedAt,
+  };
+}
+
+/** Looks up the recorded ISO completion timestamp for an FTF pending block on a specific day. */
+export function resolveFtfBlockCompletionForDay(
+  tasks: PendingTaskItem[] | unknown,
+  day: string
+): string | null {
+  return resolveFtfBlockSplitsForDay(tasks, day).latestCompletedAt;
 }
 
 /** Keeps a bounded list of deleted pending IDs so cross-sync and seeds never resurrect deleted tasks. */

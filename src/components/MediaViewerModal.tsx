@@ -19,8 +19,8 @@ export function detectMediaKind(url: string, declaredKind?: string): MediaKind {
   }
   const cleanUrl = url.split("?")[0].toLowerCase();
   if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(cleanUrl)) return "image";
-  if (/\.(mp4|webm|mov|mkv|ogg)$/i.test(cleanUrl)) return "video";
-  if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(cleanUrl)) return "audio";
+  if (/\.(mp3|wav|ogg|oga|m4a|aac|flac)$/i.test(cleanUrl)) return "audio";
+  if (/\.(mp4|webm|mov|mkv|ogv)$/i.test(cleanUrl)) return "video";
   if (/\.pdf$/i.test(cleanUrl)) return "pdf";
   return "file";
 }
@@ -191,9 +191,11 @@ export function MediaViewerModal({ url, title, kind: declaredKind, onClose, onRe
         {error ? (
           <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-amber-800/60 bg-slate-950/90 p-6 text-center shadow-2xl">
             <AlertTriangle className="text-amber-400" size={36} />
-            <h4 className="text-base font-semibold text-slate-100">No se pudo cargar el archivo</h4>
+            <h4 className="text-base font-semibold text-slate-100">No se pudo reproducir o cargar el archivo</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Las URLs firmadas de Notion tienen una vigencia temporal (60 minutos) o requieren permisos de acceso a la página original.
+              {/\.(mkv|mov)(?:[?#]|$)/i.test(url)
+                ? "Tu navegador puede no soportar el códec de archivos .mkv/.mov o el enlace temporal de Notion expiró (60 min). Puedes descargarlo para abrirlo localmente."
+                : "Las URLs firmadas de Notion tienen vigencia temporal (60 minutos), requieren acceso a la página original o el navegador no soporta este formato en línea."}
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-2">
               {onRefreshUrl && (
@@ -203,16 +205,24 @@ export function MediaViewerModal({ url, title, kind: declaredKind, onClose, onRe
                   onClick={() => void handleRefresh()}
                   className="rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
                 >
-                  {refreshing ? "Actualizando enlace…" : "🔄 Actualizar enlace de Notion"}
+                  {refreshing ? "Actualizando enlace…" : "🔄 Actualizar enlace"}
                 </button>
               )}
+              <a
+                href={url}
+                download
+                className="flex items-center gap-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-700"
+              >
+                <Download size={13} />
+                Descargar
+              </a>
               <a
                 href={url}
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
               >
-                Intentar abrir en pestaña externa
+                Abrir en pestaña externa
               </a>
             </div>
           </div>

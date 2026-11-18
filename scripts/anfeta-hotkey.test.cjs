@@ -7,9 +7,13 @@ const folder = path.join(__dirname, '../browser-extension/anfeta-hotkey');
 const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'manifest.json'), 'utf8'));
 
 assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.version, '1.1.3');
+assert.ok(manifest.permissions.includes('storage'));
+assert.ok(manifest.permissions.includes('tabs'));
 assert.equal(manifest.commands['toggle-anfeta'].global, true);
 assert.equal(manifest.commands['toggle-anfeta'].suggested_key.default, 'Ctrl+Shift+8');
 assert.ok(manifest.host_permissions.includes('https://anfeta-web.vercel.app/*'));
+assert.ok(manifest.host_permissions.includes('https://anfeta-web-iota.vercel.app/*'));
 assert.ok(manifest.host_permissions.includes('http://localhost:3000/*'));
 
 let tabs = [];
@@ -21,119 +25,172 @@ let activated = [];
 let badge = '';
 let command;
 let action;
-let lastQueryUrl = '';
+let lastFocusedId = undefined;
+let windowRemovedCb = null;
+let lastQueryUrl = null;
 
 const chrome = {
   tabs: {
-    query: async query => {
+    query: async (query) => {
       lastQueryUrl = query.url;
-      return tabs;
+      const patterns = Array.isArray(query.url) ? query.url : [query.url];
+      return tabs.filter((t) => {
+        if (!t.url) return true;
+        return patterns.some((p) => t.url.startsWith(String(p).replace(/\*$/, '')));
+      });
     },
-    update: async (id, args) => activated.push({ id, ...args })
+    update: async (id, args) => activated.push({ id, ...args }),
   },
   windows: {
-    get: async id => {
+    get: async (id) => {
       if (!windows.has(id)) throw Error('Window closed');
       return windows.get(id);
     },
+    getLastFocused: async () => (lastFocusedId != null && windows.has(lastFocusedId) ? windows.get(lastFocusedId) : null),
     update: async (id, args) => {
       updates.push({ id, ...args });
       Object.assign(windows.get(id), args);
     },
-    create: async args => {
+    create: async (args) => {
       created++;
       assert.equal(args.type, 'popup');
       const win = { id: created, type: 'popup', focused: true, state: 'normal' };
       windows.set(win.id, win);
-      tabs = [{ id: created, windowId: win.id, active: true }];
+      lastFocusedId = win.id;
+      tabs = [{ id: created, windowId: win.id, active: true, url: args.url }];
       return win;
-    }
+    },
+    onRemoved: {
+      addListener: (fn) => {
+        windowRemovedCb = fn;
+      },
+    },
   },
   storage: {
     local: {
-      get: async key => {
+      get: async (key) => {
         if (typeof key === 'string') return { [key]: store[key] };
         if (Array.isArray(key)) {
           const res = {};
-          key.forEach(k => { if (store[k] !== undefined) res[k] = store[k]; });
+          key.forEach((k) => {
+            if (store[k] !== undefined) res[k] = store[k];
+          });
           return res;
         }
         return store;
       },
-      set: async data => Object.assign(store, data),
-      remove: async key => delete store[key]
-    }
+      set: async (data) => Object.assign(store, data),
+      remove: async (keys) => {
+        const list = Array.isArray(keys) ? keys : [keys];
+        for (const k of list) delete store[k];
+      },
+    },
   },
   action: {
-    setBadgeText: async args => { badge = args.text; },
+    setBadgeText: async (args) => {
+      badge = args.text;
+    },
     setTitle: async () => {},
-    onClicked: { addListener: fn => { action = fn; } }
+    onClicked: {
+      addListener: (fn) => {
+        action = fn;
+      },
+    },
   },
   commands: {
-    onCommand: { addListener: fn => { command = fn; } }
+    onCommand: {
+      addListener: (fn) => {
+        command = fn;
+      },
+    },
   },
   runtime: {
     onInstalled: { addListener: () => {} },
     onMessage: { addListener: () => {} },
-    openOptionsPage: async () => {}
-  }
+    openOptionsPage: async () => {},
+  },
 };
 
-const context = vm.createContext({ chrome });
+const context = vm.createContext({ chrome, URL });
 vm.runInContext(fs.readFileSync(path.join(folder, 'service-worker.js'), 'utf8'), context);
 const toggle = () => vm.runInContext('toggleAnfeta()', context);
 
 (async () => {
-  // Test 1: Abrir una sola ventana dedicada con URL por defecto
+  // Test 1: Abrir una sola ventana dedicada con orígenes por defecto
   await Promise.all([toggle(), toggle()]);
   assert.equal(created, 1);
   assert.equal(store.managedWindowId, 1);
-  assert.equal(lastQueryUrl, 'https://anfeta-web.vercel.app/*');
+  assert.deepEqual(Array.from(lastQueryUrl), [
+    'https://anfeta-web.vercel.app/*',
+    'https://anfeta-web-iota.vercel.app/*',
+  ]);
 
-  // Test 2: Minimizar ventana dedicada si está al frente
+  // Test 2: Minimizar ventana dedicada maximizada y conservar estado maximizado al restaurar
+  windows.get(1).state = 'maximized';
   await toggle();
   assert.equal(windows.get(1).state, 'minimized');
+  assert.equal(store.managedPrevState, 'maximized');
 
-  // Test 3: Restaurar ventana dedicada si está minimizada
   await toggle();
-  assert.equal(windows.get(1).state, 'normal');
+  assert.equal(windows.get(1).state, 'maximized');
   assert.equal(windows.get(1).focused, true);
 
-  // Test 4: Si no estaba enfocada, enfocar sin minimizar
+  // Test 3: Si no estaba enfocada, enfocar sin minimizar
   windows.get(1).focused = false;
   await toggle();
-  assert.equal(windows.get(1).state, 'normal');
+  assert.equal(windows.get(1).state, 'maximized');
+  assert.equal(windows.get(1).focused, true);
 
-  // Test 5: Pestaña normal compartida: solo enfocar, jamás minimizar pestañas de otros sitios
-  tabs = [{ id: 8, windowId: 8, active: false }];
-  windows.set(8, { id: 8, type: 'normal', focused: true, state: 'normal' });
+  // Test 4: Detectar pestañas en /calendar, ?q=1 y origen secundario anfeta-web-iota.vercel.app
+  store.managedWindowId = 999; // stale managedWindowId
+  tabs = [
+    {
+      id: 7,
+      windowId: 7,
+      active: true,
+      url: 'https://anfeta-web-iota.vercel.app/calendar?q=1#today',
+    },
+  ];
+  windows.set(7, {
+    id: 7,
+    type: 'normal',
+    focused: true,
+    state: 'normal',
+    tabs: [{ id: 7 }, { id: 70 }],
+  });
   updates = [];
   await toggle();
-  assert.equal(updates.some(a => a.state === 'minimized'), false);
-  assert.equal(activated.at(-1).id, 8);
+  assert.equal(updates.some((a) => a.state === 'minimized'), false);
+  assert.equal(activated.at(-1).id, 7);
+  assert.equal(store.managedWindowId, undefined);
 
-  // Test 6: Ventana normal con pestaña única de ANFETA se trata como dedicada
-  windows.get(8).tabs = [{ id: 8 }];
-  updates = [];
+  // Test 5: Ventana normal con pestaña única de ANFETA se trata como dedicada
+  tabs = [{ id: 8, windowId: 8, active: true, url: 'https://anfeta-web.vercel.app/calendar' }];
+  windows.set(8, { id: 8, type: 'normal', focused: true, state: 'normal', tabs: [{ id: 8 }] });
   await toggle();
   assert.equal(windows.get(8).state, 'minimized');
   await toggle();
   assert.equal(windows.get(8).state, 'normal');
 
-  // Test 7: Soporte para customAppUrl
-  store.customAppUrl = 'http://localhost:3000';
+  // Limpiar managedWindowId con windows.onRemoved
+  if (windowRemovedCb) await windowRemovedCb(8);
+  assert.equal(store.managedWindowId, undefined);
+
+  // Test 6: Soporte para customAppUrl con ruta y query (normaliza origin/* para matching)
+  store.customAppUrl = 'http://localhost:3000/calendar?filter=mine';
   tabs = [];
   await toggle();
   assert.equal(lastQueryUrl, 'http://localhost:3000/*');
+  assert.equal(tabs[0].url, 'http://localhost:3000/calendar?filter=mine');
   delete store.customAppUrl;
 
-  // Test 8: Reabrir si se cerró la ventana
+  // Test 7: Reabrir si se cerró la ventana
   tabs = [];
   await toggle();
   assert.equal(created, 3);
 
-  // Test 9: Manejo de errores sin romper la extensión
-  tabs = [{ id: 99, windowId: 99 }];
+  // Test 8: Manejo de errores sin romper la extensión
+  tabs = [{ id: 99, windowId: 99, url: 'https://anfeta-web.vercel.app/' }];
   await toggle();
   assert.equal(badge, '!');
   assert.ok(store.lastError);
@@ -146,8 +203,8 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
   assert.equal(typeof command, 'function');
   assert.equal(typeof action, 'function');
 
-  console.log('OK extensión: manifiesto global, URL dinámica, abrir una vez, minimizar/restaurar, enfocar desde otra app, proteger pestañas ajenas y errores.');
-})().catch(e => {
+  console.log('OK extensión v1.1.3: múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, ventanas compartidas y errores.');
+})().catch((e) => {
   console.error(e);
   process.exitCode = 1;
 });

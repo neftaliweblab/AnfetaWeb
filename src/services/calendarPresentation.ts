@@ -16,11 +16,11 @@ const TYPES: [RegExp, string][] = [
   [/\b(?:soporte|ticket|mantenimiento)\b/i, 'SOPORTE'],
 ];
 const DOMAIN_TLDS='com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site';
-const DOMAIN_CHANNELS='webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|instalador|tutoriales|weblab|cliente|correos';
+const DOMAIN_CHANNELS='webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|instalador|tutoriales|weblab|cliente|correos|0[1-4](?:wl|_weblab)?';
 const domainEnding=new RegExp('\\.(?:'+DOMAIN_TLDS+')$','i');
 const channelEnding=new RegExp('(?:\\.(?:'+DOMAIN_CHANNELS+'))+$','i');
 function displayDomainTokens(value:string){
-  const pattern=new RegExp('(?<![\\p{L}\\p{N}_@./-])(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)+(?:'+DOMAIN_TLDS+')(?:\\.[a-z0-9-]+)*(?=[\\s/|#\\](),:;!?]|$)','giu');
+  const pattern=new RegExp('(?<![\\p{L}\\p{N}_@./-])(?:https?:\\/\\/)?(?:[01pd]\\.)?(?:[a-z0-9-]+\\.)+(?:'+DOMAIN_TLDS+')(?:\\.[a-z0-9-]+)*(?=[\\s/|#\\](),:;!?]|$)','giu');
   return [...String(value||'').matchAll(pattern)].flatMap(match=>{
     let host=match[0].replace(/^https?:\/\//i,'').toLowerCase();
     const withoutChannel=host.replace(channelEnding,'');
@@ -72,13 +72,17 @@ export function calendarDisplayTitle(title: string, domain = '') {
     const escaped = domain.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp('(?<![a-z0-9.-])(?:\\b(?:www|webs|web|seo|ads|maps|cotizacion|biblioteca|proyecto)\\.)*' + escaped + '(?![a-z0-9.-])', 'gi'), ' ');
   }
-  text = text.replace(/\b\d{1,2}\.(?:[a-z]|\[tipo\])\.\d{2}\.\d{2}\b/gi,' ')
-    .replace(/\b(?:ssoft|ccobr|ppaga)\b/gi,' ')
+  text = text.replace(/\b\d{1,2}\.(?:[a-z]|\[tipo\])\.(?:f\d{1,3}|\d{1,2})\.\d{2}\b/gi,' ')
+    .replace(/(?<![\p{L}\p{N}_])\[[A-Z]{4,}(?:\s+[A-Z]{4,})*\](?![\p{L}\p{N}_])/gu,' ')
+    .replace(/\b(?:ssoft|ccobr|ppaga|ffase\d+)\b/gi,' ')
+    .replace(/\bmes\s+seo\s+seo\b/gi,'SEO')
+    .replace(/\bseo\s+seo\b/gi,'SEO')
     .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu,' ')
     .replace(/\|/g,' ')
+    .replace(/(?:^|\s)--+(?=\s|$)/g,' ')
     .replace(/(?:^|\s)#(?=\s|$)/g,' ')
     .replace(/\[\s*\]|\(\s*\)/g,' ');
-  text = text.replace(/\s+\b(?:en|de|del|la|el|los|las|por|para|con)\s*$/i, '').replace(/^\s*\d+(?:\.\d+)?(?:\s*[-–]\s*|\s+)/, '').replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g,'').trim();
+  text = text.replace(/\s+\b(?:en|de|del|la|el|los|las|por|para|con)\s*$/i, '').replace(/^\s*(?:[01]\.(?!\d)|\d+(?:\.\d+)?(?:\s*[-–]\s*|\s+))/, '').replace(/\s+/g, ' ').replace(/^[\s·|—–-]+|[\s·|—–-]+$/g,'').trim();
   return text || 'Actividad';
 }
 const mexicoDayFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'});

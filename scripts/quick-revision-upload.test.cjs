@@ -6,7 +6,7 @@ const {quickRevisionTitle}=require('../src/lib/quickRevisionTitle.ts');
 const {PROGRESSIVE_WORKFLOW_PRIMARY}=require('../src/services/progressiveWorkflow.ts');
 const phase=PROGRESSIVE_WORKFLOW_PRIMARY?'prtuzR':'prtuzREVISION';
 const sample={type:'Corrección de prueba',title:'Error al mover actividad',person:'nneft',domain:'anfeta.com',description:'Revisar el horario mostrado',month:'26-[10OCT]'};
-assert.equal(quickRevisionTitle(sample),phase+' | 🌐 Corrección de prueba | 📅 26-[10OCT] Error al mover actividad | 🌐 #d.anfeta.com | 🛠️ Revisar el horario mostrado | 👤 nne11 | ✅');
+assert.equal(quickRevisionTitle(sample),phase+' | 🌐 Corrección de prueba | 📅 26-[10OCT] Error al mover actividad | 🌐 #1.anfeta.com | 🛠️ Revisar el horario mostrado | 👤 nne11 | ✅');
 assert.match(quickRevisionTitle({...sample,person:'ggena'}),/👤 gge11/);
 assert.match(quickRevisionTitle({...sample,person:'aandr'}),/👤 aan11/);
 assert.throws(()=>quickRevisionTitle({...sample,person:'desconocido'}),/responsable válido/);

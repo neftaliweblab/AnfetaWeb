@@ -370,12 +370,21 @@ export function UnifiedActivityModal({
 
   // Checklist Data State
   const [showAllChecks, setShowAllChecks] = useState(false);
-  const [checkFilter, setCheckFilter] = useState<"all" | "today" | "upcoming" | "backlog">("all");
+  const [checkFilter, setCheckFilter] = useState<"all" | "today" | "overdue" | "upcoming" | "backlog">("all");
   const [collapsedCheckGroups, setCollapsedCheckGroups] = useState<Record<string, boolean>>({});
+  const [selectedCheckIds, setSelectedCheckIds] = useState<string[]>([]);
+  const [batchDateValue, setBatchDateValue] = useState<string>("");
   const [checkSaving, setCheckSaving] = useState(false);
   const [advancingPhase, setAdvancingPhase] = useState(false);
   const [checkMessage, setCheckMessage] = useState("");
   const checkBusy = useRef(false);
+
+  const toggleCheckSelection = useCallback((blockId: string) => {
+    if (!blockId) return;
+    setSelectedCheckIds((prev) =>
+      prev.includes(blockId) ? prev.filter((id) => id !== blockId) : [...prev, blockId]
+    );
+  }, []);
 
   const effectiveTotal = activity.checklistTotal ?? 0;
   const effectiveCompleted = activity.checklistCompleted ?? 0;
@@ -384,6 +393,11 @@ export function UnifiedActivityModal({
 
   const checklistDay = displayDate || (activity.start ? mexicoDate(activity.start) : mexicoDate());
   const tomorrowDay = shiftMexicoDay(checklistDay, 1);
+
+  useEffect(() => {
+    setSelectedCheckIds([]);
+    setBatchDateValue(checklistDay);
+  }, [activity.pageId, checklistDay]);
   const daily = dailyChecklist(effectiveItems, checklistDay);
   const cumulative = checklistTotals({
     checklistItems: effectiveItems,
@@ -448,6 +462,10 @@ export function UnifiedActivityModal({
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
+      const toggledId = chk.blockId || chk.id;
+      if (toggledId) {
+        setSelectedCheckIds((prev) => prev.filter((id) => id !== toggledId));
+      }
     } catch (e) {
       setCheckMessage(e instanceof Error ? e.message : "Error al guardar el check.");
     } finally {
@@ -500,6 +518,7 @@ export function UnifiedActivityModal({
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
+      setSelectedCheckIds((prev) => prev.filter((id) => !cleanIds.includes(id)));
       setCheckMessage(
         plannedDate
           ? `Programado ${cleanIds.length > 1 ? `${cleanIds.length} checks` : "check"} para ${plannedDate}.`
@@ -1158,46 +1177,140 @@ export function UnifiedActivityModal({
                       const c = item.createdAt ? mexicoDate(item.createdAt) : "";
                       return m === checklistDay || c === checklistDay;
                     };
+                    const isItemOverdue = (item: any) => {
+                      const p = item.plannedDate ? String(item.plannedDate).slice(0, 10) : "";
+                      return Boolean(!item.isChecked && p && p < checklistDay);
+                    };
                     const todayFilterCount = effectiveItems.filter(isItemCompletedOrPlannedToday).length;
+                    const overdueFilterCount = effectiveItems.filter(isItemOverdue).length;
+                    const validSelectedIds = selectedCheckIds.filter((id) =>
+                      effectiveItems.some((item: any) => (item.blockId || item.id) === id)
+                    );
+                    const batchSelectableBacklog = daily.backlogPending
+                      .map((i: any) => i.blockId || i.id)
+                      .filter(Boolean);
                     return (
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {([
-                        { id: "all", label: `Todos (${effectiveItems.length})` },
-                        { id: "today", label: `Para hoy (${todayFilterCount})` },
-                        { id: "upcoming", label: `Próximas (${daily.upcomingPending.length})` },
-                        { id: "backlog", label: `Sin fecha (${daily.backlogPending.length})` },
-                      ] as const).map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setCheckFilter(tab.id)}
-                          className={`px-2 py-0.5 rounded border font-mono transition-colors cursor-pointer ${
-                            checkFilter === tab.id
-                              ? "border-cyan-400 bg-cyan-950/80 text-cyan-200 font-semibold"
-                              : "border-[#223549] bg-[#0D1622] text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {([
+                          { id: "all", label: `Todos (${effectiveItems.length})` },
+                          { id: "today", label: `Para hoy (${todayFilterCount})` },
+                          ...(overdueFilterCount > 0
+                            ? [{ id: "overdue" as const, label: `Atrasados (${overdueFilterCount})` }]
+                            : []),
+                          { id: "upcoming", label: `Próximas (${daily.upcomingPending.length})` },
+                          { id: "backlog", label: `Sin fecha (${daily.backlogPending.length})` },
+                        ] as const).map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setCheckFilter(tab.id)}
+                            className={`px-2 py-0.5 rounded border font-mono transition-colors cursor-pointer ${
+                              checkFilter === tab.id
+                                ? tab.id === "overdue"
+                                  ? "border-rose-400 bg-rose-950/80 text-rose-200 font-semibold"
+                                  : "border-cyan-400 bg-cyan-950/80 text-cyan-200 font-semibold"
+                                : tab.id === "overdue"
+                                  ? "border-rose-500/40 bg-rose-950/30 text-rose-300 hover:border-rose-400"
+                                  : "border-[#223549] bg-[#0D1622] text-slate-400 hover:text-slate-200"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {editable && !activity.isDaySnapshot && (daily.backlogPending.length > 0 || validSelectedIds.length > 0) && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {batchSelectableBacklog.length > 0 && validSelectedIds.length === 0 && (
+                            <button
+                              type="button"
+                              disabled={checkSaving}
+                              onClick={() => setSelectedCheckIds(batchSelectableBacklog)}
+                              className="px-2 py-0.5 rounded border border-slate-700 bg-[#0D1622] hover:border-cyan-500/70 text-slate-300 font-mono transition-colors cursor-pointer disabled:opacity-40"
+                              title="Seleccionar todos los checks pendientes sin fecha para programarlos en lote"
+                            >
+                              Sel. sin fecha ({batchSelectableBacklog.length})
+                            </button>
+                          )}
+                          {daily.backlogPending.length > 0 && (
+                            <button
+                              type="button"
+                              disabled={checkSaving}
+                              onClick={() =>
+                                void planChecklistItems(
+                                  daily.backlogPending.slice(0, 5).map((i) => i.blockId),
+                                  checklistDay
+                                )
+                              }
+                              className="px-2 py-0.5 rounded border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 font-mono transition-colors cursor-pointer disabled:opacity-40"
+                              title="Asignar para hoy los primeros 5 checks pendientes sin fecha"
+                            >
+                              +5 a Hoy
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {editable && !activity.isDaySnapshot && daily.backlogPending.length > 0 && (
-                      <button
-                        type="button"
-                        disabled={checkSaving}
-                        onClick={() =>
-                          void planChecklistItems(
-                            daily.backlogPending.slice(0, 5).map((i) => i.blockId),
-                            checklistDay
-                          )
-                        }
-                        className="px-2 py-0.5 rounded border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 font-mono transition-colors cursor-pointer disabled:opacity-40"
-                        title="Asignar para hoy los primeros 5 checks pendientes sin fecha"
-                      >
-                        +5 a Hoy
-                      </button>
+                    {editable && !activity.isDaySnapshot && validSelectedIds.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-cyan-500/50 bg-cyan-950/40 text-[10px] font-mono">
+                        <span className="text-cyan-200 font-semibold">
+                          {validSelectedIds.length} {validSelectedIds.length === 1 ? "check seleccionado" : "checks seleccionados"}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={checkSaving}
+                            onClick={() => void planChecklistItems(validSelectedIds, checklistDay)}
+                            className="px-2 py-0.5 rounded border border-cyan-400/70 bg-cyan-900/70 hover:bg-cyan-800/80 text-cyan-100 cursor-pointer disabled:opacity-40"
+                          >
+                            Hoy
+                          </button>
+                          <button
+                            type="button"
+                            disabled={checkSaving}
+                            onClick={() => void planChecklistItems(validSelectedIds, tomorrowDay)}
+                            className="px-2 py-0.5 rounded border border-indigo-400/70 bg-indigo-900/70 hover:bg-indigo-800/80 text-indigo-100 cursor-pointer disabled:opacity-40"
+                          >
+                            Mañ.
+                          </button>
+                          <label className="relative px-2 py-0.5 rounded border border-amber-400/60 bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 cursor-pointer">
+                            <span>📅 Elegir fecha</span>
+                            <input
+                              type="date"
+                              value={batchDateValue || checklistDay}
+                              disabled={checkSaving}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val) {
+                                  setBatchDateValue(val);
+                                  void planChecklistItems(validSelectedIds, val);
+                                }
+                              }}
+                              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={checkSaving}
+                            onClick={() => void planChecklistItems(validSelectedIds, null)}
+                            className="px-2 py-0.5 rounded border border-slate-600 bg-slate-900 hover:border-rose-500/70 text-slate-300 hover:text-rose-200 cursor-pointer disabled:opacity-40"
+                          >
+                            Quitar fecha
+                          </button>
+                          <button
+                            type="button"
+                            disabled={checkSaving}
+                            onClick={() => setSelectedCheckIds([])}
+                            className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-950 text-slate-400 hover:text-slate-200 cursor-pointer"
+                            title="Limpiar selección"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                     );
@@ -1222,6 +1335,7 @@ export function UnifiedActivityModal({
                       const isDone = Boolean(chk.isChecked);
                       const isTodayPlan = planned === checklistDay;
                       const isTomorrowPlan = planned === tomorrowDay;
+                      const isOverduePlan = Boolean(!isDone && planned && planned < checklistDay);
                       const isCustomPlan = Boolean(planned && !isTodayPlan && !isTomorrowPlan);
                       const markedDay = chk.markedAt ? mexicoDate(chk.markedAt) : "";
                       const createdDay = chk.createdAt ? mexicoDate(chk.createdAt) : "";
@@ -1233,6 +1347,7 @@ export function UnifiedActivityModal({
                         isDone,
                         isTodayPlan,
                         isTomorrowPlan,
+                        isOverduePlan,
                         isCustomPlan,
                         markedDay,
                         isCompletedToday,
@@ -1246,10 +1361,12 @@ export function UnifiedActivityModal({
                         isDone,
                         isTodayPlan,
                         isTomorrowPlan,
+                        isOverduePlan,
                         isCustomPlan,
                         isCompletedToday,
                       } = getCheckDayFlags(chk);
                       const bid = chk.blockId || chk.id || "";
+                      const isSelected = Boolean(bid && selectedCheckIds.includes(bid));
                       const addedDate = chk.createdAt ? formatSmartDate(chk.createdAt) : null;
                       const doneDate = chk.markingSource === "verified" && chk.markedAt ? formatSmartDate(chk.markedAt) : null;
 
@@ -1257,14 +1374,35 @@ export function UnifiedActivityModal({
                         <div
                           key={bid || idx}
                           className={`flex items-start justify-between gap-2 p-1.5 rounded-lg border text-[11px] transition-colors ${
-                            isCompletedToday
-                              ? "bg-[#0D1D1A]/90 border-emerald-600/50 hover:border-emerald-400/70"
-                              : isTodayPlan
-                                ? "bg-[#0F1E2E]/95 border-cyan-600/50 hover:border-cyan-400/70"
-                                : "bg-[#0D1520]/85 border-[#1E2A38]/80 hover:border-[#2C3F54]"
+                            isSelected
+                              ? "bg-[#10253A]/95 border-cyan-400/75"
+                              : isCompletedToday
+                                ? "bg-[#0D1D1A]/90 border-emerald-600/50 hover:border-emerald-400/70"
+                                : isOverduePlan
+                                  ? "bg-[#1F1016]/90 border-rose-500/50 hover:border-rose-400/70"
+                                  : isTodayPlan
+                                    ? "bg-[#0F1E2E]/95 border-cyan-600/50 hover:border-cyan-400/70"
+                                    : "bg-[#0D1520]/85 border-[#1E2A38]/80 hover:border-[#2C3F54]"
                           }`}
                         >
                           <div className="flex items-start gap-2 min-w-0 flex-1">
+                            {editable && !activity.isDaySnapshot && bid && (
+                              <button
+                                type="button"
+                                disabled={checkSaving}
+                                aria-pressed={isSelected}
+                                aria-label={`Seleccionar ${chk.text || "check"} para asignar fecha en lote`}
+                                title="Seleccionar para asignar fecha en lote"
+                                onClick={() => toggleCheckSelection(bid)}
+                                className={`mt-0.5 shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center text-[8px] font-mono transition-colors cursor-pointer ${
+                                  isSelected
+                                    ? "border-cyan-300 bg-cyan-500 text-slate-950 font-bold"
+                                    : "border-[#314A63] bg-[#09111B] text-transparent hover:border-cyan-400"
+                                }`}
+                              >
+                                ✓
+                              </button>
+                            )}
                             <input
                               type="checkbox"
                               aria-label={`Completar ${chk.text || "tarea"}`}
@@ -1294,12 +1432,20 @@ export function UnifiedActivityModal({
                                           className={`px-1 rounded border ${
                                             isTodayPlan
                                               ? "border-cyan-500/60 bg-cyan-950/70 text-cyan-200"
-                                              : isTomorrowPlan
-                                                ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
-                                                : "border-amber-500/50 bg-amber-950/60 text-amber-200"
+                                              : isOverduePlan
+                                                ? "border-rose-500/60 bg-rose-950/70 text-rose-200"
+                                                : isTomorrowPlan
+                                                  ? "border-indigo-500/60 bg-indigo-950/70 text-indigo-200"
+                                                  : "border-amber-500/50 bg-amber-950/60 text-amber-200"
                                           }`}
                                         >
-                                          {isTodayPlan ? "Para hoy" : isTomorrowPlan ? "Mañana" : formatGroupShort(planned)}
+                                          {isTodayPlan
+                                            ? "Para hoy"
+                                            : isOverduePlan
+                                              ? `Atrasado · ${formatGroupShort(planned)}`
+                                              : isTomorrowPlan
+                                                ? "Mañana"
+                                                : formatGroupShort(planned)}
                                         </span>
                                       )}
                                       {isDone && doneDate ? (
@@ -1382,12 +1528,18 @@ export function UnifiedActivityModal({
                     };
 
                     if (checkFilter !== "all") {
+                      const overdueSorted = effectiveItems
+                        .filter((i: any) => getCheckDayFlags(i).isOverduePlan)
+                        .slice()
+                        .sort((a: any, b: any) => String(a.plannedDate || "").localeCompare(String(b.plannedDate || "")));
                       const filteredItems =
                         checkFilter === "today"
                           ? effectiveItems.filter((i: any) => getCheckDayFlags(i).belongsToTodayGroup)
-                          : checkFilter === "upcoming"
-                            ? daily.upcomingPending
-                            : daily.backlogPending;
+                          : checkFilter === "overdue"
+                            ? overdueSorted
+                            : checkFilter === "upcoming"
+                              ? daily.upcomingPending
+                              : daily.backlogPending;
                       return (
                         <div className="space-y-1 overflow-y-auto pr-0.5 scrollbar-thin max-h-72">
                           {filteredItems.length === 0 ? (
@@ -1401,7 +1553,11 @@ export function UnifiedActivityModal({
                       );
                     }
 
-                    // Vista 'Todos': Agrupado visual por Hoy (incl. completados hoy), Mañana, cada Fecha específica (ej. 15/11), Sin fecha y Completados previos
+                    // Vista 'Todos': Agrupado visual por Atrasados, Hoy (incl. completados hoy), Mañana, cada Fecha específica (orden cronológico), Sin fecha y Completados previos
+                    const overdueGroupItems = effectiveItems
+                      .filter((i: any) => getCheckDayFlags(i).isOverduePlan)
+                      .slice()
+                      .sort((a: any, b: any) => String(a.plannedDate || "").localeCompare(String(b.plannedDate || "")));
                     const todayGroupItems = effectiveItems.filter(
                       (i: any) => getCheckDayFlags(i).belongsToTodayGroup
                     );
@@ -1439,6 +1595,17 @@ export function UnifiedActivityModal({
                     };
 
                     const groups: CheckGroup[] = [];
+                    if (overdueGroupItems.length > 0) {
+                      groups.push({
+                        key: "overdue",
+                        title: "Atrasados",
+                        subtitle: "Fechas anteriores pendientes por reprogramar",
+                        accentClass: "border-rose-500/60",
+                        headerBgClass: "bg-gradient-to-r from-rose-950/75 via-[#221218] to-[#0B1420]",
+                        badgeClass: "border-rose-400/70 bg-rose-900/70 text-rose-100",
+                        items: overdueGroupItems,
+                      });
+                    }
                     if (todayGroupItems.length > 0) {
                       const todayDoneCount = todayGroupItems.filter((i: any) => i.isChecked).length;
                       const todayComplete = todayDoneCount === todayGroupItems.length;
@@ -1495,7 +1662,12 @@ export function UnifiedActivityModal({
                       });
                     }
                     if (prevDoneGroupItems.length > 0) {
-                      const hasPendingGroups = todayGroupItems.length > 0 || tomorrowGroupItems.length > 0 || futureDatesSorted.length > 0 || backlogGroupItems.length > 0;
+                      const hasPendingGroups =
+                        overdueGroupItems.length > 0 ||
+                        todayGroupItems.length > 0 ||
+                        tomorrowGroupItems.length > 0 ||
+                        futureDatesSorted.length > 0 ||
+                        backlogGroupItems.length > 0;
                       groups.push({
                         key: "completed_prev",
                         title: "Completados",
@@ -1617,12 +1789,20 @@ export function UnifiedActivityModal({
               {!activity.isDaySnapshot && (
                 <ActivityQuickEntry
                   pageId={activity.pageId}
+                  workDate={checklistDay}
                   disabled={!editable}
                   onChecklistAdded={(newItem) => {
                     if (onChecklistUpdated) {
+                      const nextItems = [...(activity.checklistItems || []), newItem];
+                      const nextSummary = dailyChecklist(nextItems, checklistDay);
                       onChecklistUpdated(activity.pageId, {
+                        checklistScanned: true,
                         checklistTotal: (activity.checklistTotal || 0) + 1,
-                        checklistItems: [...(activity.checklistItems || []), newItem],
+                        checklistItems: nextItems,
+                        completedForDay: nextSummary.completedForDay,
+                        pendingFutureChecksCount: nextSummary.pendingFutureCount,
+                        pendingCheckValidation: nextSummary.pendingCheckValidation,
+                        nextPlannedChecklistDate: nextSummary.nextPlannedDate,
                       });
                     }
                   }}

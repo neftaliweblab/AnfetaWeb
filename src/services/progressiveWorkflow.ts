@@ -12,7 +12,17 @@ const phases={
  uz:{state:'completed',label:'Terminada · cobro/pago pendiente',financial:'pending'},
  z:{state:'completed',label:'Cerrada · cobrada/pagada',financial:'settled'},
 } as const;
+/** Detects the intermediate "Terminado por hoy (Por hacer)" state (keeps activity active/pending for future work). */
+export function isTerminadoHoyStatus(status: string): boolean {
+  const s = String(status || '').trim();
+  if (!s) return false;
+  return /\bPPRTUZ\b/i.test(s) || /TERMINADO[-\s]+HOY/i.test(s);
+}
+
 export function progressiveStage(text:string){
+ if(isTerminadoHoyStatus(text)){
+  return {code:'pprtuz',category:'revision' as const,state:'pending' as const,label:'Terminado por hoy · Por hacer',financial:'unknown' as const,token:String(text||'').trim(),index:0};
+ }
  const match=(text||'').match(/(?<![\p{L}\p{N}_@.\/-])(saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)(?:dominio|domi|[rRsSdDcCbBpP])?(?![\p{L}\p{N}_@.\/-])/iu);
  if(match){
    const key=match[1].toLowerCase() as keyof typeof phases;
@@ -33,32 +43,38 @@ export function progressiveStage(text:string){
    return {code:'Z'+other[1].toUpperCase(),category,state:'completed' as const,label:category==='dominio'?'Dominio terminado':category==='software'?'Software terminado':category==='cobro'?'Cobro terminado':'Pago terminado',financial:'unknown' as const,token:other[0],index:other.index!};
  }
 
- // Reconocimiento explícito de opciones textuales de Notion para diferenciar FIN vs TERMINADO
+ // Reconocimiento explícito de opciones textuales de Notion para diferenciar FIN vs TERMINADO (solo strings cortos de estado, sin '|' de títulos completos)
  const clean = (text || '').trim();
- if (clean) {
-   if (/(?<![\p{L}\p{N}_])(?:finalizad[oa]|z\s*-\s*cobrado|cobro\/documentacion|zrevision|\bfin\b)(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'zR', category: 'revision' as const, state: 'completed' as const, label: 'Finalizada (Fin)', financial: 'settled' as const, token: clean, index: 0 };
+ if (clean && !clean.includes('|') && clean.length <= 90) {
+   const mFin = clean.match(/(?<![\p{L}\p{N}_])(?:finalizad[oa]|z\s*-\s*cobrado|cobro\/documentacion|zrevision|\bfin\b)(?![\p{L}\p{N}_])/iu);
+   if (mFin) {
+     return { code: 'zR', category: 'revision' as const, state: 'completed' as const, label: 'Finalizada (Fin)', financial: 'settled' as const, token: mFin[0], index: mFin.index!, fromPhrase: true as const };
    }
-   if (/(?<![\p{L}\p{N}_])(?:terminad[oa]\s+rev|terminad[oa]|completad[oa])(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'tuzR', category: 'revision' as const, state: 'completed' as const, label: 'Terminada · por aprobar', financial: 'unknown' as const, token: clean, index: 0 };
+   const mTer = clean.match(/(?<![\p{L}\p{N}_])(?:terminad[oa]\s+rev|terminad[oa]|completad[oa])(?![\p{L}\p{N}_])/iu);
+   if (mTer) {
+     return { code: 'tuzR', category: 'revision' as const, state: 'completed' as const, label: 'Terminada · por aprobar', financial: 'unknown' as const, token: mTer[0], index: mTer.index!, fromPhrase: true as const };
    }
-   if (/(?<![\p{L}\p{N}_])(?:revisar\s+revisiones|en\s+revisi[oó]n|revisi[oó]n)(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'rtuzR', category: 'revision' as const, state: 'review' as const, label: 'Por revisar', financial: 'unknown' as const, token: clean, index: 0 };
+   const mRev = clean.match(/(?<![\p{L}\p{N}_])(?:revisar\s+revisiones|en\s+revisi[oó]n|revisi[oó]n)(?![\p{L}\p{N}_])/iu);
+   if (mRev) {
+     return { code: 'rtuzR', category: 'revision' as const, state: 'review' as const, label: 'Por revisar', financial: 'unknown' as const, token: mRev[0], index: mRev.index!, fromPhrase: true as const };
    }
-   if (/(?<![\p{L}\p{N}_])(?:por\s+hacer|sin\s+iniciar)(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'prtuzR', category: 'revision' as const, state: 'pending' as const, label: 'Por hacer', financial: 'unknown' as const, token: clean, index: 0 };
+   const mPen = clean.match(/(?<![\p{L}\p{N}_])(?:por\s+hacer|sin\s+iniciar)(?![\p{L}\p{N}_])/iu);
+   if (mPen) {
+     return { code: 'prtuzR', category: 'revision' as const, state: 'pending' as const, label: 'Por hacer', financial: 'unknown' as const, token: mPen[0], index: mPen.index!, fromPhrase: true as const };
    }
-   if (/(?<![\p{L}\p{N}_])(?:por\s+asignar|arrancar\s+asignar)(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'aprtuzR', category: 'revision' as const, state: 'pending' as const, label: 'Por asignar', financial: 'unknown' as const, token: clean, index: 0 };
+   const mAsg = clean.match(/(?<![\p{L}\p{N}_])(?:por\s+asignar|arrancar\s+asignar)(?![\p{L}\p{N}_])/iu);
+   if (mAsg) {
+     return { code: 'aprtuzR', category: 'revision' as const, state: 'pending' as const, label: 'Por asignar', financial: 'unknown' as const, token: mAsg[0], index: mAsg.index!, fromPhrase: true as const };
    }
-   if (/(?<![\p{L}\p{N}_])(?:suspendid[oa]s?)(?![\p{L}\p{N}_])/iu.test(clean)) {
-     return { code: 'saprtuzR', category: 'revision' as const, state: 'suspended' as const, label: 'Suspendida', financial: 'unknown' as const, token: clean, index: 0 };
+   const mSusp = clean.match(/(?<![\p{L}\p{N}_])(?:suspendid[oa]s?)(?![\p{L}\p{N}_])/iu);
+   if (mSusp) {
+     return { code: 'saprtuzR', category: 'revision' as const, state: 'suspended' as const, label: 'Suspendida', financial: 'unknown' as const, token: mSusp[0], index: mSusp.index!, fromPhrase: true as const };
    }
  }
 
  return null;
 }
-export function stripProgressiveStage(title:string){const stage=progressiveStage(title);return stage?title.slice(0,stage.index)+title.slice(stage.index+stage.token.length):title;}
+export function stripProgressiveStage(title:string){const stage=progressiveStage(title) as {index:number;token:string;fromPhrase?:boolean}|null;return stage&&!stage.fromPhrase?title.slice(0,stage.index)+title.slice(stage.index+stage.token.length):title;}
 
 export function revisionPhaseTitle(title:string,state:'pending'|'suspended'|'review'|'completed'|'finalized'|'fin',assign=false){
  const stage=progressiveStage(title);

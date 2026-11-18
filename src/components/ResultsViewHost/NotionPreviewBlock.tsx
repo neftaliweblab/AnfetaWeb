@@ -114,6 +114,47 @@ function NotionImageBlock({
   );
 }
 
+function NotionMediaBlock({ block, media, kind }: { block: PreviewBlock; media: string; kind: string }) {
+  const [mediaError, setMediaError] = useState(false);
+  const clean = media.split('?')[0].toLowerCase();
+  const isAudio = kind === 'audio' || /\.(?:mp3|wav|ogg|oga|m4a|aac|flac)$/i.test(clean);
+  const isVideo = !isAudio && (kind === 'video' || /\.(?:mp4|webm|mov|mkv|ogv)$/i.test(clean));
+
+  return (
+    <div className="my-2 rounded border border-slate-700 bg-slate-950 p-2 space-y-2">
+      {!mediaError && isAudio && (
+        <audio controls preload="metadata" src={media} onError={() => setMediaError(true)} className="w-full" />
+      )}
+      {!mediaError && isVideo && (
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          src={media}
+          onError={() => setMediaError(true)}
+          className="max-h-64 w-full rounded bg-black"
+        />
+      )}
+      {mediaError && (
+        <p className="rounded border border-amber-700/60 bg-amber-950/40 px-2.5 py-1.5 text-[11px] text-amber-200">
+          Este navegador no puede reproducir este formato en línea o el enlace expiró. Descárgalo o ábrelo en pestaña nueva.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <a href={media} target="_blank" rel="noopener noreferrer" className="break-words text-cyan-300 underline">
+          {block.text || block.caption || (kind === 'pdf' ? 'Abrir PDF' : isVideo ? 'Abrir video' : isAudio ? 'Abrir audio' : kind === 'file' ? 'Abrir archivo' : 'Abrir enlace')}
+        </a>
+        {(isVideo || isAudio || kind === 'file') && (
+          <a href={media} download className="text-[11px] text-slate-300 hover:text-cyan-200 underline">
+            Descargar
+          </a>
+        )}
+      </div>
+      {block.caption && block.caption !== block.text && <p className="text-xs text-slate-400">{block.caption}</p>}
+    </div>
+  );
+}
+
 /** Shared with Details: one renderer for tables, media, checklists and image zoom. */
 export function NotionPreviewBlock({block,index,pageTitle,onOverlayChange}:{block:PreviewBlock;index:number;pageTitle:string;onOverlayChange?:(open:boolean)=>void}){
   const [lightboxImages,setLightboxImages]=useState<LightboxImage[]>([]);
@@ -126,7 +167,7 @@ export function NotionPreviewBlock({block,index,pageTitle,onOverlayChange}:{bloc
 
     if(k === "table_row" && block.cells?.length) return <div key={block.id||index} role="table" aria-label="Fila de tabla de Notion" className="my-1 overflow-x-auto rounded border border-slate-700"><div role="row" className="grid min-w-max" style={{gridTemplateColumns:`repeat(${block.cells.length}, minmax(110px, 1fr))`}}>{block.cells.map((cell,i)=><div role="cell" key={i} className="max-w-80 whitespace-pre-wrap break-words border-r border-slate-700 bg-slate-900/60 p-2 text-xs last:border-r-0">{cell || "\u00a0"}</div>)}</div></div>;
     const media=mediaUrl(block.url);
-    if(['audio','video','pdf','file','bookmark','embed','link_preview'].includes(k)&&media){const directVideo=k==='video'&&/\.(?:mp4|webm|ogg)(?:[?#]|$)/i.test(media);return <div key={block.id||index} className="my-2 rounded border border-slate-700 bg-slate-950 p-2 space-y-2">{k==='audio'&&<audio controls preload="none" src={media} className="w-full"/>}{directVideo&&<video controls preload="none" src={media} className="max-h-64 w-full"/>}<a href={media} target="_blank" rel="noopener noreferrer" className="block break-words text-xs text-cyan-300 underline">{block.text||block.caption||(k==='pdf'?'Abrir PDF':k==='video'?'Abrir video':k==='audio'?'Abrir audio':k==='file'?'Abrir archivo':'Abrir enlace')}</a>{block.caption&&block.caption!==block.text&&<p className="text-xs text-slate-400">{block.caption}</p>}</div>;}
+    if(['audio','video','pdf','file','bookmark','embed','link_preview'].includes(k)&&media){return <NotionMediaBlock key={block.id||index} block={block} media={media} kind={k} />;}
     if (k === "heading_1" || k === "h1") {
       return (
         <div

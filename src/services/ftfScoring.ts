@@ -220,18 +220,32 @@ export function computeHybridFtfScore(
     ? normalizeStarValue(starWeight(saved!.starsOverride!.star2))
     : normalizeStarValue(computedStar2Weight);
 
+  const mexicoMin = getMexicoTimeMinutes(now);
+  const todayIso = getMexicoIsoDate(now);
+  const isCutoffReached = date < todayIso || (date === todayIso && mexicoMin >= 18 * 60 + 30);
+
   const scheduleAndTasksFinishedWithoutFtfCheck =
     person.assignedHours > 0 &&
-    effectiveCompletedHours >= person.assignedHours * 0.85 &&
-    ((fullCoverage && (person.inProgressHours === undefined || person.inProgressHours <= 0.25)) ||
-      (person.total > 0 && noOpenTasksRemaining));
+    fullCoverage &&
+    noOpenTasksRemaining &&
+    effectiveCompletedHours >= Math.max(0.5, person.assignedHours * 0.85) &&
+    (isCutoffReached || effectiveCompletedHours >= 6.5);
+
+  const hasExplicitClosingSignal =
+    person.status === 'complete' ||
+    (Boolean(person.completedAt) && (person.status !== 'pending' || noOpenTasksRemaining || isCutoffReached));
 
   const ftfCompletedCleanly =
     !isExplicitlyAbsent &&
-    (person.status === 'complete' ||
-      Boolean(person.completedAt) ||
-      (person.total > 0 && person.verified === person.total && effectiveCompletedHours >= person.assignedHours * 0.85) ||
-      scheduleAndTasksFinishedWithoutFtfCheck);
+    (hasExplicitClosingSignal ||
+      scheduleAndTasksFinishedWithoutFtfCheck ||
+      (person.assignedHours > 0 &&
+        fullCoverage &&
+        noOpenTasksRemaining &&
+        person.total > 0 &&
+        person.verified === person.total &&
+        effectiveCompletedHours >= person.assignedHours * 0.85 &&
+        (isCutoffReached || effectiveCompletedHours >= 6.5)));
 
   const closingStamp = person.completedAt || person.lastActivityEdited || person.lastSignalAt || null;
   const withinCutoffGrace =
@@ -291,10 +305,6 @@ export function computeHybridFtfScore(
   const normalShiftFulfilled = !isExplicitlyAbsent && (person.completedHours >= 6.5 || finalScore >= 75 || w3 >= 0.99);
   const rawOvertime = Number(person.afterCutoffHours ?? saved?.overtimeHours ?? 0);
   const overtimeHours = normalShiftFulfilled && rawOvertime > 0 ? Math.round(rawOvertime * 10) / 10 : 0;
-
-  const mexicoMin = getMexicoTimeMinutes(now);
-  const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(now);
-  const isCutoffReached = date < todayIso || (date === todayIso && mexicoMin >= 18 * 60 + 30);
 
   return {
     person: person.name,

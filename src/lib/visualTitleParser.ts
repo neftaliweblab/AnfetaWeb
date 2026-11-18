@@ -11,9 +11,30 @@ export interface VisualParts {
   workflowColor: string;
   area: string;         // ADS, WEB, SEO, DIS, CONT, APP, PROG, MAPS, BIBLIA, etc.
   monthCode: string;    // ej: 11, 08AGO, 09SEP, 10OCT
-  orderCode: string;    // ej: 01.00, 04.00, 90.00, 15
+  orderCode: string;    // ej: 01.00, 04.00, f41.01, 15
   domain: string;       // ej: novakid.com, clinicaalfa.mx
   contentSnippet?: string;
+}
+
+const AREA_DISPLAY_LABELS: Record<string, string> = {
+  APP: 'Aplicación',
+  AAPLI: 'Aplicación',
+  APLICACION: 'Aplicación',
+  APLICACIÓN: 'Aplicación',
+  PRO: 'Software',
+  PROG: 'Software',
+  PPROG: 'Software',
+  SOFT: 'Software',
+  SSOFT: 'Software',
+  SOFTWARE: 'Software',
+  PROGRAMAS: 'Software',
+};
+
+/** Etiqueta visible de área para tabla/badges sin romper códigos internos (`APP`/`PROG`). */
+export function formatAreaLabel(area: string): string {
+  const clean = String(area || '').trim();
+  if (!clean) return '';
+  return AREA_DISPLAY_LABELS[clean.toUpperCase()] || clean;
 }
 
 const visualPartsGlobalCache = new Map<string, VisualParts>();
@@ -98,19 +119,20 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   let orderCode = '';
   let area = areaFromStage;
 
-  // 3a. Estructura moderna de títulos: 📅? MM.c.OO.SS (ej. 11.s.01.00 o 11.a.01.00)
-  // - Mes: MM = 11 (Noviembre, nunca el orden de la actividad)
-  // - Vertiente: c = s (Software), a (App), w (Web), d (Diseño), etc.
-  // - Orden principal: OO = 01
-  // - Suborden: SS = 00
-  // - Badge visible de orden: OO.SS = 01.00
-  const structMatch = display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(\d{1,2})\.(\d{2})(?!\d)/i);
+  // 3a. Estructura moderna de títulos: 📅? MM.c.fNN.OO o MM.c.OO.SS (ej. 11.a.f41.01, 11.s.01.00, 11.a.01.00)
+  const structPhaseMatch = display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(f\d{1,3})\.(\d{2})(?!\d)/i);
+  const structMatch = structPhaseMatch || display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(\d{1,2})\.(\d{2})(?!\d)/i);
   if (structMatch) {
     monthCode = String(parseInt(structMatch[1], 10)).padStart(2, '0');
-    orderCode = `${structMatch[3]}.${structMatch[4]}`;
+    orderCode = structPhaseMatch
+      ? `${structPhaseMatch[3].toLowerCase()}.${structPhaseMatch[4]}`
+      : `${structMatch[3].padStart(2, '0')}.${structMatch[4]}`;
     const strand = structMatch[2].toLowerCase();
     if (!area) {
-      if (strand === 's' || strand === 'p') area = 'PROG';
+      if (strand === 's') {
+        const looksSeo = /\b(?:sseo|seo)\b|\.seo\b/i.test(display) && !/\b(?:ssoft|pprog|software)\b|\.\d{2}\b/i.test(display);
+        area = looksSeo ? 'SEO' : 'PROG';
+      } else if (strand === 'p') area = 'PROG';
       else if (strand === 'a') area = 'APP';
       else if (strand === 'w') area = 'WEB';
       else if (strand === 'd') area = 'DISEÑO';
@@ -130,41 +152,45 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     }
   }
 
-  // 4. Extraer Dominio (ej. webs.apantallante.com, seo.lcacalderas.com, novakid.com)
+  // 4. Extraer Dominio (soporta 1./0./p./d., sufijos .aplicacion/.01-.04/.03wl, sin mutilar IPs)
   let domain = '';
-  const classifiedToken = display.match(/(?:\[|\()?([pd]\.(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|app|dev|info)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes))*)(?:\]|\))?(?=\s|$)/i);
+  const classifiedToken = display.match(/(?:\[|\()?([01pd]\.(?=[a-z0-9-]*[a-z][a-z0-9-]*\.)(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|correos|instalador|tutoriales|weblab|cliente|0[1-4](?:wl|_weblab)?))*)(?:\]|\))?(?=\s|$|\||,|;)/i);
   if (classifiedToken) {
-    domain = calendarDomain(classifiedToken[1]);
+    const candidateDom = calendarDomain(classifiedToken[1]);
+    domain = candidateDom && candidateDom !== 'general' ? candidateDom : '';
     display = display.replace(classifiedToken[0], ' ');
   }
 
-  const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co)))\b\s*(?:\]|\))?/i;
-  const domainMatch = display.match(domainRegex);
-  if (domainMatch) {
-    const rawMatch = domainMatch[0];
-    const fullMatched = domainMatch[1];
-    const candidate = domainMatch[2].toLowerCase();
-    if (!['dominio.com', 'ejemplo.com', 'example.com'].includes(candidate)) {
-      domain = candidate;
-      const prefix = fullMatched.split('.')[0].toLowerCase();
-      if (['web', 'webs', 'wwebs'].includes(prefix) && !area) area = 'WEB';
-      else if (['seo', 'sseo'].includes(prefix) && !area) area = 'SEO';
-      else if (['ads', 'aads'].includes(prefix) && !area) area = 'ADS';
-      else if (['prog', 'pprog'].includes(prefix) && !area) area = 'PROG';
-      else if (['app', 'aapp'].includes(prefix) && !area) area = 'APP';
-      else if (['dise', 'ddise'].includes(prefix) && !area) area = 'DISEÑO';
-      display = display.replace(rawMatch, ' ');
+  if (!domain) {
+    const domainRegex = /(?:\[|\()?\s*(?:@|https?:\/\/|www\.)?((?:(?:webs?|wwebs|sseo|seo|aads|ads|pprog|prog|aapp|app|ddise|dise)\.)?([a-zA-Z0-9\-]+\.(?:com\.mx|org\.mx|gob\.mx|net\.mx|com|mx|net|org|io|dev|app|co|vip|edu|gob|ai|info|biz|us|es|online|site))(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|0[1-4](?:wl|_weblab)?))*)\b\s*(?:\]|\))?/i;
+    const domainMatch = display.match(domainRegex);
+    if (domainMatch) {
+      const rawMatch = domainMatch[0];
+      const fullMatched = domainMatch[1];
+      const candidate = domainMatch[2].toLowerCase();
+      if (!['dominio.com', 'ejemplo.com', 'example.com'].includes(candidate)) {
+        domain = candidate;
+        const prefix = fullMatched.split('.')[0].toLowerCase();
+        if (['web', 'webs', 'wwebs'].includes(prefix) && !area) area = 'WEB';
+        else if (['seo', 'sseo'].includes(prefix) && !area) area = 'SEO';
+        else if (['ads', 'aads'].includes(prefix) && !area) area = 'ADS';
+        else if (['prog', 'pprog'].includes(prefix) && !area) area = 'PROG';
+        else if (['app', 'aapp'].includes(prefix) && !area) area = 'APP';
+        else if (['dise', 'ddise'].includes(prefix) && !area) area = 'DISEÑO';
+        display = display.replace(rawMatch, ' ');
+      }
     }
   }
 
-  // 5. Extraer Área codificada adicional si aún no se tiene (ej. [WEB], aads, mmaps)
-  if (!area) {
-    const areaMatch = display.match(/(?<![\w_])(sseo|seo|wwebs|webs|web|aads|ads|ad|aapli|apli|apps?|aplicaci[oó]n|pprog|prog|software|ddise|dise[nñ]o|rrede|redes|mmaps|maps|bbibl|biblia|ccoti|coti|cchat|chat|rrapi|api)(?![.\w_])/i);
-    if (areaMatch) {
-      const rawA = areaMatch[1].toLowerCase();
+  // 5. Extraer Área codificada adicional y limpiar prefijos técnicos aunque area ya exista
+  const areaTokenRe = /(?<![\w_])(sseo|wwebs|aads|aapli|pprog|ssoft|ddise|rrede|mmaps|bbibl|ccoti|cchat|rrapi|soft|prog|aplicaci[oó]n|dise[nñ]o|biblia|seo|webs?|ads|apli|apps?|software|redes|maps|coti|chat|api)(?![.\w_])/i;
+  const areaMatch = display.match(areaTokenRe);
+  if (areaMatch) {
+    const rawA = areaMatch[1].toLowerCase();
+    if (!area) {
       if (rawA.includes('seo')) area = 'SEO';
       else if (rawA.includes('web')) area = 'WEB';
-      else if (rawA.includes('ad')) area = 'ADS';
+      else if (rawA === 'aads' || rawA === 'ads') area = 'ADS';
       else if (rawA.includes('apli') || rawA.includes('app')) area = 'APP';
       else if (rawA.includes('prog') || rawA.includes('soft')) area = 'PROG';
       else if (rawA.includes('dise')) area = 'DISEÑO';
@@ -173,27 +199,44 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
       else if (rawA.includes('bibl')) area = 'BIBLIA';
       else if (rawA.includes('coti')) area = 'COTIZACIÓN';
       else area = rawA.toUpperCase();
+    }
+    if (/^(?:sseo|wwebs|aads|aapli|pprog|ssoft|ddise|rrede|mmaps|bbibl|ccoti|cchat|rrapi)$/i.test(areaMatch[1])) {
       display = display.replace(areaMatch[0], ' ');
     }
   }
+  // Retirar códigos técnicos oficiales duplicados restantes (SSEO, AAPLI, WWEBS, etc.) sin tocar "SEO" en descripción útil
+  display = display.replace(/(?<![\w_.])(?:sseo|wwebs|aads|aapli|pprog|ssoft|ddise|rrede|mmaps|bbibl|ccoti|cchat|rrapi)(?![\w_.])/gi, ' ');
 
-  // 6. Extraer Orden heredado si no vino de la estructura moderna (ej. 01.00, 04.00, mes 1.00, 15)
+  // 6. Extraer fase/orden (fNN / ffaseNN / 01.00) sin confundir años (2026), versiones (v2.0) ni 0./1. sueltos
   if (!orderCode) {
-    const orderMatch = display.match(/(?<![\w_])(?:mes|orden|ord|num|no|act|m|#)?\s*(\d{1,3}(?:\.\d{1,2})?)(?!\d)(?:\s*-\s*|\s+)?/i);
-    if (orderMatch && orderMatch.index! < 50) {
+    const faseMatch = display.match(/(?<![\w_.])(?:ffase|fase|f)(\d{1,3}(?:\.\d{1,2})?)(?![\w.])/i);
+    if (faseMatch && faseMatch.index! < 60) {
+      orderCode = `f${faseMatch[1]}`;
+      display = display.replace(faseMatch[0], ' ');
+    }
+  }
+  if (!orderCode) {
+    const orderMatch = display.match(/(?<![\w_vV./-])(?:mes|orden|ord|num|no|act|m|#)?\s*(\d{1,2}\.\d{2}|\d{1,3}(?!\.\d)(?=\s*[-–]\s*|\s+))(?!\d|[./]\d)(?:\s*[-–]\s*|\s+)?/i);
+    if (orderMatch && orderMatch.index! < 50 && Number(orderMatch[1]) < 1900) {
       orderCode = orderMatch[1];
       display = display.replace(orderMatch[0], '');
     }
   }
 
-  display = stripActivityTags(display).replace(/(?<![\w.])ssoft(?![\w.])/gi,' ');
-  // 7. Limpieza de prefijos técnicos residuales y decoraciones de Notion
-  display = display.replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '');
+  display = stripActivityTags(display).replace(/(?<![\w.])ssoft(?![\w.])/gi, ' ');
+  // 7. Limpieza de prefijos técnicos residuales, bloques [CCORR AANFE ...], SEO repetido ("mes SEO SEO") y decoraciones de Notion
+  display = display
+    .replace(/\[[A-Z]{4,}(?:\s+[A-Z]{4,})*\]/g, ' ')
+    .replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '')
+    .replace(/\bmes\s+seo\s+seo\b/gi, 'SEO')
+    .replace(/\bseo\s+seo\b/gi, 'SEO')
+    .replace(/(?:^|\s)--+(?=\s|$)/g, ' ');
   display = display.replace(/\[\s*\]|\(\s*\)/g, '');
   // Limpiar delimitadores pipe | y emojis visuales de Notion
   display = display.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, ' ');
   display = display.replace(/\|/g, ' ');
-  display = display.replace(/(?:^|\s)#[a-zA-Z0-9_-]+/g, ' ');
+  display = display.replace(/(?:^|\s)[01pd]\.(?=\s|$)/gi, ' ');
+  display = display.replace(/(?:^|\s)#(?=\s|$)/g, ' ');
   display = display.replace(/\s{2,}/g, ' ').replace(/^[\s\-–—|:]+|[\s\-–—|:]+$/g, '').trim();
 
   const finalParsed: VisualParts = {

@@ -25,10 +25,14 @@ for (const ext of ['.ts', '.tsx']) {
 
 const {
   FIXED_FTF_BLOCK_ID,
+  FIXED_FTF_FINAL_BLOCK_ID,
   buildFixedFtfBlock,
+  buildFixedFtfFinalBlock,
+  isFtfFinalPendingBlock,
   buildAttendedStatePatch,
   normalizeRecurringPendingTasks,
   resolveFtfBlockCompletionForDay,
+  resolveFtfBlockSplitsForDay,
   mergeDeletedPendingIds,
 } = require('../src/lib/pendingRecurrence.ts');
 const { calendarLayoutPreference } = require('../src/lib/calendarLayoutPreferences.ts');
@@ -131,5 +135,31 @@ assert.equal(layout.cobros, true);
 assert.equal(layout.pagos, true);
 assert.equal(layout.secondary, true);
 assert.equal(layout.updatedAt, 1794586000000);
+
+// 7. Dual FTF blocks (inicial 08:00/09:30 vs final/avance 17:30) keep stable identities and split timestamps
+const finalBlock = {
+  ...buildFixedFtfFinalBlock(today),
+  query: 'nne00 OR nne11 OR nne22 OR nne33 OR nne000',
+};
+assert.equal(finalBlock.id, FIXED_FTF_FINAL_BLOCK_ID);
+assert.equal(finalBlock.startTime, '17:30');
+assert.equal(isFtfFinalPendingBlock(finalBlock), true);
+assert.equal(isFtfFinalPendingBlock(block), false);
+
+const checkAt1735 = new Date('2026-11-13T17:35:00-06:00');
+const finalAttended = { ...finalBlock, ...buildAttendedStatePatch(finalBlock, true, checkAt1735) };
+const splitsMorningOnly = resolveFtfBlockSplitsForDay([attendedToday, finalBlock], today);
+assert.equal(splitsMorningOnly.initialCompletedAt, checkAt0952.toISOString());
+assert.equal(splitsMorningOnly.finalCompletedAt, null);
+
+const splitsBoth = resolveFtfBlockSplitsForDay([attendedToday, finalAttended], today);
+assert.equal(splitsBoth.initialCompletedAt, checkAt0952.toISOString());
+assert.equal(splitsBoth.finalCompletedAt, checkAt1735.toISOString());
+
+// Linked query is preserved across midnight recurring reset
+const resetFinal = normalizeRecurringPendingTasks([finalAttended], tomorrow);
+assert.equal(resetFinal.changed, true);
+assert.equal(resetFinal.items[0].isAttended, false);
+assert.equal(resetFinal.items[0].query, 'nne00 OR nne11 OR nne22 OR nne33 OR nne000');
 
 console.log('OK pending recurrence, daily FTF block tracking, delete tombstones, and layout persistence.');

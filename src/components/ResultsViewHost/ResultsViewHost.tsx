@@ -22,7 +22,7 @@ import {readUploadDraft} from '@/lib/uploadDraft';
 import {openNotionPage} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
 import {readSearchView,searchViewKey} from '@/lib/searchViewPreferences';
-import {parseSearchTabs,personalFirstSearch,recoverSearchTabs,isExternalSearchChange} from '@/lib/searchTabsStorage';
+import {parseSearchTabs,personalFirstSearch,recoverSearchTabs,isExternalSearchChange,extractPersonFromWorkQuery} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
 import {CompactSearchAccess} from './CompactSearchAccess';
 import {workflowState} from '@/services/activityWorkflow';
@@ -37,7 +37,7 @@ import {activeResultsFirst, orderSearchResults, isCobroItem, isPagoItem, isBilli
 import {type ActiveSearchCriterion, type InlineSearchSuggestion, itemMatchesStructuredType} from '@/lib/inlinePredictiveEngine';
 import {retainSearchResults} from '@/lib/retainSearchResults';
 import {loadSearchIndex} from '@/lib/loadSearchIndex';
-import {normalizePerson} from '@/services/identityNormalizer';
+import {PERSON_ALIASES,normalizePerson} from '@/services/identityNormalizer';
 
 
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
@@ -239,8 +239,8 @@ export function ResultsViewHost({
     }
     return "none";
   });
-  const [billingFilter, setBillingFilter] = useState<'include' | 'exclude' | 'only'>('include');
-  const [paymentFilter, setPaymentFilter] = useState<'include' | 'exclude' | 'only'>('include');
+  const [billingFilter, setBillingFilter] = useState<'include' | 'exclude' | 'only'>('exclude');
+  const [paymentFilter, setPaymentFilter] = useState<'include' | 'exclude' | 'only'>('exclude');
   const [activeCriteria, setActiveCriteria] = useState<ActiveSearchCriterion[]>([]);
 
   const handleGroupByChange = (val: string) => {
@@ -973,9 +973,14 @@ export function ResultsViewHost({
     const cleanQ = personQuery.trim();
     let existing = findSearchTab(tabs, cleanQ);
     if (!existing) {
-      const personWord = cleanQ.split(/\s+/)[0]?.toLowerCase();
-      if (personWord) {
-        existing = tabs.find(t => t.query.trim().split(/\s+/)[0]?.toLowerCase() === personWord);
+      const targetPerson = extractPersonFromWorkQuery(cleanQ);
+      if (targetPerson) {
+        existing = tabs.find(t => extractPersonFromWorkQuery(t.query) === targetPerson);
+      } else {
+        const personWord = cleanQ.split(/\s+/)[0]?.toLowerCase();
+        if (personWord) {
+          existing = tabs.find(t => t.query.trim().split(/\s+/)[0]?.toLowerCase() === personWord);
+        }
       }
     }
     if (existing) {
@@ -1880,21 +1885,30 @@ export function ResultsViewHost({
     } else if (hideTerminatedMode === "finished") {
       res = res.filter(it => !isFinalizedResult(it));
     }
-    if (billingFilter === 'only' && paymentFilter === 'only') {
-      res = res.filter(it => isCobroItem(it) || isPagoItem(it));
-    } else if (billingFilter === 'exclude' && paymentFilter === 'exclude') {
-      res = res.filter(it => !isCobroItem(it) && !isPagoItem(it) && !isBillingItem(it));
-    } else {
-      if (billingFilter === 'only') {
-        res = res.filter(it => isCobroItem(it));
-      } else if (billingFilter === 'exclude') {
-        res = res.filter(it => !isCobroItem(it));
+    const scopeLower = String(selectedScope || '').toLowerCase();
+    const isExplicitFinancialScope =
+      scopeLower === 'zpagar' ||
+      scopeLower === 'zcobrar' ||
+      (scopeLower.startsWith('base:') && (scopeLower.includes('cobrar') || scopeLower.includes('pagar')));
+    if (!isExplicitFinancialScope) {
+      if (billingFilter === 'only' && paymentFilter === 'only') {
+        res = res.filter(it => isCobroItem(it) || isPagoItem(it));
+      } else if (billingFilter === 'exclude' && paymentFilter === 'exclude') {
+        res = res.filter(it => !isCobroItem(it) && !isPagoItem(it) && !isBillingItem(it));
+      } else {
+        if (billingFilter === 'only') {
+          res = res.filter(it => isCobroItem(it));
+        } else if (billingFilter === 'exclude') {
+          res = res.filter(it => !isCobroItem(it));
+        }
+        if (paymentFilter === 'only') {
+          res = res.filter(it => isPagoItem(it));
+        } else if (paymentFilter === 'exclude') {
+          res = res.filter(it => !isPagoItem(it));
+        }
       }
-      if (paymentFilter === 'only') {
-        res = res.filter(it => isPagoItem(it));
-      } else if (paymentFilter === 'exclude') {
-        res = res.filter(it => !isPagoItem(it));
-      }
+    } else if (billingFilter === 'only' || paymentFilter === 'only') {
+      res = res.filter(it => (billingFilter === 'only' && isCobroItem(it)) || (paymentFilter === 'only' && isPagoItem(it)));
     }
     if (activeCriteria && activeCriteria.length > 0) {
       for (const crit of activeCriteria) {
@@ -1932,9 +1946,9 @@ export function ResultsViewHost({
 
     res = sortSearchRows(res, resultSort, new Date(), deferredQuery);
     return orderSearchResults(res, groupBy);
-  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday,hideTerminated,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
+  }, [items, initialDirectActivity, activeTabId, deferredQuery, searchOptions, selectedScope, filterFavorites, favorites, selectedMonth, groupBy, resultPerson,currentMonth,resultSort,classification,currentSearchDay,statusFilter,filterToday,hideTerminated,hideTerminatedMode,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
 
-  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter,hideTerminated,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
+  useEffect(()=>{setCurrentPage(1);},[deferredQuery,selectedScope,resultPerson,pageSize,selectedMonth,filterFavorites,resultSort,classification,statusFilter,hideTerminated,hideTerminatedMode,billingFilter,paymentFilter,activeCriteria, liveDropboxItems]);
   useEffect(()=>{setCurrentPage(page=>Math.min(page,Math.max(1,Math.ceil(filteredItems.length/pageSize))));},[filteredItems.length,pageSize]);
 
   useEffect(()=>{const remove=(event?:Event)=>{if(!isDeletedPagesEvent(event,currentUser))return;setItems(prev=>filterDeletedPages(prev,currentUser));if(deleteErrorIds.current.length&&deleteErrorIds.current.every(id=>deletedPages(currentUser).has(pageIdentity(id)))){setDeleteFeedback(null);deleteErrorIds.current=[];}setSelectedItem(previous=>previous&&deletedPages(currentUser).has(pageIdentity(previous))?null:previous);setSelectedIds(previous=>new Set([...previous].filter(id=>!deletedPages(currentUser).has(pageIdentity(id)))));};window.addEventListener(DELETED_PAGES_EVENT,remove);window.addEventListener('storage',remove);return()=>{window.removeEventListener(DELETED_PAGES_EVENT,remove);window.removeEventListener('storage',remove);};},[currentUser]);
@@ -1977,7 +1991,18 @@ export function ResultsViewHost({
   const renderQuickFilters=(onSelected?:()=>void)=>(
           <QuickFiltersColumn
             onClose={()=>setIsFiltersOpen(false)}
-            onQuickSearch={(term) => {handleQueryChange(term);focusSearch();onSelected?.();}}
+            onQuickSearch={(term) => {
+              const lower = term.trim().toLowerCase();
+              if (lower === 'zpagar' || lower === 'zcobrar') {
+                setSelectedScope(lower);
+                if (lower === 'zpagar' && paymentFilter === 'exclude') setPaymentFilter('only');
+                if (lower === 'zcobrar' && billingFilter === 'exclude') setBillingFilter('only');
+              } else {
+                handleQueryChange(term);
+              }
+              focusSearch();
+              onSelected?.();
+            }}
             activeTodayProjects={activeProjects}
             onFilterByProject={(domain) => {
               handleQueryChange(domain);
@@ -2016,12 +2041,19 @@ export function ResultsViewHost({
         selectedScope={selectedScope}
         onSelectScope={(scope) => {
           setSelectedScope(scope);
+          const scopeLow = String(scope || '').toLowerCase();
+          if (scopeLow === 'zpagar' && paymentFilter === 'exclude') setPaymentFilter('only');
+          else if (scopeLow === 'zcobrar' && billingFilter === 'exclude') setBillingFilter('only');
+          else if (scopeLow.startsWith('base:') && (scopeLow.includes('cobrar') || scopeLow.includes('pagar'))) {
+            if (billingFilter === 'exclude') setBillingFilter('include');
+            if (paymentFilter === 'exclude') setPaymentFilter('include');
+          }
           focusSearch();
           if (scope === "Plantillas") {
             setResultPerson("__all__");
           }
-          const userTags = ["nneft", "jjohn", "kkarl", "bbria", "ggena", "iisai", "eedua", "ssote", "aacal", "aandr"];
-          if (scope === "Plantillas" && query.trim().toLowerCase() === "eed11") {
+          const userTags = Object.values(PERSON_ALIASES).flat().map(a => a.toLowerCase());
+          if (scope === "Plantillas" && /^(?:eed|ed)?11$/.test(query.trim().toLowerCase())) {
             handleQueryChange("");
           } else if (userTags.includes(query.trim().toLowerCase())) {
             handleQueryChange("");
@@ -2468,7 +2500,14 @@ export function ResultsViewHost({
                     type="button"
                     className="underline cursor-pointer"
                     onClick={() => {
-                      applyTabConfig({selectedScope:'Todo'});
+                      setSelectedScope('Todo');
+                      setResultPerson('__all__');
+                      setStatusFilter('all');
+                      setClassification('all');
+                      setFilterFavorites(false);
+                      setFilterToday(false);
+                      setSelectedMonth('Todos');
+                      setActiveCriteria([]);
                       focusSearch();
                     }}
                   >
@@ -2479,7 +2518,40 @@ export function ResultsViewHost({
             )}
           </div>
 <ResultsVirtualTable
-          headerActions={!isFiltersOpen?<CompactSearchAccess onOpenFilters={()=>setIsFiltersOpen(true)}/>:undefined}
+          headerActions={
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+              <CompactSearchAccess isOpen={isFiltersOpen} onOpenFilters={() => setIsFiltersOpen((prev) => !prev)} />
+              <div
+                className="flex flex-wrap items-center gap-1 rounded border border-[#1E2B3D] bg-[#0D141F] p-0.5 text-[10px]"
+                role="group"
+                aria-label="Agrupación rápida"
+              >
+                {([
+                  { value: "none", label: "Sin agrupar" },
+                  { value: "domain", label: "Dominio" },
+                  { value: "project_type", label: "Tipo / área" },
+                ] as const).map((opt) => {
+                  const active = opt.value === "none" ? !groupBy || groupBy === "none" : groupBy === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => handleGroupByChange(opt.value)}
+                      className={`px-2 py-0.5 rounded font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                        active
+                          ? "bg-cyan-950/90 text-cyan-200 border border-cyan-500/70 shadow-xs"
+                          : "text-slate-400 hover:text-white hover:bg-[#172233] border border-transparent"
+                      }`}
+                      title={`Agrupar resultados por ${opt.label} (sincronizado con Agrupar arriba)`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          }
           currentUser={currentUser}
           resultSort={resultSort}
           onChangeResultSort={setResultSort}

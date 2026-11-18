@@ -290,11 +290,14 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       const options: { name: string }[] = schema.properties?.[status[0]]?.[status[1].type]?.options || [];
       const exact = options.find(option => option.name.toLowerCase() === desired.toLowerCase());
 
-      const isDesiredFin = /^(?:z|fin|finaliz)/i.test(desired) || /(?<![a-z])z[rdscp]?\b/i.test(desired) || /cobro\/documentacion|cobrado/i.test(desired);
-      const isDesiredTerminado = /^(?:tuz|terminad)/i.test(desired) && !isDesiredFin;
+      const isDesiredTerminadoHoy = /\bPPRTUZ\b|TERMINADO[-\s]+HOY/i.test(desired);
+      const isDesiredFin = !isDesiredTerminadoHoy && (/^(?:z|fin|finaliz)/i.test(desired) || /(?<![a-z])z[rdscp]?\b/i.test(desired) || /cobro\/documentacion|cobrado/i.test(desired));
+      const isDesiredTerminado = !isDesiredTerminadoHoy && !isDesiredFin && /^(?:tuz|terminad)/i.test(desired);
 
       let equivalent: { name: string } | undefined;
-      if (isDesiredFin) {
+      if (isDesiredTerminadoHoy) {
+        equivalent = options.find(o => /\bPPRTUZ\b|TERMINADO[-\s]+HOY/i.test(o.name));
+      } else if (isDesiredFin) {
         equivalent = options.find(o => {
           const s = progressiveStage(o.name);
           return s?.code.startsWith('z') || /cobro\/documentacion|cobrado|finaliz|fin\b|zrevision/i.test(o.name);
@@ -532,7 +535,13 @@ async function createActivityUnlocked(settings: Settings, actor: string, payload
   const canonicalPerson = person ? normalizePerson(person) : '';
   const description = title.trim().split(/\s+/).filter((word:string)=>word.toLowerCase() !== String(domain || '').toLowerCase()).join(' ');
   const personTag=canonicalPerson?(scanActivityTags(description).some(tag=>tag.person===canonicalPerson&&tag.role==='active')?'':activePersonTag(canonicalPerson)):'';
-  const composed = payload.quickRevision?quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson||normalizePerson(actor),domain,description:payload.quickDescription,month:payload.quickMonth}):start ? revisionPhaseTitle([domain,personTag,description].filter(Boolean).join(' '),'pending') : [domain, person, title.trim()].filter(Boolean).join(' ');
+  const composed = payload.quickRevision
+    ? quickRevisionTitle({type:payload.quickType,title:payload.quickTitle||title,person:canonicalPerson||normalizePerson(actor),domain,description:payload.quickDescription,month:payload.quickMonth})
+    : payload.exactTitle
+      ? title.trim()
+      : start
+        ? revisionPhaseTitle([domain,personTag,description].filter(Boolean).join(' '),'pending')
+        : [domain, person, title.trim()].filter(Boolean).join(' ');
   const properties: Record<string, any> = { [titleField[0]]: { title: [{ text: { content: composed } }] } };
   if (start) {
     const dateField = fields.find(([n,p]) => p.type === 'date' && /^fecha por hacer$/i.test(n.trim()));

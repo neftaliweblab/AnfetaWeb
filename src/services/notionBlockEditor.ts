@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {notionRequest} from './notionMutations';
 import {assertChecklistAccess,invalidateChecklist} from './notionCalendar';
 import {blockTextRuns,blockTextUpdate,textRunValue,newTextBlock} from '@/lib/notionBlockText';
+import {applyChecklistDateToRuns} from '@/lib/checklistBlockDates';
 
 const clean=(id:string)=>id.replace(/-/g,'').toLowerCase();
 const valid=(id:unknown):id is string=>typeof id==='string'&&/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(id);
@@ -59,4 +60,30 @@ export async function saveEditableBlock(settings:any,actor:string,input:any){
   invalidateChecklist(settings,input.pageId);
   return {id:saved.id,text:(saved[saved.type]?.rich_text||[]).map(textRunValue).join(''),lastEditedTime:saved.last_edited_time};
  }finally{writes.delete(key);}
+}
+
+/** Updates managed `[YYYY-MM-DD]` planned-date suffix directly on real Notion `to_do` blocks, preserving rich text, links, children, and checked state. */
+export async function updateChecklistBlocksPlannedDate(
+  settings: any,
+  actor: string,
+  pageId: string,
+  updates: Array<{ blockId: string; plannedDate: string | null }>
+) {
+  if (!valid(pageId)) throw new Error('Página de Notion inválida.');
+  for (const u of updates) {
+    if (!valid(u.blockId)) throw new Error('Bloque de checklist inválido.');
+    const key = settings.notionToken + ':plan:' + u.blockId;
+    if (writes.has(key)) throw new Error('Se está guardando la fecha de ese check; espera un momento.');
+    writes.add(key);
+    try {
+      const block = await authorizedBlock(settings, actor, pageId, u.blockId);
+      if (block.type !== 'to_do') throw new Error('Solo se puede asignar fecha a bloques de check (to_do).');
+      const nextRuns = applyChecklistDateToRuns(block.to_do?.rich_text || [], u.plannedDate);
+      const saved = await notionRequest(settings, 'blocks/' + block.id, 'PATCH', { to_do: { rich_text: nextRuns } });
+      if (!saved?.id) throw new Error('Notion no confirmó la fecha en el bloque del check.');
+    } finally {
+      writes.delete(key);
+    }
+  }
+  invalidateChecklist(settings, pageId);
 }

@@ -1,8 +1,9 @@
 "use client";
 import {useRef,useState,useEffect} from 'react';
-import {workflowState} from '@/services/activityWorkflow';
+import {workflowState,isTerminadoHoyStatus} from '@/services/activityWorkflow';
 
 function getStatusOptionBadge(name: string): string {
+  if (isTerminadoHoyStatus(name)) return '🌤️ [HOY✓] ';
   const isFin = /^(?:z|fin|finaliz)/i.test(name) || /(?<![a-z])z[rdscp]?\b/i.test(name) || /cobro\/documentacion|cobrado/i.test(name);
   if (isFin) return '🏁 [FIN] ';
 

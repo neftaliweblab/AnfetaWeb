@@ -10,7 +10,7 @@ import type {GlobalPasteImagePayload} from './GlobalPasteModal';
 import {RECORD_ACTIVITY_EVENT,recordingTarget,type RecordingTarget} from '@/lib/activityRecording';
 import {playCheckChime,sendWindowsNotification} from '@/services/windowsIntegration';
 import {blobToBase64} from '@/lib/blobBase64';
-import {ACTIVITY_TAGS, activePersonTag, pendingReviewTag, type ActivityPerson, type ActivityPriority} from '@/services/activityTags';
+import {ACTIVITY_TAGS, activePersonTag, passiveReviewerTag, type ActivityPerson, type ActivityPriority} from '@/services/activityTags';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {showCreationResult} from '@/components/CreationFeedback';
 
@@ -26,6 +26,24 @@ function getMexicoToday(): string {
     return formatter.format(now);
   } catch {
     return new Date().toISOString().slice(0, 10);
+  }
+}
+
+async function findExistingQuickActivity(today: string, expectedTitle: string, expectedPerson: string) {
+  try {
+    const res = await fetch(`/api/data?type=calendar&basic=1&fresh=1&date=${encodeURIComponent(today)}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cleanTarget = expectedTitle.trim().toLowerCase();
+    return (data.activities || []).find((a: any) =>
+      String(a.title || '').trim().toLowerCase() === cleanTarget &&
+      String(a.person || '').toLowerCase() === expectedPerson.toLowerCase()
+    ) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -53,7 +71,7 @@ export const REVIEWERS = [
   { person: '', label: 'Sin revisor técnico' },
   ...TEAM_MEMBERS.map(m => ({
     person: m,
-    label: `${m} (${ACTIVITY_TAGS[m].active}000)`
+    label: `${m} (${ACTIVITY_TAGS[m].active}-000)`
   }))
 ];
 
@@ -65,20 +83,22 @@ export function buildQuickTitle(
   reviewer: string
 ): string {
   const cleanDom = (domain || '').trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  const domPart = cleanDom ? (cleanDom.startsWith('d.') || cleanDom.startsWith('p.') ? cleanDom : `d.${cleanDom}`) : '';
+  const domPart = cleanDom
+    ? (/^(?:[01pd]\.)/i.test(cleanDom) ? cleanDom : `1.${cleanDom}`)
+    : '';
   const taskPart = (desc || '').trim() || 'Actividad rápida';
   const personTag = activePersonTag(person, priority);
-  const reviewerTag = reviewer ? pendingReviewTag(reviewer) : '';
+  const reviewerTag = reviewer ? passiveReviewerTag(reviewer) : '';
+  const nowMx = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', month: '2-digit' }).format(new Date());
 
-  const parts = [
-    domPart,
-    taskPart,
-    personTag,
-    reviewerTag
+  const segments = [
+    domPart ? `🌐 ${domPart}` : '',
+    `📅 ${nowMx} ${taskPart}`,
+    `👥 ${personTag}`,
+    reviewerTag ? `✅ ${reviewerTag}` : '',
   ].filter(Boolean);
 
-  const rawTitle = parts.join(' ');
-  return revisionPhaseTitle(rawTitle, 'pending').replace(/\s{2,}/g, ' ').trim();
+  return revisionPhaseTitle(`| ${segments.join(' | ')}`, 'pending').replace(/\s{2,}/g, ' ').trim();
 }
 
 export const QUICK_NOTION_DESTINATIONS = Object.entries(ACTIVITY_TAGS).map(([person, entry]) => ({
@@ -177,13 +197,25 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       const autoTitle = buildQuickTitle(`Grabación ${today} 09:00`, customDomain, targetPerson, targetPriority, targetReviewer);
       const title = isRecordingTitleEdited && recordingCustomTitle.trim() ? recordingCustomTitle.trim() : autoTitle;
 
+      const existing = await findExistingQuickActivity(today, title, targetPerson);
+      if (existing) {
+        if (mounted.current) {
+          setNotice(`✅ Esta actividad ya existía en Notion para ${targetPerson}; se recuperó sin duplicar.`);
+          showCreationResult(true, `Actividad ya registrada para ${targetPerson}`, title, existing.pageUrl, existing.pageId);
+          setVideo(null); setPhase('idle'); setCustomDomain('');
+          setRecordingCustomTitle(''); setIsRecordingTitleEdited(false);
+        }
+        return;
+      }
+
       const response = await fetchWithScheduleChoice('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-activity',
           payload: {
-            title:revisionPhaseTitle(title,'pending'),
+            title,
+            exactTitle: true,
             domain: cleanDom || undefined,
             person: targetPerson,
             start,
@@ -202,6 +234,17 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       });
       const data = await response.json();
       if (!response.ok || data.error || data.success !== true || !data.pageId) {
+        const recovered = await findExistingQuickActivity(today, title, targetPerson);
+        if (recovered) {
+          if (mounted.current) {
+            setNotice(`✅ Guardado confirmado al reconciliar con Notion para ${targetPerson}.`);
+            showCreationResult(true, `Grabación asignada a ${targetPerson}`, title, recovered.pageUrl, recovered.pageId);
+            anfetaSync.broadcast({ type: 'ACTIVITY_CREATED', confirmed: true, activity: recovered });
+            setVideo(null); setPhase('idle'); setCustomDomain('');
+            setRecordingCustomTitle(''); setIsRecordingTitleEdited(false);
+          }
+          return;
+        }
         throw new Error(data.error || 'No se confirmó el guardado. Tu grabación se conserva; verifica Notion antes de repetir.');
       }
       playCheckChime();
@@ -285,13 +328,29 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
         base64: clipboardImage.base64
       }] : undefined;
 
+      const existing = await findExistingQuickActivity(today, title, targetPerson);
+      if (existing) {
+        if (mounted.current) {
+          setNotice(`✅ Ya existía en Notion para ${targetPerson}; se evitó duplicado.`);
+          showCreationResult(true, `Actividad recuperada para ${targetPerson}`, title, existing.pageUrl, existing.pageId);
+          setClipboardOpen(false);
+          setClipboardText('');
+          setClipboardImage(null);
+          setClipboardDomain('');
+          setClipboardCustomTitle('');
+          setIsClipboardTitleEdited(false);
+        }
+        return;
+      }
+
       const response = await fetchWithScheduleChoice('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-activity',
           payload: {
-            title:revisionPhaseTitle(title,'pending'),
+            title,
+            exactTitle: true,
             domain: cleanDom || undefined,
             person: targetPerson,
             start,
@@ -304,7 +363,22 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
       });
       const data = await response.json();
       if (!response.ok || data.error || data.success !== true || !data.pageId) {
-        throw new Error(data.error || 'No se pudo guardar la actividad en Notion');
+        const recovered = await findExistingQuickActivity(today, title, targetPerson);
+        if (recovered) {
+          if (mounted.current) {
+            setNotice(`✅ Guardado confirmado tras verificar en Notion para ${targetPerson}.`);
+            showCreationResult(true, `Actividad creada para ${targetPerson}`, title, recovered.pageUrl, recovered.pageId);
+            anfetaSync.broadcast({ type: 'ACTIVITY_CREATED', confirmed: true, activity: recovered });
+            setClipboardOpen(false);
+            setClipboardText('');
+            setClipboardImage(null);
+            setClipboardDomain('');
+            setClipboardCustomTitle('');
+            setIsClipboardTitleEdited(false);
+          }
+          return;
+        }
+        throw new Error(data.error || 'No se pudo guardar la actividad en Notion. Tu texto e imagen se conservan.');
       }
       playCheckChime();
       sendWindowsNotification('Actividad guardada en Notion', `Se asignó a ${targetPerson} (${destCode})${data.pendingSynced ? ' y se agregó a Pendientes' : ''}`);
@@ -341,12 +415,12 @@ export function ScreenRecorder({onReady,onOpenDetailed,disabled=false}:{onOpenDe
   const overlay=phase!=='idle'&&panelOpen?<div id="anfeta-recording-controls" className="fixed bottom-28 right-5 z-[400] w-[min(460px,calc(100vw-32px))] max-h-[calc(100dvh-128px)] overflow-auto rounded-xl border border-cyan-800 bg-slate-950 p-4 text-xs text-slate-100 shadow-2xl" role="region" aria-label="Grabación de pantalla">
     <button type="button" aria-label="Ocultar controles; la grabación continúa" title="Ocultar controles" onClick={()=>setPanelOpen(false)} className="float-right ml-2 p-1 text-slate-300"><X size={16}/></button>
     <h2 className="font-bold text-cyan-200">{phase==='configure'?'Preparar grabación':phase==='preview'?'Vista previa de la grabación':phase==='starting'?'Selecciona qué compartir':'● Grabando pantalla'+(microphone?' y micrófono':'')}</h2>
-    {phase==='configure'&&<div className="my-3 space-y-3"><p>El navegador te permitirá elegir pantalla, ventana o pestaña según su compatibilidad. Máximo 10 minutos / 128 MB.</p><label className="flex gap-2"><input type="checkbox" checked={microphone} onChange={e=>setMicrophone(e.target.checked)}/>Incluir micrófono</label><p className="text-xs text-slate-400">Grabación WebM fluida con audio. En Notion se incrustará el reproductor interactivo y se conservará el archivo descargable.</p><button type="button" disabled={disabled} onClick={()=>void start(targetRef.current)} className="rounded bg-cyan-800 p-2">Elegir pantalla e iniciar</button><button type="button" onClick={()=>setPhase('idle')} className="ml-3">Cancelar</button></div>}
+    {phase==='configure'&&<div className="my-3 space-y-3"><p>El navegador te permitirá elegir pantalla, ventana o pestaña según su compatibilidad. Máximo 10 minutos / 128 MB.</p><label className="flex gap-2"><input type="checkbox" checked={microphone} onChange={e=>setMicrophone(e.target.checked)}/>Incluir micrófono</label><p className="text-xs text-slate-400">Grabación WebM/MP4 con audio. Se conservará el archivo descargable y vista previa compatible en Notion/ANFETA.</p><button type="button" disabled={disabled} onClick={()=>void start(targetRef.current)} className="rounded bg-cyan-800 p-2">Elegir pantalla e iniciar</button><button type="button" onClick={()=>setPhase('idle')} className="ml-3">Cancelar</button></div>}
     {target&&<p className="mt-2 break-words text-cyan-100 font-medium">{phase==='preview'?'Destino vinculado: ':'Grabando para: '}{target.title}</p>}
     {phase==='recording'&&<><p role="status" className="my-2">{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')} · {(bytes/1048576).toFixed(1)} MB · Máximo 10 minutos / 128 MB</p>{(seconds>=540||bytes>=RECORDING_MAX_BYTES*.9)&&<p role="status" className="my-2 text-amber-200">Cerca del límite. La grabación se detendrá automáticamente; podrás revisarla.</p>}<button onClick={()=>session.current?.stop()} className="rounded bg-rose-700 px-3 py-2">Detener y revisar</button></>}
     {phase==='preview'&&<>
       {!!video&&video.size>DIRECT_NOTION_MAX_BYTES&&<p className="rounded border border-amber-700 p-2 text-xs text-amber-200">Video mayor de 2.5 MB: elige un responsable para abrir la subida por fragmentos. Revisa Notion + Dropbox antes de confirmar; Solo Notion admite hasta 2.5 MB.</p>}
-      <video src={url} controls className="my-3 w-full max-h-[45dvh] rounded"/>
+      <video src={url} controls playsInline preload="metadata" onError={()=>setNotice('Tu navegador no pudo previsualizar este códec; puedes descargarlo o subirlo directo a Notion/Dropbox.')} className="my-3 w-full max-h-[45dvh] rounded"/>
       <p className="text-[11px] text-slate-300">
         {((video?.size||0)/1048576).toFixed(1)} MB · {video?.type.includes('mp4')?'MP4':'WebM'} · {Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')} · {microphone?'Con micrófono':'Sin micrófono'}
       </p>

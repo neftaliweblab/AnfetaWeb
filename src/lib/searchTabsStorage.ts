@@ -1,8 +1,17 @@
 import {normalizeSearchTabConfig,type SearchTabConfig} from './searchTabConfig';
-import {ACTIVITY_TAGS,type ActivityPerson} from '../services/activityTags';
+import {ACTIVITY_TAGS,buildPersonWorkQuery,scanActivityTags,type ActivityPerson} from '../services/activityTags';
 import {normalizePerson} from '../services/identityNormalizer';
 export interface StoredSearchTab {id:string;query:string;canClose:boolean;unseen?:boolean;pending?:boolean;remindAt?:number;note?:string;config?:SearchTabConfig}
 export function findSearchTab(tabs:StoredSearchTab[],query:string){return tabs.find(tab=>tab.query.trim()===query.trim());}
+/** Detects the canonical person if a query is a system-generated person work query (with or without legacy Name prefix). */
+export function extractPersonFromWorkQuery(query:string):string|null{
+  const trimmed=query.trim();if(!trimmed)return null;
+  const tags=scanActivityTags(trimmed).filter(t=>t.role==='active'||t.role==='review');
+  if(!tags.length)return null;
+  const firstPerson=tags[0].person;
+  if(tags.every(t=>t.person===firstPerson))return firstPerson;
+  return null;
+}
 export function parseSearchTabs(raw:string|null):{tabs:StoredSearchTab[];activeTabId:string}|null{
   if(!raw)return null;
   try{const data=JSON.parse(raw),seen=new Set<string>();
@@ -17,7 +26,7 @@ export function personalFirstSearch(saved:NonNullable<ReturnType<typeof parseSea
  const person=normalizePerson(owner),entry=ACTIVITY_TAGS[person as ActivityPerson];
  if(!entry)return saved;
  const id='personal:'+person;
- const query=[...['00','11','22','33'].map(p=>entry.active+p),entry.active+'000'].join(' OR ');
+ const query=buildPersonWorkQuery(person,['00','11','22','33'],true);
  const existing=saved.tabs.find(t=>t.id===id);
  const others=saved.tabs.filter(t=>t.id!==id).map(t=>({...t,canClose:true}));
  if(existing?.query.trim()&&existing.query!==query&&!others.some(t=>t.query===existing.query)){

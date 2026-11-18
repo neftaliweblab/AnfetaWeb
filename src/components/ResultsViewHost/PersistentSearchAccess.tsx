@@ -1,16 +1,10 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { ACTIVITY_TAGS } from '@/services/activityTags';
+import { ACTIVITY_TAGS, buildPersonWorkQuery } from '@/services/activityTags';
 import { NotionQuickAccessChips } from '@/components/NotionQuickAccessChips';
 
 export function personWorkQuery(person: string, priorities = ['00', '11', '22', '33'], includeReview = true) {
-  const entry = ACTIVITY_TAGS[person as keyof typeof ACTIVITY_TAGS];
-  if (!entry) return person;
-  const tags = [
-    ...priorities.filter(p => ['00', '11', '22', '33'].includes(p)).map(p => entry.active + p),
-    ...(includeReview ? [entry.active + '000'] : [])
-  ].join(' OR ');
-  return tags ? `${person}  ${tags}` : person;
+  return buildPersonWorkQuery(person, priorities, includeReview);
 }
 
 export function PersistentSearchAccess({ onSearch, currentUser = '' }: { onSearch: (query: string) => void; currentUser?: string }) {

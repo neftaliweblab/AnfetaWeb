@@ -1,5 +1,6 @@
 export function workflowStateLegacy(status: string, title = ''): 'pending' | 'review' | 'completed' | 'suspended' | 'unknown' {
   const value = (status || '').trim().toUpperCase();
+  if (/^PPRTUZ\b|TERMINADO[-\s]+HOY/i.test(value)) return 'pending';
   if (/^NO\s+(?:TERMINAD[OA]|COMPLETAD[OA]|FINALIZAD[OA])\b/.test(value)) return 'pending';
   if(/^(?:(?:P?R?TUZ|UZ|Z)\s*[-:]\s*)?(?:TERMINAD[OA]|COMPLETAD[OA]|FINALIZAD[OA])(?:\s|$)/i.test(value)||/^(?:TUZ\s*[-:]\s*)?TERMINADO\s+REV\b/i.test(value)||['COMPLETED','FINISHED'].includes(value))return 'completed';
   if (/^SUSPE(?:\s|$)/.test(value) || /^(?:SAPRTUZ|SPRTUZ)\b/i.test(value)) return 'suspended';

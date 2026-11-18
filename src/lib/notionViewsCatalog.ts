@@ -52,6 +52,15 @@ export const NOTION_VIEWS: NotionViewEntry[] = [
     tooltip: 'Vista Operativo · Pendiente de ayer (enlace de Notion por confirmar)',
     keywords: ['operativo', 'vvist', 'vszu'],
   },
+  {
+    id: 'vista-nomenclatura',
+    pageId: '767abd7d91b7829fa9d58164a0896ad2',
+    name: 'Nomenclatura',
+    url: 'https://app.notion.com/p/prtuzS-Notion-S003-aprtuzS-d-anfeta-com-03wl-Nomenclatura-como-nombrar-t-tulos-d-no-767abd7d91b7829fa9d58164a0896ad2',
+    status: 'ready',
+    tooltip: 'Abrir página oficial «Nomenclatura cómo nombrar títulos» en Notion',
+    keywords: ['nomenclatura', 'fform', 'ttitu', 'nnoti', 'pprg'],
+  },
 ];
 
 const VIEW_PAGE_IDS = new Set(

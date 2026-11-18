@@ -142,7 +142,7 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         const name = (x.name || "").toLowerCase();
         return (
           (src.includes("pagar") || src.includes("cobrar y pagar") || src.includes("revision")) &&
-          (name.includes("pagar") || name.includes("zpagar") || name.includes("pago"))
+          (/(?:pagar|zpagar|ppago|ppaga|ppag)\b/.test(name) || /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)p\b/i.test(name) || name.includes("pago"))
         );
       });
 
@@ -153,7 +153,7 @@ export function filterByNotionBase(items: ResultItem[], baseTag: string): Result
         const name = (x.name || "").toLowerCase();
         return (
           (src.includes("cobrar") || src.includes("cobrar y pagar") || src.includes("revision")) &&
-          (name.includes("cobrar") || name.includes("zcobrar") || name.includes("cobro"))
+          (/(?:cobrar|zcobrar|ccobro|ccobr|ccob|cobranza)\b/.test(name) || /(?<![\w@.\/-])(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|rtuz|tuz|uz|z)c\b/i.test(name) || name.includes("cobro"))
         );
       });
 

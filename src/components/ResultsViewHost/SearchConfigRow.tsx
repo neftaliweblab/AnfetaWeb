@@ -127,7 +127,7 @@ const CLEAN_GROUP_OPTIONS = [
   { value: "domain", label: "Dominio", desc: "Agrupa por sitio web o proyecto raíz" },
   { value: "status", label: "Estado", desc: "Por hacer, En revisión, Terminadas, Suspendidas" },
   { value: "person", label: "Responsable", desc: "Separado por cada ejecutor asignado" },
-  { value: "project_type", label: "Tipo de proyecto", desc: "WEB (.webs), ADS (.ads), SEO, APP, PROG..." },
+  { value: "project_type", label: "Tipo / área", desc: "WEB (.webs), ADS (.ads), SEO, Aplicación, Software..." },
   { value: "month", label: "Mes", desc: "Conserva todos los meses; actual primero" },
 ];
 
@@ -191,14 +191,14 @@ function SearchConfigRowComponent({
   const colsRef = useRef<HTMLDivElement>(null);
 
   const TEAM_USERS = [
-    { code: "eed11", name: "Edwin" },
+    { code: "eedwin", name: "Edwin" },
     { code: "nneft", name: "Neftali" },
     { code: "jjohn", name: "John" },
     { code: "kkarl", name: "Karla" },
+    { code: "aandr", name: "Andrade" },
     { code: "bbria", name: "Brian" },
     { code: "ggena", name: "Genaro" },
     { code: "iisai", name: "Isaias" },
-    { code: "eedua", name: "Eduardo" },
     { code: "ssote", name: "Sotelo" },
     { code: "aacal", name: "Acalli" },
   ];
@@ -251,7 +251,7 @@ function SearchConfigRowComponent({
   // Label amigable para la opción de agrupación actual
   const currentAgruparLabel =
     CLEAN_GROUP_OPTIONS.find((opt) => opt.value === groupBy)?.label ||
-    (groupBy.includes("domain") ? "Dominio" : groupBy.includes("area") ? "Tipo de proyecto" : groupBy);
+    (groupBy.includes("domain") ? "Dominio" : groupBy === "project_type" || groupBy.includes("area") ? "Tipo / área" : groupBy);
 
   return (
     <div

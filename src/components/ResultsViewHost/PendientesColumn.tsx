@@ -36,7 +36,7 @@ import { formatSmartDate } from "@/lib/dateUtils";
 import { normalizePerson } from "@/services/identityNormalizer";
 import { calendarTime, mexicoDate } from "@/services/calendarPresentation";
 import { shiftMexicoDay } from "@/lib/dailyChecklist";
-import { buildAttendedStatePatch, isFtfPendingBlock, isRecurringPendingTask } from "@/lib/pendingRecurrence";
+import { buildAttendedStatePatch, isFtfFinalPendingBlock, isFtfPendingBlock, isRecurringPendingTask } from "@/lib/pendingRecurrence";
 import { isReviewOrSentPending, isVideoPendingTask } from "@/lib/pendingAlerts";
 import { playCheckChime, sendWindowsNotification } from "@/services/windowsIntegration";
 import {
@@ -1037,7 +1037,7 @@ function PendientesColumnComponent({
                   title="Bloque recurrente diario: al palomearlo hoy, mañana se reinicia automáticamente"
                 >
                   <Repeat className="w-2.5 h-2.5 text-cyan-300" />
-                  <span>{isFtfPendingBlock(task) ? "FTF Diario" : "Diario"}</span>
+                  <span>{isFtfPendingBlock(task) ? (isFtfFinalPendingBlock(task) ? "FTF final" : "FTF inicial") : "Diario"}</span>
                 </span>
               )}
               {isAttended && task.completedAt && (
@@ -1312,7 +1312,7 @@ function PendientesColumnComponent({
                 title="Bloque recurrente diario: mañana vuelve a desmarcarse solo"
               >
                 <Repeat className="w-2.5 h-2.5" />
-                <span>{isFtfPendingBlock(task) ? "FTF" : "Diario"}</span>
+                <span>{isFtfPendingBlock(task) ? (isFtfFinalPendingBlock(task) ? "FTF final" : "FTF inicial") : "Diario"}</span>
               </span>
             )}
             {isActive && !isAttended && (

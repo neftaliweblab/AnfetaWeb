@@ -32,6 +32,7 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [overrideTitle, setOverrideTitle] = useState('');
   const overlayOpen = useRef(false);
+  const mediaActive = useRef(false);
 
   useEffect(() => {
     setOverrideTitle('');
@@ -99,7 +100,16 @@ export function NotionHoverPreview({ item, anchorRect, isOpen, onMouseEnter, onM
       aria-label="Vista previa de Notion"
       onMouseEnter={onMouseEnter}
       onMouseLeave={() => {
-        if (!overlayOpen.current && !isEditingTitle) onMouseLeave();
+        if (!overlayOpen.current && !mediaActive.current && !isEditingTitle) onMouseLeave();
+      }}
+      onPlayCapture={() => {
+        mediaActive.current = true;
+      }}
+      onPauseCapture={() => {
+        mediaActive.current = false;
+      }}
+      onEndedCapture={() => {
+        mediaActive.current = false;
       }}
       style={{
         position: 'fixed',

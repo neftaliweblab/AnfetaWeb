@@ -2,7 +2,7 @@ import {NotionCalendarActivity} from '@/types/anfeta';
 import {mexicoDate,mexicoMinutes} from './calendarPresentation';
 import {normalizePerson} from './identityNormalizer';
 import {isFtfReminder} from './progressKpis';
-import {workflowState} from './activityWorkflow';
+import {workflowState, isTerminadoHoyStatus} from './activityWorkflow';
 import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
 import {dailyActivityChecks} from '../lib/dailyChecklist';
 
@@ -36,7 +36,7 @@ function isEligibleDayActivity(a: NotionCalendarActivity, name: string, day: str
 }
 
 function isCompletedForDayActivity(a: NotionCalendarActivity, day: string): boolean {
-  if (a.isDaySnapshot || a.completedForDay) return true;
+  if (a.isDaySnapshot || a.completedForDay || isTerminadoHoyStatus(a.status)) return true;
   if (a.checklistTotal > 0) {
     return dailyActivityChecks(a, day).completedForDay;
   }
@@ -58,8 +58,12 @@ function sumHours(list: NotionCalendarActivity[]): number {
 
 function ftfRecordedTime(record: any, day: string, now: Date): string | null {
   if (!record) return null;
+  // Morning FTF agenda review block must NOT count as final Cierre unless an explicit cierre/final block exists.
+  if (record.source === 'pending-ftf-block' && !record.ftfFinalBlockCompletedAt && record.timeKind !== 'confirmed') {
+    return null;
+  }
   const time = record.timeKind === 'confirmed'
-    ? record.completedAt || record.updated
+    ? record.ftfFinalBlockCompletedAt || record.completedAt || record.updated
     : record.observedAt || record.updated;
   const timestamp = Date.parse(time || '');
   if (record.timeKind !== 'confirmed' && !record.observedAt && time && mexicoMinutes(time) === 0) return null;
@@ -268,11 +272,13 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     const inProgressActivities = all.filter(a => {
       if (isCompletedForDayActivity(a, day)) return false;
       const wf = workflowState(a.status, a.title);
-      return wf === 'pending' || wf === 'unknown';
+      if (wf === 'pending') return true;
+      return wf === 'unknown' && !(a.ftfAvailable && a.ftfVerified);
     });
     const pendingCheckValidationActivities = all.filter(a => {
       if (workflowState(a.status, a.title) === 'completed') return false;
       if (!isCompletedForDayActivity(a, day)) return false;
+      if (isTerminadoHoyStatus(a.status)) return true;
       const daily = dailyActivityChecks(a, day);
       const pendingFuture = Number(a.pendingFutureChecksCount ?? daily.pendingFutureCount ?? 0);
       return Boolean(a.pendingCheckValidation) || pendingFuture > 0;
@@ -281,7 +287,11 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
       .map(a => {
         const future = Number(a.pendingFutureChecksCount ?? dailyActivityChecks(a, day).pendingFutureCount ?? 0);
         const label = a.domain || a.shortTitle || 'Actividad';
-        return future > 0 ? `${label} (${future} checks futuros)` : label;
+        return future > 0
+          ? `${label} (${future} checks futuros)`
+          : isTerminadoHoyStatus(a.status)
+            ? `${label} (terminado por hoy · pendiente cierre)`
+            : label;
       })
       .join(' · ');
     const expiredUnfinishedActivities = inProgressActivities.filter(a => {
@@ -301,10 +311,10 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     // Solo horas realmente terminadas (zR/tuzR) o enviadas a revisión (rtuzR) cuentan como avance real; "Por hacer" NO es terminada
     const completedHours = Number((workCompletedHours + reviewHours).toFixed(1));
     
-    // Exact last modified time of non-suspended workday activities in Notion for this person
+    // Exact last modified time of non-suspended workday activities in Notion for this person ON THIS DAY
     const lastActivityEdited = all
       .map(a => (a as any).serverModified || (a as any).lastEdited || (a as any).last_edited_time)
-      .filter(v => v && Number.isFinite(Date.parse(v)))
+      .filter(v => v && Number.isFinite(Date.parse(v)) && mexicoDate(v) === day)
       .sort()
       .at(-1) || null;
 
@@ -328,10 +338,11 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     lastCandidates.sort();
     const lastSignal = lastCandidates.at(-1) || null;
 
+    // Include activities from 18:00 onwards so the 18:00–18:29 closing window never falls into a dead zone
     const afterCutoffActivities = activities.filter(activity =>
       isEligibleDayActivity(activity, name, day) &&
       !isSuspendedActivity(activity) &&
-      mexicoMinutes(activity.start) >= 1110
+      mexicoMinutes(activity.start) >= 1080
     );
     const activityOvertimeHours = firstSeen ? sumHours(afterCutoffActivities) : 0;
     const presenceOvertimeMin = presenceLastSeen && mexicoDate(presenceLastSeen) === day
@@ -340,6 +351,7 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     const afterCutoffHours = Number(Math.max(activityOvertimeHours, presenceOvertimeMin / 60).toFixed(1));
 
     const record=records['ftf:'+day+':'+name],stamp=Date.parse(record?.updated||'');
+    const isMorningBlockOnly = record?.source === 'pending-ftf-block' && !record?.ftfFinalBlockCompletedAt && record?.timeKind !== 'confirmed';
     const validRecord=record?.person===name&&record?.date===day&&Number.isFinite(stamp)&&mexicoDate(record.updated)===day&&stamp<=now.getTime();
     
     const completedAt = validRecord
@@ -353,13 +365,23 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
         : null) ||
       (validRecord && typeof record?.ftfBlockCompletedAt === 'string' && mexicoDate(record.ftfBlockCompletedAt) === day
         ? record.ftfBlockCompletedAt
-        : null) ||
-      (validRecord && record?.source === 'pending-ftf-block' ? completedAt : null);
+        : null);
 
     const lateStamp = completedAt ? Date.parse(completedAt) : stamp;
     const late = !!completedAt && Number.isFinite(lateStamp) && lateStamp > cutoff;
     const hasOpenWork = inProgressActivities.length > 0;
-    const status=!all.length?'empty':(pending.length>0||hasOpenWork)?'pending':validRecord?'complete':'unconfirmed';
+    const closingAfter1700 = Boolean(completedAt && mexicoMinutes(completedAt) >= 1020);
+    const validClosingRecord =
+      validRecord &&
+      !isMorningBlockOnly &&
+      (!hasOpenWork || record?.timeKind === 'confirmed' || closingAfter1700 || now.getTime() >= cutoff);
+    const status = !all.length
+      ? 'empty'
+      : pending.length > 0 || (hasOpenWork && !validClosingRecord)
+      ? 'pending'
+      : validClosingRecord
+      ? 'complete'
+      : 'unconfirmed';
     return {
       ...person,
       name,

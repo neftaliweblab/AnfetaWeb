@@ -33,8 +33,10 @@ export function isOperativeTerminatedResult(item: any): boolean {
 
 export function isBillingItem(item: any): boolean {
   if (!item) return false;
-  const src = String(item?.sourceName || item?.externalSourceName || item?.path || item?.databaseName || '').toLowerCase();
-  if (src.includes('cobrar') || src.includes('pagar') || src.includes('cobro') || src.includes('pago')) return true;
+  const dbSource = String(item?.sourceName || item?.externalSourceName || item?.databaseName || '').toLowerCase();
+  const dbId = String(item?.databaseId || '').replace(/-/g, '').toLowerCase();
+  if (dbId === '2eeabd7d91b781a5a2eec9a20d3d656a') return true;
+  if (dbSource.includes('cobrar') || dbSource.includes('pagar') || dbSource.includes('cobro') || dbSource.includes('pago')) return true;
   return isCobroItem(item) || isPagoItem(item);
 }
 

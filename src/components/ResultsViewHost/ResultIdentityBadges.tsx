@@ -21,8 +21,8 @@ export function ResultIdentityBadges({item,query,searchOptions}:{item:any;query:
   if (/(?:prtu\.\s*r|sprtu\s*z|saprtuz|dominio\s+dominio|aprtuda\s+dominio)/i.test(clean)) return true;
   const src = String(item.sourceName || item.externalSourceName || '').toLowerCase();
   if (src.includes('revision')) {
-    const hasPrtuz = /^(?:prtuz|aprtuz|zrevision|prtu)/i.test(clean);
-    const hasStructure = clean.includes('|') || clean.includes('[') || clean.includes(']');
+    const hasPrtuz = /^(?:saprtuz|aaprtuz|aartuz|aapr|aprtuz|prtuz|pprtuz|rtuz|tuz|uz|z[rsdcp]?|zrevision|prtu)/i.test(clean);
+    const hasStructure = clean.includes('|') || clean.includes('[') || clean.includes(']') || /(?:^|\s)[01pd]\.(?=[a-z0-9-]+\.)/i.test(clean);
     if (!hasPrtuz || !hasStructure) return true;
   }
   return false;

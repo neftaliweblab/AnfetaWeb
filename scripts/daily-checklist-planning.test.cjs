@@ -133,9 +133,9 @@ function reset() {
     page: makePageFixture(),
     overlapPage: makeOverlapPageFixture(),
     todos: [
-      { id: 'todo-11111111111111111111111111111111', checked: false, text: 'Descripción de los servicios disponibles' },
-      { id: 'todo-22222222222222222222222222222222', checked: false, text: 'Apertura de autos y recuperación de llaves' },
-      { id: 'todo-33333333333333333333333333333333', checked: false, text: 'Instalación y cambio de cerraduras' },
+      { id: '11111111-1111-4111-8111-111111111111', checked: false, text: 'Descripción de los servicios disponibles' },
+      { id: '22222222-2222-4222-8222-222222222222', checked: false, text: 'Apertura de autos y recuperación de llaves' },
+      { id: '33333333-3333-4333-8333-333333333333', checked: false, text: 'Instalación y cambio de cerraduras' },
     ],
   };
 }
@@ -187,14 +187,30 @@ global.fetch = async (url, options = {}) => {
       return true;
     }), has_more: false });
   }
+  if (target.startsWith('blocks/') && !target.includes('/children') && method === 'GET') {
+    const bid = target.split('/')[1];
+    const todo = state.todos.find((t) => t.id.replace(/-/g, '') === bid.replace(/-/g, ''));
+    if (!todo) return response({ message: 'Block not found' }, 404);
+    return response({
+      id: todo.id,
+      type: 'to_do',
+      parent: { type: 'page_id', page_id: pid },
+      last_edited_time: todo.last_edited_time || '2026-11-12T10:00:00Z',
+      to_do: {
+        checked: todo.checked,
+        color: 'default',
+        rich_text: [{ type: 'text', plain_text: todo.text, text: { content: todo.text, link: null }, annotations: { bold: false } }],
+      },
+    });
+  }
   if (target.startsWith('blocks/' + pid + '/children') && method === 'GET') {
     return response({
       results: state.todos.map((t) => ({
         id: t.id,
         type: 'to_do',
         created_time: '2026-11-12T10:00:00Z',
-        last_edited_time: '2026-11-12T10:00:00Z',
-        to_do: { checked: t.checked, rich_text: [{ plain_text: t.text }] },
+        last_edited_time: t.last_edited_time || '2026-11-12T10:00:00Z',
+        to_do: { checked: t.checked, rich_text: [{ plain_text: t.text, text: { content: t.text } }] },
       })),
       has_more: false,
     });
@@ -206,9 +222,20 @@ global.fetch = async (url, options = {}) => {
     const bid = target.split('/')[1];
     const todo = state.todos.find((t) => t.id.replace(/-/g, '') === bid.replace(/-/g, ''));
     if (!todo) return response({ message: 'Block not found' }, 404);
-    todo.checked = Boolean(body?.to_do?.checked);
+    if (body?.to_do?.checked !== undefined) todo.checked = Boolean(body.to_do.checked);
+    if (Array.isArray(body?.to_do?.rich_text)) {
+      todo.text = body.to_do.rich_text.map((r) => r?.text?.content || r?.plain_text || '').join('');
+    }
     todo.last_edited_time = new Date().toISOString();
-    return response({ id: todo.id, last_edited_time: todo.last_edited_time, to_do: { checked: todo.checked } });
+    return response({
+      id: todo.id,
+      type: 'to_do',
+      last_edited_time: todo.last_edited_time,
+      to_do: {
+        checked: todo.checked,
+        rich_text: [{ type: 'text', plain_text: todo.text, text: { content: todo.text, link: null } }],
+      },
+    });
   }
   if (target.startsWith('users?')) {
     return response({ results: [{ id: 'neft-id', type: 'person', name: 'Neftalí', person: { email: 'nneft@practicante.com' } }], has_more: false });
@@ -476,22 +503,99 @@ async function test(name, fn) {
           start: `${today}T10:00:00-06:00`,
           end: `${today}T12:00:00-06:00`,
           checklistScanned: true,
-          checklistTotal: 3,
+          checklistTotal: 4,
           checklistCompleted: 2,
           checklistItems: [
             { id: 'c1', blockId: 'c1', text: 'Bugs / Estabilidad', isChecked: true, createdAt: `${today}T10:01:00-06:00` },
             { id: 'c2', blockId: 'c2', text: 'Planeado para hoy ya listo', isChecked: true, plannedDate: today },
             { id: 'c3', blockId: 'c3', text: 'Pendiente mañana', isChecked: false, plannedDate: tomorrow },
+            { id: 'c4', blockId: 'c4', text: 'Check atrasado', isChecked: false, plannedDate: shiftMexicoDay(today, -2) },
           ],
         },
         currentUser: 'Neftali',
         onClose: () => {},
       })
     );
+    assert.match(html, /Atrasados/);
     assert.match(html, /Para hoy ·/);
     assert.match(html, /Para hoy \(2\)/);
     assert.match(html, /Completado hoy/);
     assert.match(html, /Mañana ·/);
+    assert.match(html, /asignar fecha en lote/);
+  });
+
+  await test('plan-checklist-item persiste [YYYY-MM-DD] en bloques Notion to_do y falla limpio si Notion rechaza', async () => {
+    const patchCalls = [];
+    const blockId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const prevFetch = global.fetch;
+    global.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u.endsWith(`/blocks/${blockId}`) && (!init.method || init.method === 'GET')) {
+        return new Response(
+          JSON.stringify({
+            id: blockId,
+            type: 'to_do',
+            parent: { type: 'page_id', page_id: pid },
+            to_do: {
+              checked: false,
+              color: 'default',
+              rich_text: [{ type: 'text', text: { content: 'Revisar entrega', link: null }, annotations: { bold: false } }],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (u.endsWith(`/blocks/${blockId}`) && init.method === 'PATCH') {
+        const body = JSON.parse(String(init.body || '{}'));
+        patchCalls.push(body);
+        if (patchCalls.length === 2) {
+          return new Response(JSON.stringify({ error: 'conflict' }), { status: 409 });
+        }
+        return new Response(
+          JSON.stringify({
+            id: blockId,
+            type: 'to_do',
+            to_do: body.to_do,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (u.includes('/blocks/') && u.includes('/children')) {
+        return new Response(JSON.stringify({ results: [], has_more: false }), { status: 200 });
+      }
+      return prevFetch(url, init);
+    };
+
+    try {
+      const okRes = await route.POST(
+        new Request('http://localhost/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-test-user': 'nneft' },
+          body: JSON.stringify({
+            action: 'plan-checklist-item',
+            payload: { pageId: pid, blockIds: [blockId], plannedDate: '2026-11-20', currentUser: 'Neftali' },
+          }),
+        })
+      );
+      assert.equal(okRes.status, 200);
+      assert.equal(patchCalls.length, 1);
+      assert.match(patchCalls[0].to_do.rich_text.map((r) => r.text.content).join(''), /\[2026-11-20\]$/);
+
+      // Second PATCH simulates Notion 409 rejection -> endpoint must return error
+      const failRes = await route.POST(
+        new Request('http://localhost/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-test-user': 'nneft' },
+          body: JSON.stringify({
+            action: 'plan-checklist-item',
+            payload: { pageId: pid, blockIds: [blockId], plannedDate: '2026-11-21', currentUser: 'Neftali' },
+          }),
+        })
+      );
+      assert.equal(failRes.status >= 400, true);
+    } finally {
+      global.fetch = prevFetch;
+    }
   });
 
   console.log(`\nPassed ${passed}/${passed} daily checklist planning tests.`);

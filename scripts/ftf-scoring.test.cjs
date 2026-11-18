@@ -410,3 +410,114 @@ test('ftfScoring: valida 100 pts si completó horario y tareas sin marcar FTF o 
   assert.equal(pastGrace.stars.star3, 0.5);
   assert.equal(pastGrace.breakdown.ftfFinal, 13);
 });
+
+test('ftfScoring & ftfDashboard: Jornada en curso con bloque matutino FTF no otorga cierre temprano ni star3', () => {
+  const day = '2026-11-18';
+  const morningNow = new Date('2026-11-18T10:15:00-06:00');
+  const dash = buildFtfDashboard(
+    'John',
+    day,
+    [{ name: 'Edwin' }],
+    [
+      {
+        pageId: 'ed-1',
+        title: 'prtuzR | 1.anfeta.com | Revision eed11',
+        person: 'Edwin',
+        status: 'PRTUZ (POR HACER)',
+        start: `${day}T10:00:00-06:00`,
+        end: `${day}T13:00:00-06:00`,
+        ftfAvailable: true,
+        ftfVerified: false,
+        serverModified: '2026-11-17T22:00:00-06:00', // Yesterday edit must not leak into today's lastActivityEdited
+      },
+      {
+        pageId: 'ed-1815',
+        title: 'prtuzR | Cierre eed11',
+        person: 'Edwin',
+        status: 'PRTUZ (POR HACER)',
+        start: `${day}T18:10:00-06:00`,
+        end: `${day}T18:30:00-06:00`,
+        ftfAvailable: true,
+        ftfVerified: false,
+      },
+    ],
+    {
+      [`ftf:${day}:Edwin`]: {
+        id: `ftf:${day}:Edwin`,
+        kind: 'ftf',
+        person: 'Edwin',
+        date: day,
+        updated: `${day}T09:35:00-06:00`,
+        observedAt: `${day}T09:35:00-06:00`,
+        ftfBlockCompletedAt: `${day}T09:35:00-06:00`,
+        source: 'pending-ftf-block',
+        timeKind: 'ftf_block',
+      },
+    },
+    morningNow,
+    [{ day, person: 'Edwin', firstSeen: `${day}T09:30:00-06:00`, lastSeen: `${day}T10:12:00-06:00` }]
+  );
+
+  const edwin = dash.people[0];
+  assert.equal(edwin.status, 'pending');
+  assert.equal(edwin.completedAt, null);
+  assert.equal(edwin.ftfBlockCompletedAt, `${day}T09:35:00-06:00`);
+  assert.equal(edwin.lastActivityEdited, null); // filtered out yesterday's edit
+  assert.ok(edwin.afterCutoffHours > 0); // 18:10-18:30 is not dropped into a dead zone
+
+  const morningScore = computeHybridFtfScore(
+    {
+      name: 'Edwin',
+      assignedHours: edwin.assignedHours,
+      completedHours: edwin.completedHours,
+      inProgressHours: edwin.inProgressHours,
+      expiredUnfinishedCount: 0,
+      verified: edwin.verified,
+      total: edwin.total,
+      ftfPendingAssignmentMinutes: edwin.pendingAssignmentMinutes,
+      status: edwin.status,
+      completedAt: edwin.completedAt,
+      firstSignalAt: edwin.firstSeen,
+      lastSignalAt: edwin.presenceLastSeen,
+      isOnline: true,
+    },
+    day,
+    null,
+    { now: morningNow }
+  );
+  assert.equal(morningScore.stars.star3, false);
+  assert.equal(morningScore.breakdown.ftfFinal, 0);
+  assert.ok(morningScore.finalScore < 75);
+});
+
+test('ftfDashboard: PPRTUZ TERMINADO-HOY-(POR HACER) suma avance del día con advertencia de validación futura', () => {
+  const day = '2026-11-18';
+  const now = new Date('2026-11-18T17:00:00-06:00');
+  const dash = buildFtfDashboard(
+    'John',
+    day,
+    [{ name: 'Neftali' }],
+    [
+      {
+        pageId: 'hoy-1',
+        title: 'prtuzR | 1.anfeta.com | Feature nne11',
+        person: 'Neftali',
+        status: 'PPRTUZ TERMINADO-HOY-(POR HACER)',
+        start: `${day}T10:00:00-06:00`,
+        end: `${day}T14:00:00-06:00`,
+        ftfAvailable: true,
+        ftfVerified: true,
+        checklistTotal: 4,
+        checklistCompleted: 2,
+        pendingFutureChecksCount: 2,
+      },
+    ],
+    {},
+    now,
+    [{ day, person: 'Neftali', firstSeen: `${day}T09:45:00-06:00`, lastSeen: `${day}T17:00:00-06:00` }]
+  );
+  const neft = dash.people[0];
+  assert.equal(neft.workCompletedHours, 4);
+  assert.equal(neft.inProgressHours, 0);
+  assert.equal(neft.pendingCheckValidationCount, 1);
+});

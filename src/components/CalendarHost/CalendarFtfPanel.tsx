@@ -206,6 +206,8 @@ export function CalendarFtfPanel({
 
   useEffect(() => {
     let active = true;
+    setScoresMap({});
+    setOpenScorerFor(null);
     fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -273,8 +275,11 @@ export function CalendarFtfPanel({
     }
   };
 
+  const todayMexico = mexicoDate();
+  const isViewingToday = (report?.day || date) === todayMexico;
+
   const buildScoreInput = (person: Report['people'][number]) => {
-    const pres = presenceMap[person.name];
+    const pres = isViewingToday ? presenceMap[person.name] : undefined;
     return {
       name: person.name,
       assignedHours: person.assignedHours || 0,
@@ -482,8 +487,8 @@ export function CalendarFtfPanel({
     .sort((a, b) => {
       // Conectados/con trabajo primero, faltas al final; dentro de cada grupo, más horas/puntaje primero
       if (a.scoreInfo.absent !== b.scoreInfo.absent) return a.scoreInfo.absent ? 1 : -1;
-      const aOnline = presenceMap[a.person.name]?.isOnline ? 1 : 0;
-      const bOnline = presenceMap[b.person.name]?.isOnline ? 1 : 0;
+      const aOnline = isViewingToday && presenceMap[a.person.name]?.isOnline ? 1 : 0;
+      const bOnline = isViewingToday && presenceMap[b.person.name]?.isOnline ? 1 : 0;
       if (aOnline !== bOnline) return bOnline - aOnline;
       return (b.person.assignedHours || 0) - (a.person.assignedHours || 0);
     });
@@ -511,10 +516,10 @@ export function CalendarFtfPanel({
     const completionTime = person.completedAt ? calendarTime(person.completedAt) : null;
     const ftfBlockCompletionTime = (person as any).ftfBlockCompletedAt ? calendarTime((person as any).ftfBlockCompletedAt) : null;
     const isScorerOpen = openScorerFor === person.name;
-    const isOnlineNow = !!presenceMap[person.name]?.isOnline;
+    const isOnlineNow = isViewingToday && !!presenceMap[person.name]?.isOnline;
     const firstSeenIso = (person as any).firstSeen || null;
     const firstDisplay = firstSeenIso ? formatSignalTime(firstSeenIso, report?.day || date) : 'Sin conexión';
-    const presenceLastSeen = presenceMap[person.name]?.lastSeen || (person as any).presenceLastSeen || null;
+    const presenceLastSeen = (isViewingToday ? presenceMap[person.name]?.lastSeen : undefined) || (person as any).presenceLastSeen || null;
     const lastDisplay = isOnlineNow
       ? 'En línea ahora'
       : presenceLastSeen
@@ -606,10 +611,10 @@ export function CalendarFtfPanel({
                 <p className={`${scale.subText} text-slate-400 mt-0.5`}>
                   {scoreInfo.absent
                     ? 'Sin conexión registrada'
-                    : ftfBlockCompletionTime
-                    ? `FTF terminado ${ftfBlockCompletionTime}${isComplete ? '' : ' · jornada en curso'}`
                     : isComplete
-                    ? `FTF completado (${completionTime || 'al día'})`
+                    ? `FTF cierre (${completionTime || 'al día'})`
+                    : ftfBlockCompletionTime
+                    ? `Agenda inicial FTF ${ftfBlockCompletionTime} · jornada en curso`
                     : expiredUnfinishedCount > 0
                     ? `${expiredUnfinishedCount} bloque${expiredUnfinishedCount > 1 ? 's' : ''} vencido${expiredUnfinishedCount > 1 ? 's' : ''} sin cerrar`
                     : isPending
@@ -618,10 +623,10 @@ export function CalendarFtfPanel({
                 </p>
                 {ftfBlockCompletionTime && (
                   <span
-                    className="inline-flex items-center gap-1 mt-1 rounded-md border border-emerald-500/60 bg-emerald-950/70 px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300"
-                    title="Hora exacta en que marcó como terminado su bloque fijo FTF de hoy"
+                    className="inline-flex items-center gap-1 mt-1 rounded-md border border-cyan-500/50 bg-cyan-950/60 px-1.5 py-0.5 text-[10px] font-mono font-bold text-cyan-200"
+                    title="Hora en que marcó la revisión inicial de agenda FTF (no cierra la calificación de la jornada)"
                   >
-                    ✓ FTF terminado {ftfBlockCompletionTime}
+                    ✓ Agenda FTF {ftfBlockCompletionTime}
                   </span>
                 )}
                 {Number(scoreInfo.pendingCheckValidationCount || 0) > 0 && (

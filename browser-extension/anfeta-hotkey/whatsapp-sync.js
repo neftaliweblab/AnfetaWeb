@@ -48,8 +48,8 @@
         }
       }
     } catch {}
-    // Default to localhost, fallback to vercel
-    return "http://localhost:3000/";
+    // Default to production ANFETA Web origin
+    return "https://anfeta-web.vercel.app/";
   }
 
   async function extractGroupsFromIndexedDB() {

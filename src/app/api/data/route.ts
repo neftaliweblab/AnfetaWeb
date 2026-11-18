@@ -33,6 +33,7 @@ import {snapshotNeedsRefresh} from '@/lib/snapshotFreshness';
 import {BoundedCache} from '@/lib/boundedCache';
 import {browserDropboxUpload,verifiedDropboxReceipt} from '@/services/dropboxBrowserUpload';
 import {activityQuickEntry} from '@/services/activityQuickEntry';
+import {updateChecklistBlocksPlannedDate} from '@/services/notionBlockEditor';
 import {financeDateField,financeStatus} from '@/services/financeRules';
 import {replayMutation} from '@/services/replayMutation';
 import {durableStep,operationKey,withActivityLease} from '@/services/reliableOperations';
@@ -62,11 +63,14 @@ import {loadLiveFinance} from '@/services/notionFinance';
 import {financeRowsForDay} from '@/services/calendarFinance';
 import {
   FIXED_FTF_BLOCK_ID,
+  FIXED_FTF_FINAL_BLOCK_ID,
   buildFixedFtfBlock,
+  buildFixedFtfFinalBlock,
+  isFtfFinalPendingBlock,
   isFtfPendingBlock,
   mergeDeletedPendingIds,
   normalizeRecurringPendingTasks,
-  resolveFtfBlockCompletionForDay,
+  resolveFtfBlockSplitsForDay,
 } from '@/lib/pendingRecurrence';
 import { buildQuickPendingFromActivity } from '@/lib/pendingAlerts';
 import { appendDailyFtfJournalToggle, sendFtfScoreEmail } from '@/services/ftfScoreDelivery';
@@ -662,11 +666,13 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         ]);
         const ftfBlockTimesByPerson: Record<string, string> = {};
         for (const [personName, pState] of blockEntries) {
-          const resolved = resolveFtfBlockCompletionForDay(
+          const splits = resolveFtfBlockSplitsForDay(
             (personName === 'John' ? state : pState)?.values?.pendingTasks,
             day
           );
-          if (resolved) ftfBlockTimesByPerson[normalizePerson(personName)] = resolved;
+          if (splits.initialCompletedAt) {
+            ftfBlockTimesByPerson[normalizePerson(personName)] = splits.initialCompletedAt;
+          }
         }
         return NextResponse.json({...buildFtfDashboard(actor,day,people,combinedActivities,state.values?.receipts?.ftfCompletions||{},new Date(),presence,mealBreaks,ftfBlockTimesByPerson),warning,automation:await ftfJobHealth(settings,day)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo comprobar el FTF del equipo.'},{status:502});}
@@ -973,6 +979,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         { code: "ssote", name: "Sotelo", email: "ssote@pprin.com" },
         { code: "aacal", name: "Acalli", email: "aacal@pprin.com" },
         { code: "aandr", name: "Andrade", email: "aandr@pprin.com" },
+        { code: "eedwin", name: "Edwin", email: "eedwi@practicante.com" },
       ];
 
       const usersMap = new Map<string, { code: string; name: string; email?: string; avatarUrl?: string }>();
@@ -1573,16 +1580,23 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }
       }
 
-      // Bloque fijo diario FTF (08:00 - 08:30) para todos los colaboradores
+      // Bloques fijos diarios FTF inicial (08:00/09:30) y FTF final / Avance (17:30) para todos los colaboradores
       const canonicalActor = normalizePerson(actor);
-      if (
-        canonicalActor &&
-        canonicalActor !== 'Sin asignar' &&
-        !deletedIds.has(FIXED_FTF_BLOCK_ID) &&
-        !items.some((t: any) => t.id === FIXED_FTF_BLOCK_ID || isFtfPendingBlock(t))
-      ) {
-        items = [buildFixedFtfBlock(today), ...items];
-        shouldPersist = true;
+      if (canonicalActor && canonicalActor !== 'Sin asignar') {
+        if (
+          !deletedIds.has(FIXED_FTF_BLOCK_ID) &&
+          !items.some((t: any) => t.id === FIXED_FTF_BLOCK_ID || (isFtfPendingBlock(t) && !isFtfFinalPendingBlock(t)))
+        ) {
+          items = [buildFixedFtfBlock(today), ...items];
+          shouldPersist = true;
+        }
+        if (
+          !deletedIds.has(FIXED_FTF_FINAL_BLOCK_ID) &&
+          !items.some((t: any) => t.id === FIXED_FTF_FINAL_BLOCK_ID || isFtfFinalPendingBlock(t))
+        ) {
+          items = [...items, buildFixedFtfFinalBlock(today)];
+          shouldPersist = true;
+        }
       }
 
       // Reiniciar bloques recurrentes diarios marcados en días anteriores
@@ -3114,9 +3128,11 @@ async function POSTLive(req: NextRequest) {
 
       const state = await updateUserState(settings, actor, { pendingTasks: sanitized, receipts: nextReceipts }, body.expectedRevision);
 
-      // Si el usuario marcó/desmarcó su bloque fijo diario de FTF hoy, registrar la hora exacta para Bitácora (John)
+      // Si el usuario marcó/desmarcó bloques FTF hoy: FTF inicial NO cierra calificación, FTF final (17:30) sí registra cierre
       try {
-        const ftfBlockCompletedAt = resolveFtfBlockCompletionForDay(sanitized, today);
+        const splits = resolveFtfBlockSplitsForDay(sanitized, today);
+        const ftfBlockCompletedAt = splits.initialCompletedAt;
+        const ftfFinalBlockCompletedAt = splits.finalCompletedAt;
         const hadFtfBlock = sanitized.some((t: any) => isFtfPendingBlock(t));
         if (hadFtfBlock && normActor && normActor !== 'Sin asignar') {
           const johnState = await readUserState(settings, 'John');
@@ -3126,32 +3142,61 @@ async function POSTLive(req: NextRequest) {
           const existingRec = ftfRecords[recId];
           let ftfChanged = false;
 
-          if (ftfBlockCompletedAt) {
-            if (existingRec?.ftfBlockCompletedAt !== ftfBlockCompletedAt) {
-              ftfRecords[recId] = {
-                ...(existingRec || {}),
-                id: recId,
-                kind: 'ftf',
-                person: normActor,
-                date: today,
-                updated: existingRec?.updated || ftfBlockCompletedAt,
-                completedAt: existingRec?.completedAt || ftfBlockCompletedAt,
-                observedAt: existingRec?.observedAt || ftfBlockCompletedAt,
-                ftfBlockCompletedAt,
-                timeKind: 'confirmed',
-                source: existingRec?.source || 'pending-ftf-block',
-                late: Date.parse(ftfBlockCompletedAt) > Date.parse(`${today}T18:00:00-06:00`),
-                actionLabel: 'FTF completado (bloque diario)',
-                title: `${normActor} terminó su FTF de hoy`,
-                activityTitle: `${normActor} terminó su FTF de hoy`,
-              };
+          if (ftfBlockCompletedAt || ftfFinalBlockCompletedAt) {
+            const nextRec: Record<string, any> = {
+              ...(existingRec || {}),
+              id: recId,
+              kind: 'ftf',
+              person: normActor,
+              date: today,
+            };
+            if (ftfBlockCompletedAt) {
+              if (nextRec.ftfBlockCompletedAt !== ftfBlockCompletedAt) {
+                nextRec.ftfBlockCompletedAt = ftfBlockCompletedAt;
+                ftfChanged = true;
+              }
+              if (!nextRec.updated) nextRec.updated = ftfBlockCompletedAt;
+              if (!nextRec.observedAt) nextRec.observedAt = ftfBlockCompletedAt;
+              if (!nextRec.source) nextRec.source = 'pending-ftf-block';
+              if (!nextRec.timeKind) nextRec.timeKind = 'ftf_block';
+            } else if (nextRec.ftfBlockCompletedAt) {
+              delete nextRec.ftfBlockCompletedAt;
               ftfChanged = true;
             }
-          } else if (existingRec?.ftfBlockCompletedAt) {
-            if (existingRec.source === 'pending-ftf-block') {
+
+            if (ftfFinalBlockCompletedAt) {
+              if (nextRec.ftfFinalBlockCompletedAt !== ftfFinalBlockCompletedAt) {
+                nextRec.ftfFinalBlockCompletedAt = ftfFinalBlockCompletedAt;
+                nextRec.completedAt = ftfFinalBlockCompletedAt;
+                nextRec.updated = ftfFinalBlockCompletedAt;
+                nextRec.observedAt = nextRec.observedAt || ftfFinalBlockCompletedAt;
+                nextRec.timeKind = 'confirmed';
+                nextRec.source = 'pending-ftf-final-block';
+                nextRec.late = Date.parse(ftfFinalBlockCompletedAt) > Date.parse(`${today}T18:00:00-06:00`);
+                nextRec.actionLabel = 'FTF final completado (17:30)';
+                nextRec.title = `${normActor} cerró su FTF final de hoy`;
+                nextRec.activityTitle = `${normActor} cerró su FTF final de hoy`;
+                ftfChanged = true;
+              }
+            } else {
+              if (nextRec.source === 'pending-ftf-final-block') {
+                delete nextRec.ftfFinalBlockCompletedAt;
+                delete nextRec.completedAt;
+                nextRec.source = 'pending-ftf-block';
+                nextRec.timeKind = 'ftf_block';
+                ftfChanged = true;
+              }
+              if (!nextRec.actionLabel) nextRec.actionLabel = 'Agenda inicial FTF revisada';
+              if (!nextRec.title) nextRec.title = `${normActor} revisó su agenda inicial FTF`;
+              if (!nextRec.activityTitle) nextRec.activityTitle = nextRec.title;
+            }
+
+            if (ftfChanged) ftfRecords[recId] = nextRec;
+          } else if (existingRec?.ftfBlockCompletedAt || existingRec?.ftfFinalBlockCompletedAt) {
+            if (existingRec.source === 'pending-ftf-block' || existingRec.source === 'pending-ftf-final-block') {
               delete ftfRecords[recId];
             } else {
-              const { ftfBlockCompletedAt: _removed, ...restRec } = existingRec;
+              const { ftfBlockCompletedAt: _removedInit, ftfFinalBlockCompletedAt: _removedFin, ...restRec } = existingRec;
               ftfRecords[recId] = restRec;
             }
             ftfChanged = true;
@@ -3470,6 +3515,7 @@ async function POSTLive(req: NextRequest) {
               ? input.blockIds.map((blockId: string) => ({ blockId: String(blockId), plannedDate: input.plannedDate ?? null }))
               : [{ blockId: String(input.blockId || ''), plannedDate: input.plannedDate ?? null }];
           if (!updates.some(u => cleanPageId(u.blockId))) throw new Error('Selecciona al menos un check para programar.');
+          await updateChecklistBlocksPlannedDate(settings, actor, pageId, updates);
           await setChecklistItemPlans(settings, pageId, updates, actor);
           invalidateChecklist(settings, pageId);
           const livePage = extractNotionPageData(currentPage);

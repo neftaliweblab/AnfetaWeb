@@ -39,3 +39,10 @@ Extrae el ZIP y ejecuta `Preparar-carpeta.ps1` desde PowerShell si la política 
 Una desaparición no puede diagnosticarse solo desde la web. Comprueba carpeta, perfil, habilitación y políticas del navegador. El reposo del service worker es normal y no elimina la extensión. No hay código de autodesinstalación.
 
 Sin extensión: instala la PWA desde el navegador y ancla ANFETA a la barra. Windows + número abre/cambia a la aplicación de esa posición. Windows + flecha abajo minimiza la ventana activa (desde maximizada puede requerir dos pulsaciones). No es un atajo global personalizado de la web.
+
+## v1.1.3: múltiples orígenes, rutas y restauración de ventana maximizada
+
+- Soporta tanto `https://anfeta-web.vercel.app/*` como `https://anfeta-web-iota.vercel.app/*` y cualquier ruta/parámetro (`/calendar`, `?q=...`).
+- Limpia `managedWindowId` cuando se cierra una ventana y prioriza la ventana administrada o enfocada sin duplicar ventanas.
+- Conserva el estado maximizado o pantalla completa al restaurar una ventana dedicada minimizada.
+- Valida `customAppUrl` en opciones (solo `http:` / `https:`) y apunta el fallback predeterminado de sincronización de WhatsApp a producción (`https://anfeta-web.vercel.app/`).

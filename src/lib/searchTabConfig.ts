@@ -14,7 +14,7 @@ export function migrateGroupByPreference(val:string):{groupBy:string;billingFilt
 export function normalizeSearchTabConfig(raw:unknown):SearchTabConfig{
  const v=raw&&typeof raw==='object'?raw as Record<string,any>:{};
  const text=(key:string,fallback:string)=>typeof v[key]==='string'&&v[key].length<160?v[key]:fallback;
- const mode=(key:string)=>['include','exclude','only'].includes(v[key])?v[key] as 'include'|'exclude'|'only':'include';
+ const mode=(key:string)=>['include','exclude','only'].includes(v[key])?v[key] as 'include'|'exclude'|'only':'exclude';
  const migration=migrateGroupByPreference(text('groupBy','domain'));
  const TYPE_CRITERION_LABELS:Record<string,string>={PROGRAMAS:'SOFTWARE',COBROS:'INGRESOS',PAGOS:'EGRESOS'};
  const criteria:ActiveSearchCriterion[]=Array.isArray(v.activeCriteria)?v.activeCriteria.filter((c:any)=>c&&['person','domain','type','tag'].includes(c.type)&&typeof c.id==='string'&&typeof c.value==='string'&&typeof c.label==='string'&&c.value.length<160&&c.label.length<160&&c.id.length<200).slice(0,24).map((c:any)=>({id:c.id,type:c.type,value:c.value,label:c.type==='type'?TYPE_CRITERION_LABELS[String(c.value||c.label).toUpperCase()]||c.label:c.label,...(typeof c.icon==='string'?{icon:c.icon.slice(0,8)}:{})})):[];

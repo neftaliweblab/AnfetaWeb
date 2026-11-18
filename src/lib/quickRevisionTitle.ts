@@ -1,6 +1,6 @@
 import {revisionPhaseTitle} from '../services/progressiveWorkflow';
 import {getCalendarPersonTag} from './templateCatalog';
-import {activityPerson, activePersonTag, pendingReviewTag, ActivityPriority} from '../services/activityTags';
+import {activityPerson, activePersonTag, passiveReviewerTag, ActivityPriority} from '../services/activityTags';
 import {normalizePerson} from '@/services/identityNormalizer';
 import {monthToken} from './drxUploadPlan';
 
@@ -36,7 +36,7 @@ export function quickRevisionTitle(input:{
 }){
   const personKey = normalizePerson(input.person);
   const tag = input.priority ? activePersonTag(personKey, input.priority) : (getCalendarPersonTag(personKey) || activePersonTag(personKey, '11'));
-  const revTag = input.reviewer ? pendingReviewTag(input.reviewer) : '';
+  const revTag = input.reviewer ? passiveReviewerTag(input.reviewer) : '';
   if(!tag)throw Error('Selecciona un responsable válido para la actividad rápida.');
   const clean=(value:string)=>String(value||'').replace(/[\[\]\r\n|]/g,' ').replace(/\s+/g,' ').trim();
   const title=clean(input.title);
@@ -44,8 +44,8 @@ export function quickRevisionTitle(input:{
   const type=clean(input.type||'')||'Actividad rápida';
   if(!title||!rawDomain)throw Error('Completa el título y dominio de la actividad rápida.');
   
-  // Normalizar dominio con prefijo d. si no trae p. o d.
-  const domain = /^[pd]\./i.test(rawDomain) ? rawDomain : `d.${rawDomain}`;
+  // Normalizar dominio con prefijo 1. (proyecto activo) si no trae 1., 0., p. o d.
+  const domain = /^[01pd]\./i.test(rawDomain) ? rawDomain : `1.${rawDomain}`;
 
   let rawMonth = String(input.month || monthToken()).trim();
   if (/^(0[1-9]|1[0-2])$/.test(rawMonth)) {

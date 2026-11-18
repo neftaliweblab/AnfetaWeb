@@ -29,7 +29,7 @@ const PRIORITY_SUFFIXES: [string, ActivityPriority][] = [
 function resolveActivityTag(token:string):Omit<ActivityTag,'index'>|undefined{
   const lower=token.toLowerCase();
   const clean=lower.replace(/^#+/, '');
-  // Requerimiento John / Neftali: tags con guión medio (kk-a11, nn-e11) o hashtag (#kka11)
+  // Requerimiento John / Neftali: tags con guión medio (kk-a11, nn-e11, nne-11, jjo-000) o hashtag (#kka11, #nne-11)
   // pertenecen a plantillas/inactivas, NUNCA a una asignación activa.
   if(lower.startsWith('#') || lower.includes('-')){
     const compact=resolveActivityTag(clean.replace(/-/g, ''))||(/^[a-z]-/.test(clean)?resolveActivityTag(clean.slice(2)):undefined);
@@ -64,12 +64,27 @@ export function scanActivityTags(text:string):ActivityTag[]{
   if(!text)return [];
   const cached=scanTagCache.get(text);if(cached)return cached;
   const found:ActivityTag[]=[];
-  for(const match of text.matchAll(/(?<![\p{L}\p{N}_@./-])#?[a-z]+(?:-[a-z]+)?\d*(?![\p{L}\p{N}_@./-])/giu)){
+  for(const match of text.matchAll(/(?<![\p{L}\p{N}_@./-])#?[a-z]+(?:-[a-z0-9]+)?\d*(?![\p{L}\p{N}_@./-])/giu)){
     const tag=parseActivityTag(match[0]);if(tag)found.push({...tag,index:match.index!});
   }
   if(scanTagCache.size>10000)scanTagCache.delete(scanTagCache.keys().next().value!);
   scanTagCache.set(text,found);
   return found;
+}
+export function buildPersonWorkQuery(
+  person: string,
+  priorities: readonly string[] = ['00', '11', '22', '33'],
+  includeReview = true
+): string {
+  const key = activityPerson(person);
+  if (!key) return person.trim();
+  const entry = ACTIVITY_TAGS[key];
+  const validPriorities = priorities.filter((p): p is ActivityPriority => ['00', '11', '22', '33'].includes(p));
+  const clauses = [
+    ...validPriorities.map((p) => entry.active + p),
+    ...(includeReview ? [entry.active + '000'] : []),
+  ];
+  return clauses.join(' OR ');
 }
 export function activityPerson(input:string):ActivityPerson|undefined{
   const value=input.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
@@ -79,6 +94,8 @@ export function activePersonTag(person:string,priority:ActivityPriority='11'){
   const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+priority:'';
 }
 export function pendingReviewTag(person:string){const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+'000':'';}
+/** Passive planned reviewer tag (`jjo-000`), used on creation before sending to active review. */
+export function passiveReviewerTag(person:string){const key=activityPerson(person);return key?ACTIVITY_TAGS[key].active+'-000':'';}
 export function titlePriority(title:string,person?:string){
   const key=person?activityPerson(person):undefined;
   const tags=scanActivityTags(title).filter(tag=>tag.role==='active'&&(!key||tag.person===key));
@@ -101,7 +118,8 @@ export function currentReviewTagPerson(title:string,status=''){
 }
 export function inferActivityPerson(title:string,status=''){
   const tags=scanActivityTags(title),review=(PROGRESSIVE_WORKFLOW_PRIMARY&&(progressiveStage(status)?.state==='review'||progressiveStage(title)?.state==='review'))||/rtuzrevision|en revisi[oó]n/i.test(status)||/(?<![a-z])rtuzREVISION\b/i.test(title);
-  const candidate=review?(tags.findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))||tags.findLast(tag=>tag.role==='review')):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy')||tags.find(tag=>tag.role==='reference');
+  const completed=workflowState(status,title)==='completed';
+  const candidate=review?(tags.findLast(tag=>tag.role==='review'&&!tag.legacy&&tag.token.toLowerCase()===pendingReviewTag(tag.person))||tags.findLast(tag=>tag.role==='review')):tags.find(tag=>tag.role==='active')||tags.find(tag=>tag.role==='review')||tags.find(tag=>tag.role==='legacy')||(completed?tags.find(tag=>tag.role==='reference'):undefined);
   return candidate?.person||'';
 }
 export function resultAssignedPerson(item:any){

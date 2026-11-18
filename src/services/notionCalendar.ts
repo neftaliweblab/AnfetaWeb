@@ -4,6 +4,7 @@ import {workflowState} from './activityWorkflow';
 import {dailyChecklist} from '../lib/dailyChecklist';
 import {checklistTiming} from './checklistHistory';
 import {mergeChecklistItemPlans} from './checklistPlanning';
+import {parseChecklistBlockDate} from '@/lib/checklistBlockDates';
 import { mexicoDate } from './calendarPresentation';
 import { notionRequest } from './notionMutations';
 import { canEditActivity } from './activityPermissions';
@@ -182,7 +183,7 @@ export function checklistCodeFormatted(block:any) {
 }
 export async function readChecklist(settings: CalendarSettings, pageId: string) {
   const observedAt=new Date().toISOString();
-  const items: { id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt:string }[]=[];
+  const items: { id:string;blockId:string;text:string;isChecked:boolean;createdAt?:string;editedAt:string;plannedDate?:string }[]=[];
   const visited=new Set<string>();
   async function walk(id:string,depth:number) {
     if(depth>20)throw new Error('El checklist tiene demasiados niveles de anidación.');if(visited.has(id))return;visited.add(id);
@@ -191,7 +192,18 @@ export async function readChecklist(settings: CalendarSettings, pageId: string) 
       const text=(block[block.type]?.rich_text || []).map((part:any)=>part.plain_text || part.text?.content || '').join('');
       if(/\[ANFETA_|Datos internos de ANFETA/i.test(text))continue;
       const code=checklistCodeFormatted(block);
-      if(block.type==='to_do' && !code)items.push({id:block.id,blockId:block.id,text:text || 'Tarea sin texto',isChecked:!!block.to_do.checked,createdAt:block.created_time || '',editedAt:block.last_edited_time || ''});
+      if(block.type==='to_do' && !code){
+        const parsedDate = parseChecklistBlockDate(text);
+        items.push({
+          id:block.id,
+          blockId:block.id,
+          text:parsedDate.cleanText || 'Tarea sin texto',
+          isChecked:!!block.to_do.checked,
+          createdAt:block.created_time || '',
+          editedAt:block.last_edited_time || '',
+          ...(parsedDate.plannedDate ? { plannedDate: parsedDate.plannedDate } : {}),
+        });
+      }
       if(code && ['toggle','heading_1','heading_2','heading_3','heading_4','callout','paragraph','bulleted_list_item','numbered_list_item'].includes(block.type))continue;
       if(block.has_children)await walk(block.id,depth+1);
     }

@@ -7,7 +7,7 @@ import {NotionHoverPreview} from './NotionHoverPreview';
 import {SearchResultRow} from '@/types/anfeta';
 
 import React, { useState, useEffect, useRef } from "react";
-import { parseVisualParts } from "@/lib/visualTitleParser";
+import { parseVisualParts, formatAreaLabel } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled,isFullMatch} from '@/lib/searchPresentation';
@@ -795,19 +795,9 @@ function ResultsVirtualTableComponent({
                 padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
               }}
               className="shrink-0 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
+              title={`Área / tipo: ${formatAreaLabel(parsed.area)}`}
             >
-              {parsed.area}
-            </span>
-          )}
-          {parsed.orderCode && (
-            <span
-              style={{
-                fontSize: `${Math.max(7.5, 7.5 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
-              }}
-              className="shrink-0 rounded font-bold bg-[#3B2D6B]/40 border border-[#A78BFA]/60 text-[#C4B5FD]"
-            >
-              {parsed.orderCode}
+              {formatAreaLabel(parsed.area)}
             </span>
           )}
           {parsed.monthCode && (
@@ -817,8 +807,21 @@ function ResultsVirtualTableComponent({
                 padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
               }}
               className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
+              title={`Mes: ${parsed.monthCode}`}
             >
               {parsed.monthCode}
+            </span>
+          )}
+          {parsed.orderCode && (
+            <span
+              style={{
+                fontSize: `${Math.max(9.5, 10.5 * scale).toFixed(1)}px`,
+                lineHeight: 1.1,
+              }}
+              className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
+              title={`Fase / orden: ${parsed.orderCode}`}
+            >
+              {parsed.orderCode}
             </span>
           )}
           {conflict && (
@@ -842,6 +845,7 @@ function ResultsVirtualTableComponent({
             }}
             onMouseLeave={handleTitleMouseLeave}
             style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
+            title={parsed.rawTitle || item.name}
             className={'block truncate font-semibold cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0] hover:text-purple-300')}
           >
             {highlightMatch(parsed.title)}
@@ -1149,24 +1153,27 @@ function ResultsVirtualTableComponent({
               <span
                 style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
+                title={`Área / tipo: ${formatAreaLabel(parsed.area)}`}
               >
-                {parsed.area}
-              </span>
-            )}
-            {parsed.orderCode && (
-              <span
-                style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
-                className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#3B2D6B]/40 border border-[#A78BFA]/60 text-[#C4B5FD]"
-              >
-                {parsed.orderCode}
+                {formatAreaLabel(parsed.area)}
               </span>
             )}
             {parsed.monthCode && (
               <span
                 style={{ fontSize: `${Math.max(7, 7.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
+                title={`Mes: ${parsed.monthCode}`}
               >
                 {parsed.monthCode}
+              </span>
+            )}
+            {parsed.orderCode && (
+              <span
+                style={{ fontSize: `${Math.max(9.5, 10 * scale).toFixed(1)}px`, lineHeight: 1.1 }}
+                className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
+                title={`Fase / orden: ${parsed.orderCode}`}
+              >
+                {parsed.orderCode}
               </span>
             )}
           </div>

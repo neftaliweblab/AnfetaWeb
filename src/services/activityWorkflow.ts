@@ -1,6 +1,6 @@
 import {workflowStateLegacy} from './activityWorkflowLegacy';
-import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from './progressiveWorkflow';
-export {workflowStateLegacy};
+import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY,isTerminadoHoyStatus} from './progressiveWorkflow';
+export {workflowStateLegacy,isTerminadoHoyStatus};
 /** Explicit Notion state takes precedence; new title tokens are a fallback, never a mutation. */
 export function workflowState(status:string,title=''){
  if(!PROGRESSIVE_WORKFLOW_PRIMARY)return workflowStateLegacy(status,title);
@@ -23,7 +23,9 @@ export function workflowPresentation(status:string,title=''){
  * Diferenciador explícito de estados de opción múltiple / ciclo de vida:
  * Distingue entre 'pending', 'review', 'suspended', 'terminated' (tuz / terminada por aprobar) y 'finalized' (z / FIN definitiva).
  */
-export function activityDetailedState(status: string, title = ''): 'pending' | 'review' | 'suspended' | 'terminated' | 'finalized' | 'unknown' {
+export function activityDetailedState(status: string, title = ''): 'pending' | 'completed_today' | 'review' | 'suspended' | 'terminated' | 'finalized' | 'unknown' {
+  if (isTerminadoHoyStatus(status)) return 'completed_today';
+
   const isFin = /finaliz|fin\b|cobro\/documentacion|cobrado/i.test(status) || /(?<![a-z])z[rdscp]?\b/i.test(title) || /(?<![a-z])z\b/i.test(status);
   if (isFin) return 'finalized';
 
@@ -38,6 +40,16 @@ export function activityDetailedState(status: string, title = ''): 'pending' | '
 /** Display only: never use these abbreviations as Notion properties or title tokens. */
 export function workflowBadgePresentation(status:string,title=''){
  const info=workflowPresentation(status,title);
+ if(isTerminadoHoyStatus(status)){
+  return {
+   ...info,
+   shortLabel:'HOY✓',
+   description:['Terminado por hoy (Por hacer · sigue activo)',status?'Estado en Notion: '+status:''].filter(Boolean).join(' · '),
+   isFin:false,
+   isTer:false,
+   isCompletedToday:true,
+  };
+ }
  const basic={pending:'PH',review:'REV',completed:'TER',suspended:'SUS',unknown:'SC'};
  const stages:Record<string,string>={aprtuzR:'PA',aprtuz:'PA',prtuzR:'PH',prtuz:'PH',rtuzR:'REV',rtuz:'REV',saprtuzR:'SUS',saprtuz:'SUS',tuzR:'TER',tuz:'TER',uzR:'CP',uz:'CP',zR:'FIN',z:'FIN',ZS:'ST',ZC:'CT',ZP:'PT'};
  const isFin = info.stage?.code?.toLowerCase().startsWith('z') || /finaliz|fin\b|cobro\/documentacion|cobrado/i.test(status) || /(?<![a-z])z[rdscp]?\b/i.test(title);

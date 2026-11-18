@@ -2,7 +2,7 @@ import {isTemporaryCalendarResponse} from './calendarEntryPolicy';
 import {dailyActivityChecks} from '../lib/dailyChecklist';
 import {mexicoDate} from './calendarPresentation';
 import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
-import { workflowState } from './activityWorkflow';
+import { workflowState, isTerminadoHoyStatus } from './activityWorkflow';
 import { normalizePerson } from "./identityNormalizer";
 
 export function isFtfActivity(title: string) { return /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ccale)(?![\p{L}\p{Nd}_])/iu.test(title || ''); }
@@ -13,7 +13,7 @@ export function executiveActivities(activities: NotionCalendarActivity[], day: s
   return countedCalendarActivities(activities).filter(a=>{const date=a.start?mexicoDate(a.start):day;const from=Date.parse(date+'T09:30:00-06:00'),to=Date.parse(date+'T18:00:00-06:00');return normalizePerson(a.person)!=='Sin asignar'&&!a.isSuspended&&workflowState(a.status,a.title)!=='suspended'&&Date.parse(a.end)>from&&Date.parse(a.start)<to;});
 }
 export function currentActivityRatio(a: NotionCalendarActivity,day=mexicoDate(a.start)) {
-  if(a.isDaySnapshot||a.completedForDay)return 1;
+  if(a.isDaySnapshot||a.completedForDay||isTerminadoHoyStatus(a.status))return 1;
   if(a.checklistScanned&&a.checklistTotal>0){const daily=dailyActivityChecks(a,day);return daily.total?Math.max(0,Math.min(1,daily.done/daily.total)):0;}
   if(a.estimatedWorkMinutes>0)return Math.max(0,Math.min(1,(a.workedMinutes||0)/a.estimatedWorkMinutes));
   return ['review','completed'].includes(workflowState(a.status,a.title))?1:0;
@@ -28,7 +28,7 @@ export function evaluateLagStatus(
   activity: NotionCalendarActivity,
   currentTime: Date = new Date()
 ): ActivityLagStatus {
-  if (activity.completedForDay || activity.isDaySnapshot) {
+  if (activity.completedForDay || activity.isDaySnapshot || isTerminadoHoyStatus(activity.status)) {
     return { isLagging: false, isMissingChecklist: false };
   }
   const isPendingStatus = workflowState(activity.status, activity.title) === "pending";
@@ -95,7 +95,7 @@ export function computeDailyKPIs(
       reviewCount++;
     }
     const dailyChecks = dailyActivityChecks(act, dateStr);
-    const completedTodayFlag = Boolean(act.completedForDay || act.isDaySnapshot || dailyChecks.completedForDay);
+    const completedTodayFlag = Boolean(act.completedForDay || act.isDaySnapshot || isTerminadoHoyStatus(act.status) || dailyChecks.completedForDay);
     if (workflowState(act.status, act.title) === "completed" || completedTodayFlag || (workflowState(act.status, act.title) === "unknown" && act.isFinalized)) {
       completedCount++;
     }

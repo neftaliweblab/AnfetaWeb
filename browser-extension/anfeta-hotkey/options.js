@@ -1,17 +1,32 @@
 const DEFAULT_URL = 'https://anfeta-web.vercel.app/';
 
+function sanitizeAppUrl(raw) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return { ok: true, value: DEFAULT_URL, isDefault: true };
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { ok: false, error: 'La URL debe empezar con https:// o http://' };
+    }
+    return { ok: true, value: `${parsed.origin}/`, isDefault: false };
+  } catch {
+    return { ok: false, error: 'URL inválida. Ejemplo válido: https://anfeta-web.vercel.app/' };
+  }
+}
+
 async function load() {
   try {
     const commands = await chrome.commands.getAll();
-    const command = commands.find(c => c.name === 'toggle-anfeta');
+    const command = commands.find((c) => c.name === 'toggle-anfeta');
     const shortcutEl = document.getElementById('shortcut');
     if (command && command.shortcut) {
       shortcutEl.textContent = 'Atajo asignado: ' + command.shortcut;
-      document.getElementById('scopeHint').textContent = 'Comprueba que el alcance diga Global en la configuración del navegador. La extensión puede consultar la combinación, pero Chrome no informa su alcance.';
+      document.getElementById('scopeHint').textContent =
+        'Comprueba que el alcance diga Global en la configuración del navegador. La extensión puede consultar la combinación, pero Chrome no informa su alcance.';
     } else {
       shortcutEl.textContent = 'No asignado — Pulsa el botón abajo para configurarlo.';
     }
-  } catch (e) {
+  } catch {
     document.getElementById('shortcut').textContent = 'Error al consultar atajos.';
   }
 
@@ -21,25 +36,46 @@ async function load() {
 }
 
 document.getElementById('saveUrl').addEventListener('click', async () => {
-  const url = document.getElementById('appUrl').value.trim() || DEFAULT_URL;
-  await chrome.storage.local.set({ customAppUrl: url });
   const status = document.getElementById('saveStatus');
+  const errEl = document.getElementById('error');
+  const check = sanitizeAppUrl(document.getElementById('appUrl').value);
+  if (!check.ok) {
+    errEl.textContent = check.error;
+    status.textContent = '';
+    return;
+  }
+  errEl.textContent = '';
+  document.getElementById('appUrl').value = check.value;
+  if (check.isDefault) {
+    await chrome.storage.local.remove('customAppUrl');
+  } else {
+    await chrome.storage.local.set({ customAppUrl: check.value });
+  }
   status.textContent = 'Guardado';
-  setTimeout(() => { status.textContent = ''; }, 2000);
+  setTimeout(() => {
+    status.textContent = '';
+  }, 2000);
 });
 
 document.getElementById('resetUrl').addEventListener('click', async () => {
   document.getElementById('appUrl').value = DEFAULT_URL;
+  document.getElementById('error').textContent = '';
   await chrome.storage.local.remove('customAppUrl');
   const status = document.getElementById('saveStatus');
   status.textContent = 'Restablecido';
-  setTimeout(() => { status.textContent = ''; }, 2000);
+  setTimeout(() => {
+    status.textContent = '';
+  }, 2000);
 });
 
 document.getElementById('configure').addEventListener('click', () => {
   const isEdge = navigator.userAgent.includes('Edg/');
-  const isBrave = (navigator.brave && typeof navigator.brave.isBrave === 'function');
-  const url = isEdge ? 'edge://extensions/shortcuts' : (isBrave ? 'brave://extensions/shortcuts' : 'chrome://extensions/shortcuts');
+  const isBrave = navigator.brave && typeof navigator.brave.isBrave === 'function';
+  const url = isEdge
+    ? 'edge://extensions/shortcuts'
+    : isBrave
+      ? 'brave://extensions/shortcuts'
+      : 'chrome://extensions/shortcuts';
   void chrome.tabs.create({ url }).catch(() => {
     alert('Abre ' + url + ' en una pestaña nueva para configurar los atajos.');
   });

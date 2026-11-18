@@ -77,17 +77,26 @@ export function getPathOrderRank(row: any): number {
 export function getOrderNumericRank(row: any): number {
   const order = row.orderChip || row.OrderChip;
   if (order) {
-    const num = parseFloat(order);
+    const str = String(order).trim();
+    const fOrder = str.match(/^f(\d{1,3})(?:\.(\d{1,2}))?$/i);
+    if (fOrder) {
+      return parseInt(fOrder[1], 10) * 100 + parseInt(fOrder[2] || '0', 10);
+    }
+    const num = parseFloat(str);
     if (Number.isFinite(num)) return num;
   }
   const name = String(row.Name || row.name || '');
-  // Detección de estructura canónica moderna: 📅? MM.c.OO.SS -> Orden numérico OO.SS
-  const structMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.(\d{1,2})\.(\d{2})/i);
+  // Detección de estructura canónica moderna: 📅? MM.c.fNN.SS o MM.c.OO.SS -> orden numérico
+  const phaseMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.f(\d{1,3})\.(\d{2})(?!\d)/i);
+  if (phaseMatch) {
+    return parseInt(phaseMatch[1], 10) * 100 + parseInt(phaseMatch[2], 10);
+  }
+  const structMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.(\d{1,2})\.(\d{2})(?!\d)/i);
   if (structMatch) {
     const num = parseFloat(`${parseInt(structMatch[1], 10)}.${structMatch[2]}`);
     if (Number.isFinite(num)) return num;
   }
-  const m = name.match(/(?<![a-zA-Z0-9_])(\d{1,3}\.\d{1,2})(?![a-zA-Z0-9_])/);
+  const m = name.match(/(?<![a-zA-Z0-9_vV./-])(\d{1,2}\.\d{2})(?![a-zA-Z0-9_./])/);
   if (m && m.index !== undefined && m.index < 80) {
     const num = parseFloat(m[1]);
     if (Number.isFinite(num)) return num;
