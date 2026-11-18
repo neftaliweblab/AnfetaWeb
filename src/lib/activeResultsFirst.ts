@@ -1,7 +1,7 @@
 import {searchDatabaseName} from './searchDatabase';
 import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
-import {parseVisualParts} from '@/lib/visualTitleParser';
+import {parseVisualParts, formatAreaLabel} from '@/lib/visualTitleParser';
 import {normalizePerson} from '@/services/identityNormalizer';
 import {resultAssignedPerson} from '@/services/activityTags';
 import {resultMonthKey,sortMonthGroups} from './searchMonthOrder';
@@ -163,14 +163,14 @@ export function getItemGroupKey(item: any, groupBy: string): string {
   }
 
   if (groupBy === "domain" || groupBy === "domain_nobilling") {
-    const dom = parsed.domain || item.domainChip || item.domain || item.sourceName || "General";
-    return `🌐 ${dom}`;
+    const dom = String(parsed.domain || item.domainChip || item.domain || "").trim();
+    return dom ? `🌐 ${dom}` : "🌐 Sin dominio";
   }
 
   if(groupBy==='status')return 'Estado: '+(parsed.workflow||'Sin clasificar');
   if (groupBy === "project_suffix") {
-    const dom = parsed.domain || item.domainChip || item.domain || "General";
-    const suffixMatch = String(item.name || item.title || "").match(/\.(webs|ads|seo|app|prog)\b/i);
+    const dom = parsed.domain || item.domainChip || item.domain || "Sin dominio";
+    const suffixMatch = String(item.name || item.title || "").match(/\.(webs|ads|seo|app|apli|prog|soft)\b/i);
     const suffix = suffixMatch ? suffixMatch[0] : ".general";
     return `📁 ${dom} · ${suffix}`;
   }
@@ -180,7 +180,8 @@ export function getItemGroupKey(item: any, groupBy: string): string {
   }
 
   if (groupBy === "project_type" || groupBy === "area" || groupBy === "area_nobilling") {
-    return parsed.area || item.areaChip ? `🏷️ Área: ${parsed.area || item.areaChip}` : "🏷️ Otros";
+    const rawArea = parsed.area || item.areaChip;
+    return rawArea ? `🏷️ Área: ${formatAreaLabel(rawArea)}` : "🏷️ Otros";
   }
 
   return "";
@@ -204,9 +205,17 @@ export function activeGroupsFirst<T, G extends { items: T[] }>(groups: G[]): G[]
 }
 
 /** Order the full result set before pagination, respecting grouping rules. */
-export function sortResultGroups<T,G extends {items:T[]}>(groups:G[],groupBy:string,now=new Date()):G[]{
+export function sortResultGroups<T,G extends {key?:string;items:T[]}>(groups:G[],groupBy:string,now=new Date()):G[]{
   if(groupBy==='month')return sortMonthGroups(groups.map(group=>({...group,items:activeResultsFirst(group.items)})),now);
-  return activeGroupsFirst(groups);
+  const sorted = activeGroupsFirst(groups);
+  if (groupBy === 'domain' || groupBy === 'domain_nobilling' || groupBy === 'project_type' || groupBy === 'area' || groupBy === 'area_nobilling') {
+    const isFallback = (key?: string) => key === '🌐 Sin dominio' || key === '🌐 General' || key === '🏷️ Otros';
+    return [
+      ...sorted.filter((g) => !isFallback(g.key)),
+      ...sorted.filter((g) => isFallback(g.key)),
+    ];
+  }
+  return sorted;
 }
 export function orderSearchResults<T>(items: readonly T[], groupBy?: string,now=new Date()): T[] {
   if (!groupBy || groupBy === "none") {

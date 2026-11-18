@@ -35,14 +35,14 @@ const { buildPersonWorkQuery, passiveReviewerTag, scanActivityTags } = require(r
 const { extractPersonFromWorkQuery } = require(root + '/src/lib/searchTabsStorage.ts');
 const { calendarDomain, calendarDisplayTitle } = require(root + '/src/services/calendarPresentation.ts');
 const { contentClassification, classifiedDomain } = require(root + '/src/lib/contentClassification.ts');
-const { isBillingItem, isCobroItem, isPagoItem } = require(root + '/src/lib/activeResultsFirst.ts');
+const { isBillingItem, isCobroItem, isPagoItem, getItemGroupKey, sortResultGroups } = require(root + '/src/lib/activeResultsFirst.ts');
 const { normalizeSearchTabConfig } = require(root + '/src/lib/searchTabConfig.ts');
 const { quickRevisionTitle } = require(root + '/src/lib/quickRevisionTitle.ts');
 const { workflowState, isTerminadoHoyStatus, workflowBadgePresentation } = require(root + '/src/services/activityWorkflow.ts');
 const { parseChecklistBlockDate, applyChecklistDateToRuns } = require(root + '/src/lib/checklistBlockDates.ts');
 const { detectMediaKind } = require(root + '/src/components/MediaViewerModal.tsx');
 
-test('§1 + §5: Nuevo formato 1./0., áreas visibles Aplicación/Software, f41.01, orden numérico y preservación de SEO', () => {
+test('§1 + §5: Nuevo formato 1./0., áreas visibles Aplicación/Software, f41.01, orden numérico, SEO y agrupación real por Dominio/Área', () => {
   const realExample =
     'prtuzR | 💻 AAPLI -- | 🌐 1.anfeta.com.aplicacion | 📅 11.a.f41.01 corregir anfeta | 🛠️ [CCORR AANFE NNOTI] | 👥 nne11 kka-11 gge-11 sso-11 aac-11 eed-11 jjo11 | ✅ jjo-000';
   const parsed = parseVisualParts(realExample);
@@ -80,6 +80,32 @@ test('§1 + §5: Nuevo formato 1./0., áreas visibles Aplicación/Software, f41.
     calendarDisplayTitle('prtuzR | 🌐 1.anfeta.com.aplicacion | 📅 11.a.f41.01 corregir anfeta', 'anfeta.com'),
     /^1\./
   );
+
+  // SEO con formato 11.s.f11.00 no debe confundirse con Software/PROG y [SSEO OOPT TTEC] debe limpiarse completo
+  const seoF11 = parseVisualParts('prtuzR | 🔎 SSEO -- | 🌐 1.opticayoftalmologia.com.seo | 📅 11.s.f11.00 SEO Optimización Técnica / Reporte Mes | 🛠️ [SSEO OOPT TTEC] | 👥 nne11');
+  assert.equal(seoF11.area, 'SEO');
+  assert.equal(seoF11.domain, 'opticayoftalmologia.com');
+  assert.doesNotMatch(seoF11.title, /OOPT|TTEC|\[/);
+
+  // Dominios con # prefijo (#d.anfeta.com.03 / #1.anfeta.com) se conservan y agrupan por dominio real, no por Revisiones (BD)
+  const recQuick = parseVisualParts('prtuzR | 🌐 Actividad rápida | 📅 26-[11NOV] Grabacion_jjo11 | 🌐 #d.anfeta.com.03 | 👤 jjo11 | ✅');
+  assert.equal(recQuick.domain, 'anfeta.com');
+  assert.equal(getItemGroupKey({ name: '111 prompt notion IA', sourceName: 'Revisiones' }, 'domain'), '🌐 Sin dominio');
+  assert.equal(getItemGroupKey({ name: 'prtuzR | 🌐 #d.anfeta.com.03 | Demo', sourceName: 'Revisiones' }, 'domain'), '🌐 anfeta.com');
+  const sortedDomGroups = sortResultGroups(
+    [
+      { key: '🌐 Sin dominio', items: [{ id: '1', name: '111 prompt notion IA' }] },
+      { key: '🌐 anfeta.com', items: [{ id: '2', name: 'prtuzR | 1.anfeta.com | Fix' }] },
+    ],
+    'domain'
+  );
+  assert.equal(sortedDomGroups[0].key, '🌐 anfeta.com');
+  assert.equal(sortedDomGroups[1].key, '🌐 Sin dominio');
+
+  // Encabezados de Área nunca muestran APP/PROG en bruto y limpian ffase00
+  assert.equal(getItemGroupKey({ name: realExample }, 'project_type'), '🏷️ Área: Aplicación');
+  assert.equal(getItemGroupKey({ name: 'prtuzR | 💻 SSOFT | 11.s.03.00 Usos-weblab | 0.anfeta.com.03' }, 'project_type'), '🏷️ Área: Software');
+  assert.doesNotMatch(parseVisualParts('01.00 REQUERIMIENTOS CONTROL DE JORNADA ffase00').title, /ffase00/i);
 });
 
 test('§3: Consulta personal automática genera únicamente códigos canónicos sin nombre antepuesto e incluye a Edwin', () => {

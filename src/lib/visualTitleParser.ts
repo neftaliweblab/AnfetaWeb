@@ -130,8 +130,11 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     const strand = structMatch[2].toLowerCase();
     if (!area) {
       if (strand === 's') {
-        const looksSeo = /\b(?:sseo|seo)\b|\.seo\b/i.test(display) && !/\b(?:ssoft|pprog|software)\b|\.\d{2}\b/i.test(display);
-        area = looksSeo ? 'SEO' : 'PROG';
+        const hasSoftwareSignal =
+          /\b(?:ssoft|pprog|software|instalador|tutoriales)\b/i.test(display) ||
+          /\.(?:com|mx|net|org|io|app|dev)(?:\.[a-z0-9-]+)*\.0[1-4](?:wl|_weblab)?\b/i.test(display);
+        const looksSeo = /\b(?:sseo|seo)\b|\.seo\b/i.test(display);
+        area = looksSeo && !hasSoftwareSignal ? 'SEO' : 'PROG';
       } else if (strand === 'p') area = 'PROG';
       else if (strand === 'a') area = 'APP';
       else if (strand === 'w') area = 'WEB';
@@ -152,12 +155,15 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     }
   }
 
-  // 4. Extraer Dominio (soporta 1./0./p./d., sufijos .aplicacion/.01-.04/.03wl, sin mutilar IPs)
+  // 4. Extraer Dominio (soporta #?1./0./p./d., sufijos .aplicacion/.01-.04/.03wl, sin mutilar IPs)
   let domain = '';
-  const classifiedToken = display.match(/(?:\[|\()?([01pd]\.(?=[a-z0-9-]*[a-z][a-z0-9-]*\.)(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|correos|instalador|tutoriales|weblab|cliente|0[1-4](?:wl|_weblab)?))*)(?:\]|\))?(?=\s|$|\||,|;)/i);
+  const classifiedToken = display.match(/(?:\[|\(|#)?([01pd]\.(?=[a-z0-9-]*[a-z][a-z0-9-]*\.)(?:[a-z0-9-]+\.)+(?:com|mx|net|org|io|vip|app|edu|gob|co|ai|dev|info|biz|us|es|online|site)(?:\.(?:webs?|ads|seo|maps|cotizacion|biblioteca|aplicacion|software|proyecto|app|prog|redes|correos|instalador|tutoriales|weblab|cliente|0[1-4](?:wl|_weblab)?))*)(?:\]|\))?(?=\s|$|\||,|;)/i);
   if (classifiedToken) {
     const candidateDom = calendarDomain(classifiedToken[1]);
-    domain = candidateDom && candidateDom !== 'general' ? candidateDom : '';
+    domain =
+      candidateDom && !['general', 'dominio.com', 'ejemplo.com', 'example.com'].includes(candidateDom)
+        ? candidateDom
+        : '';
     display = display.replace(classifiedToken[0], ' ');
   }
 
@@ -208,8 +214,15 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   display = display.replace(/(?<![\w_.])(?:sseo|wwebs|aads|aapli|pprog|ssoft|ddise|rrede|mmaps|bbibl|ccoti|cchat|rrapi)(?![\w_.])/gi, ' ');
 
   // 6. Extraer fase/orden (fNN / ffaseNN / 01.00) sin confundir años (2026), versiones (v2.0) ni 0./1. sueltos
+  const trailingFaseMatch = display.match(/(?<![\w_.])(?:ffase|fase)(\d{1,3}(?:\.\d{1,2})?)(?![\w.])/i);
+  if (!orderCode && trailingFaseMatch) {
+    orderCode = `f${trailingFaseMatch[1]}`;
+    display = display.replace(trailingFaseMatch[0], ' ');
+  } else if (trailingFaseMatch) {
+    display = display.replace(trailingFaseMatch[0], ' ');
+  }
   if (!orderCode) {
-    const faseMatch = display.match(/(?<![\w_.])(?:ffase|fase|f)(\d{1,3}(?:\.\d{1,2})?)(?![\w.])/i);
+    const faseMatch = display.match(/(?<![\w_.])f(\d{1,3}(?:\.\d{1,2})?)(?![\w.])/i);
     if (faseMatch && faseMatch.index! < 60) {
       orderCode = `f${faseMatch[1]}`;
       display = display.replace(faseMatch[0], ' ');
@@ -226,7 +239,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   display = stripActivityTags(display).replace(/(?<![\w.])ssoft(?![\w.])/gi, ' ');
   // 7. Limpieza de prefijos técnicos residuales, bloques [CCORR AANFE ...], SEO repetido ("mes SEO SEO") y decoraciones de Notion
   display = display
-    .replace(/\[[A-Z]{4,}(?:\s+[A-Z]{4,})*\]/g, ' ')
+    .replace(/\[\s*[A-Z]{4,}(?:\s+[A-Z]{4,})*\s*\]/g, ' ')
     .replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '')
     .replace(/\bmes\s+seo\s+seo\b/gi, 'SEO')
     .replace(/\bseo\s+seo\b/gi, 'SEO')
