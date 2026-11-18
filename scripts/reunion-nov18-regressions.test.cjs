@@ -184,3 +184,74 @@ test('§13: detectMediaKind distingue audio .ogg vs video .mp4/.mkv/.mov', () =>
   assert.equal(detectMediaKind('https://cdn.notion.so/grabacion.mkv?X-Amz=1'), 'video');
   assert.equal(detectMediaKind('https://cdn.notion.so/clip.mov'), 'video');
 });
+
+test('Cotización plantilla: no duplica sufijo .cotizacion y maneja link_mention/advertencias', async () => {
+  const { buildCalendarQuickTemplateFinalTitle } = require(root + '/src/lib/templateCatalog.ts');
+  const built = buildCalendarQuickTemplateFinalTitle({
+    projectToken: 'ccoti',
+    selectedDate: new Date('2026-11-18T10:00:00-06:00'),
+    description: 'Cotizacion Etapas',
+    domain: 'p.djexcavation.com.cotizacion',
+    personName: 'Karla',
+    templateOriginalTitle: 'prtuzR | 💻 ccoti | 📅 00.c.00.00 Cotizacion Etapas | 🌐 #p.dominio.com.cotizacion | 🛠 #descripcion | 💬 #ffase 00',
+  });
+  assert.match(built, /#p\.djexcavation\.com\.cotizacion \|/);
+  assert.doesNotMatch(built, /\.cotizacion\.cotizacion/);
+
+  // Mock Notion reads/writes for notionTemplateBody tolerant warning flow
+  let mockTree = {
+    tplPage: [
+      { id: 'p-valid', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: 'Paso 1' }, plain_text: 'Paso 1' }] } },
+      { id: 'p-link-mention', type: 'paragraph', paragraph: { rich_text: [{ type: 'mention', mention: { type: 'link_mention', link_mention: { href: 'https://anfeta.com/cotizacion', title: 'Cotizador ANFETA' } }, plain_text: 'Cotizador ANFETA', href: 'https://anfeta.com/cotizacion' }] } },
+      { id: 'p-empty-mention', type: 'paragraph', paragraph: { rich_text: [{ type: 'mention', mention: { type: 'link_preview', link_preview: { url: 'https://example.com/ref' } }, plain_text: 'https://example.com/ref' }] } },
+      { id: 'p-restricted', type: 'meeting_notes', meeting_notes: { block_type: 'meeting_notes' } },
+      { id: 'p-notion-400', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: 'Bloque que rechaza Notion al escribir' }, plain_text: 'Bloque que rechaza Notion al escribir' }] } },
+      { id: 'p-todo', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: 'Enviar propuesta' }, plain_text: 'Enviar propuesta' }], checked: false } },
+    ],
+  };
+  let appendedChildren = [];
+  const origLoad = Module._load;
+  Module._load = function (name, parent, ...rest) {
+    if (parent?.filename.endsWith('notionTemplateBody.ts')) {
+      if (name === './notionCalendar') return { readBlocks: async (_s, id) => structuredClone(mockTree[id] || []) };
+      if (name === './notionMutations') {
+        return {
+          notionRequest: async (_s, _url, method, body) => {
+            if (method === 'DELETE') return {};
+            const hasFailingBlock = (body?.children || []).some((b) =>
+              b?.paragraph?.rich_text?.[0]?.text?.content?.includes('rechaza Notion')
+            );
+            if (hasFailingBlock) {
+              throw new Error('Notion API 400: invalid test block');
+            }
+            appendedChildren.push(...(body?.children || []));
+            return { results: (body?.children || []).map((_, idx) => ({ id: 'created-' + appendedChildren.length + '-' + idx })) };
+          },
+        };
+      }
+    }
+    return origLoad.call(this, name, parent, ...rest);
+  };
+  try {
+    delete require.cache[require.resolve(root + '/src/services/notionTemplateBody.ts')];
+    const { prepareTemplateBodyWithWarnings, appendTemplateBodyWithWarnings } = require(root + '/src/services/notionTemplateBody.ts');
+    const prep = await prepareTemplateBodyWithWarnings({}, 'tplPage');
+    // meeting_notes omitted with warning; link_mention & link_preview converted cleanly to text runs with links
+    assert.equal(prep.warnings.length, 1);
+    assert.match(prep.warnings[0], /meeting_notes/);
+    assert.equal(prep.nodes.length, 5);
+    assert.equal(prep.nodes[1].block.paragraph.rich_text[0].type, 'text');
+    assert.equal(prep.nodes[1].block.paragraph.rich_text[0].text.link.url, 'https://anfeta.com/cotizacion');
+    assert.equal(prep.nodes[2].block.paragraph.rich_text[0].type, 'text');
+    assert.equal(prep.nodes[2].block.paragraph.rich_text[0].text.link.url, 'https://example.com/ref');
+
+    const app = await appendTemplateBodyWithWarnings({}, 'destPage', prep.nodes);
+    assert.equal(app.appendedCount, 4);
+    assert.equal(app.warnings.length, 1);
+    assert.match(app.warnings[0], /rechaza Notion/);
+    assert.equal(appendedChildren.length, 4);
+    assert.equal(appendedChildren[3].type, 'to_do');
+  } finally {
+    Module._load = origLoad;
+  }
+});

@@ -282,13 +282,21 @@ export function CalendarTemplatesModal({
       const data = await res.json();
       if (data.createdActivities?.length) onActivitiesCreated?.(data.createdActivities);
       if (res.ok && data.success && data.createdActivities?.length === requests.length) {
-        showCreationResult(true, requests.length === 1 ? "Actividad creada" : `${requests.length} actividades creadas`);
+        const baseTitle = requests.length === 1 ? "Actividad creada" : `${requests.length} actividades creadas`;
+        const hasWarning = Boolean(data.warning);
+        showCreationResult(
+          true,
+          hasWarning ? `${baseTitle} (con advertencia)` : baseTitle,
+          data.warning || undefined,
+          requests.length === 1 ? data.createdActivities[0]?.pageUrl : undefined
+        );
         onClose();
       }
       else {
         const successful = new Set((data.results || []).filter((item:any)=>item.success).map((item:any)=>requests[item.index]?.sourcePageId));
         setSelectedIds(prev=>new Set([...prev].filter(id=>!successful.has(id))));
-        setCreationError(data.error || 'No se confirmó la creación en Notion.');
+        const combinedError = [data.error, data.warning].filter(Boolean).join(' · ');
+        setCreationError(combinedError || 'No se confirmó la creación en Notion.');
         showCreationResult(false, successful.size ? 'Creación parcial' : 'No se confirmó la creación', successful.size ? `${successful.size} de ${requests.length} actividades confirmadas. Revisa las pendientes.` : 'Revisa el detalle en el formulario.');
       }
     } catch (err: any) {

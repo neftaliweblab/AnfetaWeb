@@ -49,7 +49,7 @@ import {drxFolder,uploadFilename} from '@/lib/drxUploadPlan';
 import {consolidateInternalMetadata} from '@/services/internalMetadataConsolidation';
 import {readActivityPreview} from '@/services/notionActivityPreview';
 import {auditTemplateAccess} from '@/services/templateAccessAudit';
-import {prepareTemplateBody,appendTemplateBody} from '@/services/notionTemplateBody';
+import {prepareTemplateBodyWithWarnings,appendTemplateBodyWithWarnings} from '@/services/notionTemplateBody';
 import {createHash} from 'node:crypto';
 import {supabaseConfigured} from '@/services/supabaseServer';
 import {readIndexSlice,snapshotRequestKey,snapshotContext,readSnapshot,claimSnapshot,finishSnapshot,invalidateSnapshots,notionSourceKey} from '@/services/notionSnapshotCache';
@@ -410,7 +410,7 @@ async function duplicateNotionPageWithoutBody({
   overridePerson?: string;
   copyBody?: boolean;
   deadline?: number;
-}): Promise<{ page:any; pageId: string; pageUrl: string; title: string }> {
+}): Promise<{ page:any; pageId: string; pageUrl: string; title: string; warnings: string[] }> {
   // Leave time to archive an incomplete copy before the route's 120s deadline.
   const budget=Math.min(85000,deadline?deadline-Date.now()-20000:85000);
   if(budget<1000)throw Error('Esta plantilla quedó pendiente porque el lote alcanzó su tiempo disponible. Reintenta solo las pendientes.');
@@ -504,7 +504,18 @@ async function duplicateNotionPageWithoutBody({
     parent: sourcePage.parent,
     properties: duplicateProperties,
   };
-  const preparedBody=copyBody?await prepareTemplateBody(bodySettings,sourcePageId):[];
+  const bodyWarnings: string[] = [];
+  let preparedBody: Awaited<ReturnType<typeof prepareTemplateBodyWithWarnings>>['nodes'] = [];
+  if (copyBody) {
+    try {
+      const prepared = await prepareTemplateBodyWithWarnings(bodySettings, sourcePageId);
+      preparedBody = prepared.nodes;
+      bodyWarnings.push(...prepared.warnings);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      bodyWarnings.push('No se pudo leer parte del contenido de la plantilla (' + (error instanceof Error ? error.message : 'error de lectura') + ').');
+    }
+  }
 
   const createRes = await fetch("https://api.notion.com/v1/pages", {
     signal:bodySettings.notionSignal,
@@ -523,7 +534,7 @@ async function duplicateNotionPageWithoutBody({
   }
 
   const createdPage = await createRes.json();
-  if(copyBody){try{await appendTemplateBody(bodySettings,createdPage.id,preparedBody);}catch(error){try{await notionRequest({...bodySettings,notionSignal:AbortSignal.timeout(20000)},'pages/'+createdPage.id,'PATCH',{archived:true});}catch{throw new Error('La copia del cuerpo falló y no se pudo retirar la página incompleta: '+createdPage.url);}throw new Error('No se pudo copiar el cuerpo; se retiró la página incompleta. '+(error instanceof Error?error.message:''));}}
+  if(copyBody && preparedBody.length){try{const appended=await appendTemplateBodyWithWarnings(bodySettings,createdPage.id,preparedBody);bodyWarnings.push(...appended.warnings);}catch(error){if(error instanceof Error && error.name==='AbortError')throw error;bodyWarnings.push('Algunos elementos del contenido no se pudieron duplicar ('+(error instanceof Error?error.message:'error al escribir bloques')+').');}}
   try {
     await saveActivityLinkToNotion(bodySettings, createdPage.id);
   } catch (linkErr) {
@@ -537,6 +548,7 @@ async function duplicateNotionPageWithoutBody({
     pageId: newId,
     pageUrl: newUrl,
     title: overrideTitle || "Actividad desde plantilla",
+    warnings: bodyWarnings,
   };
 }
 
@@ -3943,10 +3955,15 @@ async function POSTLive(req: NextRequest) {
           const live = extractNotionPageData(created);
           const activity = normalizeActivity({pageId:created.id,pageUrl:created.url,title:live.title,person:live.person,start:live.dateStart,end:live.dateEnd,domain:calendarDomain(live.title,item.domain),status:live.status},0);
           createdActivities.push(activity); persistCalendarActivity(activity);
-          results.push({index,success:true,pageId:created.id});
+          results.push({index,success:true,pageId:created.id,warnings:result.warnings});
         } catch (error) {results.push({index,success:false,error:error instanceof Error ? error.message : 'No se pudo crear la plantilla.'});}
       }
-      return NextResponse.json({success:results.every(item=>item.success),createdActivities,results,count:createdActivities.length,error:results.filter(item=>!item.success).map(item=> 'Plantilla ' + (item.index+1) + ': ' + item.error).join(' · ')});
+      const warningList = results.flatMap((item: any) =>
+        (item.warnings || []).map((w: string) => (results.length > 1 ? 'Plantilla ' + (item.index + 1) + ': ' : 'Advertencia: ') + w)
+      );
+      const uniqueWarnings = Array.from(new Set(warningList));
+      const warning = uniqueWarnings.length ? uniqueWarnings.join(' · ') : undefined;
+      return NextResponse.json({success:results.every(item=>item.success),createdActivities,results,count:createdActivities.length,error:results.filter(item=>!item.success).map(item=> 'Plantilla ' + (item.index+1) + ': ' + item.error).join(' · '),...(warning ? { warning, warnings: uniqueWarnings } : {})});
     }
 
     if (action === 'save-meal-break') {

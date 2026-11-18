@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { CheckCircle2, AlertCircle, Loader2, ExternalLink, X } from "lucide-react";
+import { CheckCircle2, AlertCircle, AlertTriangle, Loader2, ExternalLink, X } from "lucide-react";
 
 export type CreationResult = {
   success: boolean;
@@ -42,7 +42,7 @@ export function CreationFeedback() {
 
       // Auto cerrar: 5s para éxito, 7.5s si trae enlace o error, no auto-cerrar si está cargando
       if (!next.loading) {
-        const timeout = next.pageUrl ? 7500 : next.success ? 4500 : 6500;
+        const timeout = next.success && next.detail ? 11000 : next.pageUrl ? 7500 : next.success ? 4500 : 6500;
         timerRef.current = window.setTimeout(() => setResult(null), timeout);
       }
     };
@@ -57,11 +57,14 @@ export function CreationFeedback() {
   if (!result) return null;
 
   const isSuccess = result.success && !result.loading;
+  const isWarning = isSuccess && Boolean(result.detail);
   const isError = !result.success && !result.loading;
   const isLoading = Boolean(result.loading);
 
   const containerStyle = isLoading
     ? "border-cyan-500/50 bg-[#091522]/95 text-cyan-200 shadow-[0_10px_25px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.15)]"
+    : isWarning
+    ? "border-amber-500/60 bg-[#1A1407]/95 text-amber-200 shadow-[0_10px_25px_rgba(0,0,0,0.5),0_0_15px_rgba(245,158,11,0.18)]"
     : isSuccess
     ? "border-emerald-500/50 bg-[#071912]/95 text-emerald-200 shadow-[0_10px_25px_rgba(0,0,0,0.5),0_0_15px_rgba(16,185,129,0.18)]"
     : "border-rose-500/60 bg-[#1A0A10]/95 text-rose-200 shadow-[0_10px_25px_rgba(0,0,0,0.5),0_0_15px_rgba(244,63,94,0.18)]";
@@ -79,6 +82,8 @@ export function CreationFeedback() {
           <div className="flex items-center gap-2">
             {isLoading ? (
               <Loader2 className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+            ) : isWarning ? (
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             ) : isSuccess ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             ) : (
@@ -100,7 +105,7 @@ export function CreationFeedback() {
         </div>
 
         {result.detail && (
-          <p className="text-[11px] text-slate-300 font-mono leading-relaxed line-clamp-2 pl-6">
+          <p className={`text-[11px] leading-relaxed pl-6 ${isWarning ? "text-amber-100/90 line-clamp-5" : "text-slate-300 font-mono line-clamp-2"}`}>
             {result.detail}
           </p>
         )}
