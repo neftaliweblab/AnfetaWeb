@@ -72,7 +72,7 @@ export function calendarDisplayTitle(title: string, domain = '') {
     const escaped = domain.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp('(?<![a-z0-9.-])(?:\\b(?:www|webs|web|seo|ads|maps|cotizacion|biblioteca|proyecto)\\.)*' + escaped + '(?![a-z0-9.-])', 'gi'), ' ');
   }
-  text = text.replace(/\b\d{1,2}\.(?:[a-z]|\[tipo\])\.(?:f\d{1,3}|\d{1,2})\.\d{2}\b/gi,' ')
+  text = text.replace(/\b\d{1,2}(?:[A-Za-z]{3,4})?\.(?:[a-z]|\[tipo\])\.(?:f\d{1,3}|\d{1,2})\.\d{2}\b/gi,' ')
     .replace(/(?<![\p{L}\p{N}_])\[[A-Z]{4,}(?:\s+[A-Z]{4,})*\](?![\p{L}\p{N}_])/gu,' ')
     .replace(/\b(?:ssoft|ccobr|ppaga|ffase\d+)\b/gi,' ')
     .replace(/\bmes\s+seo\s+seo\b/gi,'SEO')

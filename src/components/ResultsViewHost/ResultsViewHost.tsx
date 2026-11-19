@@ -64,7 +64,8 @@ import { DropboxConnectModal } from "@/components/DropboxConnectModal/DropboxCon
 import { GlobalPasteModal, GlobalPasteImagePayload } from "./GlobalPasteModal";
 import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus';
 import {matchesContentClassification} from '@/lib/contentClassification';
-import {searchDatabaseOptions} from '@/lib/searchDatabase';
+import { searchDatabaseOptions } from "@/lib/searchDatabase";
+import { itemMatchesMonthFilter } from "@/lib/searchMonthOrder";
 import { filterByNotionBase, isNotionItem, isDropboxItem, isLegacyDropboxDiskItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
@@ -1862,7 +1863,7 @@ export function ResultsViewHost({
       res = res.filter(item => itemMatchesScheduledDay(item, todayStr));
     }
     if (selectedMonth && selectedMonth !== "Todos") {
-      res = res.filter((it) => it.name.toUpperCase().includes(selectedMonth));
+      res = res.filter((it) => itemMatchesMonthFilter(it, selectedMonth));
     }
 
     res=res.filter(item=>matchesResultStatus(item,statusFilter));

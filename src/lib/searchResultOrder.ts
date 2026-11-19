@@ -86,12 +86,12 @@ export function getOrderNumericRank(row: any): number {
     if (Number.isFinite(num)) return num;
   }
   const name = String(row.Name || row.name || '');
-  // Detección de estructura canónica moderna: 📅? MM.c.fNN.SS o MM.c.OO.SS -> orden numérico
-  const phaseMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.f(\d{1,3})\.(\d{2})(?!\d)/i);
+  // Detección de estructura canónica moderna: 📅? MM[MES]?.c.fNN.SS o MM[MES]?.c.OO.SS -> orden numérico
+  const phaseMatch = name.match(/(?:📅\s*)?\d{1,2}(?:[A-Za-z]{3,4})?\.[a-z]\.f(\d{1,3})\.(\d{2})(?!\d)/i);
   if (phaseMatch) {
     return parseInt(phaseMatch[1], 10) * 100 + parseInt(phaseMatch[2], 10);
   }
-  const structMatch = name.match(/(?:📅\s*)?\d{1,2}\.[a-z]\.(\d{1,2})\.(\d{2})(?!\d)/i);
+  const structMatch = name.match(/(?:📅\s*)?\d{1,2}(?:[A-Za-z]{3,4})?\.[a-z]\.(\d{1,2})\.(\d{2})(?!\d)/i);
   if (structMatch) {
     const num = parseFloat(`${parseInt(structMatch[1], 10)}.${structMatch[2]}`);
     if (Number.isFinite(num)) return num;

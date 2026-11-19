@@ -67,6 +67,39 @@ export function formatAreaLabel(area: string): string {
   return AREA_DISPLAY_LABELS[clean.toUpperCase()] || clean;
 }
 
+const CANONICAL_MONTH_LABELS = [
+  '01ENE',
+  '02FEB',
+  '03MAR',
+  '04ABR',
+  '05MAY',
+  '06JUN',
+  '07JUL',
+  '08AGO',
+  '09SEP',
+  '10OCT',
+  '11NOV',
+  '12DIC',
+] as const;
+
+/**
+ * Convierte un código de mes numérico o abreviado a su etiqueta oficial visible (`11` -> `11NOV`).
+ * Solo afecta visualización; no modifica títulos fuente en Notion.
+ */
+export function formatMonthBadgeLabel(rawMonthCode: string): string {
+  const clean = String(rawMonthCode || '').trim().toUpperCase();
+  if (!clean) return '';
+  const numOnly = clean.match(/^0?([1-9]|1[0-2])$/);
+  if (numOnly) {
+    return CANONICAL_MONTH_LABELS[parseInt(numOnly[1], 10) - 1] || clean;
+  }
+  const numWithLetters = clean.match(/^0?([1-9]|1[0-2])([A-Z]{3,4})$/);
+  if (numWithLetters) {
+    return CANONICAL_MONTH_LABELS[parseInt(numWithLetters[1], 10) - 1] || clean;
+  }
+  return clean;
+}
+
 const visualPartsGlobalCache = new Map<string, VisualParts>();
 const MAX_PARTS_CACHE = 4000;
 
@@ -149,9 +182,9 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   let orderCode = '';
   let area = areaFromStage;
 
-  // 3a. Estructura moderna de títulos: 📅? MM.c.fNN.OO o MM.c.OO.SS (ej. 11.a.f41.01, 11.s.01.00, 11.a.01.00)
-  const structPhaseMatch = display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(f\d{1,3})\.(\d{2})(?!\d)/i);
-  const structMatch = structPhaseMatch || display.match(/(?:📅\s*)?(\d{1,2})\.([a-z])\.(\d{1,2})\.(\d{2})(?!\d)/i);
+  // 3a. Estructura moderna de títulos: 📅? MM[MES]?.c.fNN.OO o MM[MES]?.c.OO.SS (ej. 11.a.f41.01, 11NOV.a.f43.00, 11.s.01.00)
+  const structPhaseMatch = display.match(/(?:📅\s*)?(0?[1-9]|1[0-2])(?:[A-Za-z]{3,4})?\.([a-z])\.(f\d{1,3})\.(\d{2})(?!\d)/i);
+  const structMatch = structPhaseMatch || display.match(/(?:📅\s*)?(0?[1-9]|1[0-2])(?:[A-Za-z]{3,4})?\.([a-z])\.(\d{1,2})\.(\d{2})(?!\d)/i);
   if (structMatch) {
     monthCode = String(parseInt(structMatch[1], 10)).padStart(2, '0');
     orderCode = structPhaseMatch
@@ -178,10 +211,10 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
 
   // 3b. Extraer Mes heredado si no vino de la estructura moderna (ej. 26-[08AGO], [08AGO], (2609SEPT), 08AGO)
   if (!monthCode) {
-    const monthMatch = display.match(/(?<![\w_])(?:\d{2}-)?\[?\(?(\d{1,2}[A-Za-z]{3,4})\)?\]?(?:\s*-\s*|\s+)?/i);
-    if (monthMatch && monthMatch.index! < 50) {
-      monthCode = monthMatch[1].toUpperCase();
-      display = display.replace(monthMatch[0], '');
+    const monthMatch = display.match(/(?<![\w_])(?:\d{2}-)?\[?\(?((?:0?[1-9]|1[0-2])(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEPT?|OCT|NOVI?|DIC)[A-Z]*)\)?\]?(?:\s*-\s*|\s+)?/i);
+    if (monthMatch && monthMatch.index! < 120) {
+      monthCode = formatMonthBadgeLabel(monthMatch[1]);
+      display = display.replace(monthMatch[0], ' ');
     }
   }
 

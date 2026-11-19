@@ -22,7 +22,7 @@ import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {confirmedCalendarActivity} from '@/lib/confirmedCalendarActivity';
 import {normalizePerson,PERSON_METADATA} from '@/services/identityNormalizer';
 import {calendarDomain,calendarDisplayTitle,calendarTime,mexicoDate} from '@/services/calendarPresentation';
-import {parseVisualParts} from '@/lib/visualTitleParser';
+import {parseVisualParts,formatMonthBadgeLabel} from '@/lib/visualTitleParser';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 
 const SHORT_COLLABORATORS = [
@@ -377,7 +377,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>{vp.monthCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]" title={'Mes: '+vp.monthCode}>{vp.monthCode}</span>}{vp.orderCode&&<OrderCodeBadge orderCode={vp.orderCode} variant="pill"/>}
+                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>{vp.monthCode&&(()=>{const ml=formatMonthBadgeLabel(vp.monthCode);return <span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]" title={'Mes: '+ml}>{ml}</span>;})()}{vp.orderCode&&<OrderCodeBadge orderCode={vp.orderCode} variant="pill"/>}
                     <span className={'text-[10px] font-semibold ' + appearance.text}>
                       {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : <WorkflowStageBadge status={a.status} title={a.title}/>}
                       {a.isReviewMirror ? ' · Copia de revisión' : a.isHandoffMirror ? ' · Copia histórica' : ''}

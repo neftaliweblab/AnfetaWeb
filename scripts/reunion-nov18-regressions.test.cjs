@@ -29,7 +29,8 @@ for (const ext of ['.ts', '.tsx']) {
     );
 }
 
-const { parseVisualParts, formatAreaLabel, formatDisplayOrderParts } = require(root + '/src/lib/visualTitleParser.ts');
+const { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel, formatDisplayOrderParts } = require(root + '/src/lib/visualTitleParser.ts');
+const { resultMonth, itemMatchesMonthFilter } = require(root + '/src/lib/searchMonthOrder.ts');
 const { getOrderNumericRank } = require(root + '/src/lib/searchResultOrder.ts');
 const { buildPersonWorkQuery, passiveReviewerTag, scanActivityTags } = require(root + '/src/services/activityTags.ts');
 const { extractPersonFromWorkQuery } = require(root + '/src/lib/searchTabsStorage.ts');
@@ -316,5 +317,37 @@ test('Reunión 18/11 tarde: numeración visual sin f/cero inicial, área webs y 
   assert.equal(
     pprtuzResetCandidate(makePage('pprtuzR | 💻 wwebs | Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', '2026-11-18T22:15:00-06:00', true), 'Neftali', '2026-11-19'),
     false
+  );
+});
+
+test('10) Visual month badges format 11 -> 11NOV and parse both 11.a.f41.00 and 11NOV.a.f41.00 cleanly', () => {
+  assert.equal(formatMonthBadgeLabel('11'), '11NOV');
+  assert.equal(formatMonthBadgeLabel('01'), '01ENE');
+  assert.equal(formatMonthBadgeLabel('12'), '12DIC');
+  assert.equal(formatMonthBadgeLabel('09SEPT'), '09SEP');
+
+  const longPrefixed =
+    'pprtuzD | 💻 AAPLI -- | 🌐 0.anfeta.com.aplicacion | 📅 11NOV.a.f41.00 Asistente recurrente: corregir funciones';
+  const parsedLong = parseVisualParts(longPrefixed);
+  assert.equal(formatMonthBadgeLabel(parsedLong.monthCode), '11NOV');
+  assert.equal(parsedLong.orderCode, 'f41.00');
+  assert.equal(parsedLong.area, 'APP');
+  assert.equal(parsedLong.domain, 'anfeta.com');
+  assert.equal(parsedLong.title, 'Asistente recurrente: corregir funciones');
+
+  const parsedNumeric = parseVisualParts('11.a.f43.00 Asistente recurrente');
+  assert.equal(parsedNumeric.monthCode, '11');
+  assert.equal(formatMonthBadgeLabel(parsedNumeric.monthCode), '11NOV');
+  assert.equal(parsedNumeric.orderCode, 'f43.00');
+  assert.equal(parsedNumeric.area, 'APP');
+  assert.equal(parsedNumeric.title, 'Asistente recurrente');
+
+  assert.deepEqual(resultMonth({ name: '11.a.f41.00 Tarea' }), { year: 0, month: 11 });
+  assert.equal(itemMatchesMonthFilter({ name: '11.a.f41.00 Tarea' }, '11NOV'), true);
+  assert.equal(itemMatchesMonthFilter({ name: '11NOV.a.f43.00 Tarea' }, '11NOV'), true);
+  assert.equal(itemMatchesMonthFilter({ name: '10.a.f41.00 Tarea' }, '11NOV'), false);
+
+  assert.ok(
+    getOrderNumericRank({ name: '11NOV.a.f41.00' }) < getOrderNumericRank({ name: '11NOV.a.f43.00' })
   );
 });

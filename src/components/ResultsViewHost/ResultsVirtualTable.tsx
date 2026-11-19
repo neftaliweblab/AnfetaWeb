@@ -7,7 +7,7 @@ import {NotionHoverPreview} from './NotionHoverPreview';
 import {SearchResultRow} from '@/types/anfeta';
 
 import React, { useState, useEffect, useRef } from "react";
-import { parseVisualParts, formatAreaLabel } from "@/lib/visualTitleParser";
+import { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled,isFullMatch} from '@/lib/searchPresentation';
@@ -801,18 +801,21 @@ function ResultsVirtualTableComponent({
               {formatAreaLabel(parsed.area)}
             </span>
           )}
-          {parsed.monthCode && (
-            <span
-              style={{
-                fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
-                padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
-              }}
-              className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
-              title={`Mes: ${parsed.monthCode}`}
-            >
-              {parsed.monthCode}
-            </span>
-          )}
+          {parsed.monthCode && (() => {
+            const monthLabel = formatMonthBadgeLabel(parsed.monthCode);
+            return (
+              <span
+                style={{
+                  fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(3, Math.round(4 * scale))}px`,
+                }}
+                className="shrink-0 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
+                title={`Mes: ${monthLabel}`}
+              >
+                {monthLabel}
+              </span>
+            );
+          })()}
           {parsed.orderCode && (
             <OrderCodeBadge orderCode={parsed.orderCode} scale={scale} variant="table" />
           )}
@@ -1156,15 +1159,18 @@ function ResultsVirtualTableComponent({
                 {formatAreaLabel(parsed.area)}
               </span>
             )}
-            {parsed.monthCode && (
-              <span
-                style={{ fontSize: `${Math.max(8, 8.5 * scale).toFixed(1)}px` }}
-                className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
-                title={`Mes: ${parsed.monthCode}`}
-              >
-                {parsed.monthCode}
-              </span>
-            )}
+            {parsed.monthCode && (() => {
+              const monthLabel = formatMonthBadgeLabel(parsed.monthCode);
+              return (
+                <span
+                  style={{ fontSize: `${Math.max(8, 8.5 * scale).toFixed(1)}px` }}
+                  className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#104E3E]/40 border border-[#2DD4BF]/60 text-[#5EEAD4]"
+                  title={`Mes: ${monthLabel}`}
+                >
+                  {monthLabel}
+                </span>
+              );
+            })()}
             {parsed.orderCode && (
               <OrderCodeBadge orderCode={parsed.orderCode} scale={scale} variant="compact" />
             )}

@@ -3,7 +3,7 @@ import { UnifiedActivityModal } from './UnifiedActivityModal';
 import { getModalPositionConfig } from '@/lib/modalPosition';
 import { ReturnedObservations } from './ReturnedObservations';
 import { ReturnToOwnerModal } from './ReturnToOwnerModal';
-import { parseVisualParts } from "@/lib/visualTitleParser";
+import { parseVisualParts, formatMonthBadgeLabel } from "@/lib/visualTitleParser";
 import { OrderCodeBadge } from "../OrderCodeBadge";
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
@@ -632,14 +632,17 @@ function ActivityCardComponent({
             )}
 
             {/* Badges de mes y código/fase de la actividad */}
-            {visualParts.monthCode && (
-              <span
-                className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]"
-                title={`Mes: ${visualParts.monthCode}`}
-              >
-                {visualParts.monthCode}
-              </span>
-            )}
+            {visualParts.monthCode && (() => {
+              const monthLabel = formatMonthBadgeLabel(visualParts.monthCode);
+              return (
+                <span
+                  className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]"
+                  title={`Mes: ${monthLabel}`}
+                >
+                  {monthLabel}
+                </span>
+              );
+            })()}
             {visualParts.orderCode && (
               <OrderCodeBadge orderCode={visualParts.orderCode} variant="pill" />
             )}
