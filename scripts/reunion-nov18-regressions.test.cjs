@@ -29,7 +29,7 @@ for (const ext of ['.ts', '.tsx']) {
     );
 }
 
-const { parseVisualParts, formatAreaLabel } = require(root + '/src/lib/visualTitleParser.ts');
+const { parseVisualParts, formatAreaLabel, formatDisplayOrderParts } = require(root + '/src/lib/visualTitleParser.ts');
 const { getOrderNumericRank } = require(root + '/src/lib/searchResultOrder.ts');
 const { buildPersonWorkQuery, passiveReviewerTag, scanActivityTags } = require(root + '/src/services/activityTags.ts');
 const { extractPersonFromWorkQuery } = require(root + '/src/lib/searchTabsStorage.ts');
@@ -254,4 +254,67 @@ test('Cotización plantilla: no duplica sufijo .cotizacion y maneja link_mention
   } finally {
     Module._load = origLoad;
   }
+});
+
+test('Reunión 18/11 tarde: numeración visual sin f/cero inicial, área webs y transición pprtuz <-> prtuz', () => {
+  assert.deepEqual(formatDisplayOrderParts('f01.01'), { full: '1.01', major: '1', minor: '.01' });
+  assert.deepEqual(formatDisplayOrderParts('f12.01'), { full: '12.01', major: '12', minor: '.01' });
+  assert.deepEqual(formatDisplayOrderParts('01.00'), { full: '1.00', major: '1', minor: '.00' });
+  assert.deepEqual(formatDisplayOrderParts('f0.51'), { full: '0.51', major: '0', minor: '.51' });
+  assert.deepEqual(formatDisplayOrderParts('f41.01'), { full: '41.01', major: '41', minor: '.01' });
+
+  const webParsed = parseVisualParts('prtuzR | 💻 wwebs | 🌐 1.ejemplo.com.webs | 📅 11.w.f01.01 Header Menú');
+  assert.equal(webParsed.orderCode, 'f01.01');
+  assert.equal(formatAreaLabel(webParsed.area), 'webs');
+  assert.equal(formatAreaLabel('WEB'), 'webs');
+
+  const { progressiveStage, stripProgressiveStage, revisionPhaseTitle } = require(root + '/src/services/progressiveWorkflow.ts');
+  const stage = progressiveStage('pprtuzR | 💻 wwebs | 📅 11.w.f01.01 Header Menú');
+  assert.equal(stage?.code, 'pprtuzR');
+  assert.equal(stage?.state, 'pending');
+  assert.equal(stripProgressiveStage('pprtuzR | 💻 wwebs | 📅 11.w.f01.01 Header Menú').trim(), '| 💻 wwebs | 📅 11.w.f01.01 Header Menú');
+
+  const toToday = revisionPhaseTitle('prtuzR | 💻 wwebs | 📅 11.w.f01.01 Header Menú | 👥 nne11', 'completed_today');
+  assert.equal(toToday, 'pprtuzR | 💻 wwebs | 📅 11.w.f01.01 Header Menú | 👥 nne11');
+
+  const backToPending = revisionPhaseTitle(toToday, 'pending');
+  assert.equal(backToPending, 'prtuzR | 💻 wwebs | 📅 11.w.f01.01 Header Menú | 👥 nne11');
+
+  const { pprtuzResetCandidate } = require(root + '/src/services/pprtuzDailyReset.ts');
+  const makePage = (title, status, edited, locked = false) => ({
+    id: 'page-1',
+    last_edited_time: edited,
+    archived: false,
+    in_trash: false,
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: title }] },
+      Estado: { type: 'select', select: { name: status } },
+      Responsable: { type: 'people', people: [{ name: 'Neftali' }] },
+      Bloqueado: { type: 'checkbox', checkbox: locked },
+    },
+  });
+
+  // Finished yesterday -> must reset at 01:00 AM next day
+  assert.equal(
+    pprtuzResetCandidate(makePage('pprtuzR | 💻 wwebs | Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', '2026-11-18T22:15:00-06:00'), 'Neftali', '2026-11-19'),
+    true
+  );
+  // Already in review (rtuz) -> never reset back to pending
+  assert.equal(
+    pprtuzResetCandidate(makePage('rtuzR | 💻 wwebs | Tarea', 'EN REVISIÓN', '2026-11-18T22:15:00-06:00'), 'Neftali', '2026-11-19'),
+    false
+  );
+  // Marked after 00:55 AM of current day -> protect current day's progress
+  assert.equal(
+    pprtuzResetCandidate(makePage('pprtuzR | 💻 wwebs | Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', '2026-11-19T01:30:00-06:00'), 'Neftali', '2026-11-19'),
+    false
+  );
+  // A completion at 00:30 belongs to the new day, never reset at 01:00.
+  assert.equal(pprtuzResetCandidate(makePage('pprtuzR Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', '2026-11-19T00:30:00-06:00'), 'Neftali', '2026-11-19'), false);
+  assert.equal(pprtuzResetCandidate(makePage('pprtuzR Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', ''), 'Neftali', '2026-11-19'), false);
+  // Locked page -> protected
+  assert.equal(
+    pprtuzResetCandidate(makePage('pprtuzR | 💻 wwebs | Tarea', 'PPRTUZ TERMINADO-HOY-(POR HACER)', '2026-11-18T22:15:00-06:00', true), 'Neftali', '2026-11-19'),
+    false
+  );
 });

@@ -3,6 +3,10 @@
 import React, { useState } from "react";
 import { X, Edit3, Loader2 } from "lucide-react";
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 interface BatchRenameModalProps {
   isOpen: boolean;
   selectedItems: any[];
@@ -20,14 +24,20 @@ export function BatchRenameModal({
   const [suffix, setSuffix] = useState("");
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+  const [ignoreCase, setIgnoreCase] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   if (!isOpen) return null;
 
   const computeNewName = (originalName: string) => {
     let name = originalName || "";
     if (findText) {
-      name = name.split(findText).join(replaceText);
+      if (ignoreCase) {
+        name = name.replace(new RegExp(escapeRegExp(findText), "gi"), () => replaceText);
+      } else {
+        name = name.split(findText).join(replaceText);
+      }
     }
     if (prefix) {
       name = `${prefix.trim()} ${name}`.trim();
@@ -47,10 +57,12 @@ export function BatchRenameModal({
       newName: computeNewName(item.name),
     }));
 
-    setBusy(true);
+    setBusy(true);setError("");
     try {
       await onConfirm(list);
       onClose();
+    } catch(error) {
+      setError(error instanceof Error?error.message:"No se confirmó el renombrado.");
     } finally {
       setBusy(false);
     }
@@ -118,11 +130,21 @@ export function BatchRenameModal({
               type="text"
               value={replaceText}
               onChange={(e) => setReplaceText(e.target.value)}
-              placeholder="Texto de reemplazo"
+              placeholder="Texto de reemplazo (vacío para quitar)"
               className="w-full rounded bg-[#16202C] border border-[#26354A] p-2 text-white text-xs focus:outline-none focus:border-[#38BDF8]"
             />
           </label>
         </div>
+
+        <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={ignoreCase}
+            onChange={(e) => setIgnoreCase(e.target.checked)}
+            className="rounded border-slate-600 bg-[#16202C] text-cyan-400 focus:ring-0"
+          />
+          <span>Ignorar mayúsculas/minúsculas al buscar (ej. zzz / ZZZ)</span>
+        </label>
 
         {/* Vista previa de cambios */}
         <div className="space-y-1 pt-1">
@@ -139,6 +161,7 @@ export function BatchRenameModal({
           </div>
         </div>
 
+        {error&&<p role="alert" className="text-xs text-rose-300 break-words">{error}</p>}
         <footer className="flex justify-end gap-2 pt-2 border-t border-[#1E2836]">
           <button
             type="button"

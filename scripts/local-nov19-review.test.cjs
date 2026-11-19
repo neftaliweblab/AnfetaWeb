@@ -1,0 +1,33 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename;
+Module._resolveFilename=function(n,p,...a){if(n.startsWith('@/'))n=path.join(root,'src',n.slice(2));return resolve.call(this,n,p,...a)};
+for(const ext of ['.ts','.tsx'])require.extensions[ext]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,f);
+let calls=[],leases=new Map();const load=Module._load;
+Module._load=function(n,p,...args){if(n==='./supabaseServer'&&p?.filename.endsWith('reliableOperations.ts'))return {supabaseConfigured:()=>true,supabaseAdmin:()=>({rpc:async(name,args)=>{calls.push(name);if(name==='claim_activity_lease'){if(leases.has(args.p_key))return {data:false};leases.set(args.p_key,args.p_token);return {data:true}}if(name==='release_activity_lease'){assert.equal(leases.get(args.p_key),args.p_token);leases.delete(args.p_key);return {data:true}}throw Error('Unexpected RPC');}})};return load.call(this,n,p,...args)};
+(async()=>{
+ const {withActivityLease}=require('../src/services/reliableOperations.ts');
+ await withActivityLease('page',()=>withActivityLease('page',async()=>assert.equal(leases.size,1)));
+ assert.deepEqual(calls,['claim_activity_lease','release_activity_lease'],'nested mutation reuses the outer lease');
+ let release,entered;const inside=new Promise(r=>entered=r),wait=new Promise(r=>release=r);
+ const busy=withActivityLease('page',async()=>{entered();await wait});await inside;
+ await assert.rejects(()=>withActivityLease('page',async()=>{}),/otro dispositivo/);release();await busy;
+ await assert.rejects(()=>withActivityLease('page',async()=>{throw Error('failed')}),/failed/);assert.equal(leases.size,0);
+ let later,finishLater;
+ await withActivityLease('page',async()=>{later=(async()=>{await new Promise(r=>finishLater=r);return withActivityLease('page',async()=>{});})();});
+ const before=calls.filter(n=>n==='claim_activity_lease').length;finishLater();await later;assert.equal(calls.filter(n=>n==='claim_activity_lease').length,before+1,'an async descendant cannot reuse a lease after its owner released it');
+ const {runBatchRename}=require('../src/lib/batchRename.ts');let sent=[],confirmed=[];
+ const entries=['non-json','missing-success','network','good','bad','after-failure','empty'].map(id=>({item:{id,name:id,source:'Notion'},newName:id==='empty'?'':'prefix '+id}));
+ const result=await runBatchRename(entries,(entry,data)=>confirmed.push({id:entry.item.id,data}),async(_url,init)=>{
+  const {payload}=JSON.parse(init.body);sent.push(payload.id);
+  if(payload.id==='non-json')return new Response('<html>bad gateway</html>');
+  if(payload.id==='missing-success')return Response.json({});
+  if(payload.id==='network')throw Error('offline');
+  if(payload.id==='bad')return Response.json({error:'rejected'},{status:400});
+  return Response.json({success:true,newName:payload.newName});
+ });
+ assert.equal(result.saved.length,2);assert.equal(result.failed.length,5);assert.equal(sent.length,6);assert.deepEqual(confirmed.map(x=>x.id),['good','after-failure']);
+ const localFailure=await runBatchRename([{item:{id:'ok',name:'a'},newName:'b'}],()=>{throw Error('local render failed')},async()=>Response.json({success:true}));assert.equal(localFailure.saved.length,1);assert.equal(localFailure.failed.length,0);assert.equal(localFailure.warnings.length,1);
+ const original='prtuzR  Texto con  espacios';
+ await runBatchRename([{item:{id:'1',name:original},newName:original}],()=>{},async()=>{throw Error('unchanged must not request')});
+ console.log('OK revisión local: lease anidado sin bloqueo propio; exclusión entre solicitudes y liberación; lote continúa tras fallos, rechaza éxito no confirmado y conserva fallidos.');
+})().catch(e=>{console.error(e);process.exitCode=1});

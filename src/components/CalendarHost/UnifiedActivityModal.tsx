@@ -29,6 +29,7 @@ import { NotionCalendarActivity } from "@/types/anfeta";
 import { WorkflowStageBadge } from "../WorkflowStageBadge";
 import { ActivityStatusSelect } from "./ActivityStatusSelect";
 import { ActivityContentPanel } from "./ActivityContentPanel";
+import {ChecklistGroupingControl} from "./ChecklistGroupingControl";
 import { ReturnedObservations } from "./ReturnedObservations";
 import { ReturnToOwnerModal } from "./ReturnToOwnerModal";
 import { SendToReviewModal } from "./SendToReviewModal";
@@ -459,6 +460,7 @@ export function UnifiedActivityModal({
         pendingFutureChecksCount: data.stats?.pendingFutureChecksCount ?? nextSummary.pendingFutureCount,
         pendingCheckValidation: data.stats?.pendingCheckValidation ?? nextSummary.pendingCheckValidation,
         nextPlannedChecklistDate: data.stats?.nextPlannedChecklistDate ?? nextSummary.nextPlannedDate,
+        ...(data.activity ? { title: data.activity.title, status: data.activity.status, ...(data.activity.serverModified ? { serverModified: data.activity.serverModified } : {}) } : {}),
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
@@ -515,6 +517,7 @@ export function UnifiedActivityModal({
         pendingFutureChecksCount: data.stats?.pendingFutureChecksCount ?? nextSummary.pendingFutureCount,
         pendingCheckValidation: data.stats?.pendingCheckValidation ?? nextSummary.pendingCheckValidation,
         nextPlannedChecklistDate: data.stats?.nextPlannedChecklistDate ?? nextSummary.nextPlannedDate,
+        ...(data.activity ? { title: data.activity.title, status: data.activity.status, ...(data.activity.serverModified ? { serverModified: data.activity.serverModified } : {}) } : {}),
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
@@ -1191,6 +1194,7 @@ export function UnifiedActivityModal({
                       .filter(Boolean);
                     return (
                   <div className="space-y-1.5">
+                    {editable&&!activity.isDaySnapshot&&!activity.isReviewMirror&&!activity.isHandoffMirror&&<ChecklistGroupingControl key={activity.pageId} pageId={activity.pageId} workDate={checklistDay} onBusyChange={value=>{checkBusy.current=value;setCheckSaving(value);}} onUpdated={stats=>{setSelectedCheckIds([]);onChecklistUpdated?.(activity.pageId,stats);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:stats});}}/>}
                     <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
                       <div className="flex flex-wrap items-center gap-1">
                         {([

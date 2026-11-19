@@ -17,6 +17,11 @@ export interface VisualParts {
 }
 
 const AREA_DISPLAY_LABELS: Record<string, string> = {
+  WEB: 'webs',
+  WEBS: 'webs',
+  WWEB: 'webs',
+  WWEBS: 'webs',
+  WEBSITE: 'webs',
   APP: 'Aplicación',
   AAPLI: 'Aplicación',
   APLICACION: 'Aplicación',
@@ -29,6 +34,31 @@ const AREA_DISPLAY_LABELS: Record<string, string> = {
   SOFTWARE: 'Software',
   PROGRAMAS: 'Software',
 };
+
+export interface DisplayOrderParts {
+  full: string;
+  major: string;
+  minor: string;
+}
+
+/**
+ * Formatea visualmente la fase/orden sin modificar el título original en Notion:
+ * retira la 'f' inicial y elimina un cero a la izquierda en números de 2+ dígitos antes del punto
+ * (ej. f01.01 -> 1.01, f12.01 -> 12.01, f0.51 -> 0.51, 01.00 -> 1.00).
+ */
+export function formatDisplayOrderParts(rawOrderCode: string): DisplayOrderParts | null {
+  const clean = String(rawOrderCode || '').trim();
+  if (!clean) return null;
+  const withoutF = clean.replace(/^f(?=\d)/i, '');
+  const dotIdx = withoutF.indexOf('.');
+  if (dotIdx >= 0) {
+    const major = withoutF.slice(0, dotIdx).replace(/^0(?=\d)/, '');
+    const minor = withoutF.slice(dotIdx);
+    return { full: `${major}${minor}`, major, minor };
+  }
+  const major = withoutF.replace(/^0(?=\d)/, '');
+  return { full: major, major, minor: '' };
+}
 
 /** Etiqueta visible de área para tabla/badges sin romper códigos internos (`APP`/`PROG`). */
 export function formatAreaLabel(area: string): string {

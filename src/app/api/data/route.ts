@@ -80,7 +80,7 @@ import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
 import { appendInternalMetadata, clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
-import { workflowState } from '@/services/activityWorkflow';
+import { workflowState, isTerminadoHoyStatus } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken, searchDropboxLive } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule,validateNotionCreationTarget } from '@/services/notionMutations';
 import { computeDailyKPIs, generateMarkdownReport } from '@/services/progressKpis';
@@ -3493,6 +3493,27 @@ async function POSTLive(req: NextRequest) {
           ? input.workDate
           : (/^\d{4}-\d{2}-\d{2}/.test(livePage.dateStart || '') ? mexicoDate(livePage.dateStart) : mexicoDate());
         let stats:any;try{stats=await checklistSnapshot(settings,currentPage,workDay);}catch{warning=[warning,'El check se guardó, pero no se confirmaron los contadores.'].filter(Boolean).join(' ');}
+        let effectivePage = currentPage;
+        const curStatus = livePage.status || notionStatusValue(calendarStatusField(currentPage)?.[1]);
+        const curState = workflowState(curStatus, livePage.title);
+        const currentlyTerminadoHoy = isTerminadoHoyStatus(curStatus) || /\bpprtuz[rsdcp]?\b/i.test(livePage.title);
+        const hasFuturePlannedChecks = stats?.checklistItems?.some((check:any)=>!check.isChecked && check.plannedDate > workDay);
+        let autoStageStatus: string | undefined;
+        if (workDay === mexicoDate() && item.plannedDate === workDay && checked && stats?.hasDailyPlan && stats?.completedForDay && hasFuturePlannedChecks && curState === 'pending' && !currentlyTerminadoHoy) {
+          try {
+            effectivePage = await mutateActivity(settings, actor, cleanPageId(pageId), { status: 'PPRTUZ TERMINADO-HOY-(POR HACER)', expectedStatus: curStatus, expectedTitle: livePage.title });
+            autoStageStatus = notionStatusValue(calendarStatusField(effectivePage)?.[1]);
+          } catch (error) {
+            warning = [warning, 'El check se guardó, pero no se confirmó Terminado por hoy: ' + (error instanceof Error ? error.message : 'Actualiza para comprobar el estado.')].filter(Boolean).join(' ');
+          }
+        } else if (workDay === mexicoDate() && item.plannedDate === workDay && !checked && stats && curState === 'pending' && currentlyTerminadoHoy && !stats.completedForDay) {
+          try {
+            effectivePage = await mutateActivity(settings, actor, cleanPageId(pageId), { status: 'PRTUZ POR HACER', expectedStatus: curStatus, expectedTitle: livePage.title });
+            autoStageStatus = notionStatusValue(calendarStatusField(effectivePage)?.[1]);
+          } catch (error) {
+            warning = [warning, 'El check se guardó, pero no se confirmó Por hacer: ' + (error instanceof Error ? error.message : 'Actualiza para comprobar el estado.')].filter(Boolean).join(' ');
+          }
+        }
         const checklistUpdate={
           blockId:item.blockId,
           checked,
@@ -3505,9 +3526,19 @@ async function POSTLive(req: NextRequest) {
           nextPlannedChecklistDate:stats?.nextPlannedChecklistDate,
           checklistItems:stats?.checklistItems,
         };
-        const hydratedCurrent=await hydratePageReviewFlow(settings,currentPage);
-        await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:block.last_edited_time||currentPage.last_edited_time,properties:{calendarActivity:{...calendarActivityFromPage(hydratedCurrent,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId),...stats},checklistUpdate}});
-        return NextResponse.json({success:true, blockId:item.blockId, checked,warning,stats});
+        const hydratedCurrent=await hydratePageReviewFlow(settings,effectivePage);
+        const serverModified=[effectivePage.last_edited_time,block.last_edited_time].filter((value):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))).sort((a,b)=>Date.parse(b)-Date.parse(a))[0];
+        const calendarActivity=calendarActivityFromPage(hydratedCurrent,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId);
+        const updatedActivity=calendarActivity?{...calendarActivity,...stats,serverModified}:undefined;
+        const liveUpdated=extractNotionPageData(effectivePage);
+        if(autoStageStatus){
+          liveNotionOverrides.set(liveUpdated.id,liveUpdated);
+          if(updatedActivity)persistCalendarActivity(updatedActivity);
+          if(supabaseConfigured())await invalidateSnapshots(settings).catch(()=>{});
+        }
+        try{await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified,properties:{name:liveUpdated.title,updateStatus:liveUpdated.status,assignedPerson:liveUpdated.person,calendarActivity:updatedActivity,checklistUpdate}});}
+        catch{warning=[warning,'El check se guardó, pero queda pendiente propagar la actualización.'].filter(Boolean).join(' ');}
+        return NextResponse.json({success:true, blockId:item.blockId, checked,warning,stats,...(autoStageStatus?{autoStageStatus,activity:updatedActivity||{pageId,title:liveUpdated.title,status:liveUpdated.status,serverModified}}:{})});
         });
       } catch (error) { return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo actualizar el checklist.'}, {status:400}); }
     }
@@ -3762,7 +3793,7 @@ async function POSTLive(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: true, id, newName: cleanNewName });
+      return NextResponse.json({error:source?.toLowerCase()==='dropbox'?'Este flujo aún no confirma renombrados en Dropbox Web. No se guardaron cambios.':'No se encontró un destino editable. No se confirmó el renombrado.'},{status:source?.toLowerCase()==='dropbox'?501:404});
     }
 
     if (action === "duplicate-item") {

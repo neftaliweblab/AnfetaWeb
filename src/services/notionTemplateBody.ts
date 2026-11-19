@@ -198,6 +198,8 @@ function rich(value: any[], tolerant = false): any[] {
   });
 }
 
+export function writableNotionRichText(parts:any[]){return rich(parts,false);}
+
 export function validateNotionInternalUrl(urlStr: string): URL {
   let parsed: URL;
   try {

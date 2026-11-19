@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/jobs/pprtuz", "schedule": "0 7 * * *" },
     { "path": "/api/jobs/ftf", "schedule": "0 11 * * *" },
     { "path": "/api/jobs/ftf-weekly", "schedule": "30 0 * * 6" }
   ]

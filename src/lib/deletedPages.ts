@@ -32,14 +32,14 @@ export function setUnverifiedPage(id: string, reason?: string) {
     reason: reason || 'No se puede verificar esta página: puede no existir o faltar acceso a la integración. Actualiza o revisa los permisos.',
     timestamp: Date.now()
   });
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent('anfeta_unverified_pages', { detail: { id: clean } }));
   }
 }
 
 export function clearUnverifiedPage(id: string) {
   const clean = pageIdentity(id);
-  if (unverifiedMap.delete(clean) && typeof window !== 'undefined') {
+  if (unverifiedMap.delete(clean) && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
     window.dispatchEvent(new CustomEvent('anfeta_unverified_pages', { detail: { id: clean } }));
   }
 }
@@ -66,7 +66,7 @@ export function broadcastPageSync(message: { type: 'deleted' | 'restored' | 'upd
 
 const deletedPagesCache = new Map<string, Set<string>>();
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('storage', (e) => {
     if (e.key?.startsWith('anfeta-deleted-pages:')) {
       const owner = e.key.replace('anfeta-deleted-pages:', '');
@@ -110,7 +110,9 @@ export function restoreConfirmedPages(owner: string, values: string[]) {
     localStorage.setItem('anfeta-deleted-pages:' + owner, JSON.stringify([...ids]));
   } catch {}
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(DELETED_PAGES_EVENT, { detail: { owner, ids: [...ids] } }));
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(DELETED_PAGES_EVENT, { detail: { owner, ids: [...ids] } }));
+    }
     broadcastPageSync({ type: 'restored', owner, ids: values.map(pageIdentity) });
   }
 }
@@ -132,7 +134,9 @@ export function rememberDeletedPages(owner: string, values: string[]) {
     localStorage.setItem('anfeta-deleted-pages:' + owner, JSON.stringify([...ids]));
   } catch {}
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(DELETED_PAGES_EVENT, { detail: { owner, ids: [...ids] } }));
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(DELETED_PAGES_EVENT, { detail: { owner, ids: [...ids] } }));
+    }
     broadcastPageSync({ type: 'deleted', owner, ids: added });
   }
 }

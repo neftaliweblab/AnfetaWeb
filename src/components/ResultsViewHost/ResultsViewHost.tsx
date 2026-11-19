@@ -70,6 +70,7 @@ import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/service
 import { SearchHelpModal } from "./SearchHelpModal";
 import { RenameModal, DuplicateModal, CreateFolderModal } from "./ActionDialogs";
 import { BatchRenameModal } from "./BatchRenameModal";
+import {runBatchRename} from "@/lib/batchRename";
 import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/WhatsappDirectoryModal";
 import { ResponsePagesCleanupModal } from "./ResponsePagesCleanupModal";
 import { isExpiredResponsePage } from "@/lib/responsePageRules";
@@ -1738,37 +1739,22 @@ export function ResultsViewHost({
   };
 
   const handleBatchRenameConfirm = async (renames: Array<{ item: any; newName: string }>) => {
-    try {
-      playCheckChime();
-      let count = 0;
-      for (const { item, newName } of renames) {
-        if (!newName || newName === item.name) continue;
-        const res = await fetch("/api/data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "rename-item",
-            payload: {
-              id: item.externalId||item.id,
-              source: item.source,
-              oldName: item.name,
-              newName,
-              path: item.target || item.path,
-            },
-          }),
-        });
-        if (res.ok) {
-          const data=await res.json();if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:data.activity.pageId,updates:data.activity});
-          count++;
-          setItems((prev) =>
-            prev.map((it) => (it.id === item.id ? { ...it, name: newName } : it))
-          );
-        }
-      }
-      sendWindowsNotification("Renombrado Masivo", `Se renombraron ${count} elementos con éxito.`);
-    } catch (err) {
-      console.error("Error en renombrado masivo:", err);
+    const result=await runBatchRename(renames,({item,newName},data)=>{
+      if(data.activity)anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:data.activity.pageId,updates:data.activity});
+      const confirmedName=data.newName||newName;
+      setItems(prev=>prev.map(it=>it.id===item.id?{...it,name:confirmedName}:it));
+      setSelectedItem((prev:any)=>prev?.id===item.id?{...prev,name:confirmedName}:prev);
+    });
+    if(result.failed.length){
+      // Retry only failed rows: prefix/suffix must not be applied again to successes.
+      setSelectedIds(new Set(result.failed.map(entry=>entry.item.id)));
+      const message=`Se renombraron ${result.saved.length}. Con error (${result.failed.length}): ${result.failed[0].error}`;
+      setStatusError(message);
+      throw Error(message);
     }
+    if(result.warnings.length)setStatusError(result.warnings[0]);
+    if(result.saved.length)playCheckChime();
+    sendWindowsNotification('Renombrado Masivo',`Se renombraron ${result.saved.length} elementos con éxito.`);
   };
 
   const handleDuplicateConfirm = async (item: any, newTitle: string) => {
@@ -2643,6 +2629,7 @@ export function ResultsViewHost({
         statusText={`Índice: ${items.length} · Notion: ${filterByNotionBase(items as any, 'Notion').length} · Visibles: ${filteredItems.length}`} 
         selectedItem={selectedItem}
         selectedCount={selectedIds.size}
+        onBatchRenameSelected={() => setIsBatchRenameOpen(true)}
         onDeleteSelected={handleDeleteSelected}
         onOpenItem={handleOpenItem}
         onOpenLocation={handleOpenLocation}

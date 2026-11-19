@@ -2,7 +2,7 @@
 
 import {MeetQuickLinks} from './MeetQuickLinks';
 import React, { useState, useRef, useEffect } from "react";
-import { Info, MoreHorizontal, ExternalLink, FolderOpen, Copy, Trash2, Upload, Clipboard } from "lucide-react";
+import { Info, MoreHorizontal, ExternalLink, FolderOpen, Copy, Trash2, Upload, Clipboard, Edit3 } from "lucide-react";
 
 interface SearchBottomBarProps {
   currentPage: number;
@@ -13,6 +13,7 @@ interface SearchBottomBarProps {
   onPageChange?: (page: number) => void;
   selectedItem: any | null;
   selectedCount?: number;
+  onBatchRenameSelected?: () => void;
   onOpenItem: (item: any) => void;
   onOpenLocation: (item: any) => void;
   onCopyName: (item: any) => void;
@@ -34,6 +35,7 @@ export function SearchBottomBar({
   onPageChange,
   selectedItem,
   selectedCount = 0,
+  onBatchRenameSelected,
   onOpenItem,
   onOpenLocation,
   onCopyName,
@@ -147,9 +149,25 @@ export function SearchBottomBar({
         )}
       </div>
 
-      {/* Derecha: Borrar seleccionados | Abrir | Ubicación | Copiar | ⋯ */}
+      {/* Derecha: Editar lote | Borrar seleccionados | Abrir | Ubicación | Copiar | ⋯ */}
       <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex items-center">
         <MeetQuickLinks />
+        {selectedCount > 0 && onBatchRenameSelected && (
+          <button
+            type="button"
+            onClick={onBatchRenameSelected}
+            style={{
+              fontSize: `${(10.5 * scale).toFixed(1)}px`,
+              padding: `${Math.round(2 * scale)}px ${Math.round(8 * scale)}px`,
+              gap: `${Math.round(4 * scale)}px`,
+            }}
+            className="flex items-center rounded bg-[#0284C7]/20 border border-[#38BDF8]/40 hover:bg-[#0284C7]/35 text-[#7DD3FC] font-semibold transition-colors cursor-pointer"
+            title={`Editar títulos en lote (${selectedCount} seleccionadas)`}
+          >
+            <Edit3 style={{ width: `${Math.round(12 * scale)}px`, height: `${Math.round(12 * scale)}px` }} />
+            <span>Editar lote ({selectedCount})</span>
+          </button>
+        )}
         {selectedCount > 0 && onDeleteSelected && (
           <button
             type="button"

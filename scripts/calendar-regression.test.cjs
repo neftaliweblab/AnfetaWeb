@@ -9,7 +9,14 @@ for(const ext of ['.ts','.tsx']) Module._extensions[ext]=(mod,file)=>mod._compil
 const pid='11111111-1111-1111-1111-111111111111', other='22222222-2222-2222-2222-222222222222';
 const settings={notionToken:'TEST_ONLY',currentUser:'nneft'};
 const load=Module._load;
+const testLeases=new Map(),leaseCalls=[];
 Module._load=function(name,parent,...rest){
+  if(process.env.ANFETA_TEST_LEASES==='1'&&name==='./supabaseServer'&&parent?.filename.replace(/\\/g,'/').endsWith('/src/services/reliableOperations.ts'))return {supabaseConfigured:()=>true,supabaseAdmin:()=>({rpc:async(name,args)=>{
+    leaseCalls.push({name,args});
+    if(name==='claim_activity_lease'){if(testLeases.has(args.p_key))return {data:false};testLeases.set(args.p_key,args.p_token);return {data:true};}
+    if(name==='release_activity_lease'){assert.equal(testLeases.get(args.p_key),args.p_token);testLeases.delete(args.p_key);return {data:true};}
+    throw Error('Unexpected coordination RPC '+name);
+  }})};
   if(name==='next/server'){const actual=load.call(this,name,parent,...rest);return {...actual,after:()=>{}};}
   if(name==='@/services/serverAuth' && parent?.filename.replace(/\\/g,'/').endsWith('/src/app/api/data/route.ts'))return {requireActor:req=>req.headers.get('x-test-user') || 'nneft',assertSameOrigin:()=>{}};
   if((name==='fs'||name==='node:fs') && ['/src/app/api/data/route.ts','/src/services/serverSettings.ts'].some(s=>parent?.filename.replace(/\\/g,'/').endsWith(s))) return {...fs,
@@ -48,6 +55,7 @@ global.fetch=async(url,options={})=>{
   if(target.startsWith('blocks/'+other+'/children') && method==='GET')return response({results:[],has_more:false});
   if((target==='blocks/'+other+'/children'||target.startsWith('blocks/copied-')) && method==='PATCH')return response({results:body.children.map((b,i)=>({...b,id:'copied-'+i}))});
   if(target==='pages/'+pid && method==='GET')return state.pageMissing?response({message:'Could not find page'},404):response(state.page);
+  if(target.startsWith('data_sources/') && method==='GET' && state.statusOptions)return response({properties:{Estado:{type:'status',status:{options:state.statusOptions.map(name=>({name}))}}}});
   if(target.startsWith('data_sources/') && method==='GET' && state.multiStatus)return response({properties:{Estado:{type:'multi_select',multi_select:{options:[{name:'Por hacer'},{name:'SUSPENDIDA'},{name:'En revisión'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET' && state.realSchema) return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'(bien) Estado opcion multiple revisiones':{type:'status',status:{options:[{name:'PRTUZ POR HACER'},{name:'REVISAR REVISIONES rrevi'},{name:'TERMINADO REV COBRO/DOCUMENTACION'}]}}}});
   if(target.startsWith('data_sources/') && method==='GET') return response({properties:{Name:{type:'title'},'Assignee/Ejecutor Principal':{type:'people'},'Fecha POR Hacer':{type:'date'},'Due Fecha Recordatorio':{type:'date'},Estado:{type:'status',status:{options:[{name:'Por hacer'},{name:'En revisión'},{name:'Terminada'}]}}}});
@@ -79,6 +87,7 @@ global.fetch=async(url,options={})=>{
   }
   if(target.startsWith('blocks/flow-toggle/children'))return response({results:[{type:'paragraph',paragraph:{rich_text:[{plain_text:calendar.REVIEW_PREFIX+Buffer.from(JSON.stringify(state.flow)).toString('base64')}]}}],has_more:false});
   if(target.startsWith('blocks/nested/children'))return response({results:[{id:'todo-nested',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Tarea anidada real'}]}}],has_more:false});
+  if(state.customBlocks&&method==='PATCH'&&state.customBlocks.some(b=>target==='blocks/'+b.id)){const block=state.customBlocks.find(b=>target==='blocks/'+b.id);block.to_do.checked=body.to_do.checked;return response({...block,last_edited_time:new Date().toISOString()});}
   if(target==='blocks/todo-first' && method==='PATCH')return state.failChecklist?response({message:'Notion rejected checklist'},403):response({id:'todo-first',to_do:{checked:body.to_do.checked}});
   throw Error('Unexpected mock request '+method+' '+target);
 };
@@ -540,6 +549,41 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const normal={title:'Actividad real',person:'Neftali',start:'2026-10-05T08:00:00-06:00',end:'2026-10-05T09:00:00-06:00',calendarEntryKind:'recording',files:[]};
     await assert.rejects(()=>mutations.createActivity(settings,'Neftali',normal),/empalma/);assert.ok(!state.calls.some(c=>c.target==='pages'&&c.method==='POST'));
     await assert.rejects(()=>mutations.createActivity(settings,'Neftali',{...normal,title:'Video [GRABACIÓN]',start:'2026-10-05T23:00:00-06:00',end:'2026-10-06T00:00:00-06:00'}),/horario|Horario/);
+  });
+  await test('Terminado hoy automático confirma estado y prefijo con lease real simulado y conserva People',async()=>{
+    const day=presentation.mexicoDate(),tomorrow=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
+    state.page.properties.Name.title=[{plain_text:'prtuzR | Trabajo nne11 | jjo-000',text:{content:'prtuzR | Trabajo nne11 | jjo-000'}}];
+    state.page.parent.data_source_id=process.env.NOTION_CALENDAR_DATA_SOURCE_ID||'2eeabd7d-91b7-8193-a131-000b08cd54e2';
+    state.page.properties.Estado.status.name='PRTUZ (POR HACER)';
+    state.statusOptions=['PPRTUZ TERMINADO-HOY-(POR HACER)','PRTUZ (POR HACER)','Terminada'];
+    const make=(id,date)=>({id,type:'to_do',to_do:{checked:false,rich_text:[{type:'text',text:{content:'Check ['+date+']'},plain_text:'Check ['+date+']'}]}});
+    state.customBlocks=[make('todo-first',day),make('todo-future',tomorrow)];
+    let res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,expectedChecked:false,workDate:day})),data=await res.json();
+    assert.equal(res.status,200,JSON.stringify(data));assert.equal(data.stats.hasDailyPlan,true);assert.equal(data.autoStageStatus,state.statusOptions[0],JSON.stringify(data));
+    assert.match(data.activity.title,/^pprtuzR \| Trabajo nne11/);assert.equal(state.page.properties['Assignee/Ejecutor Principal'].people[0].id,'neft-id');
+    if(process.env.ANFETA_TEST_LEASES==='1')assert.equal(testLeases.size,0,'outer lease is released after nested mutation');
+    const yesterday=new Date(Date.parse(day+'T12:00:00Z')-86400000).toISOString().slice(0,10);
+    const history=make('todo-history',yesterday);history.to_do.checked=true;state.customBlocks.push(history);calendar.invalidateChecklist(settings,pid);
+    res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-history',checked:false,expectedChecked:true,workDate:yesterday}));data=await res.json();
+    assert.equal(data.autoStageStatus,undefined,'editing history must not reopen today');assert.equal(state.page.properties.Estado.status.name,state.statusOptions[0]);
+    res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:false,expectedChecked:true,workDate:day}));data=await res.json();
+    assert.equal(data.autoStageStatus,'PRTUZ (POR HACER)',JSON.stringify(data));assert.match(data.activity.title,/^prtuzR \| Trabajo nne11/);
+  });
+  await test('Terminado hoy ausente no cambia estado ni título y devuelve aviso tras guardar check',async()=>{
+    const day=presentation.mexicoDate(),next=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
+    const oldTitle=state.page.properties.Name.title[0].plain_text;
+    state.customBlocks=[{id:'todo-first',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Hoy ['+day+']'}]}},{id:'todo-future',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Futuro ['+next+']'}]}}];
+    const res=await route.POST(request('toggle-checklist',{pageId:pid,blockId:'todo-first',checked:true,workDate:day})),data=await res.json();
+    assert.equal(data.success,true);assert.equal(data.checked,true);assert.equal(data.autoStageStatus,undefined);assert.match(data.warning,/no se confirmó Terminado por hoy/);assert.equal(state.page.properties.Name.title[0].plain_text,oldTitle);
+  });
+  await test('Terminado hoy no se confunde con Terminada al resolver opciones de Notion',async()=>{
+    state.statusOptions=['PPRTUZ TERMINADO-HOY-(POR HACER)','Terminada'];
+    const page=await mutations.mutateActivity(settings,'nneft',pid,{status:'TUZ TERMINADO'});
+    assert.equal(page.properties.Estado.status.name,'Terminada');assert.match(page.properties.Name.title[0].text.content,/^tuzR/);
+  });
+  await test('Renombrado sin destino soportado no devuelve éxito ficticio',async()=>{
+    const response=await route.POST(request('rename-item',{id:'cloud-id',source:'Dropbox',path:'/remote-only/not-present/old.txt',oldName:'old.txt',newName:'new.txt'})),data=await response.json();
+    assert.equal(response.status,501);assert.equal(data.success,undefined);assert.match(data.error,/No se guardaron cambios/);assert.equal(state.calls.length,0);
   });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

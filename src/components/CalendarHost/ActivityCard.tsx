@@ -4,6 +4,7 @@ import { getModalPositionConfig } from '@/lib/modalPosition';
 import { ReturnedObservations } from './ReturnedObservations';
 import { ReturnToOwnerModal } from './ReturnToOwnerModal';
 import { parseVisualParts } from "@/lib/visualTitleParser";
+import { OrderCodeBadge } from "../OrderCodeBadge";
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
 import {dailyChecklist,checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
 import {ActivityContentPanel} from './ActivityContentPanel';
@@ -447,12 +448,12 @@ function ActivityCardComponent({
     const previous=checklistData,items=effectiveItems.map((i:any)=>(i.id||i.blockId)===(chk.id||chk.blockId)?{...i,isChecked:!chk.isChecked,...(!chk.isChecked?{markedAt:new Date().toISOString(),markingSource:'verified'}:{})}:i);
     const optimistic={total:effectiveTotal,completed:Math.max(0,effectiveCompleted+(chk.isChecked?-1:1)),today:effectiveToday,items,completedChecks:previous?.completedChecks||[]};
     setChecklistData(optimistic);
-    try{const response=await offlineAwareFetch('/api/data',{action:'toggle-checklist',payload:{pageId:activity.pageId,blockId:chk.blockId||chk.id,checked:!chk.isChecked,expectedChecked:!!chk.isChecked,currentUser}});const data=await response.json();
+    try{const response=await offlineAwareFetch('/api/data',{action:'toggle-checklist',payload:{pageId:activity.pageId,blockId:chk.blockId||chk.id,checked:!chk.isChecked,expectedChecked:!!chk.isChecked,workDate:displayDate||mexicoDate(activity.start),currentUser}});const data=await response.json();
       if(data.queued){setChecklistData(previous);setCheckMessage('Pendiente local; se confirmará al recuperar conexión.');return;}
       if(!response.ok||!data.success||data.checked!==!chk.isChecked)throw Error(data.error||'Notion no confirmó el check.');
       const confirmed={...optimistic,items:data.stats?.checklistItems||items,total:data.stats?.checklistTotal??optimistic.total,completed:data.stats?.checklistCompleted??optimistic.completed,today:data.stats?.todayChecklistCompleted??effectiveToday,completedChecks:data.stats?.completedChecks||optimistic.completedChecks};
       setChecklistCache(cleanCardId(activity.pageId),confirmed);setChecklistData(confirmed);
-      const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
+      const updates={checklistScanned:true,checklistTotal:confirmed.total,checklistCompleted:confirmed.completed,checklistItems:confirmed.items,todayChecklistCompleted:confirmed.today,completedChecks:confirmed.completedChecks,...(data.activity?{title:data.activity.title,status:data.activity.status,...(data.activity.serverModified?{serverModified:data.activity.serverModified}:{})}:{})};onChecklistUpdated?.(activity.pageId,updates);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates});setCheckMessage(data.warning||'Check guardado en Notion.');
     }catch(e){setChecklistData(previous);setCheckMessage(e instanceof Error?e.message:'No se pudo guardar.');}finally{checkBusy.current=false;setCheckSaving(false);}
   }
     const conflict = detectActivityConflict({
@@ -640,12 +641,7 @@ function ActivityCardComponent({
               </span>
             )}
             {visualParts.orderCode && (
-              <span
-                className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#3B2D6B]/60 border border-[#A78BFA]/70 text-[#C4B5FD]"
-                title={`Fase / Orden: ${visualParts.orderCode}`}
-              >
-                {visualParts.orderCode}
-              </span>
+              <OrderCodeBadge orderCode={visualParts.orderCode} variant="pill" />
             )}
 
             {/* Dominio en azul claro */}

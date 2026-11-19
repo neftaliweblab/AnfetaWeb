@@ -15,6 +15,7 @@ import {AgendaActivityActions} from './AgendaActivityActions';
 import {saveAgendaActivity,type AgendaUpdate} from './saveAgendaActivity';
 import {personalAgendaActivities,agendaSelection,agendaAppearance} from '@/lib/personalAgenda';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
+import {OrderCodeBadge} from '../OrderCodeBadge';
 import {isFtfReminder} from '@/services/progressKpis';
 import {anfetaSync} from '@/lib/anfetaBroadcastSync';
 import {filterDeletedPages,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
@@ -376,7 +377,7 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>{vp.monthCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]" title={'Mes: '+vp.monthCode}>{vp.monthCode}</span>}{vp.orderCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#3B2D6B]/60 border border-[#A78BFA]/70 text-[#C4B5FD]" title={'Fase / Orden: '+vp.orderCode}>{vp.orderCode}</span>}
+                    <span className="font-mono text-[11px] font-semibold text-cyan-200">{calendarTime(a.start)} – {calendarTime(a.end)}</span><span className="max-w-full truncate font-mono text-[10px] text-cyan-300" title={calendarDomain(a.title,a.domain)}>{calendarDomain(a.title,a.domain)}</span>{vp.monthCode&&<span className="shrink-0 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-[#104E3E]/60 border border-[#2DD4BF]/70 text-[#5EEAD4]" title={'Mes: '+vp.monthCode}>{vp.monthCode}</span>}{vp.orderCode&&<OrderCodeBadge orderCode={vp.orderCode} variant="pill"/>}
                     <span className={'text-[10px] font-semibold ' + appearance.text}>
                       {isFtfReminder(a) ? 'FTF · Recordatorio · No cuenta como actividad' : <WorkflowStageBadge status={a.status} title={a.title}/>}
                       {a.isReviewMirror ? ' · Copia de revisión' : a.isHandoffMirror ? ' · Copia histórica' : ''}

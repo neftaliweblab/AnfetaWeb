@@ -417,3 +417,11 @@ export async function readDailySnapshotMirrors(
 
   return mirrors;
 }
+
+/** Remap local mirrors only after the durable database migration was confirmed. */
+export function remapLocalChecklistPlans(settings:CalendarSettings,pageId:string,mappings:Array<{oldId:string;newId:string}>){
+ const source=notionSourceKey(settings),page=cleanId(pageId),memory=memoryPlans.get(source)?.[page];
+ const disk=readOptionalJson<any>('checklist_plans.json',{}),local=disk[source]?.[page];
+ for(const data of [memory,local]){if(!data)continue;for(const m of mappings){const old=cleanId(m.oldId),next=cleanId(m.newId);if(data[old]&&!data[next])data[next]=data[old];delete data[old];}}
+ if(local)writeOptionalJson('checklist_plans.json',disk);
+}

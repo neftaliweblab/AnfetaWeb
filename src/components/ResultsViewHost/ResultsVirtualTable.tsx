@@ -13,6 +13,7 @@ import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled,isFullMatch} from '@/lib/searchPresentation';
 import {matchesFlexibleOrQuotedQuery, type SearchMatchOptions} from '@/services/advancedQuery';
 import {WorkflowStageBadge} from '../WorkflowStageBadge';
+import {OrderCodeBadge} from '../OrderCodeBadge';
 import {workflowState} from '@/services/activityWorkflow';
 import {detectActivityConflict} from '@/services/activityConflict';
 import {activeResultsFirst, sortResultGroups, isCompletedResult, getItemGroupKey, isBillingItem} from '@/lib/activeResultsFirst';
@@ -813,16 +814,7 @@ function ResultsVirtualTableComponent({
             </span>
           )}
           {parsed.orderCode && (
-            <span
-              style={{
-                fontSize: `${Math.max(10.5, 11.5 * scale).toFixed(1)}px`,
-                lineHeight: 1.1,
-              }}
-              className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
-              title={`Fase / orden: ${parsed.orderCode}`}
-            >
-              {parsed.orderCode}
-            </span>
+            <OrderCodeBadge orderCode={parsed.orderCode} scale={scale} variant="table" />
           )}
           {conflict && (
             <span
@@ -846,23 +838,29 @@ function ResultsVirtualTableComponent({
             onMouseLeave={handleTitleMouseLeave}
             style={{ fontSize: `${(12 * scale).toFixed(1)}px` }}
             title={parsed.rawTitle || item.name}
-            className={'block truncate font-semibold cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0] hover:text-purple-300')}
+            className={'min-w-0 flex-1 block truncate font-semibold cursor-pointer '+(workflowState(item.updateStatus||'',item.name)==='completed'?'text-slate-400 line-through decoration-slate-400/60 decoration-1 opacity-75':'text-[#E2E8F0] hover:text-purple-300')}
           >
             {highlightMatch(parsed.title)}
           </span>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 overflow-hidden">
+          <div
+            style={{ width: `${Math.round(170 * Math.min(1.4, Math.max(0.9, scale)))}px` }}
+            className="hidden sm:flex items-center shrink-0 ml-2 overflow-hidden"
+          >
             {(parsed.domain || item.domainChip || item.domain) && (
               <span
-                style={{
-                  fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
-                  padding: `${Math.max(1, Math.round(1 * scale))}px ${Math.max(4, Math.round(6 * scale))}px`,
-                }}
-                className="shrink-0 max-w-[140px] truncate rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono"
+                style={{ fontSize: `${(12 * scale).toFixed(1)}px` }}
+                className="truncate font-mono font-medium text-[#7DD3FC]"
+                title={parsed.domain || item.domainChip || item.domain}
               >
                 {highlightMatch(parsed.domain || item.domainChip || item.domain)}
               </span>
             )}
-            <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions}/>
+          </div>
+          <div
+            style={{ width: `${Math.round(145 * Math.min(1.4, Math.max(0.9, scale)))}px` }}
+            className="flex items-center justify-end gap-1.5 shrink-0 ml-2 overflow-hidden"
+          >
+            <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions} scale={scale}/>
           </div>
         </div>
 
@@ -1168,13 +1166,7 @@ function ResultsVirtualTableComponent({
               </span>
             )}
             {parsed.orderCode && (
-              <span
-                style={{ fontSize: `${Math.max(10.5, 11 * scale).toFixed(1)}px`, lineHeight: 1.1 }}
-                className="shrink-0 font-extrabold font-mono tracking-tight text-[#C4B5FD]"
-                title={`Fase / orden: ${parsed.orderCode}`}
-              >
-                {parsed.orderCode}
-              </span>
+              <OrderCodeBadge orderCode={parsed.orderCode} scale={scale} variant="compact" />
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -1331,7 +1323,7 @@ function ResultsVirtualTableComponent({
             <span className="truncate">{conflict.label}</span>
           </div>
         )}
-        <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions}/>
+        <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions} scale={scale}/>
         <div
           onMouseEnter={(e) => {
             const isNotion = item.source === 'Notion' || item.sourceName === 'Notion' || item.externalSourceName === 'Notion' || /^[a-f0-9]{32}$/i.test((item.externalId || item.id || '').replace(/-/g, '')) || /[a-f0-9]{32}/i.test(item.target || '');
@@ -1347,11 +1339,11 @@ function ResultsVirtualTableComponent({
         </div>
 
         <div
-          style={{ fontSize: `${(10 * scale).toFixed(1)}px` }}
+          style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
           className="flex items-center justify-between text-[#94A3B8] pt-1 border-t border-[#1E2836] gap-1"
         >
           {(parsed.domain || item.domainChip || item.domain) ? (
-            <span className="truncate max-w-[90px] text-[#93C5FD] font-mono">{highlightMatch(parsed.domain || item.domainChip || item.domain)}</span>
+            <span className="truncate max-w-[130px] text-[#7DD3FC] font-mono font-medium">{highlightMatch(parsed.domain || item.domainChip || item.domain)}</span>
           ) : (
             <span className="truncate max-w-[90px] text-[#64748B] font-mono">{item.sourceName || "—"}</span>
           )}
@@ -1463,7 +1455,7 @@ function ResultsVirtualTableComponent({
       </div>
 
       <div className="min-h-0 flex-1 overflow-x-auto">
-      <div className="flex h-full min-h-0 flex-col" style={{minWidth:viewZoom==='list'?Math.max(800,500+(showPath?colWidths.path:0)+(showStatus?colWidths.status:0)+(showScheduledDate?colWidths.scheduledDate:0)+(showModifiedDate?colWidths.modifiedDate:0)+90):undefined}}>
+      <div className="flex h-full min-h-0 flex-col" style={{minWidth:viewZoom==='list'?Math.max(800,Math.round(500*Math.max(1,scale))+(showPath?colWidths.path:0)+(showStatus?colWidths.status:0)+(showScheduledDate?colWidths.scheduledDate:0)+(showModifiedDate?colWidths.modifiedDate:0)+90):undefined}}>
       {/* Encabezados de Columna (Modo Lista) */}
       {viewZoom === "list" && (
         <div

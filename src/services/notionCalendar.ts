@@ -295,6 +295,7 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     checklistUnknownCompleted:plannedItems.filter(item=>item.isChecked&&item.markingSource==='unknown').length,
     checklistTimingEstimated:plannedItems.some(item=>item.markingSource==='estimated'),
     checklistTimingWarning:plannedItems.find(item=>item.timingWarning)?.timingWarning,
+    hasDailyPlan: daily.hasDailyPlan,
     completedForDay: daily.completedForDay,
     pendingFutureChecksCount: daily.pendingFutureCount,
     pendingCheckValidation: daily.pendingCheckValidation,

@@ -1,6 +1,6 @@
 import {writableStatusValue,notionStatusValue} from './notionStatusValue';
 import {appendInternalMetadata} from './notionCalendar';
-import {revisionPhaseTitle, progressiveStage} from './progressiveWorkflow';
+import {revisionPhaseTitle, progressiveStage, isTerminadoHoyStatus} from './progressiveWorkflow';
 import {isFtfActivity} from './progressKpis';
 import {inferActivityPerson,activePersonTag,setTaskUrgent,scanActivityTags,completedActivityTags} from './activityTags';
 import {DOCUMENTATION_SOURCE_ID} from '../lib/notionBaseCatalog';
@@ -290,13 +290,13 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       const options: { name: string }[] = schema.properties?.[status[0]]?.[status[1].type]?.options || [];
       const exact = options.find(option => option.name.toLowerCase() === desired.toLowerCase());
 
-      const isDesiredTerminadoHoy = /\bPPRTUZ\b|TERMINADO[-\s]+HOY/i.test(desired);
+      const isDesiredTerminadoHoy = isTerminadoHoyStatus(desired);
       const isDesiredFin = !isDesiredTerminadoHoy && (/^(?:z|fin|finaliz)/i.test(desired) || /(?<![a-z])z[rdscp]?\b/i.test(desired) || /cobro\/documentacion|cobrado/i.test(desired));
       const isDesiredTerminado = !isDesiredTerminadoHoy && !isDesiredFin && /^(?:tuz|terminad)/i.test(desired);
 
       let equivalent: { name: string } | undefined;
       if (isDesiredTerminadoHoy) {
-        equivalent = options.find(o => /\bPPRTUZ\b|TERMINADO[-\s]+HOY/i.test(o.name));
+        equivalent = options.find(o => isTerminadoHoyStatus(o.name));
       } else if (isDesiredFin) {
         equivalent = options.find(o => {
           const s = progressiveStage(o.name);
@@ -305,17 +305,17 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       } else if (isDesiredTerminado) {
         equivalent = options.find(o => {
           const s = progressiveStage(o.name);
-          return s?.code.startsWith('tuz') || (/terminad/i.test(o.name) && !/cobro|cobrado|finaliz|fin/i.test(o.name));
+          return !isTerminadoHoyStatus(o.name) && (s?.code.startsWith('tuz') || (/terminad/i.test(o.name) && !/cobro|cobrado|finaliz|fin/i.test(o.name)));
         });
       }
 
-      if (!equivalent) {
+      if (!equivalent && !isDesiredTerminadoHoy) {
         const state = workflowState(desired);
-        equivalent = state !== 'unknown' ? options.find(option => workflowState(option.name) === state) : undefined;
+        equivalent = state !== 'unknown' ? options.find(option => !isTerminadoHoyStatus(option.name) && workflowState(option.name) === state) : undefined;
       }
 
       if (exact || equivalent) desired = (exact || equivalent)!.name;
-      else if (options.length) throw new Error('Ese estado no está disponible en la base de Notion.');
+      else if (options.length || isDesiredTerminadoHoy) throw new Error('Ese estado no está disponible en la base de Notion.');
     }
     properties[status[0]] = writableStatusValue(status[1].type,desired);
 
@@ -326,6 +326,8 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       const isFin = /^(?:z|fin|finaliz)/i.test(desired) || /(?<![a-z])z[rdscp]?\b/i.test(desired) || /cobro\/documentacion|cobrado/i.test(desired);
       if (desired === 'rtuzREVISION' || updates.status === 'rtuzREVISION') {
         properties[titleField[0]] = { title: [{ text: { content: revisionPhaseTitle(currentTitle,'review') } }] };
+      } else if (isTerminadoHoyStatus(desired) || isTerminadoHoyStatus(updates.status)) {
+        properties[titleField[0]] = { title: [{ text: { content: revisionPhaseTitle(currentTitle,'completed_today') } }] };
       } else if (['pending','suspended'].includes(workflowState(desired))) {
         properties[titleField[0]] = {title:[{text:{content:revisionPhaseTitle(currentTitle,workflowState(desired)==='suspended'?'suspended':'pending',/^ARRANCAR ASIGNAR$/i.test(desired))}}]};
       } else if (isFin || desired === 'zREVISION' || updates.status === 'zREVISION') {

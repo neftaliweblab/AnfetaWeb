@@ -3,7 +3,7 @@ import {getSearchTermColorMap,makeAccentRegexPattern} from '@/lib/multiSearchHig
 import {matchesActivityTagQuery,resultAssignedPerson} from '@/services/activityTags';
 
 /** Outside the truncated title: the matching tag and owner remain readable. */
-export function ResultIdentityBadges({item,query,searchOptions}:{item:any;query:string;searchOptions?:SearchMatchOptions}){
+export function ResultIdentityBadges({item,query,searchOptions,scale=1}:{item:any;query:string;searchOptions?:SearchMatchOptions;scale?:number}){
  const title=String(item.name||item.title||''),{terms,termColorMap}=getSearchTermColorMap(query);
  const matches=terms.filter(term=>{
   const structured=matchesActivityTagQuery(title,term,false,'',item);
@@ -29,15 +29,17 @@ export function ResultIdentityBadges({item,query,searchOptions}:{item:any;query:
  })();
 
  if(!matches.length&&!notion&&!contentMatch&&!isNonStandardTitle)return null;
- return <span className="inline-flex shrink-0 items-center gap-1 text-[9px] leading-none" aria-label="Coincidencias y responsable">
+ return <span style={{fontSize:`${Math.max(9.5, 10.5 * scale).toFixed(1)}px`}} className="inline-flex min-w-0 w-full items-center justify-end gap-1 leading-none max-w-full" aria-label="Coincidencias y responsable">
+  <span className="inline-flex min-w-0 items-center gap-1 overflow-hidden" title={matches.join(" · ")}>
   {isNonStandardTitle&&<span title="El nombre no sigue la estructura oficial (prtuzR | tipo | fecha | dominio...)" className="rounded border border-amber-600/70 bg-amber-950/70 px-1 py-0.5 font-semibold text-amber-300 font-mono">⚠️ Formato</span>}
   {contentMatch&&<span title="Coincidencia en el texto indexado" className="rounded border border-cyan-700 bg-cyan-950 px-1.5 py-0.5 font-semibold text-cyan-200">En contenido</span>}
   {matches.map(term=><span key={term} title={'Coincide con la búsqueda: '+term} className={(termColorMap.get(term.toLowerCase())?.badge||'text-cyan-300')+' !mx-0 break-all rounded px-1 py-0.5'}>{term}</span>)}
-  {notion&&<span title={'Asignado: '+(person||'Sin asignar')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-700/80 bg-[#16202c] px-1.5 py-0.5 text-slate-200">
-    <svg className="h-2.5 w-2.5 text-cyan-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
+  </span>
+  {notion&&<span title={'Asignado: '+(person||'Sin asignar')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-700/80 bg-[#16202c] px-1.5 py-0.5 text-slate-200 max-w-full">
+    <svg style={{width:`${Math.round(11 * scale)}px`,height:`${Math.round(11 * scale)}px`}} className="text-cyan-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
-    <span className="truncate max-w-[85px] font-medium">{person||'Sin asignar'}</span>
+    <span className="truncate max-w-[115px] font-medium">{person||'Sin asignar'}</span>
   </span>}
  </span>;
 }
