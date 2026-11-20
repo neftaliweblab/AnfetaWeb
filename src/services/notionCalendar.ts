@@ -271,7 +271,7 @@ export async function assertChecklistAccess(settings: CalendarSettings, actor: s
 
 const checklistCache = new Map<string,{edited:string;expires:number;items:Awaited<ReturnType<typeof readChecklist>>}>();
 export async function checklistSnapshot(settings: CalendarSettings, page: any, day: string) {
-  const key = settings.notionToken + ':' + page.id;
+  const key = settings.notionToken + ':' + String(page.id).replace(/-/g,'').toLowerCase();
   let cached = checklistCache.get(key);
   if (!cached || cached.edited !== page.last_edited_time || cached.expires < Date.now()) {
     const items = await readChecklist(settings,page.id);
@@ -302,7 +302,7 @@ export async function checklistSnapshot(settings: CalendarSettings, page: any, d
     nextPlannedChecklistDate: daily.nextPlannedDate || undefined,
   };
 }
-export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
+export function invalidateChecklist(settings: CalendarSettings, pageId:string) {checklistCache.delete(settings.notionToken+':'+String(pageId).replace(/-/g,'').toLowerCase());checklistCache.delete(settings.notionToken+':'+pageId);clearReadBlocksCache(settings);}
 
 export async function queryProjectPages(settings:CalendarSettings, domain:string) {
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) throw new Error('Selecciona un dominio válido.');

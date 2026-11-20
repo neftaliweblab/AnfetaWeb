@@ -613,6 +613,13 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     let res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:day})),data=await res.json();assert.ok(!res.ok);assert.match(data.error,/Completa/);
     res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:'2001-01-01'}));data=await res.json();assert.ok(!res.ok);assert.match(data.error,/actual/);assert.ok(!state.calls.some(c=>c.method==='PATCH'||c.method==='POST'));
   });
+  await test('Agrupación invalida checklist con ID sin guiones aunque la página tenga guiones',async()=>{
+    const day=presentation.mexicoDate();state.customBlocks=[{id:'old-check',type:'to_do',to_do:{checked:true,rich_text:[{plain_text:'Anterior ['+day+']'}]}}];
+    const first=await calendar.checklistSnapshot(settings,state.page,day);assert.equal(first.checklistItems[0].blockId,'old-check');
+    state.customBlocks=[{id:'new-check',type:'to_do',to_do:{checked:true,rich_text:[{plain_text:'Agrupado ['+day+']'}]}}];
+    calendar.invalidateChecklist(settings,pid.replace(/-/g,''));
+    const next=await calendar.checklistSnapshot(settings,state.page,day);assert.equal(next.checklistItems[0].blockId,'new-check');assert.equal(next.checklistCompleted,1);assert.equal(next.hasDailyPlan,true);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

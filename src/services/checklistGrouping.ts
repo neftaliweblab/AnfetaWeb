@@ -61,6 +61,7 @@ async function build(settings:any,actor:string,pageId:string){
  const named=new Map<string,Tree[]>();for(const root of roots){const m=text(root.block).match(/^📅 (\d{4}-\d{2}-\d{2})$/);if(root.block.type==='toggle'&&m)named.set(m[1],[...(named.get(m[1])||[]),root]);}
  for(const [date,items] of named){if(items.length>1)throw Error('Hay desplegables duplicados para '+date+'. Revísalos en Notion.');if(!groups.some(g=>g.planned_date===date))groups.push({planned_date:date,toggle_id:clean(items[0].block.id),state:'ready',unregistered:true});}
  const handled=new Set<string>();
+ const undated:Array<{blockId:string;label:string}>=[];let alreadyGrouped=0;
  function collect(tree:Tree,parentId:string,insideCheck=false){
   const b=tree.block,id=clean(b.id);
   if(protectedBlock(b))return;
@@ -70,6 +71,8 @@ async function build(settings:any,actor:string,pageId:string){
    const record=pending.find(r=>r.old_block_id===id);if(record)handled.add(record.id);
    const target= date?groups.find(g=>g.planned_date===date&&g.state==='ready')?.toggle_id:page;
    const needsMove=!!record||((date||oldGroup)&&clean(target)!==clean(parentId));
+   if(!date&&!oldGroup&&!insideCheck)undated.push({blockId:id,label:text(b).slice(0,180)});
+   if(date&&oldGroup&&!needsMove)alreadyGrouped++;
    if(needsMove){
     const mixedDates=tree.children.some(c=>c.block.type==='to_do'&&(parseChecklistBlockDate(text(c.block)).plannedDate||plans[clean(c.block.id)]?.plannedDate)&& (parseChecklistBlockDate(text(c.block)).plannedDate||plans[clean(c.block.id)]?.plannedDate)!==date);
     const reason=insideCheck?'Es un check anidado dentro de otro check; se conserva su estructura.':mixedDates?'Sus checks hijos tienen otra fecha; se conserva la estructura.':compatible(tree);
@@ -88,9 +91,9 @@ async function build(settings:any,actor:string,pageId:string){
   if(['copied','verified','migrated'].includes(record.state)&&record.backup?.tree)moves.push({oldId:record.old_block_id,parentId:page,date:record.planned_date,label:text(record.backup.tree.block).slice(0,180),version:record.source_version,tree:record.backup.tree,record});
  }
  const fingerprint=hash({moves:moves.map(m=>[m.oldId,m.parentId,m.date,m.version,m.record?.state||null]),blocked});
- return {page,source,store,groups,roots,moves,blocked,fingerprint};
+ return {page,source,store,groups,roots,moves,blocked,fingerprint,undated,alreadyGrouped};
 }
-function publicPlan(p:Awaited<ReturnType<typeof build>>){return {fingerprint:p.fingerprint,moves:p.moves.map(m=>({blockId:m.oldId,label:m.label,date:m.date,resuming:!!m.record})),blocked:p.blocked,warning:'Cambiarán los IDs de los checks trasladados. Los comentarios y enlaces a bloques antiguos no se copian; los originales se archivan después de verificar copia e historial.'};}
+function publicPlan(p:Awaited<ReturnType<typeof build>>){return {fingerprint:p.fingerprint,undated:p.undated,alreadyGrouped:p.alreadyGrouped,moves:p.moves.map(m=>({blockId:m.oldId,label:m.label,date:m.date,resuming:!!m.record})),blocked:p.blocked,warning:'Cambiarán los IDs de los checks trasladados. Los comentarios y enlaces a bloques antiguos no se copian; los originales se archivan después de verificar copia e historial.'};}
 export async function previewChecklistGrouping(settings:any,actor:string,pageId:string){return publicPlan(await build(settings,actor,pageId));}
 async function targetGroup(settings:any,p:Awaited<ReturnType<typeof build>>,date:string|null){
  if(!date)return p.page;
