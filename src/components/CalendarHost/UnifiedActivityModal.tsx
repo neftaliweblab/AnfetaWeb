@@ -374,6 +374,7 @@ export function UnifiedActivityModal({
   const [checkFilter, setCheckFilter] = useState<"all" | "today" | "overdue" | "upcoming" | "backlog">("all");
   const [collapsedCheckGroups, setCollapsedCheckGroups] = useState<Record<string, boolean>>({});
   const [selectedCheckIds, setSelectedCheckIds] = useState<string[]>([]);
+  const [includeDatedPending, setIncludeDatedPending] = useState(false);
   const [batchDateValue, setBatchDateValue] = useState<string>("");
   const [checkSaving, setCheckSaving] = useState(false);
   const [advancingPhase, setAdvancingPhase] = useState(false);
@@ -476,18 +477,23 @@ export function UnifiedActivityModal({
     }
   };
 
-  const planChecklistItems = async (blockIds: string[], plannedDate: string | null) => {
+  const planChecklistItems = async (blockIds: string[], plannedDate: string | null, onlyUnplanned = false, pendingOnly = false) => {
     const cleanIds = blockIds.filter(Boolean);
     if (!editable || checkBusy.current || cleanIds.length === 0) return;
     checkBusy.current = true;
     setCheckSaving(true);
     setCheckMessage("");
+    let confirmedCount = 0;
     try {
+      for (let offset = 0; offset < cleanIds.length; offset += 5) {
+      const batchIds = cleanIds.slice(offset, offset + 5);
       const response = await offlineAwareFetch("/api/data", {
         action: "plan-checklist-item",
         payload: {
           pageId: activity.pageId,
-          blockIds: cleanIds,
+          blockIds: batchIds,
+          onlyUnplanned,
+          pendingOnly,
           plannedDate,
           workDate: checklistDay,
           currentUser,
@@ -495,7 +501,7 @@ export function UnifiedActivityModal({
       });
       const data = await response.json();
       if (data.queued) {
-        setCheckMessage("Planificación guardada localmente; se sincronizará al conectar.");
+        setCheckMessage(`${confirmedCount} checks confirmados. Este lote quedó localmente; los restantes no se enviaron. Revisa al reconectar antes de continuar.`);
         return;
       }
       if (!response.ok || !data.success) {
@@ -504,7 +510,7 @@ export function UnifiedActivityModal({
       const nextItems = Array.isArray(data.items)
         ? data.items
         : effectiveItems.map((i: any) =>
-            cleanIds.includes(i.blockId || i.id) ? { ...i, plannedDate: plannedDate || undefined } : i
+            batchIds.includes(i.blockId || i.id) ? { ...i, plannedDate: plannedDate || undefined } : i
           );
       const nextSummary = dailyChecklist(nextItems, checklistDay);
       const updates = {
@@ -521,21 +527,24 @@ export function UnifiedActivityModal({
       };
       onChecklistUpdated?.(activity.pageId, updates);
       anfetaSync.broadcast({ type: "ACTIVITY_UPDATED", confirmed: true, pageId: activity.pageId, updates });
-      setSelectedCheckIds((prev) => prev.filter((id) => !cleanIds.includes(id)));
+      setSelectedCheckIds((prev) => prev.filter((id) => !batchIds.includes(id)));
+      confirmedCount += data.appliedCount ?? batchIds.length;
+      setCheckMessage(`Confirmados ${confirmedCount} de ${cleanIds.length} checks…`);
+      }
       setCheckMessage(
         plannedDate
-          ? `Programado ${cleanIds.length > 1 ? `${cleanIds.length} checks` : "check"} para ${plannedDate}.`
+          ? `${confirmedCount} checks programados para ${plannedDate}.`
           : "Fecha del check limpiada."
       );
     } catch (e) {
-      setCheckMessage(e instanceof Error ? e.message : "No se pudo programar el check.");
+      setCheckMessage(`${confirmedCount} checks confirmados. ${e instanceof Error ? e.message : "No se pudo programar el check."} Los lotes restantes no se enviaron; actualiza antes de reintentar.`);
     } finally {
       checkBusy.current = false;
       setCheckSaving(false);
     }
   };
 
-  const handleCompleteDayAndAdvance = async () => {
+  const handleCompleteDayAndAdvance = async (advance = true) => {
     if (!editable || checkBusy.current || advancingPhase) return;
     checkBusy.current = true;
     setAdvancingPhase(true);
@@ -546,7 +555,7 @@ export function UnifiedActivityModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "complete-day-and-advance",
+          action: advance ? "complete-day-and-advance" : "confirm-activity-day",
           payload: {
             pageId: activity.pageId,
             workDate: checklistDay,
@@ -558,6 +567,10 @@ export function UnifiedActivityModal({
       const data = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data.error || "No se pudo cerrar la fase de hoy.");
+      }
+      if (!advance && data.stats) {
+        onChecklistUpdated?.(activity.pageId, data.stats);
+        anfetaSync.broadcast({type:"ACTIVITY_UPDATED",confirmed:true,pageId:activity.pageId,updates:data.stats});
       }
       if (data.movedActivity) {
         anfetaSync.broadcast({
@@ -573,7 +586,7 @@ export function UnifiedActivityModal({
         });
       }
       setCheckMessage(
-        `Fase guardada en ${checklistDay} y actividad movida al ${data.targetDate || targetDate}.`
+        advance ? `Fase guardada en ${checklistDay} y actividad movida al ${data.targetDate || targetDate}. ${data.warning || ""}` : `Cierre de hoy confirmado. ${data.warning || "Aviso guardado para John. El horario se conserva."}`
       );
     } catch (e) {
       setCheckMessage(e instanceof Error ? e.message : "No se pudo cerrar la fase de hoy.");
@@ -1194,6 +1207,12 @@ export function UnifiedActivityModal({
                       .filter(Boolean);
                     return (
                   <div className="space-y-1.5">
+                    {editable && !activity.isDaySnapshot && !activity.isReviewMirror && !activity.isHandoffMirror && <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={checkSaving || !effectiveItems.some((i:any)=>!i.isChecked && (includeDatedPending || !i.plannedDate))} onClick={()=>void planChecklistItems(effectiveItems.filter((i:any)=>!i.isChecked && (includeDatedPending || !i.plannedDate)).map((i:any)=>i.blockId || i.id),checklistDay,!includeDatedPending,true)} className="rounded border border-cyan-500 px-3 py-2 text-xs text-cyan-100 disabled:opacity-40">{includeDatedPending ? "Todos los pendientes para hoy" : "Todos sin fecha para hoy"}</button>
+                      <label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" disabled={checkSaving} checked={includeDatedPending} onChange={e=>setIncludeDatedPending(e.target.checked)}/>Incluir pendientes que ya tienen fecha</label>
+                      <p className="w-full text-[10px] text-slate-400">{includeDatedPending ? `Se cambiará a hoy la fecha de ${effectiveItems.filter((i:any)=>!i.isChecked && i.plannedDate && i.plannedDate!==checklistDay).length} pendientes programados. Los completados se conservan.` : "Conserva los completados y las fechas ya asignadas."} Puedes cambiar después algunos a mañana.</p>
+                      <details className="w-full text-xs text-violet-200"><summary className="cursor-pointer">Ayuda para organizar los pasos en Notion</summary><p className="select-text mt-2 text-slate-300">Convierte únicamente las tareas pendientes en casillas de verificación sin marcar. Conserva los checks completados, los textos, enlaces, imágenes y demás contenido. A las tareas pendientes sin fecha agrega al final la fecha de hoy en formato YYYY-MM-DD; conserva las fechas ya asignadas. Agrupa los checks por su fecha en desplegables con fecha fija y deja sin fecha los que no deban programarse todavía. Revisa la propuesta antes de aplicarla.</p></details>
+                    </div>}
                     {editable&&!activity.isDaySnapshot&&!activity.isReviewMirror&&!activity.isHandoffMirror&&<ChecklistGroupingControl key={activity.pageId} pageId={activity.pageId} workDate={checklistDay} onBusyChange={value=>{checkBusy.current=value;setCheckSaving(value);}} onUpdated={stats=>{setSelectedCheckIds([]);onChecklistUpdated?.(activity.pageId,stats);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:stats});}}/>}
                     <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
                       <div className="flex flex-wrap items-center gap-1">
@@ -1763,6 +1782,10 @@ export function UnifiedActivityModal({
                     );
                   })()}
 
+                  {editable && !activity.isDaySnapshot && !activity.isReviewMirror && !activity.isHandoffMirror && <div className="rounded-lg border border-emerald-500/50 p-3 space-y-1">
+                    <button type="button" disabled={advancingPhase || checkSaving || !(daily.completedForDay || (!daily.hasDailyPlan && daily.done > 0))} onClick={()=>void handleCompleteDayAndAdvance(false)} className="w-full rounded-lg bg-emerald-700 py-3 text-sm font-semibold text-white disabled:opacity-40">{advancingPhase ? "Confirmando…" : "✓ Confirmar terminado por hoy y avisar"}</button>
+                    <p className="text-[10px] text-slate-400">Confirma los pasos de hoy y avisa a John. Conserva el horario, el responsable y los pendientes futuros; no aprueba la revisión final.</p>
+                  </div>}
                   {editable && !activity.isDaySnapshot && remainingGlobalChecks > 0 && (daily.completedForDay || (!daily.hasDailyPlan && daily.done > 0)) && (
                     <div className="pt-1.5 border-t border-[#1D2D3E]">
                       <button

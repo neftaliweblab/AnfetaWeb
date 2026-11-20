@@ -585,6 +585,34 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const response=await route.POST(request('rename-item',{id:'cloud-id',source:'Dropbox',path:'/remote-only/not-present/old.txt',oldName:'old.txt',newName:'new.txt'})),data=await response.json();
     assert.equal(response.status,501);assert.equal(data.success,undefined);assert.match(data.error,/No se guardaron cambios/);assert.equal(state.calls.length,0);
   });
+  await test('Cierre diario explícito conserva horario People y pendientes futuros',async()=>{
+    const day=presentation.mexicoDate(),future=new Date(Date.parse(day+'T12:00:00Z')+86400000).toISOString().slice(0,10);
+    state.page.properties.Name.title=[{plain_text:'prtuzR Trabajo nne11',text:{content:'prtuzR Trabajo nne11'}}];
+    state.page.properties.Estado.status.name='PRTUZ (POR HACER)';
+    state.statusOptions=['PPRTUZ TERMINADO-HOY-(POR HACER)','PRTUZ (POR HACER)','Terminada'];
+    state.customBlocks=[{id:'todo-today',type:'to_do',to_do:{checked:true,rich_text:[{plain_text:'Hoy ['+day+']'}]}},{id:'todo-future',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Futuro ['+future+']'}]}}];
+    const notice=require(root+'/src/services/activityDayNotice.ts'),original=notice.confirmActivityDayNotice;let notified=0;
+    notice.confirmActivityDayNotice=async(_settings,actor,live,workDay,summary)=>{notified++;assert.equal(actor,'nneft');assert.equal(workDay,day);assert.equal(summary.plannedDone,1);};
+    try{
+      const beforeDate=JSON.stringify(state.page.properties['Fecha POR Hacer']),beforePeople=JSON.stringify(state.page.properties['Assignee/Ejecutor Principal']);
+      const res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:day})),data=await res.json();
+      assert.equal(data.success,true,JSON.stringify(data));assert.equal(notified,1);assert.equal(state.page.properties.Estado.status.name,state.statusOptions[0]);
+      assert.equal(JSON.stringify(state.page.properties['Fecha POR Hacer']),beforeDate);assert.equal(JSON.stringify(state.page.properties['Assignee/Ejecutor Principal']),beforePeople);
+      assert.equal(state.customBlocks[1].to_do.checked,false);assert.ok(!state.calls.some(c=>c.target==='pages'&&c.method==='POST'));
+    }finally{notice.confirmActivityDayNotice=original;}
+  });
+  await test('Cierre diario explícito no aprueba revisión aunque todos los checks estén completos',async()=>{
+    const day=presentation.mexicoDate();state.page.properties.Estado.status.name='En revisión';
+    state.customBlocks=[{id:'todo-today',type:'to_do',to_do:{checked:true,rich_text:[{plain_text:'Hoy ['+day+']'}]}}];
+    const notice=require(root+'/src/services/activityDayNotice.ts'),original=notice.confirmActivityDayNotice;notice.confirmActivityDayNotice=async()=>{};
+    try{const res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:day})),data=await res.json();assert.equal(data.success,true,JSON.stringify(data));assert.equal(state.page.properties.Estado.status.name,'En revisión');assert.ok(!state.calls.some(c=>c.target==='pages/'+pid&&c.method==='PATCH'));}
+    finally{notice.confirmActivityDayNotice=original;}
+  });
+  await test('Cierre diario explícito rechaza pasos de hoy sin completar y fechas históricas',async()=>{
+    const day=presentation.mexicoDate();state.customBlocks=[{id:'todo-today',type:'to_do',to_do:{checked:false,rich_text:[{plain_text:'Hoy ['+day+']'}]}}];
+    let res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:day})),data=await res.json();assert.ok(!res.ok);assert.match(data.error,/Completa/);
+    res=await route.POST(request('confirm-activity-day',{pageId:pid,workDate:'2001-01-01'}));data=await res.json();assert.ok(!res.ok);assert.match(data.error,/actual/);assert.ok(!state.calls.some(c=>c.method==='PATCH'||c.method==='POST'));
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

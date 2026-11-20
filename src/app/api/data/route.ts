@@ -1,3 +1,4 @@
+import {confirmActivityDayNotice,assertDailyClosureReady} from '@/services/activityDayNotice';
 import phaseOneCatalog from '../../../../data/notion_template_phase1_catalog_v2.json';
 import {
   canonicalActivityUrl,
@@ -703,7 +704,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }catch(error){ftfWarning='No se pudo comprobar el FTF: '+(error instanceof Error?error.message:'Intenta actualizar.');}
         try{
           const state=await readUserState(settings,actor);
-          items.unshift(...Object.values(state.values?.receipts?.ftfCompletions||{}).filter((r:any)=>r.date===mexicoDate()));
+          items.unshift(...Object.values(state.values?.receipts?.ftfCompletions||{}).filter((r:any)=>r.date===mexicoDate()), ...Object.values(state.values?.receipts?.activityDayCompletions||{}).filter((r:any)=>r.date===mexicoDate()));
         }catch(error){ftfWarning=ftfWarning||'No se pudieron leer los avisos FTF guardados.';}
         return NextResponse.json({items,warning:ftfWarning}, {headers:{'Cache-Control':'no-store'}});
       }
@@ -3558,8 +3559,16 @@ async function POSTLive(req: NextRequest) {
               ? input.blockIds.map((blockId: string) => ({ blockId: String(blockId), plannedDate: input.plannedDate ?? null }))
               : [{ blockId: String(input.blockId || ''), plannedDate: input.plannedDate ?? null }];
           if (!updates.some(u => cleanPageId(u.blockId))) throw new Error('Selecciona al menos un check para programar.');
-          await updateChecklistBlocksPlannedDate(settings, actor, pageId, updates);
-          await setChecklistItemPlans(settings, pageId, updates, actor);
+          let appliedUpdates=updates;
+          if(input.onlyUnplanned || input.pendingOnly){
+            invalidateChecklist(settings,pageId);
+            const fresh=await readChecklist(settings,pageId);
+            const eligible=new Set(fresh.filter(i=>!i.isChecked&&(!input.onlyUnplanned||!i.plannedDate)).map(i=>cleanPageId(i.blockId)));
+            appliedUpdates=updates.filter(u=>eligible.has(cleanPageId(u.blockId)));
+          }
+
+          await updateChecklistBlocksPlannedDate(settings, actor, pageId, appliedUpdates);
+          await setChecklistItemPlans(settings, pageId, appliedUpdates, actor);
           invalidateChecklist(settings, pageId);
           const livePage = extractNotionPageData(currentPage);
           const workDay = typeof input.workDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.workDate)
@@ -3581,13 +3590,41 @@ async function POSTLive(req: NextRequest) {
               },
             },
           });
-          return NextResponse.json({ success: true, items, stats, plannedDate: input.plannedDate ?? null });
+          return NextResponse.json({ success: true, items, stats, appliedCount: appliedUpdates.length, plannedDate: input.plannedDate ?? null });
         });
       } catch (error) {
         return NextResponse.json({ error: error instanceof Error ? error.message : 'No se pudo programar el checklist.' }, { status: 400 });
       }
     }
 
+    if (action === 'confirm-activity-day') {
+      const settings = {...getSettings(),notionToken:resolveNotionToken(req)};
+      const pageId = cleanPageId(payload.pageId || '');
+      if (!/^[a-f0-9]{32}$/.test(pageId)) throw Error('Página inválida.');
+      return await withActivityLease(operationKey(settings.notionToken,pageId),async()=>{
+        const day=mexicoDate();
+        if(payload.workDate!==day)throw Error('Solo puedes confirmar el cierre del día actual.');
+        const page=await assertChecklistAccess(settings,actor,pageId);
+        const live=extractNotionPageData(page);
+        invalidateChecklist(settings,pageId);
+        const items=await readChecklist(settings,pageId),summary=dailyChecklist(items,day);
+        assertDailyClosureReady(payload.workDate,day,items.length,summary);
+        const state=workflowState(live.status,live.title);
+        let effective=page;
+        // A daily confirmation never approves a review or changes its assignee/date.
+        if(state==='pending' && !isTerminadoHoyStatus(live.status))effective=await mutateActivity(settings,actor,pageId,{status:'PPRTUZ TERMINADO-HOY-(POR HACER)',expectedStatus:live.status,expectedTitle:live.title});
+        const warning=await confirmActivityDayNotice(settings,actor,live,day,summary);
+        const stats={...await checklistSnapshot(settings,effective,day),status:extractNotionPageData(effective).status,serverModified:effective.last_edited_time};
+        let syncWarning='';
+        try{
+          const hydrated=await hydratePageReviewFlow(settings,effective);
+          const activity=calendarActivityFromPage(hydrated,process.env.NOTION_CALENDAR_DATA_SOURCE_ID||settings.notionDataSourceId);
+          if(activity)await recordPageEvent({sourceKey:notionSourceKey(settings),pageId,state:'active',eventType:'page.content_updated',serverModified:effective.last_edited_time,properties:{calendarActivity:{...activity,...stats}}});
+        }catch{syncWarning='El cierre está guardado; actualiza los otros equipos para comprobarlo.';}
+        previewMemoryCache.clear();
+        return NextResponse.json({success:true,stats,warning:[warning,syncWarning].filter(Boolean).join(' ')||undefined});
+      });
+    }
     if (action === 'complete-day-and-advance') {
       const input = payload || body;
       const settings = { ...getSettings(), notionToken: resolveNotionToken(req) };
@@ -3749,10 +3786,14 @@ async function POSTLive(req: NextRequest) {
         const snapshotMirrors = await readDailySnapshotMirrors(settings, workDay, shiftMexicoDay(workDay, 1), [movedActivity]);
         const snapshotActivity = snapshotMirrors.find(m => cleanPageId(m.originalPageId) === cleanPageId(pageId)) || null;
 
+        let dayNoticeWarning:string|undefined;
+        try{if(workDay===mexicoDate())dayNoticeWarning=await confirmActivityDayNotice(settings,actor,liveOrig,workDay,summary);}
+        catch{dayNoticeWarning='La fase y el nuevo horario están guardados; no se confirmó el aviso para John.';}
         return NextResponse.json({
           success: true,
           workDate: workDay,
           targetDate,
+          warning:dayNoticeWarning,
           pendingFutureChecksCount: remainingGlobal,
           movedActivity,
           snapshotActivity,

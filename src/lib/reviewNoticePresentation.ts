@@ -4,6 +4,7 @@ import {normalizePerson} from '../services/identityNormalizer';
 /** Notices describe people and actions; only activity titles use the calendar cleaner. */
 export function reviewNoticePresentation(item: any) {
   const raw=String(item.activityTitle || item.title || '');
+  if(item.kind==='activity-day')return {title:calendarDisplayTitle(raw),people:'De: '+normalizePerson(item.authorName)+' · Para: John',detail:item.detail||'Cierre diario confirmado',timestamp:item.completedAt||item.updated};
   if(item.kind==='ftf'){
     const idPerson=String(item.id || '').match(/^ftf:\d{4}-\d{2}-\d{2}:(.+)$/)?.[1];
     const titlePerson=raw.match(/^(.+?)\s+completó su revisión FTF/i)?.[1];

@@ -95,7 +95,7 @@ export function CalendarReviewNotifications({
     if(item.kind==='ftf'){onSelectDate?.(item.date);setOpen(false);return;}
     setBusy(true);
     try {
-      const res=await fetch('/api/data?type=review-activity&id='+encodeURIComponent(item.id),{cache:'no-store',signal:AbortSignal.timeout(45000)});
+      const res=await fetch(item.kind==='activity-day'?'/api/data?type=calendar-activity&pageId='+encodeURIComponent(item.pageId):'/api/data?type=review-activity&id='+encodeURIComponent(item.id),{cache:'no-store',signal:AbortSignal.timeout(45000)});
       const data=await res.json();
       if(!res.ok||!data.activity)throw Error(data.error||'No se pudo abrir la actividad.');
       window.dispatchEvent(new Event('anfeta_open_calendar_from_notice'));onSelectActivity?.(data.activity);setOpen(false);setError('');
