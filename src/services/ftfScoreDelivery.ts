@@ -33,6 +33,9 @@ export interface FtfEmailDeliveryResult {
   to?: string[];
   emailId?: string;
   provider?: 'smtp' | 'resend';
+  uncertain?: boolean;
+  accepted?: string[];
+  rejected?: string[];
 }
 
 export interface EmailTransportConfig {
@@ -297,7 +300,7 @@ export function parseRecipients(raw: string | undefined): string[] {
 }
 
 export async function deliverHtmlEmail(
-  params: EmailTransportConfig & { subject: string; html: string }
+  params: EmailTransportConfig & { subject: string; html: string; idempotencyKey?: string }
 ): Promise<FtfEmailDeliveryResult> {
   const recipients = parseRecipients(params.to);
   if (recipients.length === 0) {
@@ -321,10 +324,12 @@ export async function deliverHtmlEmail(
               host: smtpHost,
               port: smtpPort,
               secure: smtpPort === 465,
+              connectionTimeout:15000,greetingTimeout:15000,socketTimeout:20000,
               auth: { user: smtpUser, pass: smtpPass },
             }
           : {
               service: 'gmail',
+              connectionTimeout:15000,greetingTimeout:15000,socketTimeout:20000,
               auth: { user: smtpUser, pass: smtpPass },
             }
       );
@@ -334,9 +339,13 @@ export async function deliverHtmlEmail(
         to: recipients.join(', '),
         subject: params.subject,
         html: params.html,
+        ...(params.idempotencyKey?{messageId:`<${params.idempotencyKey}@anfeta-web.vercel.app>`}:{}),
       });
+      const accepted=(info?.accepted||[]).map(String),rejected=(info?.rejected||[]).map(String);
       return {
-        ok: true,
+        ok: !rejected.length,
+        ...(rejected.length?{uncertain:true,reason:'El proveedor rechazó parte de los destinatarios; revisa la entrega antes de reenviar.'}:{}),
+        accepted,rejected,
         to: recipients,
         emailId: info?.messageId,
         provider: 'smtp',
@@ -346,6 +355,7 @@ export async function deliverHtmlEmail(
         ok: false,
         to: recipients,
         provider: 'smtp',
+        uncertain: !((Number((err as any)?.responseCode)||0)>=400 && (Number((err as any)?.responseCode)||0)<600),
         reason: err instanceof Error ? err.message : 'Error enviando por SMTP.',
       };
     }
@@ -366,6 +376,7 @@ export async function deliverHtmlEmail(
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      ...(params.idempotencyKey?{'Idempotency-Key':params.idempotencyKey}:{}),
     },
     body: JSON.stringify({
       from,
@@ -382,6 +393,7 @@ export async function deliverHtmlEmail(
       ok: false,
       to: recipients,
       provider: 'resend',
+      uncertain: res.status>=500||res.status===408,
       reason: data?.message || data?.error || `Resend respondió HTTP ${res.status}`,
     };
   }

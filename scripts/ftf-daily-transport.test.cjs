@@ -1,0 +1,21 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript'),root=path.resolve(__dirname,'..');
+const resolve=Module._resolveFilename;Module._resolveFilename=function(n,p,...a){if(n.startsWith('@/'))n=path.join(root,'src',n.slice(2));return resolve.call(this,n,p,...a)};
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);
+let emailMode='ok',captured,jobCalls=0;const load=Module._load;
+Module._load=function(n,p,...a){if(n==='nodemailer')return {__esModule:true,default:{createTransport:()=>({sendMail:async m=>{captured=m;if(emailMode==='error'){throw Object.assign(Error('rejected'),{responseCode:535})}return {messageId:'smtp-test',accepted:['a@example.com'],rejected:emailMode==='partial'?['b@example.com']:[]}}})}};
+ if(p?.filename.replace(/\\/g,'/').endsWith('/api/jobs/ftf-report/route.ts')&&n==='@/services/ftfDailyReport')return {runDailyReport:async options=>{jobCalls++;return {success:true,dryRun:options.dryRun,date:options.date}}};
+ return load.call(this,n,p,...a)};
+(async()=>{const {deliverHtmlEmail}=require(root+'/src/services/ftfScoreDelivery.ts');let header;global.fetch=async(_url,init)=>{header=init.headers;return new Response(JSON.stringify({id:'resend-test'}),{status:200})};
+ let r=await deliverHtmlEmail({to:'a@example.com',apiKey:'TEST_ONLY',subject:'Test',html:'<p>test</p>',idempotencyKey:'stable-test'});assert.equal(r.ok,true);assert.equal(header['Idempotency-Key'],'stable-test');
+ global.fetch=async()=>new Response('{}',{status:500});r=await deliverHtmlEmail({to:'a@example.com',apiKey:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.uncertain,true);
+ global.fetch=async()=>new Response('{}',{status:429});r=await deliverHtmlEmail({to:'a@example.com',apiKey:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.uncertain,false);
+ r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:'',idempotencyKey:'stable-test'});assert.equal(r.ok,true);assert.match(captured.messageId,/stable-test/);
+ emailMode='partial';r=await deliverHtmlEmail({to:'a@example.com,b@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.ok,false);assert.equal(r.uncertain,true);assert.deepEqual(r.rejected,['b@example.com']);
+ emailMode='error';r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.uncertain,false);
+ const route=require(root+'/src/app/api/jobs/ftf-report/route.ts'),old=process.env.CRON_SECRET;process.env.CRON_SECRET='x'.repeat(32);
+ try{r=await route.GET(new Request('https://example.com/api/jobs/ftf-report'));assert.equal(r.status,401);assert.equal(jobCalls,0);
+ r=await route.GET(new Request('https://example.com/api/jobs/ftf-report?dryRun=1&date=2026-11-20',{headers:{Authorization:'Bearer '+process.env.CRON_SECRET}}));assert.equal(r.status,200);const body=await r.json();assert.equal(body.dryRun,true);assert.equal(jobCalls,1);
+ process.env.CRON_SECRET='short';r=await route.GET(new Request('https://example.com/api/jobs/ftf-report'));assert.equal(r.status,503);assert.equal(jobCalls,1);
+ }finally{if(old===undefined)delete process.env.CRON_SECRET;else process.env.CRON_SECRET=old;}
+ console.log('OK daily email transport and cron auth: idempotency header, SMTP Message-ID, partial rejection, uncertain provider failure, unauthorized and dry run. No real emails sent.');
+})().catch(e=>{console.error(e);process.exitCode=1});
