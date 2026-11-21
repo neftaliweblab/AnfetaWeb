@@ -1,3 +1,4 @@
+import {reportPublicUrl} from '@/lib/reportPublicUrl';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NotionCalendarActivity } from '@/types/anfeta';
@@ -294,10 +295,7 @@ export async function sendWeeklyReportFromWeekData(options: {
   const teamNames = (options.weekReport.days[0]?.people || []).map(p => p.name);
   const matrix = buildWeeklyPayrollMatrix(workDates, teamNames, mergedScores);
 
-  const appUrl =
-    process.env.ANFETA_PUBLIC_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'https://anfeta-web-iota.vercel.app';
+  const appUrl = reportPublicUrl();
 
   const email: FtfEmailDeliveryResult = options.dryRun
     ? { ok: true, skipped: true, to: [] }
