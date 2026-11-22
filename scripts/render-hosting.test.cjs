@@ -1,0 +1,16 @@
+const fs=require('fs'),path=require('path'),Module=require('module'),assert=require('assert/strict'),ts=require('typescript');
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,f);
+const {allowedRequestOrigin}=require('../src/lib/requestOrigin.ts');
+const request=(origin,extra={})=>new Request('http://localhost:10000/api/auth',{headers:{...(origin?{origin}:{}),...extra}}),render={RENDER:'true',RENDER_EXTERNAL_URL:'https://anfeta-web.onrender.com'};
+assert.equal(allowedRequestOrigin(request('http://localhost:10000'),{}),true);
+assert.equal(allowedRequestOrigin(request('https://anfeta-web.onrender.com'),{}),false);
+assert.equal(allowedRequestOrigin(request('https://anfeta-web.onrender.com'),render),true);
+assert.equal(allowedRequestOrigin(request('https://evil.example'),render),false);
+assert.equal(allowedRequestOrigin(request('https://evil.example',{'x-forwarded-host':'evil.example'}),render),false);
+assert.equal(allowedRequestOrigin(request('null'),render),false);
+assert.equal(allowedRequestOrigin(request(undefined),render),true);
+assert.equal(allowedRequestOrigin(request('https://app.example'),{...render,ANFETA_PUBLIC_URL:'https://app.example'}),true);
+assert.equal(allowedRequestOrigin(request('http://app.example'),{...render,ANFETA_PUBLIC_URL:'http://app.example'}),false);
+assert.equal(allowedRequestOrigin(request('https://app.example'),{RENDER:'false',ANFETA_PUBLIC_URL:'https://app.example'}),false);
+const {reportPublicUrl}=require('../src/lib/reportPublicUrl.ts');assert.equal(reportPublicUrl(render),'https://anfeta-web.onrender.com');
+console.log('OK Render origin: configured proxy and custom origins accepted, foreign/null/spoofed origins rejected; non-Render behavior preserved.');

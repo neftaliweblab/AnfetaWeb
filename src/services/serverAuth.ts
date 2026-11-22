@@ -1,3 +1,4 @@
+import {allowedRequestOrigin} from '@/lib/requestOrigin';
 import {supabaseConfigured,supabaseIdentity} from './supabaseServer';
 import {createHmac,randomBytes,scryptSync,timingSafeEqual,createHash} from 'node:crypto';
 import {normalizePerson,PERSON_ALIASES} from './identityNormalizer';
@@ -14,4 +15,4 @@ export function authenticateUser(user:string,password:string){const {secret,user
 }
 export function sessionActor(request:Request){try{const cookie=request.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(SESSION_COOKIE+'='))?.slice(SESSION_COOKIE.length+1);if(!cookie)return undefined;const {secret,users}=configuration();const [data,signature,extra]=cookie.split('.');if(extra || !data || !signature)return undefined;const expected=createHmac('sha256',secret).update(data).digest();const received=Buffer.from(signature,'base64url');if(received.length!==expected.length || !timingSafeEqual(expected,received))return undefined;const value=JSON.parse(Buffer.from(data,'base64url').toString());const credential=credentialFor(value.user,users);if(value.expires<Date.now() || !credential || fingerprint(credential)!==value.version)return undefined;return normalizePerson(value.user);}catch{return undefined;}}
 export async function requireActor(request:Request){if(supabaseConfigured()){const identity=await supabaseIdentity(request);const expected=request.headers.get('x-anfeta-owner');if(expected&&expected!==identity.id)throw new Error('La sesión cambió; activa la persona original antes de enviar cambios pendientes.');return identity.person;}const actor=sessionActor(request);if(!actor)throw new Error('Inicia sesión para continuar.');return actor;}
-export function assertSameOrigin(request:Request){const origin=request.headers.get('origin');if(origin && origin!==new URL(request.url).origin)throw new Error('Origen de solicitud no permitido.');}
+export function assertSameOrigin(request:Request){if(!allowedRequestOrigin(request))throw new Error('Origen de solicitud no permitido.');}
