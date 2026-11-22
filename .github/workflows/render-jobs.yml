@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   invoke:
-    if: github.repository == 'neftaliweblab/AnfetaWeb' && (github.event_name == 'workflow_dispatch' || vars.ANFETA_RENDER_SCHEDULES_ENABLED == 'true')
+    if: github.repository == 'neftaliweblab/AnfetaWeb' && (github.event_name == 'workflow_dispatch' || vars.ANFETA_RENDER_SCHEDULES_ENABLED == 'true') && (github.event_name == 'workflow_dispatch' || (github.event.schedule != '30 0 * * 2-6' && github.event.schedule != '30 0 * * 6') || vars.ANFETA_RENDER_REPORTS_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:

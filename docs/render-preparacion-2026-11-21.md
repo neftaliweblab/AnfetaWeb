@@ -8,3 +8,12 @@
 - vercel.json no programa tareas en Render. Preparar un disparador externo gratuito con secreto independiente y deduplicación; comprobar límites de GitHub Actions del repositorio antes de activarlo. El horario de un scheduler gratuito no implica garantía de puntualidad.
 - Antes de declarar migración completa: verificar login, selección de usuario, lectura de Notion, búsqueda, calendario, escritura reversible de prueba, subida, archivos, enlaces, reportes y plan/memoria. Los archivos locales son efímeros; Supabase sigue siendo el almacén compartido.
 - Revisar los cron anteriores de Vercel antes de reactivar ese proyecto para evitar ejecutar dos schedulers en paralelo.
+
+## Despliegue realizado
+- Servicio gratuito: https://anfeta-web.onrender.com, workspace confirmado My Workspace, ID srv-dc16umqjnfac73ftc230. Supabase existente conservado.
+- Node 22, arranque next start en 0.0.0.0 con PORT proporcionado por Render, despliegue automático desde main.
+- Corregido el origen de solicitudes detrás del proxy: solo los dominios HTTPS configurados del servicio se aceptan; no se confía en x-forwarded-host recibido.
+- Variables privadas cargadas por el usuario en Environment; despliegue y prueba real de Notion/Supabase con nueve personas y sin mandar correos completados.
+- GitHub Actions prepara las llamadas externas para las tareas: ANFETA_RENDER_SCHEDULES_ENABLED activa reinicio/preparación FTF; ANFETA_RENDER_REPORTS_ENABLED habilita los correos únicamente cuando el proveedor HTTPS esté configurado. Ambos se activan por separado, y el modo manual dry_run no envía mensajes.
+- Pendiente: RESEND_API_KEY, FTF_REPORT_EMAIL_TO y un FTF_REPORT_EMAIL_FROM verificado. El SMTP actual no está habilitado en Render Free.
+- Render comparte sus horas gratuitas entre servicios del espacio y puede dormir tras inactividad. No se cambió el chatbot existente ni se reactivó el puente de WhatsApp suspendido. GitHub Actions puede retrasar ejecuciones; no se garantiza el minuto exacto.
