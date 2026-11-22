@@ -12,6 +12,10 @@ Module._load=function(n,p,...a){if(n==='nodemailer')return {__esModule:true,defa
  r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:'',idempotencyKey:'stable-test'});assert.equal(r.ok,true);assert.match(captured.messageId,/stable-test/);
  emailMode='partial';r=await deliverHtmlEmail({to:'a@example.com,b@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.ok,false);assert.equal(r.uncertain,true);assert.deepEqual(r.rejected,['b@example.com']);
  emailMode='error';r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.uncertain,false);
+ const disabledBefore=process.env.ANFETA_DISABLE_SMTP;process.env.ANFETA_DISABLE_SMTP='1';
+ const previousCaptured=captured;r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.ok,false);assert.equal(r.skipped,true);assert.equal(captured,previousCaptured);assert.match(r.reason,/SMTP/);
+ global.fetch=async()=>new Response(JSON.stringify({id:'https-provider-test'}),{status:200});r=await deliverHtmlEmail({to:'a@example.com',smtpUser:'test',smtpPass:'TEST_ONLY',apiKey:'TEST_ONLY',subject:'Test',html:''});assert.equal(r.ok,true);assert.equal(r.provider,'resend');assert.equal(captured,previousCaptured);
+ if(disabledBefore===undefined)delete process.env.ANFETA_DISABLE_SMTP;else process.env.ANFETA_DISABLE_SMTP=disabledBefore;
  const route=require(root+'/src/app/api/jobs/ftf-report/route.ts'),old=process.env.CRON_SECRET;process.env.CRON_SECRET='x'.repeat(32);
  try{r=await route.GET(new Request('https://example.com/api/jobs/ftf-report'));assert.equal(r.status,401);assert.equal(jobCalls,0);
  r=await route.GET(new Request('https://example.com/api/jobs/ftf-report?dryRun=1&date=2026-11-20',{headers:{Authorization:'Bearer '+process.env.CRON_SECRET}}));assert.equal(r.status,200);const body=await r.json();assert.equal(body.dryRun,true);assert.equal(jobCalls,1);

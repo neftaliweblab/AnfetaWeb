@@ -1,0 +1,77 @@
+name: ANFETA Render scheduled jobs
+on:
+  schedule:
+    - cron: '0 7 * * *'
+    - cron: '0 11 * * *'
+    - cron: '30 0 * * 2-6'
+    - cron: '30 0 * * 6'
+  workflow_dispatch:
+    inputs:
+      job:
+        type: choice
+        options: [ftf-report, ftf-weekly, ftf, pprtuz]
+        default: ftf-report
+        required: true
+      date:
+        description: 'Report date YYYY-MM-DD (optional)'
+        required: false
+      dry_run:
+        description: 'Preview reports without sending email'
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: render-jobs-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+jobs:
+  invoke:
+    if: github.repository == 'neftaliweblab/AnfetaWeb' && (github.event_name == 'workflow_dispatch' || vars.ANFETA_RENDER_SCHEDULES_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      APP_URL: ${{ secrets.ANFETA_RENDER_URL }}
+      CRON_SECRET: ${{ secrets.ANFETA_RENDER_CRON_SECRET }}
+      SCHEDULE: ${{ github.event.schedule }}
+      MANUAL_JOB: ${{ inputs.job }}
+      REPORT_DATE: ${{ inputs.date }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Wake service and invoke authenticated job
+        shell: python
+        run: |
+          import os, json, time, datetime, urllib.request, urllib.parse
+          base=os.environ['APP_URL'].rstrip('/')
+          parsed=urllib.parse.urlsplit(base)
+          if parsed.scheme!='https' or not parsed.hostname or not parsed.hostname.endswith('.onrender.com') or parsed.username or parsed.password or parsed.query or parsed.fragment:
+              raise SystemExit('Configure ANFETA_RENDER_URL with the Render HTTPS service URL.')
+          secret=os.environ['CRON_SECRET']
+          if len(secret)<32: raise SystemExit('Configure ANFETA_RENDER_CRON_SECRET.')
+          schedules={'0 7 * * *':'pprtuz','0 11 * * *':'ftf','30 0 * * 2-6':'ftf-report','30 0 * * 6':'ftf-weekly'}
+          job=os.environ.get('MANUAL_JOB') or schedules.get(os.environ.get('SCHEDULE'))
+          if job not in schedules.values(): raise SystemExit('Invalid job.')
+          query={}
+          day=os.environ.get('REPORT_DATE','')
+          if day: query['date']=datetime.date.fromisoformat(day).isoformat()
+          dry=os.environ.get('DRY_RUN','').lower()=='true'
+          if dry:
+              if job not in ('ftf-report','ftf-weekly'): raise SystemExit('Dry run is only supported for reports.')
+              query['dryRun']='1'
+          ready=False
+          for attempt in range(6):
+              try:
+                  with urllib.request.urlopen(base+'/api/health',timeout=25) as res:
+                      ready=json.load(res).get('ok') is True
+                  if ready: break
+              except Exception: pass
+              time.sleep(15)
+          if not ready: raise SystemExit('Render did not become ready; no job was invoked.')
+          url=base+'/api/jobs/'+job+('?' + urllib.parse.urlencode(query) if query else '')
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+secret,'User-Agent':'anfeta-render-scheduler'})
+          try:
+              with urllib.request.urlopen(req,timeout=180) as res: data=json.load(res)
+          except Exception as error:
+              print('Job did not confirm success:',getattr(error,'code',type(error).__name__))
+              raise SystemExit(1)
+          if data.get('success') is not True: raise SystemExit('Job returned an unsuccessful result. Check the delivery history.')
+          print(json.dumps({'job':job,'success':True,'date':data.get('date'),'state':data.get('state'),'skipped':data.get('skipped'),'dryRun':data.get('dryRun',dry)}))

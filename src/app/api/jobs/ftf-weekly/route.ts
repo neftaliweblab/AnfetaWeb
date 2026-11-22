@@ -35,6 +35,7 @@ export async function GET(req: Request) {
       targetDate,
       recipientOverride,
       forceCutoffComplete: !searchParams.get('liveCutoff'),
+      dryRun: searchParams.get('dryRun') === '1',
     });
     return NextResponse.json(
       {

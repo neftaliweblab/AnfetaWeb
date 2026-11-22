@@ -27,6 +27,9 @@ export function getPublicBaseUrl(customBaseUrl?: string): string {
     return cleanBaseUrl(envPublic);
   }
 
+  const renderUrl = (process.env.RENDER_EXTERNAL_URL || '').trim();
+  if (renderUrl && isValidPublicUrl(renderUrl)) return cleanBaseUrl(renderUrl);
+
   const vercelProd = (process.env.VERCEL_PROJECT_PRODUCTION_URL || '').trim();
   if (vercelProd && isValidPublicUrl(vercelProd)) {
     return cleanBaseUrl(vercelProd.startsWith('http') ? vercelProd : `https://${vercelProd}`);
