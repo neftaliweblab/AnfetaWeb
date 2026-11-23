@@ -1,4 +1,5 @@
 "use client";
+import {ACTIVITY_TAGS} from "@/services/activityTags";
 import { TemplateModalGuide } from "@/components/TemplateModalGuide";
 import { showCreationResult } from "@/components/CreationFeedback";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
@@ -49,25 +50,8 @@ interface NotionTemplatesModalProps {
   currentDate?: string;
 }
 
-const COLLABORATORS = [
-  "John",
-  "Karla",
-  "Isaias",
-  "Sotelo",
-  "Acalli",
-  "Andrade",
-  "Brian",
-  "Pedro",
-  "Neft",
-  "Edwin",
-];
-
-const REVIEWERS = [
-  { name: "John", tag: "john" },
-  { name: "Karla", tag: "k-karl" },
-  { name: "Neft", tag: "n-neft" },
-  { name: "Edwin", tag: "edwi" },
-];
+const COLLABORATORS = Object.keys(ACTIVITY_TAGS);
+const REVIEWERS = Object.entries(ACTIVITY_TAGS).map(([name,tags])=>({name,tag:tags.active+'-000'}));
 
 export function NotionTemplatesModal({
   isOpen,
@@ -94,7 +78,7 @@ export function NotionTemplatesModal({
   // Parámetros de configuración
   const [configDomain, setConfigDomain] = useState("");
   const [configPerson, setConfigPerson] = useState("");
-  const [configReviewer, setConfigReviewer] = useState("john");
+  const [configReviewer, setConfigReviewer] = useState("");
   const [configNames,setConfigNames]=useState<Record<string,string>>({});
   const [configDate, setConfigDate] = useState(() => currentDate || new Date().toISOString().split("T")[0]);
   const [configTime, setConfigTime] = useState("10:00");
@@ -779,14 +763,14 @@ export function NotionTemplatesModal({
                 <div>
                   <label className="text-[11px] font-semibold text-[#94A3B8] mb-1 flex items-center gap-1">
                     <User className="w-3 h-3 text-[#A855F7]" />
-                    <span>Revisor</span>
+                    <span>Revisor adicional (opcional)</span>
                   </label>
                   <select
                     value={configReviewer}
                     onChange={(e) => setConfigReviewer(e.target.value)}
                     className="w-full bg-[#121A26] border border-[#22354A] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#38BDF8] cursor-pointer"
                   >
-                    <option value="">— Sin revisor —</option>
+                    <option value="">— Conservar revisores originales —</option>
                     {REVIEWERS.map((r) => (
                       <option key={r.name} value={r.name}>
                         {r.name} ({r.tag})

@@ -1,4 +1,5 @@
 "use client";
+import {ACTIVITY_TAGS} from "@/services/activityTags";
 import { TemplateModalGuide } from "@/components/TemplateModalGuide";
 import { showCreationResult } from "@/components/CreationFeedback";
 import {TemplateAccessCheck} from '../TemplateAccessCheck';
@@ -48,31 +49,8 @@ interface CalendarTemplatesModalProps {
   onActivitiesCreated?: (createdActivities: any[]) => void;
 }
 
-const COLLABORATORS = [
-  "John",
-  "Karla",
-  "Isaias",
-  "Sotelo",
-  "Acalli",
-  "Andrade",
-  "Brian",
-  "Genaro",
-  "Neftali",
-  "Edwin",
-];
-
-const REVIEWERS = [
-  { name: "John", tag: "john" },
-  { name: "Karla", tag: "karl" },
-  { name: "Isaias", tag: "isai" },
-  { name: "Sotelo", tag: "edua" },
-  { name: "Acalli", tag: "acal" },
-  { name: "Andrade", tag: "andr" },
-  { name: "Brian", tag: "bria" },
-  { name: "Genaro", tag: "gena" },
-  { name: "Neftali", tag: "neft" },
-  { name: "Edwin", tag: "edwi" },
-];
+const COLLABORATORS = Object.keys(ACTIVITY_TAGS);
+const REVIEWERS = Object.entries(ACTIVITY_TAGS).map(([name,tags])=>({name,tag:tags.active+'-000'}));
 
 export function CalendarTemplatesModal({
   isOpen,
@@ -683,14 +661,14 @@ export function CalendarTemplatesModal({
                 <div>
                   <label className="text-[11px] font-semibold text-[#94A3B8] mb-1 flex items-center gap-1">
                     <User className="w-3 h-3 text-[#A855F7]" />
-                    <span>Revisor (opcional)</span>
+                    <span>Revisor adicional (opcional)</span>
                   </label>
                   <select
                     value={configReviewer}
                     onChange={(e) => setConfigReviewer(e.target.value)}
                     className="w-full bg-[#121A26] border border-[#22354A] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#38BDF8] cursor-pointer"
                   >
-                    <option value="">— Sin revisor —</option>
+                    <option value="">— Conservar revisores originales —</option>
                     {REVIEWERS.map((r) => (
                       <option key={r.name} value={r.name}>
                         {r.name} ({r.tag})

@@ -1,4 +1,5 @@
 "use client";
+import {calendarDropSchedule,calendarSaveError} from "@/lib/calendarDrag";
 import {mirrorVisibilityKey,calendarCopyVisible} from '@/lib/calendarMirrorVisibility';
 import {CalendarDisplaySettings} from './CalendarDisplaySettings';
 import {calendarGridInterval,calendarDisplayHeight,calendarDisplayWidth,calendarLabelDivisions} from '@/lib/calendarDisplayOptions';
@@ -55,7 +56,7 @@ import { WhatsappDirectoryModal } from "@/components/WhatsappDirectoryModal/What
 import { normalizePerson } from "@/services/identityNormalizer";
 import { computeActivityOverlaps } from "@/utils/calendarLayout";
 
-import { canEditActivity, scheduleAtDrop, isDirection, isReviewer } from '@/services/activityPermissions';
+import { canEditActivity, isDirection, isReviewer } from '@/services/activityPermissions';
 import { matchesFlexibleOrQuotedQuery } from "@/services/advancedQuery";
 import { ACTIVITY_TAGS } from "@/services/activityTags";
 import { CreateActivityModal } from './CreateActivityModal';
@@ -572,7 +573,7 @@ export function CalendarHost({
       const response = await offlineAwareFetch('/api/data', { action:updates.titleDescription!==undefined?'update-activity-details':updates.start ? 'update-activity-schedule' : updates.reviewer || updates.person ? 'update-activity-assignee' : 'update-activity-status', payload:{id:pageId,currentUser,expectedTitle:original.title,expectedStart:original.start,expectedEnd:original.end,expectedStatus:original.status,expectedPerson:original.person,...((updates.reviewer||updates.reviewAction||updates.handoff)?{expectedReviewUpdatedAt}:{}),...updates,...(updates.start?{expectedStart:updates.expectedStart||original.start,expectedEnd:updates.expectedEnd||original.end}:{})} });
       const data = await response.json();
       if(data.queued){restoreSchedule();setError('Cambio guardado localmente. Se confirmará al recuperar conexión; la tarjeta conserva los datos del servidor.');return false;}
-      if (!response.ok || !data.success || !data.activity) throw new Error(data.error || 'Notion no confirmó el guardado.');
+      if (!response.ok || !data.success || !data.activity) throw calendarSaveError(data);
       showCreationResult(true, 'Actividad guardada en Notion', original.title, data.activity?.pageUrl, pageId);
       const saved: NotionCalendarActivity = updates.ftfVerified!==undefined?{...data.activity,checklistTotal:original.checklistTotal,checklistCompleted:original.checklistCompleted,checklistScanned:original.checklistScanned,checklistItems:original.checklistItems,completedChecks:original.completedChecks,todayChecklistCompleted:original.todayChecklistCompleted}:data.activity;
       if(updates.handoff){setVisiblePeople(prev=>prev.includes(saved.person)?prev:[...prev,saved.person]);if(Array.isArray(data.handoffCopies))for(const copy of data.handoffCopies)recentHandoffs.current.set(copy.pageId,{activity:copy,until:Date.now()+120000});}
@@ -604,7 +605,7 @@ export function CalendarHost({
       }
       if(updates.reviewer)setActivitiesList(prev=>[...prev.filter(a=>a.pageId!==pageId&&a.pageId!=='review-mirror-'+pageId),original,...(originalMirror?[originalMirror]:[])]);
       setError(error instanceof Error ? error.message : 'Error de conexión.');
-      showCreationResult(false, 'Error al guardar en Notion', error instanceof Error ? error.message : 'No se pudo guardar la actividad.');
+      if(!isConflict)showCreationResult(false, 'Error al guardar en Notion', error instanceof Error ? error.message : 'No se pudo guardar la actividad.');
       if(updates.reviewer)rememberReviewFailure(pageId,error);
       return false;
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
@@ -807,26 +808,27 @@ export function CalendarHost({
     setShowCreate(true);
   };
 
+  const cleanDragId=(id:unknown)=>String(id||'').replace(/-/g,'').toLowerCase();
   const handleDropOnColumn = (e: React.DragEvent, colPerson: string) => {
     e.preventDefault();
     stopAutoScroll();
     try {
-      const dataStr = e.dataTransfer.getData('text/plain');
+      const dataStr = e.dataTransfer.getData('application/x-anfeta-activity') || e.dataTransfer.getData('text/plain');
       if (!dataStr) return;
-      const { pageId, offsetY = 0 } = JSON.parse(dataStr);
-      const activity = activitiesList.find(a => a.pageId === pageId);
+      const { pageId:dragPageId, offsetY = 0 } = JSON.parse(dataStr);
+      const activity = activitiesListRef.current.find(a => cleanDragId(a.pageId) === cleanDragId(dragPageId));
       if (!activity || !canEditActivity(currentUser, activity)) {setError('No tienes permiso para mover esta actividad o está bloqueada.');return;}
+      const pageId=activity.pageId;
       if(workflowState(activity.status,activity.title)==='completed'){setError('Esta revisión es histórica. Reactívala antes de cambiar su horario.');return;}
       const reassignment=normalizePerson(activity.person)!==colPerson;
       if(reassignment&&!isReviewer(currentUser)){setError('Solo Dirección o un revisor puede mover actividades a otra persona.');return;}
 
-      const columnRect = e.currentTarget.getBoundingClientRect();
-      // 56px es la altura del CalendarColHeader
-      const y = Math.max(0, e.clientY - columnRect.top - 56 - offsetY);
-      const newSchedule = scheduleAtDrop(activity, currentDate, (y / pixelsPerHour) * 60);
+      const canvas=e.currentTarget.querySelector<HTMLElement>('[data-calendar-canvas]');
+      if(!canvas)throw Error('No se encontró el área del calendario para mover la actividad.');
+      const newSchedule=calendarDropSchedule(activity,currentDate,{clientY:e.clientY,canvasTop:canvas.getBoundingClientRect().top,offsetY:Number(offsetY),pixelsPerHour});
       const moving={...activity,...newSchedule,person:colPerson};
-      const conflict=calendarConflict(activitiesList,moving);
-      if(conflict){const free=nearbyFreeCalendarSlots(activitiesList,moving)[0];setScheduleConflict({pageId,conflictTitle:conflict.title,suggestedSlot:free?{start:free.start,end:free.end}:undefined,newSchedule,targetPerson:colPerson,reassignment});return;}
+      const conflict=calendarConflict(activitiesListRef.current,moving);
+      if(conflict){const free=nearbyFreeCalendarSlots(activitiesListRef.current,moving)[0];setScheduleConflict({pageId,conflictTitle:conflict.title,suggestedSlot:free?{start:free.start,end:free.end}:undefined,newSchedule,targetPerson:colPerson,reassignment});return;}
 
       void handleUpdateActivity(pageId, {...newSchedule,...(reassignment?{person:colPerson}:{})});
     } catch (error) {
@@ -1110,7 +1112,7 @@ export function CalendarHost({
                 return (
                   <div
                     key={person}
-                    onDragOver={(e) => e.preventDefault()}
+                    onDragOver={(e) => {if(!e.dataTransfer.types.includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="move";}}}
                     onDrop={(e) => handleDropOnColumn(e, person)}
                     className="min-w-0 border-r border-[#202832] flex flex-col"
                     style={{ order:columnIndex*3+2,height: `${canvasHeight + 56}px`, flex: `1 0 ${columnWidth}px`, width: columnWidth }}
@@ -1126,6 +1128,7 @@ export function CalendarHost({
                       onSelectPerson={(p) => {setPreviewTab('activities');setSelectedPersonPreview(p);}}
                     />
                     <div
+                      data-calendar-canvas="true"
                       onDoubleClick={(e) => handleColumnCanvasDoubleClick(e, person)}
                       className="relative flex-1 overflow-hidden bg-[#080B0F] cursor-pointer"
                       style={{ height: `${canvasHeight}px`,backgroundColor:columnIndex%2?'color-mix(in srgb, var(--anfeta-calendar-bg) 92%, #4338ca 8%)':'color-mix(in srgb, var(--anfeta-calendar-bg) 96%, #0284c7 4%)' }}

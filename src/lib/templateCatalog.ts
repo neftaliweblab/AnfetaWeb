@@ -1,3 +1,4 @@
+import {canonicalWebTemplateTitle,isWebTemplateTitle} from './canonicalWebTemplateTitle';
 import {softwareTemplatePhase} from './softwareTemplatePhases';
 import {revisionPhaseTitle} from '../services/progressiveWorkflow';
 import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePriority,scanActivityTags} from '../services/activityTags';
@@ -195,7 +196,8 @@ export function cleanCalendarQuickTemplateActivityTitle(
 ): string {
   const structured = structuredTemplate(rawTitle || "");
   // Use structured.name if present, but continue through cleaning to remove leftover technical tokens
-  const baseTitle = structured ? structured.name : stripActivityTags(rawTitle || "");
+  const canonicalName=(rawTitle||"").split("|").find(field=>field.includes("📅"))?.match(/\d{2}(?:[A-Z]{3})?\.[A-Z]\.f\d{2}\.\d{2}\s+(.+)$/i)?.[1];
+  const baseTitle = structured ? structured.name : canonicalName || stripActivityTags(rawTitle || "");
 
   let value = baseTitle.trim().replace(/\s+/g, " ");
   if (!value) return "Actividad desde plantilla";
@@ -244,6 +246,8 @@ export function extractCalendarQuickTemplateOrder(title: string): string {
   if (!title) return "";
   const structured = structuredTemplate(title);
   if (structured) return structured.order;
+  const canonical=title.match(/\b\d{2}[A-Z]{3}\.[A-Z]\.f(\d{2}\.\d{2})/i);
+  if(canonical)return canonical[1];
   const match = title.match(/(?:mes|fase)?\s*(\d{1,3}\.\d{1,3})/i);
   return match ? match[1].trim() : "";
 }
@@ -255,6 +259,8 @@ export function extractCalendarQuickTemplateDomain(title: string): string {
   if (!title) return "";
   const structured = structuredTemplate(title);
   if (structured) return structured.domain;
+  const canonical=title.split("|").find(field=>field.includes("🌐"))?.match(/🌐\s*#?([^\s|]+)/u)?.[1];
+  if(canonical)return canonical;
   const match = title.match(/\[\s*([a-z0-9_.-]+\.[a-z]{2,})\s*\]/i);
   if (match) return match[1].trim();
 
@@ -312,6 +318,7 @@ export function buildCalendarQuickTemplateFinalTitle(params: {
     templateOriginalTitle = "",
   } = params;
 
+  if(isWebTemplateTitle(projectToken,templateOriginalTitle))return canonicalWebTemplateTitle({...params,state:'prtuzR',useSelectedMonth:true});
   const monthTag = buildCalendarTemplateMonthTag(selectedDate);
   const cleanDom = domain.trim().replace(/^\[|\]$/g, "");
 

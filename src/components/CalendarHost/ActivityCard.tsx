@@ -17,7 +17,7 @@ import {isFtfReminder} from '@/services/progressKpis';
 import React, { useState, useRef, useMemo } from "react";
 import {createPortal} from 'react-dom';
 import {offlineAwareFetch} from '@/services/offlineQueue';
-import { Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3, Sparkles } from "lucide-react";
+import { GripVertical, Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3, Sparkles } from "lucide-react";
 import { ActivityTitleFieldEditor } from '../ActivityTitleFieldEditor';
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -145,6 +145,7 @@ function ActivityCardComponent({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  const dragging=useRef(false);
   const contentEditing=useRef(false);
   const hoverTimer = useRef<NodeJS.Timeout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -474,9 +475,10 @@ function ActivityCardComponent({
 
   // Hover handlers con protección mejorada de zoom y colisiones en pantalla
   const handleMouseEnter = () => {
+    if(dragging.current)return;
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
-      if (cardRef.current) {
+      if (!dragging.current && cardRef.current) {
         const rect = cardRef.current.getBoundingClientRect();
         const expectedWidth = popoverSize === "small" ? 360 : popoverSize === "large" ? 640 : popoverSize === "xl" ? 820 : 480;
         const fitsRight = rect.right + 14 + expectedWidth <= window.innerWidth;
@@ -530,20 +532,24 @@ function ActivityCardComponent({
     return () => window.removeEventListener("click", handleClickOutside);
   }, [contextMenu]);
 
+  const historicalMove=/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(activity.status+' '+activity.title);
+  const canDrag=editable&&!isSaving&&!isCompleted&&!historicalMove;
   if (interval.end <= interval.start) return null;
 
   return (
     <>
       <div
         ref={cardRef}
-        draggable={editable && !isSaving && !/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(activity.status+' '+activity.title)}
+        draggable={canDrag}
         aria-busy={isSaving}
         title={isSaving?'Guardando movimiento en Notion…':undefined}
         onDragStart={(e) => {
-          if (!editable) {
+          if (!canDrag) {
             e.preventDefault();
             return;
           }
+          dragging.current=true;
+          e.dataTransfer.effectAllowed="move";
           if (hoverTimer.current) clearTimeout(hoverTimer.current);
           setShowHover(false);
           e.dataTransfer.setData(
@@ -555,7 +561,9 @@ function ActivityCardComponent({
               offsetY: e.clientY - e.currentTarget.getBoundingClientRect().top,
             })
           );
+          e.dataTransfer.setData("application/x-anfeta-activity",e.dataTransfer.getData("text/plain"));
         }}
+        onDragEnd={() => {dragging.current=false;}}
         onClick={(e) => {
           e.stopPropagation();
           onSelectActivity?.(activity);
@@ -589,6 +597,14 @@ function ActivityCardComponent({
         {isSaving&&<span role="status" className="text-[10px] text-cyan-200 animate-pulse">Guardando en Notion…</span>}
         <div className="flex items-center justify-between gap-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+            {editable && !isCompleted && !historicalMove && <button type="button" data-calendar-drag-handle="true" draggable={!isSaving}
+              disabled={isSaving} aria-label="Arrastrar actividad para cambiar horario" title="Arrastra para mover; si hay un empalme podrás revisarlo antes de guardar"
+              onMouseEnter={() => {if(hoverTimer.current)clearTimeout(hoverTimer.current);setShowHover(false);}}
+              onMouseDown={() => {if(hoverTimer.current)clearTimeout(hoverTimer.current);setShowHover(false);}}
+              onClick={e=>e.stopPropagation()}
+              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-cyan-950 hover:text-cyan-200 cursor-grab active:cursor-grabbing">
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>}
             {/* Badge circular con inicial oficial (P, R, T, S) */}
             <span
               style={{ backgroundColor: badgeBg, borderColor: badgeBorder, color: badgeText }}
