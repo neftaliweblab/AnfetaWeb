@@ -943,6 +943,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         ...publicSettings,
         currentUser: actor,
         notionConfigured: !!notionToken,
+        reportEmailManagedExternally: process.env.RENDER === "true" || process.env.ANFETA_DISABLE_SMTP === "1",
         hasDropboxToken: hasDropbox,
         hasResendApiKey,
         hasSmtpConfig,
@@ -2582,7 +2583,7 @@ async function POSTLive(req: NextRequest) {
         nextSettings.resendApiKey = existing.resendApiKey;
       }
       delete nextSettings.clearResendApiKey;
-      saveSettings(nextSettings);
+      saveSettings({...existing, ...nextSettings});
       const { resendApiKey: savedResend, notionToken: _tok, smtpPass: savedSmtpPass, ...safeSettings } = { ...existing, ...nextSettings };
       const hasSmtpConfig = Boolean(
         (safeSettings.smtpUser || process.env.SMTP_USER || process.env.GMAIL_USER) &&

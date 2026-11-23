@@ -374,7 +374,7 @@ export function CalendarFtfPanel({
         else if (d?.notionJournal?.skipped) parts.push('Journal Notion: falta URL/ID en Ajustes');
         else if (d?.notionJournal?.reason) parts.push(`Journal Notion ✕`);
         if (d?.email?.ok) parts.push(`Correo → ${Array.isArray(d.email.to) ? d.email.to.join(', ') : 'John'} ✓`);
-        else if (d?.email?.skipped) parts.push('Correo: falta Resend API Key o email en Ajustes');
+        else if (d?.email?.skipped) parts.push('Correo no enviado desde este corte; los reportes automáticos por Gmail se gestionan por separado');
         else if (d?.email?.reason) parts.push(`Correo ✕`);
         if (d?.push?.sentCount > 0) parts.push(`Push (${d.push.sentCount}) ✓`);
         setPublishNotice(parts.join(' · '));
