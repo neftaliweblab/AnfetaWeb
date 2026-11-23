@@ -1,3 +1,5 @@
+import {composeCalendarSnapshot} from '@/lib/composeCalendarSnapshot';
+import {runMaintenanceOnce} from '@/lib/maintenanceBudget';
 import {confirmActivityDayNotice,assertDailyClosureReady} from '@/services/activityDayNotice';
 import phaseOneCatalog from '../../../../data/notion_template_phase1_catalog_v2.json';
 import {
@@ -196,21 +198,10 @@ const syncedActivityLinkCache = new Map<string, number>();
 const confirmedDeletedPages=new BoundedCache<boolean>(5000,1024*1024,24*60*60*1000,()=>1);
 function recordDeletedPage(token:string,id:string){const key=token+':'+cleanPageId(id),known=confirmedDeletedPages.get(key);confirmedDeletedPages.set(key,true);liveNotionOverrides.delete(cleanPageId(id));calendarMemoryUpdates.delete(cleanPageId(id));if(!known)previewMemoryCache.clear();}
 function calendarSnapshot() {
-  const cache = readLocalJson<Record<string, any[]>>('notion_calendar_cache_v13.json', {});
-  for (const live of liveNotionOverrides.values()) {
-    if (!live.dateStart) continue;
-    let existing: any;
-    for (const day of Object.keys(cache)) { const found = cache[day].find(a => cleanPageId(a.PageId || a.pageId) === live.id); if (found) existing = normalizeActivity(found, 0); cache[day] = cache[day].filter(a => cleanPageId(a.PageId || a.pageId) !== live.id); }
-    const date = live.dateStart.slice(0,10);
-    const activity = normalizeActivity({ ...existing, pageId: live.id, pageUrl: live.url, title: live.title, person: live.person || existing?.person, domain: live.domain || existing?.domain, status: live.status || existing?.status, isLocked: live.isLocked || existing?.isLocked, start: live.dateStart, end: live.dateEnd || existing?.end || live.dateStart }, 0);
-    cache[date] = [...(cache[date] || []), activity];
-  }
-  for (const [id, updated] of calendarMemoryUpdates) {
-    for (const day of Object.keys(cache)) cache[day] = cache[day].filter(a => cleanPageId(a.PageId || a.pageId) !== id);
-    const day = updated.start?.slice(0,10);
-    if (day) cache[day] = [...(cache[day] || []), updated];
-  }
-  return cache;
+  return composeCalendarSnapshot(
+    readLocalJson<Record<string, any[]>>('notion_calendar_cache_v13.json', {}),
+    liveNotionOverrides.values(),calendarMemoryUpdates,cleanPageId,normalizeActivity,
+  );
 }
 function persistCalendarActivity(activity: any) {
   calendarMemoryUpdates.set(cleanPageId(activity.pageId), activity);
@@ -1317,7 +1308,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       if (token && !bootstrap) {
         after(async () => {
           try {
-            await cleanupExpiredResponsePages({ ...getSettings(), notionToken: token });
+            const cleanupSettings={...getSettings(),notionToken:token};
+            await runMaintenanceOnce('response-cleanup:'+notionSourceKey(cleanupSettings),()=>cleanupExpiredResponsePages(cleanupSettings));
           } catch {}
         });
       }
