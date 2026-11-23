@@ -332,7 +332,7 @@ export function SettingsModal({
 
         body: JSON.stringify({ action: "test-notion-token", payload: { token } }),
 
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(30000),
 
       });
 
@@ -358,7 +358,7 @@ export function SettingsModal({
 
       const msg = e.name === "TimeoutError" || e.name === "AbortError"
 
-        ? "Tiempo de espera agotado al conectar con Notion (12s)."
+        ? "ANFETA no completó la prueba a tiempo. La validación quedó pendiente; esto no confirma que el token sea inválido."
 
         : (e.message || "Error de red al conectar");
 

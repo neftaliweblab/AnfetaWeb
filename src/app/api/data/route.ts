@@ -2028,12 +2028,10 @@ async function POSTLive(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     let actor: string = "";
-    try {
+    // Token diagnostics were already permitted without a session. Do not make
+    // them wait for Supabase before checking the independent provider.
+    if (action !== "test-notion-token" && action !== "test-dropbox-token") {
       actor = await requireActor(req);
-    } catch (authErr) {
-      if (action !== "test-notion-token" && action !== "test-dropbox-token") {
-        throw authErr;
-      }
     }
     const payload={...(body.payload || {}),currentUser:actor};
     if(action==='notion-page-states'){
@@ -2629,7 +2627,7 @@ async function POSTLive(req: NextRequest) {
         );
       } catch (err: any) {
         const msg = err.name === 'TimeoutError' || err.name === 'AbortError'
-          ? "Tiempo de espera agotado al conectar con Notion (10s)."
+          ? "Notion no respondió dentro del plazo. La validación quedó pendiente; no se confirmó que el token sea inválido."
           : (err.message || "Error al verificar el token de Notion");
         return NextResponse.json({ success: false, error: msg }, { status: 200 });
       }
