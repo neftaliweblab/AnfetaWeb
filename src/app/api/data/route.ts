@@ -2674,7 +2674,8 @@ async function POSTLive(req: NextRequest) {
         );
       }
       try {
-        const result = await exchangeDropboxCode(code);
+        const verifier = typeof payload?.codeVerifier === 'string' ? payload.codeVerifier : undefined;
+        const result = await exchangeDropboxCode(code, undefined, undefined, verifier);
         const tokenToSave = (result.refreshToken || result.accessToken).trim();
         const prev = getSettings();
         const updated = {
@@ -2695,6 +2696,9 @@ async function POSTLive(req: NextRequest) {
         });
       } catch (err: any) {
         let msg = err.message || "Error al verificar código con Dropbox";
+        if (/client secret|public client|code.verifier|code.challenge/i.test(msg)) {
+          msg = "Solicita un código nuevo desde este modal. Si vuelve a fallar, el administrador debe habilitar Allow public clients (PKCE) en la aplicación de Dropbox.";
+        }
         if (msg.includes("code doesn't exist or has expired") || msg.includes("invalid_grant")) {
           msg = "El código ingresado no existe o ha expirado. Por favor genera un nuevo código en Dropbox e inténtalo de nuevo.";
         }

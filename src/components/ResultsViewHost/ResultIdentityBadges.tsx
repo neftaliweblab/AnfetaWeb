@@ -3,7 +3,7 @@ import {getSearchTermColorMap,makeAccentRegexPattern} from '@/lib/multiSearchHig
 import {matchesActivityTagQuery,resultAssignedPerson} from '@/services/activityTags';
 
 /** Outside the truncated title: the matching tag and owner remain readable. */
-export function ResultIdentityBadges({item,query,searchOptions,scale=1}:{item:any;query:string;searchOptions?:SearchMatchOptions;scale?:number}){
+export function ResultIdentityBadges({item,query,searchOptions,scale=1,wrap=false}:{item:any;query:string;searchOptions?:SearchMatchOptions;scale?:number;wrap?:boolean}){
  const title=String(item.name||item.title||''),{terms,termColorMap}=getSearchTermColorMap(query);
  const matches=terms.filter(term=>{
   const structured=matchesActivityTagQuery(title,term,false,'',item);
@@ -29,13 +29,13 @@ export function ResultIdentityBadges({item,query,searchOptions,scale=1}:{item:an
  })();
 
  if(!matches.length&&!notion&&!contentMatch&&!isNonStandardTitle)return null;
- return <span style={{fontSize:`${Math.max(9.5, 10.5 * scale).toFixed(1)}px`}} className="inline-flex min-w-0 w-full items-center justify-end gap-1 leading-none max-w-full" aria-label="Coincidencias y responsable">
-  <span className="inline-flex min-w-0 items-center gap-1 overflow-hidden" title={matches.join(" · ")}>
-  {isNonStandardTitle&&<span title="El nombre no sigue la estructura oficial (prtuzR | tipo | fecha | dominio...)" className="rounded border border-amber-600/70 bg-amber-950/70 px-1 py-0.5 font-semibold text-amber-300 font-mono">⚠️ Formato</span>}
-  {contentMatch&&<span title="Coincidencia en el texto indexado" className="rounded border border-cyan-700 bg-cyan-950 px-1.5 py-0.5 font-semibold text-cyan-200">En contenido</span>}
-  {matches.map(term=><span key={term} title={'Coincide con la búsqueda: '+term} className={(termColorMap.get(term.toLowerCase())?.badge||'text-cyan-300')+' !mx-0 break-all rounded px-1 py-0.5'}>{term}</span>)}
+ return <span style={{fontSize:`${Math.max(9.5, 10.5 * scale).toFixed(1)}px`}} className={'inline-flex items-center gap-1 leading-normal max-w-full whitespace-nowrap '+(wrap?'flex-wrap justify-start':'flex-nowrap min-w-0 w-full justify-end')} aria-label="Coincidencias y responsable">
+  <span tabIndex={0} aria-label="Etiquetas de coincidencia; desplázate para ver todas" style={{minWidth:0, whiteSpace:"nowrap", overflowX:"auto", overflowY:"hidden", paddingBlock:2}} className={"inline-flex items-center gap-1 "+(wrap?"flex-wrap":"flex-nowrap flex-1")} title={matches.join(" · ")}>
+  {isNonStandardTitle&&<span style={{whiteSpace:"nowrap",flexShrink:0}} title="El nombre no sigue la estructura oficial (prtuzR | tipo | fecha | dominio...)" className="inline-flex items-center shrink-0 whitespace-nowrap rounded border border-amber-600/70 bg-amber-950/70 px-1 py-0.5 font-semibold text-amber-300 font-mono">⚠️ Formato</span>}
+  {contentMatch&&<span style={{whiteSpace:"nowrap",flexShrink:0}} title="Coincidencia en el texto indexado" className="inline-flex items-center shrink-0 whitespace-nowrap rounded border border-cyan-700 bg-cyan-950 px-1.5 py-0.5 font-semibold text-cyan-200">En contenido</span>}
+  {matches.map(term=><span style={{display:"inline-block",flexShrink:0,whiteSpace:"nowrap",lineHeight:1.4,wordBreak:"normal",overflowWrap:"normal"}} key={term} title={'Coincide con la búsqueda: '+term} className={(termColorMap.get(term.toLowerCase())?.badge||'text-cyan-300')+' !mx-0 shrink-0 whitespace-nowrap max-w-[160px] truncate rounded px-1 py-0.5'}>{term}</span>)}
   </span>
-  {notion&&<span title={'Asignado: '+(person||'Sin asignar')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-700/80 bg-[#16202c] px-1.5 py-0.5 text-slate-200 max-w-full">
+  {notion&&<span title={'Asignado: '+(person||'Sin asignar')} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-700/80 bg-[#16202c] px-1.5 py-0.5 text-slate-200 max-w-full">
     <svg style={{width:`${Math.round(11 * scale)}px`,height:`${Math.round(11 * scale)}px`}} className="text-cyan-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
       <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>

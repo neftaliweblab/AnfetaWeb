@@ -15,7 +15,7 @@ import {
   Unlink,
   ClipboardPaste,
 } from "lucide-react";
-import { getDropboxAuthorizeUrl, DropboxOAuthAccountInfo } from "@/lib/dropboxConfig";
+import { createDropboxPkceAuthorization, DropboxOAuthAccountInfo } from "@/lib/dropboxConfig";
 
 interface DropboxConnectModalProps {
   isOpen: boolean;
@@ -30,6 +30,7 @@ export function DropboxConnectModal({
   onConnected,
   onDisconnected,
 }: DropboxConnectModalProps) {
+  const [authorization, setAuthorization] = useState<{verifier:string;url:string}|null>(null);
   const [authCode, setAuthCode] = useState("");
   const [isExchanging, setIsExchanging] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -44,6 +45,15 @@ export function DropboxConnectModal({
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) { setAuthorization(null); return; }
+    let cancelled = false;
+    setAuthorization(null);
+    createDropboxPkceAuthorization().then(value => { if (!cancelled) setAuthorization(value); })
+      .catch(() => { if (!cancelled) setErrorMessage('No se pudo preparar la autorización segura. Recarga ANFETA e inténtalo de nuevo.'); });
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
   // Leer estado actual de conexión
   useEffect(() => {
@@ -101,15 +111,16 @@ export function DropboxConnectModal({
 
   if (!isOpen) return null;
 
-  const authUrl = getDropboxAuthorizeUrl();
+  const authUrl = authorization?.url || "";
 
   const handleOpenAuthUrl = () => {
-    if (typeof window !== "undefined") {
+    if (authUrl && typeof window !== "undefined") {
       window.open(authUrl, "_blank", "noopener,noreferrer");
     }
   };
 
   const handleCopyUrl = async () => {
+    if (!authUrl) return;
     try {
       await navigator.clipboard.writeText(authUrl);
       setCopiedUrl(true);
@@ -134,6 +145,7 @@ export function DropboxConnectModal({
       return;
     }
 
+    if (!authorization) { setErrorMessage("Espera a que se prepare la autorización y solicita un código nuevo."); return; }
     setIsExchanging(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -144,7 +156,7 @@ export function DropboxConnectModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "exchange-dropbox-code",
-          payload: { code: cleanCode },
+          payload: { code: cleanCode, codeVerifier: authorization.verifier },
         }),
       });
 
@@ -411,6 +423,7 @@ export function DropboxConnectModal({
                 <button
                   type="button"
                   onClick={handleOpenAuthUrl}
+                  disabled={!authorization || isExchanging}
                   className="flex-1 px-3.5 py-2 bg-[#00A8FF] hover:bg-[#1FB6FF] text-[#080B0F] font-bold rounded flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -419,6 +432,7 @@ export function DropboxConnectModal({
                 <button
                   type="button"
                   onClick={handleCopyUrl}
+                  disabled={!authorization || isExchanging}
                   title="Copiar enlace de autorización al portapapeles"
                   className="px-2.5 py-2 bg-[#162232] hover:bg-[#1E2E44] border border-[#2B4058] text-cyan-300 rounded flex items-center gap-1 cursor-pointer transition-colors"
                 >

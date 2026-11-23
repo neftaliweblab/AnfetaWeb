@@ -860,8 +860,8 @@ function ResultsVirtualTableComponent({
             )}
           </div>
           <div
-            style={{ width: `${Math.round(145 * Math.min(1.4, Math.max(0.9, scale)))}px` }}
-            className="flex items-center justify-end gap-1.5 shrink-0 ml-2 overflow-hidden"
+            style={{ '--badges-col-w': `${Math.round(235 * Math.min(1.35, Math.max(0.95, scale)))}px` } as React.CSSProperties}
+            className="flex items-center justify-end gap-1.5 shrink-0 ml-2 overflow-hidden min-w-0 max-w-full sm:w-[var(--badges-col-w)]"
           >
             <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions} scale={scale}/>
           </div>
@@ -1329,7 +1329,7 @@ function ResultsVirtualTableComponent({
             <span className="truncate">{conflict.label}</span>
           </div>
         )}
-        <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions} scale={scale}/>
+        <ResultIdentityBadges item={item} query={searchQuery} searchOptions={searchOptions} scale={scale} wrap/>
         <div
           onMouseEnter={(e) => {
             const isNotion = item.source === 'Notion' || item.sourceName === 'Notion' || item.externalSourceName === 'Notion' || /^[a-f0-9]{32}$/i.test((item.externalId || item.id || '').replace(/-/g, '')) || /[a-f0-9]{32}/i.test(item.target || '');

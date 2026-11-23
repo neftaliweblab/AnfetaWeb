@@ -46,11 +46,13 @@ export async function exchangeDropboxCode(
 
   appKey = DEFAULT_DROPBOX_APP_KEY,
 
-  appSecret?: string
+  appSecret?: string,
+  codeVerifier?: string
 
 ): Promise<DropboxExchangeResult> {
 
   const cleanCode = code.trim();
+  if (codeVerifier !== undefined && !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)) throw new Error('Vuelve a abrir Conectar Dropbox y solicita un código nuevo.');
 
   const cleanAppKey = (appKey || DEFAULT_DROPBOX_APP_KEY).trim();
 
@@ -74,7 +76,8 @@ export async function exchangeDropboxCode(
 
 
 
-  const secret = (appSecret || process.env.DROPBOX_APP_SECRET || '').trim();
+  if (codeVerifier) bodyParams.set('code_verifier', codeVerifier);
+  const secret = codeVerifier ? '' : (appSecret || process.env.DROPBOX_APP_SECRET || '').trim();
 
   if (secret) {
 
@@ -106,7 +109,7 @@ export async function exchangeDropboxCode(
 
     const errDetail = data?.error_description || data?.error || (data ? JSON.stringify(data) : `HTTP ${res.status}`);
 
-    console.error('Dropbox OAuth exchange error:', errDetail);
+    console.warn('Dropbox OAuth: no se pudo completar la autorización.');
 
     throw new Error(errDetail);
 
