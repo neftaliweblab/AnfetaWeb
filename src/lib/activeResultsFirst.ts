@@ -1,7 +1,7 @@
 import {searchDatabaseName} from './searchDatabase';
 import {progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '@/services/progressiveWorkflow';
 import {workflowState} from '@/services/activityWorkflow';
-import {parseVisualParts, formatAreaLabel} from '@/lib/visualTitleParser';
+import {parseVisualParts, formatAreaLabel, resolveItemDomain} from '@/lib/visualTitleParser';
 import {normalizePerson} from '@/services/identityNormalizer';
 import {resultAssignedPerson} from '@/services/activityTags';
 import {resultMonthKey,sortMonthGroups} from './searchMonthOrder';
@@ -163,13 +163,13 @@ export function getItemGroupKey(item: any, groupBy: string): string {
   }
 
   if (groupBy === "domain" || groupBy === "domain_nobilling") {
-    const dom = String(parsed.domain || item.domainChip || item.domain || "").trim();
+    const dom = resolveItemDomain(item, parsed.domain);
     return dom ? `🌐 ${dom}` : "🌐 Sin dominio";
   }
 
   if(groupBy==='status')return 'Estado: '+(parsed.workflow||'Sin clasificar');
   if (groupBy === "project_suffix") {
-    const dom = parsed.domain || item.domainChip || item.domain || "Sin dominio";
+    const dom = resolveItemDomain(item, parsed.domain) || "Sin dominio";
     const suffixMatch = String(item.name || item.title || "").match(/\.(webs|ads|seo|app|apli|prog|soft)\b/i);
     const suffix = suffixMatch ? suffixMatch[0] : ".general";
     return `📁 ${dom} · ${suffix}`;

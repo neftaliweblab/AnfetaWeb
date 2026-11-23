@@ -11,8 +11,8 @@ import {activePersonTag,activityPerson,ACTIVITY_TAGS,stripActivityTags,titlePrio
 // The new catalog separates title, classification and assignment metadata.
 function structuredTemplate(title: string) {
   const fields = title.split("|").map(field => field.trim());
-  const type = fields[1]?.match(/(?:^|\s)([a-z]{3,})(?:$|\s)/i)?.[1];
-  const detail = fields[2]?.match(/(?:^|\s)(\d{2}\.[a-z]\.(\d{2}\.\d{2}))\s+(.+)$/i);
+  const type = fields[1]?.match(/(?:^|\s)([a-z]{3,}(?:\.[a-z]{3,})*)(?:$|\s)/i)?.[1];
+  const detail = fields[2]?.match(/(?:^|\s)(\d{2}(?:[A-Z]{3,4})?\.[a-z]\.f?(\d{2}\.\d{2}))\s+(.+)$/i);
   const domain = fields[3]?.match(/#([pd]\.dominio\.com(?:\.[a-z0-9-]+)*)/i)?.[1];
   if (!type || !detail || !domain) return null;
   return { type, order: detail[2], name: detail[3], domain, fields };
@@ -196,7 +196,7 @@ export function cleanCalendarQuickTemplateActivityTitle(
 ): string {
   const structured = structuredTemplate(rawTitle || "");
   // Use structured.name if present, but continue through cleaning to remove leftover technical tokens
-  const canonicalName=(rawTitle||"").split("|").find(field=>field.includes("📅"))?.match(/\d{2}(?:[A-Z]{3})?\.[A-Z]\.f\d{2}\.\d{2}\s+(.+)$/i)?.[1];
+  const canonicalName=(rawTitle||"").split("|").find(field=>field.includes("📅"))?.match(/\d{2}(?:[A-Z]{3,4})?\.[A-Z]\.f?\d{2}\.\d{2}\s+(.+)$/i)?.[1];
   const baseTitle = structured ? structured.name : canonicalName || stripActivityTags(rawTitle || "");
 
   let value = baseTitle.trim().replace(/\s+/g, " ");
@@ -246,7 +246,7 @@ export function extractCalendarQuickTemplateOrder(title: string): string {
   if (!title) return "";
   const structured = structuredTemplate(title);
   if (structured) return structured.order;
-  const canonical=title.match(/\b\d{2}[A-Z]{3}\.[A-Z]\.f(\d{2}\.\d{2})/i);
+  const canonical=title.match(/\b\d{2}(?:[A-Z]{3,4})?\.[A-Z]\.f?(\d{2}\.\d{2})/i);
   if(canonical)return canonical[1];
   const match = title.match(/(?:mes|fase)?\s*(\d{1,3}\.\d{1,3})/i);
   return match ? match[1].trim() : "";

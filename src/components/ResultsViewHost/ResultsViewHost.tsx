@@ -20,8 +20,9 @@ import {resultAssignedPerson} from '@/services/activityTags';
 import {QuickPendingCapture} from './QuickPendingCapture';
 import {ScreenRecorder} from './ScreenRecorder';
 import {readUploadDraft} from '@/lib/uploadDraft';
-import {openNotionPage} from '@/services/windowsIntegration';
+import {openNotionPage, openMultipleNotionPages} from '@/services/windowsIntegration';
 import {notionPageUrl} from '@/lib/notionPageUrl';
+import {buildQuickOpenSelectionSummary} from '@/lib/quickOpenPlan';
 import {readSearchView,searchViewKey} from '@/lib/searchViewPreferences';
 import {parseSearchTabs,personalFirstSearch,recoverSearchTabs,isExternalSearchChange,extractPersonFromWorkQuery} from '@/lib/searchTabsStorage';
 import {readSearchDefaults,searchDefaultsKey,newSearchQuery,replaceInitialSearchTag,currentSearchMonth,effectiveSearchMonth} from '@/lib/searchDefaults';
@@ -44,7 +45,7 @@ import {PERSON_ALIASES,normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab, SearchTabConfig } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles, RefreshCw, CheckCircle2, AlertTriangle, Zap } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles, RefreshCw, CheckCircle2, AlertTriangle, Zap, ExternalLink } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -67,6 +68,7 @@ import {installSearchTypingFocus,insertSearchText} from '@/lib/searchTypingFocus
 import {matchesContentClassification} from '@/lib/contentClassification';
 import { searchDatabaseOptions } from "@/lib/searchDatabase";
 import { itemMatchesMonthFilter } from "@/lib/searchMonthOrder";
+import { resolveItemDomain } from "@/lib/visualTitleParser";
 import { filterByNotionBase, isNotionItem, isDropboxItem, isLegacyDropboxDiskItem } from "@/lib/notionFilters";
 import { matchesFlexibleOrQuotedQuery, type SearchMatchOptions } from "@/services/advancedQuery";
 import { SearchHelpModal } from "./SearchHelpModal";
@@ -890,6 +892,8 @@ export function ResultsViewHost({
   const [selectedItem, setSelectedItem] = useState<SearchResultRow | null>(null);
   const [showPersonalAgenda,setShowPersonalAgenda]=useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [dismissedSelectionKey, setDismissedSelectionKey] = useState<string | null>(null);
+  const [bulkOpenWarning, setBulkOpenWarning] = useState<{ key: string; message: string } | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -1106,6 +1110,42 @@ export function ResultsViewHost({
   const handleClearSelection = () => {
     setSelectedIds(new Set());
     setSelectedItem(null);
+    setBulkOpenWarning(null);
+  };
+
+  const selectionKey = useMemo(() => Array.from(selectedIds).sort().join(","), [selectedIds]);
+  const selectedItemsList = useMemo(() => {
+    if (selectedIds.size === 0) return [];
+    const byId = new Map(items.map((it) => [it.id, it]));
+    return Array.from(selectedIds).map((id) => byId.get(id)).filter(Boolean);
+  }, [items, selectedIds]);
+  const quickOpenSummary = useMemo(() => buildQuickOpenSelectionSummary(selectedItemsList), [selectedItemsList]);
+  const showSelectionNotice =
+    selectedIds.size > 0 &&
+    dismissedSelectionKey !== selectionKey &&
+    (quickOpenSummary.launchUrls.length > 0 || quickOpenSummary.otherItems.length > 0);
+  const activeBulkOpenWarning = bulkOpenWarning?.key === selectionKey ? bulkOpenWarning.message : "";
+
+  const handleOpenSelectedItems = () => {
+    if (quickOpenSummary.launchUrls.length > 0) {
+      const result = openMultipleNotionPages(quickOpenSummary.launchUrls);
+      if (result.blocked > 0) {
+        setBulkOpenWarning({
+          key: selectionKey,
+          message: `El navegador bloqueó ${result.blocked} pestaña(s). Permite ventanas emergentes para ANFETA o ábrelas de una en una.`,
+        });
+        return;
+      }
+      setBulkOpenWarning(
+        quickOpenSummary.cappedWarning
+          ? { key: selectionKey, message: quickOpenSummary.cappedWarning }
+          : null
+      );
+      return;
+    }
+    if (quickOpenSummary.otherItems.length > 0) {
+      handleOpenItem(quickOpenSummary.otherItems[0]);
+    }
   };
 
   const handleDeleteSelected = async () => {
@@ -1900,7 +1940,11 @@ export function ResultsViewHost({
           res = res.filter(it => resultAssignedPerson(it) === normalizePerson(crit.value));
         } else if (crit.type === 'domain') {
           const domLower = crit.value.toLowerCase();
-          res = res.filter(it => String(it.name || (it as any).title || '').toLowerCase().includes(domLower) || String((it as any).domain || '').toLowerCase().includes(domLower));
+          res = res.filter(it =>
+            String(it.name || (it as any).title || '').toLowerCase().includes(domLower) ||
+            String((it as any).domain || '').toLowerCase().includes(domLower) ||
+            resolveItemDomain(it).toLowerCase().includes(domLower)
+          );
         } else if (crit.type === 'type') {
           res = res.filter(it => itemMatchesStructuredType(it, crit.value));
         }
@@ -2301,7 +2345,7 @@ export function ResultsViewHost({
         )}
 
         {/* Col 2: RESULTADOS (Central) */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-2 py-1 bg-[#0B0F15]">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <PersistentSearchAccess onSearch={openPersonSearch} currentUser={currentUser}/>
@@ -2586,6 +2630,7 @@ export function ResultsViewHost({
           onActivityAction={handleActivityActionSelect}
           onToggleSelectAll={handleToggleSelectAll}
           onClearSelection={handleClearSelection}
+          onOpenSelected={handleOpenSelectedItems}
           onDeleteSelected={handleDeleteSelected}
           onOpenUploadDropbox={handleOpenDropboxUpload}
           onDropFiles={handleDropFiles}
@@ -2603,7 +2648,66 @@ export function ResultsViewHost({
           onChangeViewZoom={handleChangeViewZoom}
           textScale={textScale}
           groupBy={groupBy}
-        /></div>
+        />
+        {showSelectionNotice && (
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-auto flex max-w-full flex-wrap items-center gap-2.5 rounded-xl border border-[#38BDF8]/60 bg-[#0B1726]/95 px-3.5 py-2 text-xs text-slate-100 shadow-2xl shadow-cyan-950/60 backdrop-blur-md"
+            >
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#38BDF8]" />
+              <div className="min-w-0 flex flex-col">
+                <span className="font-semibold text-cyan-100 truncate max-w-[420px]">
+                  {quickOpenSummary.headline}
+                </span>
+                {(activeBulkOpenWarning || quickOpenSummary.cappedWarning) && (
+                  <span className="text-[10.5px] text-amber-300">
+                    {activeBulkOpenWarning || quickOpenSummary.cappedWarning}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenSelectedItems}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] px-3 py-1 font-semibold text-white shadow-sm transition-colors cursor-pointer"
+              >
+                <ExternalLink className="h-3 w-3" />
+                <span>{quickOpenSummary.buttonLabel}</span>
+              </button>
+              {selectedIds.size === 1 && selectedItem && (!isDetailsOpen || showPersonalAgenda) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDetailsOpen(true);
+                    setShowPersonalAgenda(false);
+                  }}
+                  className="inline-flex shrink-0 items-center rounded-lg border border-slate-600 bg-[#152232] hover:bg-[#1E2E42] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors cursor-pointer"
+                >
+                  Ver detalles
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
+                title="Deseleccionar todos"
+              >
+                Limpiar
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedSelectionKey(selectionKey)}
+                aria-label="Cerrar aviso rápido"
+                title="Ocultar aviso"
+                className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+        </div>
 
         {activityAction&&<SearchActivityActions item={activityAction.item} currentUser={currentUser} mode={activityAction.mode} position={activityAction.position} onClose={()=>setActivityAction(null)} onSaved={()=>setStatusError('')}/>}
         {/* Col 4: DETALLES (320px) */}
@@ -2639,6 +2743,7 @@ export function ResultsViewHost({
         selectedItem={selectedItem}
         selectedCount={selectedIds.size}
         onBatchRenameSelected={() => setIsBatchRenameOpen(true)}
+        onOpenSelected={handleOpenSelectedItems}
         onDeleteSelected={handleDeleteSelected}
         onOpenItem={handleOpenItem}
         onOpenLocation={handleOpenLocation}

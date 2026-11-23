@@ -135,6 +135,56 @@ export function openNotionPage(url: string) {
   } catch { /* Los enlaces inválidos no abren protocolos del sistema. */ }
 }
 
+/** Abre una o varias páginas de Notion desde un gesto de usuario, detectando bloqueos de pop-ups. */
+export function openMultipleNotionPages(
+  urls: string[],
+  maxOpen = 15
+): { attempted: number; opened: number; blocked: number; capped: number } {
+  if (typeof window === "undefined" || !Array.isArray(urls) || urls.length === 0) {
+    return { attempted: 0, opened: 0, blocked: 0, capped: 0 };
+  }
+  const unique = Array.from(new Set(urls.map((u) => String(u || "").trim()).filter(Boolean)));
+  const capped = Math.max(0, unique.length - maxOpen);
+  const batch = unique.slice(0, maxOpen);
+  if (batch.length === 1) {
+    openNotionPage(batch[0]);
+    return { attempted: 1, opened: 1, blocked: 0, capped };
+  }
+
+  let desktop = false;
+  try { desktop = localStorage.getItem('anfeta_notion_open_mode') === 'desktop'; } catch {}
+  let opened = 0;
+  let blocked = 0;
+  let desktopDelayIndex = 0;
+
+  for (const rawUrl of batch) {
+    try {
+      const target = new URL(rawUrl.replace(/^notion:/, 'https:'));
+      if (!['https:', 'http:'].includes(target.protocol)) continue;
+      const notionHost = /(^|\.)notion\.(so|com)$/.test(target.hostname);
+      if (desktop && notionHost) {
+        const delayMs = desktopDelayIndex * 180;
+        desktopDelayIndex += 1;
+        if (delayMs === 0) {
+          openNotionPage(target.href);
+        } else {
+          window.setTimeout(() => openNotionPage(target.href), delayMs);
+        }
+        opened += 1;
+      } else {
+        const popup = window.open(target.href, '_blank', 'noopener,noreferrer');
+        if (popup) {
+          opened += 1;
+        } else {
+          blocked += 1;
+        }
+      }
+    } catch { /* Los enlaces inválidos se omiten */ }
+  }
+
+  return { attempted: batch.length, opened, blocked, capped };
+}
+
 export function openCalendarWindow(url:string){
   const target=new URL(url,window.location.origin);
   if(target.origin!==window.location.origin)throw new Error('La ventana de calendario debe pertenecer a ANFETA.');

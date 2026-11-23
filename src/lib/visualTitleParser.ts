@@ -1,8 +1,15 @@
 import {stripActivityTags} from '../services/activityTags';
 import {stripTitlePlaceholders} from './titlePlaceholders';
-import {calendarDomain} from '../services/calendarPresentation';
+import {calendarDomain, normalizeFtfDomain} from '../services/calendarPresentation';
 import {workflowPresentation} from '../services/activityWorkflow';
 import {stripProgressiveStage,progressiveStage,PROGRESSIVE_WORKFLOW_PRIMARY} from '../services/progressiveWorkflow';
+
+/** Resuelve el dominio visible/de agrupación, normalizando FTFs (<persona>.com o vacío) a anfeta.com. */
+export function resolveItemDomain(item: any, parsedDomain?: string): string {
+  const title = String(item?.name || item?.title || item?.Name || '');
+  const raw = String(parsedDomain || item?.domainChip || item?.domain || '').trim();
+  return normalizeFtfDomain(title, raw);
+}
 
 export interface VisualParts {
   title: string;        // Título limpio para la tabla
@@ -300,8 +307,10 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
   }
 
   display = stripActivityTags(display).replace(/(?<![\w.])ssoft(?![\w.])/gi, ' ');
-  // 7. Limpieza de prefijos técnicos residuales, bloques [CCORR AANFE ...], SEO repetido ("mes SEO SEO") y decoraciones de Notion
+  // 7. Limpieza de prefijos técnicos residuales, bloques [CCORR AANFE ...], tags canónicos 🛠 y dominios finales entre paréntesis
   display = display
+    .replace(/(?:🛠\uFE0F?)\s*[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})*/gu, ' ')
+    .replace(/\(\s*(?:(?:[01pd]\.)?(?:[a-z0-9-]+\.)+[a-z0-9-]+|\.[a-z0-9._-]+)\s*\)/gi, ' ')
     .replace(/\[\s*[A-Z]{4,}(?:\s+[A-Z]{4,})*\s*\]/g, ' ')
     .replace(/^\s*(?:bbibl|rrapi|wwebs|sseo|aads|aapli|pprog|ddise|rrede|mmaps|ccon|pproy|mes)\s+/i, '')
     .replace(/\bmes\s+seo\s+seo\b/gi, 'SEO')
@@ -323,7 +332,7 @@ export function parseVisualParts(rawName: string, status?: string, contentSnippe
     area,
     monthCode,
     orderCode,
-    domain,
+    domain: domain ? normalizeFtfDomain(rawName, domain) : '',
     contentSnippet,
   };
   if (visualPartsGlobalCache.size >= MAX_PARTS_CACHE) {

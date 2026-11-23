@@ -29,7 +29,8 @@ for (const ext of ['.ts', '.tsx']) {
     );
 }
 
-const { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel, formatDisplayOrderParts } = require(root + '/src/lib/visualTitleParser.ts');
+const { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel, formatDisplayOrderParts, resolveItemDomain } = require(root + '/src/lib/visualTitleParser.ts');
+const { buildQuickOpenSelectionSummary } = require(root + '/src/lib/quickOpenPlan.ts');
 const { resultMonth, itemMatchesMonthFilter } = require(root + '/src/lib/searchMonthOrder.ts');
 const { getOrderNumericRank } = require(root + '/src/lib/searchResultOrder.ts');
 const { buildPersonWorkQuery, passiveReviewerTag, scanActivityTags } = require(root + '/src/services/activityTags.ts');
@@ -350,4 +351,77 @@ test('10) Visual month badges format 11 -> 11NOV and parse both 11.a.f41.00 and 
   assert.ok(
     getOrderNumericRank({ name: '11NOV.a.f41.00' }) < getOrderNumericRank({ name: '11NOV.a.f43.00' })
   );
+});
+
+test('11) FTFs normalizan dominios de persona o sin dominio a anfeta.com y badges Formato/En contenido van en fila', () => {
+  const grokFtfTitle = 'Calendario CCALE NNOTI AACTI FTF FFFTFF JJOFTF INCIAL 0.john.com Grok bot --- FTF JJOFTF-FF';
+  assert.equal(calendarDomain(grokFtfTitle), 'anfeta.com');
+  assert.ok(!calendarDisplayTitle(grokFtfTitle).includes('john.com'));
+  assert.equal(resolveItemDomain({ name: grokFtfTitle }), 'anfeta.com');
+  assert.equal(getItemGroupKey({ name: grokFtfTitle }, 'domain'), '🌐 anfeta.com');
+
+  for (const [title, chip] of [
+    ['Final Grok bot --- FTF jjofTF final', 'john.com'],
+    ['GGSTF Calendario 0000000 CCALE NNOTI AACTI FTF - MOVER AL TERMINAR JJOFF', 'genaro.com'],
+    ['[p] 1.00 FTF | TERMINADO 12 Calendario 0000000 CCALE NNOTI AACTI FTF | prtuzR MOVER AL TERMINAR KKAFF', 'karla.com'],
+    ['tuzCalendario AANDRADE Calendario 0000000 CCALE NNOTI AACTI FTF AANFF', 'andrade.com'],
+    ['NNEFT FTF JJOFTF', 'neftali.com'],
+    ['TERMINADO FTF Calendario 0000000 CCALE NNOTI AACTI FTF - MOVER AL TERMINAR', ''],
+  ]) {
+    assert.equal(resolveItemDomain({ name: title, domainChip: chip }), 'anfeta.com', `${title} (${chip})`);
+    assert.equal(getItemGroupKey({ name: title, domainChip: chip }, 'domain'), '🌐 anfeta.com');
+  }
+
+  // Dominio explícito no personal en un item distinto (ej. weblab.mx) o actividad sin FTF se conservan
+  assert.equal(resolveItemDomain({ name: 'PRACTICANTES FTF --- QAATITUD', domainChip: 'weblab.mx' }), 'weblab.mx');
+  assert.equal(resolveItemDomain({ name: 'Proyecto cliente', domainChip: 'novakid.com' }), 'novakid.com');
+
+  const badgesSrc = fs.readFileSync(path.join(root, 'src/components/ResultsViewHost/ResultIdentityBadges.tsx'), 'utf8');
+  assert.match(badgesSrc, /shrink-0 whitespace-nowrap[^>]*>⚠️ Formato/);
+  assert.match(badgesSrc, /shrink-0 whitespace-nowrap[^>]*>En contenido/);
+
+  const tableSrc = fs.readFileSync(path.join(root, 'src/components/ResultsViewHost/ResultsVirtualTable.tsx'), 'utf8');
+  assert.match(tableSrc, /border-\[#60A5FA\]\/30[^"]*\{highlightMatch|rounded bg-\[#1E293B\]\/70 border border-\[#60A5FA\]\/30/);
+});
+
+test('12) Aviso rápido para abrir 1 o varios resultados seleccionados en Notion', () => {
+  const one = buildQuickOpenSelectionSummary([
+    {
+      id: '11111111111111111111111111111111',
+      name: '[Revisiones] Configuracion inicial WordPress',
+      source: 'Notion',
+      externalUrl: 'https://www.notion.so/11111111111111111111111111111111',
+    },
+  ]);
+  assert.equal(one.totalSelected, 1);
+  assert.equal(one.notionUrls.length, 1);
+  assert.match(one.headline, /¿Quieres verlo en Notion\?/);
+  assert.equal(one.buttonLabel, 'Abrir en Notion ↗');
+
+  const multi = buildQuickOpenSelectionSummary([
+    { id: 'a1', name: 'Uno', source: 'Notion', externalId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    { id: 'a2', name: 'Dos', source: 'Notion', externalId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    { id: 'a3', name: 'Duplicado', source: 'Notion', externalId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  ]);
+  assert.equal(multi.totalSelected, 3);
+  assert.equal(multi.notionUrls.length, 2);
+  assert.match(multi.headline, /3 resultados seleccionados/);
+  assert.equal(multi.buttonLabel, 'Abrir 2 en Notion ↗');
+  assert.equal(multi.cappedWarning, '');
+
+  const capped = buildQuickOpenSelectionSummary(
+    Array.from({ length: 18 }, (_, i) => ({
+      id: `item-${i}`,
+      name: `Act ${i}`,
+      source: 'Notion',
+      externalId: `${String(i + 10).padStart(32, '0')}`,
+    })),
+    15
+  );
+  assert.equal(capped.launchUrls.length, 15);
+  assert.match(capped.buttonLabel, /Abrir primeros 15 de 18 en Notion/);
+  assert.match(capped.cappedWarning, /15 pestañas/);
+
+  const tableSrc = fs.readFileSync(path.join(root, 'src/components/ResultsViewHost/ResultsVirtualTable.tsx'), 'utf8');
+  assert.match(tableSrc, /Abrir rápido en Notion \(1 clic\)/);
 });

@@ -7,7 +7,7 @@ import {NotionHoverPreview} from './NotionHoverPreview';
 import {SearchResultRow} from '@/types/anfeta';
 
 import React, { useState, useEffect, useRef } from "react";
-import { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel } from "@/lib/visualTitleParser";
+import { parseVisualParts, formatAreaLabel, formatMonthBadgeLabel, resolveItemDomain } from "@/lib/visualTitleParser";
 import { highlightMultiSearch } from "@/lib/multiSearchHighlight";
 import {ResultIdentityBadges} from './ResultIdentityBadges';
 import {lastSearchTerm,isFutureScheduled,isFullMatch} from '@/lib/searchPresentation';
@@ -141,6 +141,7 @@ interface ResultsTableProps {
   onActivityAction?:(item:any,mode:'review'|'handoff'|'schedule'|'menu'|'finish',position:{x:number;y:number})=>void;
   onToggleSelectAll?: () => void;
   onClearSelection?: () => void;
+  onOpenSelected?: () => void;
   onDeleteSelected?: () => void;
   onOpenUploadDropbox?: (targetDir?: string) => void;
   onDropFiles?: (files: File[]) => void;
@@ -199,6 +200,7 @@ function ResultsVirtualTableComponent({
   onUpdateStatus, onActivityAction, currentUser,
   onToggleSelectAll,
   onClearSelection,
+  onOpenSelected,
   onDeleteSelected,
   onOpenDetailModal,
   resultSort,
@@ -672,6 +674,7 @@ function ResultsVirtualTableComponent({
     const isChecked = selectedIds.has(item.id);
     const isExpanded = expandedRowIds.has(item.id);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const displayDomain = resolveItemDomain(item, parsed.domain);
     const conflict = detectActivityConflict(item);
     const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
@@ -789,7 +792,7 @@ function ResultsVirtualTableComponent({
             >
             {renderIcon(item)}
           </span>
-          <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
+          <ContentClassificationBadge title={item.name} domain={displayDomain}/>{parsed.area && (
             <span
               style={{
                 fontSize: `${Math.max(8.5, 9 * scale).toFixed(1)}px`,
@@ -849,13 +852,16 @@ function ResultsVirtualTableComponent({
             style={{ width: `${Math.round(170 * Math.min(1.4, Math.max(0.9, scale)))}px` }}
             className="hidden sm:flex items-center shrink-0 ml-2 overflow-hidden"
           >
-            {(parsed.domain || item.domainChip || item.domain) && (
+            {displayDomain && (
               <span
-                style={{ fontSize: `${(12 * scale).toFixed(1)}px` }}
-                className="truncate font-mono font-medium text-[#7DD3FC]"
-                title={parsed.domain || item.domainChip || item.domain}
+                style={{
+                  fontSize: `${Math.max(10, 11 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(1.5 * scale))}px ${Math.max(5, Math.round(6 * scale))}px`,
+                }}
+                className="inline-flex items-center max-w-full truncate rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 text-[#93C5FD] font-mono font-medium"
+                title={displayDomain}
               >
-                {highlightMatch(parsed.domain || item.domainChip || item.domain)}
+                {highlightMatch(displayDomain)}
               </span>
             )}
           </div>
@@ -905,8 +911,8 @@ function ResultsVirtualTableComponent({
           </div>
         )}
 
-        {/* Favorito + Checkbox + Eliminar */}
-        <div className="w-[110px] shrink-0 flex items-center justify-end gap-1 px-1">
+        {/* Abrir rápido + Favorito + Checkbox + Eliminar */}
+        <div className="w-[126px] shrink-0 flex items-center justify-end gap-1 px-1">
           {onOpenDetailModal && (
             <button
               type="button"
@@ -925,6 +931,27 @@ function ResultsVirtualTableComponent({
               <span className="hidden xl:inline">Abrir</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDoubleClick(item);
+            }}
+            style={{
+              width: `${Math.round(16 * scale)}px`,
+              height: `${Math.round(16 * scale)}px`,
+            }}
+            className="rounded hover:bg-[#0284C7]/25 text-[#38BDF8] flex items-center justify-center cursor-pointer transition-colors"
+            title="Abrir rápido en Notion (1 clic)"
+            aria-label={`Abrir ${item.name} en Notion`}
+          >
+            <ExternalLink
+              style={{
+                width: `${Math.round(10.5 * scale)}px`,
+                height: `${Math.round(10.5 * scale)}px`,
+              }}
+            />
+          </button>
           <button
             type="button"
             onClick={(e) => {
@@ -1045,6 +1072,7 @@ function ResultsVirtualTableComponent({
     const isExpanded = expandedRowIds.has(item.id);
     const activity = itemToActivity(item);
     const parsed = getVisualPartsCached(item.name, item.updateStatus || item.statusLabel, item.contentSnippet);
+    const displayDomain = resolveItemDomain(item, parsed.domain);
     const conflict = detectActivityConflict(item);
     const upcoming=isFutureScheduled(item);
     const isFav = favorites.has(String(item.externalId || item.path || item.id));
@@ -1150,7 +1178,7 @@ function ResultsVirtualTableComponent({
               )}
             </button>
             <span className="shrink-0">{renderIcon(item)}</span>
-            <ContentClassificationBadge title={item.name} domain={parsed.domain || item.domain || item.domainChip}/>{parsed.area && (
+            <ContentClassificationBadge title={item.name} domain={displayDomain}/>{parsed.area && (
               <span
                 style={{ fontSize: `${Math.max(8, 8.5 * scale).toFixed(1)}px` }}
                 className="shrink-0 px-1 py-0.2 rounded font-bold bg-[#1B4764]/40 border border-[#38B6FF]/60 text-[#7DD3FC]"
@@ -1176,6 +1204,27 @@ function ResultsVirtualTableComponent({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDoubleClick(item);
+              }}
+              style={{
+                width: `${Math.round(16 * scale)}px`,
+                height: `${Math.round(16 * scale)}px`,
+              }}
+              className="rounded hover:bg-[#0284C7]/25 text-[#38BDF8] flex items-center justify-center cursor-pointer transition-colors"
+              title="Abrir rápido en Notion (1 clic)"
+              aria-label={`Abrir ${item.name} en Notion`}
+            >
+              <ExternalLink
+                style={{
+                  width: `${Math.round(10.5 * scale)}px`,
+                  height: `${Math.round(10.5 * scale)}px`,
+                }}
+              />
+            </button>
             <button
               type="button"
               onClick={(e) => {
@@ -1348,11 +1397,14 @@ function ResultsVirtualTableComponent({
           style={{ fontSize: `${(11 * scale).toFixed(1)}px` }}
           className="flex items-center justify-between text-[#94A3B8] pt-1 border-t border-[#1E2836] gap-1"
         >
-          {(parsed.domain || item.domainChip || item.domain) ? (
-            <span className="truncate max-w-[130px] text-[#7DD3FC] font-mono font-medium">{highlightMatch(parsed.domain || item.domainChip || item.domain)}</span>
-          ) : (
-            <span className="truncate max-w-[90px] text-[#64748B] font-mono">{item.sourceName || "—"}</span>
-          )}
+          {(() => {
+            const gridDomain = resolveItemDomain(item, parsed.domain);
+            return gridDomain ? (
+              <span className="inline-flex items-center truncate max-w-[140px] rounded bg-[#1E293B]/70 border border-[#60A5FA]/30 px-1.5 py-0.5 text-[#93C5FD] font-mono font-medium">{highlightMatch(gridDomain)}</span>
+            ) : (
+              <span className="truncate max-w-[90px] text-[#64748B] font-mono">{item.sourceName || "—"}</span>
+            );
+          })()}
           {(item.scheduledDate || item.serverModified) && (
             <span
               className="text-[9px] text-[#CBD5E1] font-mono truncate max-w-[130px]"
@@ -1446,6 +1498,17 @@ function ResultsVirtualTableComponent({
           >
             ✓ / ✕
           </button>
+          {selectedIds.size > 0 && onOpenSelected && (
+            <button
+              type="button"
+              onClick={onOpenSelected}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#0284C7] hover:bg-[#0369A1] text-white text-[9.5px] font-semibold transition-colors cursor-pointer"
+              title={`Abrir ${selectedIds.size} resultado${selectedIds.size > 1 ? "s" : ""} en Notion`}
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+              <span>Abrir en Notion ({selectedIds.size})</span>
+            </button>
+          )}
           {selectedIds.size > 0 && onDeleteSelected && (
             <button
               type="button"
@@ -1461,7 +1524,7 @@ function ResultsVirtualTableComponent({
       </div>
 
       <div className="min-h-0 flex-1 overflow-x-auto">
-      <div className="flex h-full min-h-0 flex-col" style={{minWidth:viewZoom==='list'?Math.max(800,Math.round(500*Math.max(1,scale))+(showPath?colWidths.path:0)+(showStatus?colWidths.status:0)+(showScheduledDate?colWidths.scheduledDate:0)+(showModifiedDate?colWidths.modifiedDate:0)+90):undefined}}>
+      <div className="flex h-full min-h-0 flex-col" style={{minWidth:viewZoom==='list'?Math.max(880,Math.round(580*Math.max(1,scale))+(showPath?colWidths.path:0)+(showStatus?colWidths.status:0)+(showScheduledDate?colWidths.scheduledDate:0)+(showModifiedDate?colWidths.modifiedDate:0)+90):undefined}}>
       {/* Encabezados de Columna (Modo Lista) */}
       {viewZoom === "list" && (
         <div
@@ -1700,8 +1763,8 @@ function ResultsVirtualTableComponent({
             </div>
           )}
 
-          {/* Acciones y selección: ancho 110px alineado exactamente con las filas */}
-          <div className="w-[110px] shrink-0 flex items-center justify-end gap-2 px-1">
+          {/* Acciones y selección: ancho 126px alineado exactamente con las filas */}
+          <div className="w-[126px] shrink-0 flex items-center justify-end gap-2 px-1">
             <span className="text-[10px] text-[#F59E0B]" title="Favoritos">★</span>
             <button
               type="button"

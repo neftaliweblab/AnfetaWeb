@@ -14,6 +14,7 @@ interface SearchBottomBarProps {
   selectedItem: any | null;
   selectedCount?: number;
   onBatchRenameSelected?: () => void;
+  onOpenSelected?: () => void;
   onOpenItem: (item: any) => void;
   onOpenLocation: (item: any) => void;
   onCopyName: (item: any) => void;
@@ -36,6 +37,7 @@ export function SearchBottomBar({
   selectedItem,
   selectedCount = 0,
   onBatchRenameSelected,
+  onOpenSelected,
   onOpenItem,
   onOpenLocation,
   onCopyName,
@@ -187,13 +189,19 @@ export function SearchBottomBar({
 
         <button
           type="button"
-          onClick={() => selectedItem && onOpenItem(selectedItem)}
-          disabled={!selectedItem}
-          className="flex items-center gap-1 px-3 py-1 rounded bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-40 text-white font-semibold text-[10.5px] transition-colors"
-          title="Abrir página directamente en Notion"
+          onClick={() => {
+            if (selectedCount > 1 && onOpenSelected) {
+              onOpenSelected();
+            } else if (selectedItem) {
+              onOpenItem(selectedItem);
+            }
+          }}
+          disabled={!selectedItem && selectedCount === 0}
+          className="flex items-center gap-1 px-3 py-1 rounded bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-40 text-white font-semibold text-[10.5px] transition-colors cursor-pointer"
+          title={selectedCount > 1 ? `Abrir ${selectedCount} seleccionados en Notion` : "Abrir página directamente en Notion"}
         >
           <ExternalLink className="w-3 h-3" />
-          <span>Abrir</span>
+          <span>{selectedCount > 1 ? `Abrir (${selectedCount})` : 'Abrir'}</span>
         </button>
 
         <button

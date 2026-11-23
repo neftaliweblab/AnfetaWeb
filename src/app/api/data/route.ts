@@ -82,7 +82,7 @@ import { executeDailyAutomation, planDailyAutomation } from '@/services/calendar
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
 import { appendInternalMetadata, clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
-import { mexicoDate, calendarInterval, calendarDomain } from '@/services/calendarPresentation';
+import { mexicoDate, calendarInterval, calendarDomain, normalizeFtfDomain } from '@/services/calendarPresentation';
 import { workflowState, isTerminadoHoyStatus } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken, searchDropboxLive } from '@/services/dropboxUpload';
 import { createActivity, mutateActivity, notionRequest, validateSchedule,validateNotionCreationTarget } from '@/services/notionMutations';
@@ -300,6 +300,7 @@ function extractNotionPageData(page: any): LiveNotionPage {
   if(!person&&title)person=inferActivityPerson(title,status);
 
   person = assignedPerson(page, person);
+  domain = normalizeFtfDomain(title, domain);
   const statusProp = calendarStatusField(page)?.[1];
   status = page._anfetaBase==='Cobrar y pagar'?financeStatus(page.properties||{}):notionStatusValue(statusProp);
   return { sourceName:page._anfetaBase, id, url, title, status, dateStart, dateEnd, person, domain, aiContent, lastEdited, ...ftfState(page), isLocked: isLocked || /Bloqueada_ANFETA/i.test(title) };
@@ -1217,7 +1218,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
             row.assignedPerson = cal.raw.Person;
           }
           if (cal.raw.Domain || cal.raw.ParsedDomain) {
-            row.domainChip = cal.raw.Domain || cal.raw.ParsedDomain;
+            row.domainChip = normalizeFtfDomain(row.name || cal.raw.Title || '', cal.raw.Domain || cal.raw.ParsedDomain);
           }
           if (cal.raw.aiContent || cal.raw['busqueda palabras por contenido pagina IA']) {
             const calAi = cal.raw.aiContent || cal.raw['busqueda palabras por contenido pagina IA'];

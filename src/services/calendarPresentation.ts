@@ -33,14 +33,55 @@ function displayDomainTokens(value:string){
     return [{text:match[0],index:match.index!,domain:host}];
   });
 }
+const FTF_DOMAIN_TITLE_RE = /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ffftff|00ftf|jjoftf|ggstf)(?![\p{L}\p{Nd}_])/iu;
+const PERSON_SYNTHETIC_DOMAINS = new Set([
+  'john', 'jjohn', 'jhon',
+  'genaro', 'ggena',
+  'karla', 'karlo', 'carla', 'carlo', 'kkarl',
+  'andrade', 'aandr',
+  'neftali', 'nneft', 'nnetf',
+  'isaias', 'iisai', 'iisaia',
+  'brian', 'bbria',
+  'acalli', 'aacal',
+  'sotelo', 'ssote',
+  'edwin', 'eedwin', 'eedwi',
+  'eduardo', 'eedua',
+  'emmanuel', 'eemma',
+  'isaac', 'iisac',
+  'gabriel',
+]);
+
+export function isFtfDomainTitle(title: string) {
+  return FTF_DOMAIN_TITLE_RE.test(String(title || ''));
+}
+
+export function isPersonSyntheticDomain(domain: string) {
+  const host = classifiedDomain(String(domain || '').trim().toLowerCase());
+  const firstLabel = host.split('.')[0]?.normalize('NFD').replace(/[\u0300-\u036f]/g, '') || '';
+  return PERSON_SYNTHETIC_DOMAINS.has(firstLabel) && /\.(?:com|mx|net|org|io|app|co|dev)$/i.test(host);
+}
+
+/** Los FTFs usan anfeta.com en lugar de dominios sintéticos con nombre de persona o quedar sin dominio. */
+export function normalizeFtfDomain(title: string, rawDomain = '') {
+  const clean = classifiedDomain(String(rawDomain || '').trim().toLowerCase());
+  if (!isFtfDomainTitle(title)) return clean;
+  if (!clean || /^(?:general|sin dominio)$/i.test(clean) || isPersonSyntheticDomain(clean)) {
+    return 'anfeta.com';
+  }
+  return clean;
+}
+
 /** Read-only presentation: a real #p./#d. domain is data, not an empty template slot. */
 export function calendarDomain(title: string, project = '') {
   const domainField=String(title||'').split('|').find(field=>field.includes('🌐'))||'';
+  let resolved = '';
   for(const value of [domainField,project,title]){
     const found=displayDomainTokens(value)[0];
-    if(found)return found.domain;
+    if(found){resolved=found.domain;break;}
   }
-  return 'general';
+  if (!resolved) resolved = isFtfDomainTitle(title) ? normalizeFtfDomain(title, '') : '';
+  else resolved = normalizeFtfDomain(title, resolved);
+  return resolved || 'general';
 }
 export function calendarType(title: string, project = '') {
   title = stripTitlePlaceholders(title);
@@ -56,15 +97,19 @@ export function calendarUrgent(title: string) {
 }
 export function calendarDisplayTitle(title: string, domain = '') {
   const visualDomain=calendarDomain(title,domain);
+  const ftf=isFtfDomainTitle(title);
   let visibleTitle=title;
   for(const token of displayDomainTokens(title).reverse()){
-    if(token.domain===visualDomain)visibleTitle=visibleTitle.slice(0,token.index)+' '+visibleTitle.slice(token.index+token.text.length);
+    if(token.domain===visualDomain||(ftf&&isPersonSyntheticDomain(token.domain)))visibleTitle=visibleTitle.slice(0,token.index)+' '+visibleTitle.slice(token.index+token.text.length);
   }
   title = stripTitlePlaceholders(visibleTitle);
   let text = stripActivityTags(PROGRESSIVE_WORKFLOW_PRIMARY?stripProgressiveStage(title):title).replace(/\[COPIA REVISIÓN\]\s*/gi, '')
     .replace(/\b(?:sprtuzREVISION|prtuzREVISION|rtuzREVISION|zREVISION|TERMINAD[OA]|PENDIENTE|Bloqueada_ANFETA)\b/gi, '')
     .replace(/\b(?:jjohn|nneft|nnetf|kkarl|bbria|iisai|iisaia|aandr|ggena|ssote|aacal|eemma|eedwin|eedwi|eed|edwin|ed)(?:0{2,4}|00[1-3])?\b/gi, '')
     .replace(/\b(?:aads|sseo|wwebs|mmaps|ddise|aapli|pprog|rrede|cchat|rrapi|mmapi|bblib|ccoti|coti)\b/gi, '')
+    .replace(/\b\d{1,2}(?:[A-Za-z]{3,4})?\.(?:[a-z]|\[tipo\])\.(?:f\d{1,3}|\d{1,2})\.\d{2}\b/gi,' ')
+    .replace(/(?:🛠\uFE0F?)\s*[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})*/gu,' ')
+    .replace(/\(\s*(?:(?:[01pd]\.)?(?:[a-z0-9-]+\.)+[a-z0-9-]+|\.[a-z0-9._-]+)\s*\)/gi,' ')
     .replace(/(?:\b\d{2}-)?\[\d{2,4}[A-ZÁÉÍÓÚ]+\]/gi, '')
     .replace(/\(?\b\d{2,4}(?:-)?(?:0[1-9]|1[0-2])?(?:ENER|FEBR|MARZ|ABRI|MAYO|JUNI|JULI|AGOS|SEPT|OCTU|NOVI|DICI|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\b\)?/gi, '')
     .replace(/(?:^|\s)00(?=\s|$)/g, ' ');
@@ -72,7 +117,7 @@ export function calendarDisplayTitle(title: string, domain = '') {
     const escaped = domain.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp('(?<![a-z0-9.-])(?:\\b(?:www|webs|web|seo|ads|maps|cotizacion|biblioteca|proyecto)\\.)*' + escaped + '(?![a-z0-9.-])', 'gi'), ' ');
   }
-  text = text.replace(/\b\d{1,2}(?:[A-Za-z]{3,4})?\.(?:[a-z]|\[tipo\])\.(?:f\d{1,3}|\d{1,2})\.\d{2}\b/gi,' ')
+  text = text
     .replace(/(?<![\p{L}\p{N}_])\[[A-Z]{4,}(?:\s+[A-Z]{4,})*\](?![\p{L}\p{N}_])/gu,' ')
     .replace(/\b(?:ssoft|ccobr|ppaga|ffase\d+)\b/gi,' ')
     .replace(/\bmes\s+seo\s+seo\b/gi,'SEO')
