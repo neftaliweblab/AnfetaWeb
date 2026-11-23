@@ -173,30 +173,40 @@ export default function AnfetaApp() {
   const [directActivityError, setDirectActivityError] = useState("");
   const [directActivityLoading,setDirectActivityLoading]=useState(false);
   const [directActivityRetry,setDirectActivityRetry]=useState(0);
+  const requestedDirectActivity=useRef({owner:"",pageId:""});
 
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
+    let controller: AbortController | null = null;
+    const openActivity = (requested: unknown) => {
+      if (!requested) return;
+      controller?.abort();
+      const targetId=activityLinkPageId(requested);
+      if(!targetId) {setDirectActivityLoading(false);setDirectActivityError('El enlace de actividad no es válido.');return;}
+      requestedDirectActivity.current={owner:currentUser,pageId:targetId};
+      const activeController=new AbortController();
+      controller=activeController;
+      setDirectActivityError('');setDirectActivityLoading(true);setActiveView('results');
+      void fetch('/api/data?type=calendar-activity&pageId='+targetId,{signal:AbortSignal.any([activeController.signal,AbortSignal.timeout(40000)])})
+        .then(async response=>{
+          const data=await response.json();
+          if(activeController.signal.aborted)return;
+          if(!response.ok||!data.success||!data.activity)throw Error(data.error||'No se pudo abrir la actividad enlazada. No se buscaron otras páginas.');
+          if(activityLinkPageId(data.activity.pageId)!==targetId)throw Error('La página recibida no coincide con el enlace. No se abrió otra actividad.');
+          if(data.date)setCurrentDate(data.date);
+          setActiveView('results');
+          setCalendarActivities(previous=>previous.some(item=>item.pageId===data.activity.pageId)?previous:[data.activity,...previous]);
+          setDirectSelectedActivity(data.activity);
+        })
+        .catch(error=>{if(!activeController.signal.aborted)setDirectActivityError(error instanceof Error?error.message:'No se pudo abrir la actividad.');})
+        .finally(()=>{if(!activeController.signal.aborted)setDirectActivityLoading(false);});
+    };
+    const requestedActivity = (event: Event) => openActivity((event as CustomEvent).detail?.pageId);
+    window.addEventListener('anfeta_open_activity', requestedActivity);
     const params = new URLSearchParams(window.location.search);
-    const requested=params.get('activity')||params.get('pageId');
-    if(!requested)return;
-    const targetId=activityLinkPageId(requested);
-    if(!targetId) {setDirectActivityError('El enlace de actividad no es válido.');return;}
-    const controller=new AbortController();
-    setDirectActivityError('');setDirectActivityLoading(true);setActiveView('results');
-    void fetch('/api/data?type=calendar-activity&pageId='+targetId,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(40000)])})
-      .then(async response=>{
-        const data=await response.json();
-        if(controller.signal.aborted)return;
-        if(!response.ok||!data.success||!data.activity)throw Error(data.error||'No se pudo abrir la actividad.');
-        if(activityLinkPageId(data.activity.pageId)!==targetId)throw Error('La página recibida no coincide con el enlace. No se abrió otra actividad.');
-        if(data.date)setCurrentDate(data.date);
-        setActiveView('results');
-        setCalendarActivities(previous=>previous.some(item=>item.pageId===data.activity.pageId)?previous:[data.activity,...previous]);
-        setDirectSelectedActivity(data.activity);
-      })
-      .catch(error=>{if(!controller.signal.aborted)setDirectActivityError(error instanceof Error?error.message:'No se pudo abrir la actividad.');})
-      .finally(()=>{if(!controller.signal.aborted)setDirectActivityLoading(false);});
-    return()=>controller.abort();
+    const previousTarget=requestedDirectActivity.current;
+    openActivity(directActivityRetry > 0 && previousTarget.owner === currentUser ? previousTarget.pageId : params.get('activity')||params.get('pageId'));
+    return()=>{controller?.abort();window.removeEventListener('anfeta_open_activity',requestedActivity);};
   }, [isAuthenticated,currentUser,directActivityRetry]);
   const [indexSyncLabel,setIndexSyncLabel]=useState('Iniciando catálogo...');
   useEffect(()=>{

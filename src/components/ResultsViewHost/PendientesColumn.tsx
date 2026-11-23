@@ -208,6 +208,7 @@ interface PendientesColumnProps {
   onDeleteTask: (id: string) => void;
   onDeleteAllTasks?: () => void;
   onSelectTaskQuery?: (query: string) => void;
+  onOpenTask?: (task: PendingTaskItem) => void;
   onReorderTasks?: (ids: string[]) => void;
   onDuplicateTask?: (task: PendingTaskItem) => void;
 }
@@ -226,9 +227,14 @@ function PendientesColumnComponent({
   onDeleteTask,
   onDeleteAllTasks,
   onSelectTaskQuery,
+  onOpenTask,
   onReorderTasks,
   onDuplicateTask,
 }: PendientesColumnProps) {
+  const openPendingTask = (task: PendingTaskItem) => {
+    if (onOpenTask) onOpenTask(task);
+    else onSelectTaskQuery?.(task.query || task.title);
+  };
   const [contextMenu, setContextMenu] = useState<{ task: PendingTaskItem; x: number; y: number } | null>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -889,7 +895,7 @@ function PendientesColumnComponent({
         onDrop={(e) => handleDrop(e, task.id)}
         onClick={() => {
           if (task.query || task.title) {
-            onSelectTaskQuery?.(task.query || task.title);
+            openPendingTask(task);
           }
         }}
         onDoubleClick={() => {
@@ -1274,7 +1280,7 @@ function PendientesColumnComponent({
         onDragEnd={handleDragEnd}
         onClick={() => {
           if (task.query || task.title) {
-            onSelectTaskQuery?.(task.query || task.title);
+            openPendingTask(task);
           }
         }}
         onContextMenu={(e) => handleContextMenu(e, task)}
@@ -2308,10 +2314,10 @@ function PendientesColumnComponent({
               type="button"
               onClick={() => {
                 const first = reviewPendingTasks[0];
-                if (first?.query || first?.title) onSelectTaskQuery?.(first.query || first.title);
+                if (first) openPendingTask(first);
               }}
               className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 text-[9.5px] font-bold shrink-0 cursor-pointer"
-              title="Buscar pendiente por revisar"
+              title="Abrir la actividad vinculada al pendiente"
             >
               Revisar
             </button>

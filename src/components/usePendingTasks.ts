@@ -13,6 +13,7 @@ const sanitizeTask = (t: any): PendingTaskItem => ({
   description: typeof t?.description === 'string' ? t.description : undefined,
   note: typeof t?.note === 'string' && t.note.trim() ? t.note : undefined,
   url: typeof t?.url === 'string' && t.url.trim() ? t.url : undefined,
+  pageId: typeof t?.pageId === 'string' && t.pageId.trim() ? t.pageId.trim() : undefined,
   isCompleted: Boolean(t?.isCompleted),
   isArchived: Boolean(t?.isArchived),
   isAttended: Boolean(t?.isAttended),

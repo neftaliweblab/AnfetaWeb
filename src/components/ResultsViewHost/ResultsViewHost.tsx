@@ -1,5 +1,6 @@
 "use client";
 import {migrateGroupByPreference,normalizeSearchTabConfig} from '@/lib/searchTabConfig';
+import {pendingActivityPageId} from '@/lib/pendingActivityTarget';
 import {directActivitySearchRow} from '@/lib/activityDeepLink';
 const cleanPageId = (id: unknown) => String(id || '').replace(/-/g, '').toLowerCase();
 import type { NotionCalendarActivity } from '@/types/anfeta';
@@ -330,13 +331,9 @@ export function ResultsViewHost({
     }
   }, []);
 
-  const openedDirectLink=useRef('');
   useEffect(() => {
     if (!initialDirectActivity || tabsOwner!==tabsKey) return;
     const cleanId=cleanPageId(initialDirectActivity.pageId);
-    const identity=tabsKey+':'+cleanId;
-    if(openedDirectLink.current===identity)return;
-    openedDirectLink.current=identity;
     const tabId='activity_'+cleanId;
     // A dedicated tab preserves the user's other search tabs.
     setTabs(previous=>previous.some(tab=>tab.id===tabId)?previous:[...previous,{id:tabId,query:'',canClose:true}]);
@@ -2266,6 +2263,17 @@ export function ResultsViewHost({
             onDeleteAllTasks={onDeleteAllPendingTasks}
             onReorderTasks={onReorderPendingTasks}
             onSelectTaskQuery={(q) => handleQueryChange(q)}
+            onOpenTask={(task) => {
+              const pageId = pendingActivityPageId(task);
+              if (pageId) {
+                onShowResults?.();
+                window.dispatchEvent(new CustomEvent('anfeta_open_activity', {detail:{pageId}}));
+              } else if (isReviewOrSentPending(task)) {
+                setStatusError('Este pendiente no tiene un enlace válido a su actividad. Edita el pendiente y agrega su enlace de Notion para abrir la página exacta.');
+              } else {
+                handleQueryChange(task.query || task.title);
+              }
+            }}
             onDuplicateTask={(task) => {
               onAddPendingTask({
                 title: `${task.title} (Copia)`,
