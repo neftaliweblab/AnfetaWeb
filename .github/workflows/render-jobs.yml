@@ -15,6 +15,10 @@ on:
       date:
         description: 'Report date YYYY-MM-DD (optional)'
         required: false
+      verify_mail:
+        description: 'Check Gmail credentials without sending a test message'
+        type: boolean
+        default: false
       dry_run:
         description: 'Preview reports without sending email'
         type: boolean
@@ -26,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   invoke:
-    if: github.repository == 'neftaliweblab/AnfetaWeb' && (github.event_name == 'workflow_dispatch' || vars.ANFETA_RENDER_SCHEDULES_ENABLED == 'true') && (github.event_name == 'workflow_dispatch' || (github.event.schedule != '30 0 * * 2-6' && github.event.schedule != '30 0 * * 6') || vars.ANFETA_RENDER_REPORTS_ENABLED == 'true')
+    if: github.repository == 'neftaliweblab/AnfetaWeb' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.ANFETA_RENDER_SCHEDULES_ENABLED == 'true') && (github.event_name == 'workflow_dispatch' || (github.event.schedule != '30 0 * * 2-6' && github.event.schedule != '30 0 * * 6') || vars.ANFETA_RENDER_REPORTS_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -37,7 +41,17 @@ jobs:
       REPORT_DATE: ${{ inputs.date }}
       DRY_RUN: ${{ inputs.dry_run }}
     steps:
+      - name: Select job
+        id: target
+        shell: python
+        run: |
+          import os
+          schedules={'0 7 * * *':'pprtuz','0 11 * * *':'ftf','30 0 * * 2-6':'ftf-report','30 0 * * 6':'ftf-weekly'}
+          job=os.environ.get('MANUAL_JOB') or schedules.get(os.environ.get('SCHEDULE'))
+          if job not in schedules.values(): raise SystemExit('Invalid job.')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('job='+job+'\n')
       - name: Wake service and invoke authenticated job
+        if: steps.target.outputs.job != 'ftf-report' && steps.target.outputs.job != 'ftf-weekly'
         shell: python
         run: |
           import os, json, time, datetime, urllib.request, urllib.parse
@@ -75,3 +89,17 @@ jobs:
               raise SystemExit(1)
           if data.get('success') is not True: raise SystemExit('Job returned an unsuccessful result. Check the delivery history.')
           print(json.dumps({'job':job,'success':True,'date':data.get('date'),'state':data.get('state'),'skipped':data.get('skipped'),'dryRun':data.get('dryRun',dry)}))
+      - name: Checkout report worker
+        if: steps.target.outputs.job == 'ftf-report' || steps.target.outputs.job == 'ftf-weekly'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Send prepared report through Gmail
+        if: steps.target.outputs.job == 'ftf-report' || steps.target.outputs.job == 'ftf-weekly'
+        env:
+          REPORT_JOB: ${{ steps.target.outputs.job }}
+          VERIFY_MAIL: ${{ inputs.verify_mail }}
+          SMTP_USER: ${{ secrets.ANFETA_REPORT_SMTP_USER }}
+          SMTP_PASS: ${{ secrets.ANFETA_REPORT_SMTP_PASS }}
+          EMAIL_TO: ${{ secrets.ANFETA_REPORT_EMAIL_TO }}
+        run: python scripts/send-ftf-report.py

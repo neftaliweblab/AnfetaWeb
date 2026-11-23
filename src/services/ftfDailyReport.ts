@@ -52,7 +52,7 @@ export async function runDailyReport(options:{actor:string;date?:string;now?:Dat
  let sending=false;
  try{
   if(!to.length)throw Error('Falta configurar FTF_REPORT_EMAIL_TO.');
-  if(process.env.ANFETA_DISABLE_SMTP==='1'&&!settings.resendApiKey)throw Error('Falta configurar RESEND_API_KEY y un remitente verificado para este alojamiento.');
+  if(process.env.ANFETA_DISABLE_SMTP==='1'&&!settings.resendApiKey)throw Error('El envío por Gmail debe ejecutarse desde el trabajador externo de GitHub.');
   if(!(settings.smtpUser&&settings.smtpPass)&&!settings.resendApiKey)throw Error('Falta configurar el proveedor de correo.');
   const report=await buildDailyReport(settings,options.actor,date,now),subject='Reporte diario ANFETA · '+date,html=dailyReportHtml(report,date);
   await rpc('finish_daily_report',{p_key:key,p_token:token,p_state:'sending',p_payload:{subject,html,report}});sending=true;

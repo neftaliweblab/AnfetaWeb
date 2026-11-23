@@ -17,3 +17,16 @@
 - GitHub Actions prepara las llamadas externas para las tareas: ANFETA_RENDER_SCHEDULES_ENABLED activa reinicio/preparación FTF; ANFETA_RENDER_REPORTS_ENABLED habilita los correos únicamente cuando el proveedor HTTPS esté configurado. Ambos se activan por separado, y el modo manual dry_run no envía mensajes.
 - Pendiente: RESEND_API_KEY, FTF_REPORT_EMAIL_TO y un FTF_REPORT_EMAIL_FROM verificado. El SMTP actual no está habilitado en Render Free.
 - Render comparte sus horas gratuitas entre servicios del espacio y puede dormir tras inactividad. No se cambió el chatbot existente ni se reactivó el puente de WhatsApp suspendido. GitHub Actions puede retrasar ejecuciones; no se garantiza el minuto exacto.
+
+
+## Reportes por Gmail (puente externo)
+
+Render prepara el reporte en `/api/jobs/report-mail`; GitHub Actions recibe solo el reporte y lo envía por Gmail SMTP. Las claves de Notion/Supabase permanecen en Render. No requiere dominio ni Resend. La contraseña de aplicación de Gmail se guarda exclusivamente como secreto privado de GitHub, nunca en código.
+
+Secretos GitHub: `ANFETA_REPORT_SMTP_USER`, `ANFETA_REPORT_SMTP_PASS`, `ANFETA_REPORT_EMAIL_TO`. Reutiliza `ANFETA_RENDER_URL` y `ANFETA_RENDER_CRON_SECRET`. No crear secretos de Notion/Supabase para el runner.
+
+Primero ejecutar manualmente `ftf-report`, fecha laboral existente, `dry_run=true`, `verify_mail=true`: valida acceso Gmail y genera vista previa sin enviar. Activar `ANFETA_RENDER_REPORTS_ENABLED=true` solo tras verificar esa ejecución. Diarios a las 18:30 CDMX de lunes a viernes; semanal viernes 18:30. GitHub puede retrasar horarios. La app puede necesitar despertar en Render Free.
+
+El historial durable registra `sending` antes de entregar el contenido al runner; confirma `sent`, `failed` o `uncertain`. Solo se reintenta la confirmación, nunca el envío SMTP. Ante `uncertain`, revisar Gmail antes de repetir. Si el runner se interrumpe, la reserva vencida evita un segundo envío automático. La migración SQL de reportes existente es suficiente.
+
+Pruebas: `node scripts/report-mail-relay.test.cjs`, `python scripts/test-report-mail-worker.py`, `node scripts/ftf-daily-report.test.cjs`, `npx tsc --noEmit`, `npm run build`.

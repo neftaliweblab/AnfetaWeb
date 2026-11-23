@@ -1,0 +1,25 @@
+const assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),Module=require('module'),ts=require('typescript');
+const root=path.resolve(__dirname,'..'),resolve=Module._resolveFilename,load=Module._load;
+Module._resolveFilename=function(n,p,...a){if(n.startsWith('@/'))n=path.join(root,'src',n.slice(2));return resolve.call(this,n,p,...a)};
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);
+const rows=new Map();let builds=0;
+const admin={rpc:async(n,a)=>{let row=rows.get(a.p_key);if(n==='claim_daily_report'){if(row)return {data:{state:row.state},error:null};rows.set(a.p_key,{state:'generating',token:a.p_token});return {data:{state:'claimed'},error:null};}if(!row||row.token!==a.p_token)return {data:false};row.state=a.p_state;return {data:true,error:null}},from:()=>{let key,token;const q={select:()=>q,eq:(n,v)=>{if(n==='key')key=v;else token=v;return q},maybeSingle:async()=>({data:rows.get(key)?.token===token?rows.get(key):null,error:null})};return q}};
+Module._load=function(n,p,...a){if(p?.filename.endsWith('reportMailRelay.ts')){
+if(n==='./serverSettings')return {getSettings:()=>({})};
+if(n==='./ftfDailyReport')return {dailyReportDay:()=>null,buildDailyReport:async()=>{builds++;return {people:[{}]}},dailyReportHtml:()=>'<p>Report</p>'};
+if(n==='./ftfWeeklyReport')return {buildAndSendWeeklyFtfReport:async()=>({weekStart:'2026-11-16',weekEnd:'2026-11-20',workDates:[],matrix:[{}],week:{}})};
+if(n==='./ftfScoreDelivery')return {parseRecipients:s=>s.split(',').filter(x=>x.includes('@')),buildWeeklyFtfEmailHtml:()=>'<p>Weekly</p>'};
+if(n==='./ftfDashboard')return {ftfWeekStart:()=> '2026-11-16'};
+if(n==='./calendarPresentation')return {mexicoDate:()=> '2026-11-20'};
+if(n==='./notionSnapshotCache')return {notionSourceKey:()=> 'test-source'};
+if(n==='./supabaseServer')return {supabaseConfigured:()=>true,supabaseAdmin:()=>admin};
+}return load.call(this,n,p,...a)};
+(async()=>{const {prepareReportMail:prepare,finishReportMail:finish}=require(root+'/src/services/reportMailRelay.ts');const input={job:'ftf-report',date:'2026-11-20',to:'recipient@example.com'};
+await prepare('John',{...input,dryRun:true});assert.equal(rows.size,0);
+const result=await prepare('John',input);assert.equal(rows.get(result.delivery.key).state,'sending');assert.equal((await prepare('John',input)).skipped,'sending');assert.equal(builds,2);
+await assert.rejects(finish({...result.delivery,token:'00000000-0000-4000-8000-000000000000',state:'sent'}));
+await finish({...result.delivery,state:'sent'});assert.equal((await finish({...result.delivery,state:'sent'})).alreadyRecorded,true);
+await assert.rejects(finish({...result.delivery,state:'failed'}));assert.equal((await prepare('John',input)).skipped,'sent');assert.equal(builds,2);
+const weekly=await prepare('John',{...input,job:'ftf-weekly'});assert.notEqual(weekly.delivery.key,result.delivery.key);await finish({...weekly.delivery,state:'uncertain'});assert.equal((await prepare('John',{...input,job:'ftf-weekly'})).skipped,'uncertain');
+await assert.rejects(prepare('John',{...input,to:''}));console.log('OK mail relay: dry run, claim before payload, no duplicate build, ownership, immutable sent, acknowledgment retry, uncertain delivery, weekly isolation. No real messages.');
+})().catch(e=>{console.error(e);process.exitCode=1});

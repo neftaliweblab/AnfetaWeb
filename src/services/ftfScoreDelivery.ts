@@ -314,7 +314,7 @@ export async function deliverHtmlEmail(
   const smtpUser = String(params.smtpUser || '').trim();
   const smtpPass = String(params.smtpPass || '').trim();
   const smtpDisabled=process.env.ANFETA_DISABLE_SMTP==='1';
-  if(smtpDisabled&&!params.apiKey?.trim())return {ok:false,skipped:true,reason:'El alojamiento no permite SMTP. Configura RESEND_API_KEY y un remitente verificado para enviar los reportes por HTTPS.'};
+  if(smtpDisabled&&!params.apiKey?.trim())return {ok:false,skipped:true,reason:'Este alojamiento no permite SMTP. El envío por Gmail está preparado en el trabajador externo de GitHub.'};
   if (!smtpDisabled && smtpUser && smtpPass) {
     try {
       const nodemailer = await import('nodemailer');
