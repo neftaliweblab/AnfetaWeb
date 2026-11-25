@@ -771,15 +771,22 @@ export default function AnfetaApp() {
                   const s = localStorage.getItem("anfeta_settings");
                   if (s) token = JSON.parse(s).notionToken || "";
                 } catch {}
-                const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&date=${currentDate}`,currentUser, {
+                const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&fresh=1&date=${currentDate}`,currentUser, {
                   headers: token ? { "x-notion-token": token } : {},
                 });
                 {
                   const data = await readApiJson(res);
                   if(calendarContextRef.current!==context)return;
-          if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:calendarReadBoundary(res,data.cacheMeta)});
-                  if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate,calendarReadBoundary(res,data.cacheMeta)));
+                  if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
+                  const boundary = calendarReadBoundary(res,data.cacheMeta);
+                  setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:boundary});
+                  if (data.activities) {
+                    setCalendarActivities(previous => {
+                      const merged = mergeCalendarSnapshot(previous,data.activities,currentDate,boundary);
+                      writeCalendarLocalCache(currentDate, merged, data.scanTimestamp);
+                      return merged;
+                    });
+                  }
                 }
               } catch (e) {
                 setCalendarLoadError(e instanceof Error ? e.message : "No se pudo cargar el calendario.");

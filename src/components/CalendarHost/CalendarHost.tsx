@@ -170,6 +170,10 @@ export function CalendarHost({
   });
   const activitiesListRef = React.useRef(activitiesList); activitiesListRef.current = activitiesList;
   const syncCursorRef = React.useRef<string | undefined>(readCalendarLocalCache(currentDate, currentUser)?.syncCursor);
+  const [incrementalSyncing, setIncrementalSyncing] = useState(false);
+  const [incrementalStatus, setIncrementalStatus] = useState<{ kind: 'syncing' | 'updated' | 'idle' | 'error'; text: string } | null>(null);
+  const manualSyncRef = React.useRef<(() => Promise<void>) | null>(null);
+  const statusClearTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const cached = readCalendarLocalCache(currentDate, currentUser);
     syncCursorRef.current = cached?.syncCursor;
@@ -477,18 +481,39 @@ export function CalendarHost({
     if(!active)return;
     let stopped = false, busy = false, lightBusy=false, deltaBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0, refreshQueued=false;
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
+    let supabaseDeltaTimer:ReturnType<typeof setTimeout>|undefined;
     let deltaTimer:ReturnType<typeof setInterval>|undefined;
     const controller = new AbortController();
-    const syncIncremental = async () => {
-      if (stopped || document.hidden || deltaBusy || busy) return;
-      if (pending.current.size) { refreshQueued = true; return; }
-      if (!syncCursorRef.current) { void refresh(true); return; }
+    const setTransientStatus = (status: { kind: 'syncing' | 'updated' | 'idle' | 'error'; text: string } | null, autoHideMs = 0) => {
+      if (statusClearTimerRef.current) {
+        clearTimeout(statusClearTimerRef.current);
+        statusClearTimerRef.current = null;
+      }
+      setIncrementalStatus(status);
+      if (autoHideMs > 0 && !stopped) {
+        statusClearTimerRef.current = setTimeout(() => {
+          if (!stopped) setIncrementalStatus(null);
+        }, autoHideMs);
+      }
+    };
+    const syncIncremental = async (manual = false) => {
+      if (stopped || (!manual && document.hidden) || deltaBusy || (!manual && busy)) return;
+      if (pending.current.size) {
+        refreshQueued = true;
+        if (manual) setTransientStatus({ kind: 'idle', text: 'Guardando cambio local…' }, 2500);
+        return;
+      }
+      const effectiveSince = syncCursorRef.current || new Date(Date.now() - 15 * 60 * 1000).toISOString();
       deltaBusy = true;
+      if (manual) {
+        setIncrementalSyncing(true);
+        setTransientStatus({ kind: 'syncing', text: 'Buscando cambios…' });
+      }
       const version = mutationVersion.current;
       try {
         let token = '';
         try { token = JSON.parse(localStorage.getItem('anfeta_settings') || '{}').notionToken || ''; } catch {}
-        const url = '/api/data?type=calendar-changes&date=' + encodeURIComponent(currentDate) + '&since=' + encodeURIComponent(syncCursorRef.current);
+        const url = '/api/data?type=calendar-changes&date=' + encodeURIComponent(currentDate) + '&since=' + encodeURIComponent(effectiveSince);
         const response = await fetch(url, {
           cache: 'no-store',
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
@@ -500,7 +525,8 @@ export function CalendarHost({
         if (data.scanTimestamp) syncCursorRef.current = data.scanTimestamp;
         const upserts: NotionCalendarActivity[] = Array.isArray(data.upserts) ? data.upserts : [];
         const removedIds: string[] = Array.isArray(data.removedIds) ? data.removedIds : [];
-        if (upserts.length > 0 || removedIds.length > 0) {
+        const changedCount = upserts.length + removedIds.length;
+        if (changedCount > 0) {
           setActivitiesList(prev => {
             const safeUpserts = protectSaved(upserts);
             const deltaApplied = filterDeletedPages(
@@ -519,12 +545,26 @@ export function CalendarHost({
           writeCalendarLocalCache(currentDate, activitiesListRef.current, syncCursorRef.current);
         }
         setCacheMeta((prev: any) => ({ ...(prev || {}), source: 'notion-delta', updatedAt: new Date().toISOString() }));
-      } catch {
-        // Silent incremental retry on next cycle
+        if (manual) {
+          setTransientStatus(
+            changedCount > 0
+              ? { kind: 'updated', text: `✓ ${upserts.length > 0 ? `+${upserts.length} act.` : ''}${upserts.length > 0 && removedIds.length > 0 ? ' · ' : ''}${removedIds.length > 0 ? `${removedIds.length} mov./quit.` : ''}` }
+              : { kind: 'idle', text: '✓ Al día (sin cambios)' },
+            4000
+          );
+        }
+      } catch (err) {
+        if (manual && !stopped) {
+          const msg = err instanceof Error ? err.message : 'No se pudo sincronizar.';
+          setTransientStatus({ kind: 'error', text: '⚠️ Error al sincronizar' }, 5000);
+          setRefreshWarning(msg);
+        }
       } finally {
         deltaBusy = false;
+        if (manual && !stopped) setIncrementalSyncing(false);
       }
     };
+    manualSyncRef.current = () => syncIncremental(true);
     const refresh = async (light=false) => {
       if(stopped||document.hidden)return;
       if(pending.current.size||(light?lightBusy:(busy||lightBusy))){if(light)refreshQueued=true;return;}
@@ -539,7 +579,15 @@ export function CalendarHost({
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if(!stopped&&Date.now()-startedAt>30000)recordAppLog(currentUser,'Calendario · sincronización','Lectura '+(light||basic?'básica':'de enriquecimiento')+' del '+currentDate+' demoró '+Math.round((Date.now()-startedAt)/1000)+' s y finalizó correctamente; origen '+String(data.cacheMeta?.source||'Notion')+'. Se conservan los cambios confirmados.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
-        if (data.scanTimestamp) syncCursorRef.current = data.scanTimestamp;
+        const snapshotTs = Date.parse(data.cacheMeta?.updatedAt || '');
+        const scanTs = Date.parse(data.scanTimestamp || '');
+        if (Number.isFinite(snapshotTs) && Number.isFinite(scanTs)) {
+          syncCursorRef.current = new Date(Math.min(snapshotTs, scanTs)).toISOString();
+        } else if (data.scanTimestamp) {
+          syncCursorRef.current = data.scanTimestamp;
+        } else if (Number.isFinite(snapshotTs)) {
+          syncCursorRef.current = new Date(snapshotTs).toISOString();
+        }
         // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
         if(requestSequence<appliedSequence){
           if(!light){
@@ -576,6 +624,10 @@ export function CalendarHost({
           queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
+        if (data.cacheMeta?.source === 'supabase' && syncCursorRef.current && !stopped) {
+          if (supabaseDeltaTimer) clearTimeout(supabaseDeltaTimer);
+          supabaseDeltaTimer = setTimeout(() => void syncIncremental(false), 120);
+        }
         if(!light){const wasBasic=basic;basic=false;
           enrichOffset=data.nextEnrichOffset || 0;
           if((wasBasic||enrichOffset) && hasUnscannedAfterMerge)enrichmentTimer=setTimeout(()=>void refresh(),wasBasic?1200:400);
@@ -583,24 +635,24 @@ export function CalendarHost({
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setRefreshWarning(data.warning || '');
       } catch (e) { if (!stopped) {const message=e instanceof Error && e.name==='TimeoutError'?'Actualización demorada; se conserva el calendario y se volverá a intentar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.';setRefreshWarning(message);} }
-      finally {if(light)lightBusy=false;else busy = false;if(refreshQueued&&!stopped){refreshQueued=false;enrichmentTimer=setTimeout(()=>void syncIncremental(),250);}}
+      finally {if(light)lightBusy=false;else busy = false;if(refreshQueued&&!stopped){refreshQueued=false;enrichmentTimer=setTimeout(()=>void syncIncremental(false),250);}}
     };
     const hydrated = readCalendarLocalCache(currentDate, currentUser);
     if (hydrated && hydrated.activities.length > 0 && hydrated.syncCursor) {
       syncCursorRef.current = hydrated.syncCursor;
-      void syncIncremental();
+      void syncIncremental(false);
       void refresh();
     } else {
       void refresh();
     }
-    const fastRefresh=()=>{void syncIncremental();};
-    const resumeRefresh=()=>{if(refreshQueued)void syncIncremental();};
-    const onVisibility=()=>{if(!document.hidden)void syncIncremental();};
-    deltaTimer = setInterval(()=>{if(!document.hidden)void syncIncremental();}, 20000);
+    const fastRefresh=()=>{void syncIncremental(false);};
+    const resumeRefresh=()=>{if(refreshQueued)void syncIncremental(false);};
+    const onVisibility=()=>{if(!document.hidden)void syncIncremental(false);};
+    deltaTimer = setInterval(()=>{if(!document.hidden)void syncIncremental(false);}, 20000);
     window.addEventListener('anfeta_calendar_idle',resumeRefresh);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('online',fastRefresh);window.addEventListener('anfeta_calendar_refresh',fastRefresh);
-    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); if(deltaTimer)clearInterval(deltaTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);window.removeEventListener('anfeta_calendar_idle',resumeRefresh);document.removeEventListener('visibilitychange', onVisibility);};
+    return () => {stopped = true; manualSyncRef.current = null; if (statusClearTimerRef.current) { clearTimeout(statusClearTimerRef.current); statusClearTimerRef.current = null; } controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); if(supabaseDeltaTimer)clearTimeout(supabaseDeltaTimer); if(deltaTimer)clearInterval(deltaTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);window.removeEventListener('anfeta_calendar_idle',resumeRefresh);document.removeEventListener('visibilitychange', onVisibility);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
@@ -1038,7 +1090,12 @@ export function CalendarHost({
         onClearSearchFilter={onClearSearchFilter}
         onRunAutomation={onRunAutomation}
         onOpenDailyProgress={onOpenDailyProgress}
-        onRefresh={onRefresh}
+        onRefresh={() => {
+          if (manualSyncRef.current) void manualSyncRef.current();
+          else onRefresh?.();
+        }}
+        isRefreshing={incrementalSyncing}
+        refreshStatus={incrementalStatus}
         onOpenStandaloneWindow={onOpenStandaloneWindow}
         calendarPalette={calendarPalette}
         onTogglePalette={handleTogglePalette}

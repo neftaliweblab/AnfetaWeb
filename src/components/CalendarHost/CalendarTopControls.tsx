@@ -58,6 +58,8 @@ interface CalendarTopControlsProps {
   onRunAutomation?: () => void;
   onOpenDailyProgress?: () => void;
   onRefresh?: () => void;
+  isRefreshing?: boolean;
+  refreshStatus?: { kind: 'syncing' | 'updated' | 'idle' | 'error'; text: string } | null;
   onOpenStandaloneWindow?: () => void;
   onOpenPlanB?: () => void;
   calendarPalette?: "web" | "desktop";
@@ -97,6 +99,8 @@ export function CalendarTopControls({
   onRunAutomation,
   onOpenDailyProgress,
   onRefresh,
+  isRefreshing = false,
+  refreshStatus = null,
   onOpenStandaloneWindow,
   onOpenPlanB,
   calendarPalette = "web",
@@ -429,15 +433,45 @@ export function CalendarTopControls({
           <Users className="w-3.5 h-3.5 text-[#38BDF8]" />
         </button>
 
-        {/* Botón ↻ Refrescar Notion */}
+        {/* Botón ↻ Refrescar Notion (Actualización rápida incremental) */}
         {onRefresh && (
-          <button
-            onClick={onRefresh}
-            className="p-1.5 rounded bg-[#131A22] hover:bg-[#18212B] text-[#CBD5E1] hover:text-[#38BDF8] border border-[#223848] cursor-pointer"
-            title="↻ Actualización rápida incremental Notion"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              aria-busy={isRefreshing}
+              className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-65 ${
+                isRefreshing
+                  ? "bg-cyan-950/70 text-cyan-200 border-cyan-500/60"
+                  : refreshStatus?.kind === "updated"
+                    ? "bg-emerald-950/60 text-emerald-200 border-emerald-500/60"
+                    : refreshStatus?.kind === "error"
+                      ? "bg-rose-950/60 text-rose-200 border-rose-500/60"
+                      : "bg-[#131A22] hover:bg-[#18212B] text-[#CBD5E1] hover:text-[#38BDF8] border-[#223848]"
+              }`}
+              title="↻ Actualización rápida incremental Notion (trae solo cambios recientes)"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-cyan-300" : ""}`} />
+              <span className="hidden 2xl:inline">{isRefreshing ? "Sincronizando…" : "Sync"}</span>
+            </button>
+            {refreshStatus && (
+              <span
+                role="status"
+                className={`px-2 py-0.5 rounded border text-[10px] font-mono whitespace-nowrap ${
+                  refreshStatus.kind === "syncing"
+                    ? "border-cyan-500/50 bg-cyan-950/60 text-cyan-200 animate-pulse"
+                    : refreshStatus.kind === "updated"
+                      ? "border-emerald-500/50 bg-emerald-950/60 text-emerald-200"
+                      : refreshStatus.kind === "error"
+                        ? "border-rose-500/50 bg-rose-950/60 text-rose-200"
+                        : "border-slate-700 bg-slate-900/80 text-slate-300"
+                }`}
+              >
+                {refreshStatus.text}
+              </span>
+            )}
+          </div>
         )}
 
         {/* Botón ⧉ Ventana independiente Multi-Monitor */}
