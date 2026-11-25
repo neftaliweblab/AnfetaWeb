@@ -620,6 +620,56 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     calendar.invalidateChecklist(settings,pid.replace(/-/g,''));
     const next=await calendar.checklistSnapshot(settings,state.page,day);assert.equal(next.checklistItems[0].blockId,'new-check');assert.equal(next.checklistCompleted,1);assert.equal(next.hasDailyPlan,true);
   });
+  await test('Selector de estado etiqueta PRTUZ como [POR] sin confundirlo con [REV]',()=>{
+    const {getStatusOptionBadge}=require(root+'/src/components/CalendarHost/ActivityStatusSelect.tsx');
+    assert.equal(getStatusOptionBadge('PRTUZ (POR HACER)'),'⏳ [POR] ');
+    assert.equal(getStatusOptionBadge('RTUZ - REVISAR REVISIONES rrevi'),'🔍 [REV] ');
+    assert.equal(getStatusOptionBadge('AA - SUSPE X PAGO INFO'),'⏸ [SUS] ');
+    assert.equal(getStatusOptionBadge('Arrancar Asignar'),'👤 [PA] ');
+    assert.equal(getStatusOptionBadge('PPRTUZ TERMINADO-HOY-(POR HACER)'),'🌤️ [HOY✓] ');
+    assert.equal(getStatusOptionBadge('TUZ - TERMINADO Pendiente Cobrar/Pagar y/o Documentar'),'✅ [TER] ');
+    assert.equal(getStatusOptionBadge('szr Software Terminado'),'✅ [TER] ');
+    assert.equal(getStatusOptionBadge('UZ - X COBRAR/PAGAR (YA TERMINADO)'),'✅ [TER] ');
+    assert.equal(getStatusOptionBadge('ZZ- Pendiente Documentado Terminado'),'🏁 [FIN] ');
+    assert.equal(getStatusOptionBadge('Z - FIN-alizado COBRADO TERMINADO REVI'),'🏁 [FIN] ');
+  });
+  await test('Buscador de checks filtra por texto, acentos y fecha programada',()=>{
+    const {filterChecklistItems}=require(root+'/src/lib/checklistSearch.ts');
+    const items=[
+      {blockId:'1',text:'Revisar sección de pagos',plannedDate:'2026-11-25'},
+      {blockId:'2',text:'Ajustar diseño del botón',plannedDate:'2026-11-26'},
+      {blockId:'3',text:'Publicar cambios finales'}
+    ];
+    assert.deepEqual(filterChecklistItems(items,'seccion pagos').map(i=>i.blockId),['1']);
+    assert.deepEqual(filterChecklistItems(items,'diseno 26/11').map(i=>i.blockId),['2']);
+    assert.equal(filterChecklistItems(items,'   ').length,3);
+  });
+  await test('Cualquier integrante puede mover horario de actividades en revisión y reasignarlas',async()=>{
+    process.env.NOTION_PERSON_IDS=JSON.stringify({Karla:'karla-id',Neftali:'neft-id',John:'john-id'});
+    state.page.properties.Name.title=[{text:{content:'rtuzR | sseo | 11NOV | anfeta.com | Revisión activa | nne11 | jjo000'}}];
+    state.page.properties.Estado.status.name='RTUZ - REVISAR REVISIONES rrevi';
+    assert.equal(permissions.canEditActivity('bbria',{person:'Karla'}),true);
+    const moved=await mutations.mutateActivity(settings,'bbria',pid,{start:'2026-10-06T10:00:00-06:00',end:'2026-10-06T11:00:00-06:00'});
+    assert.equal(moved.properties['Fecha POR Hacer'].date.start,'2026-10-06T10:00:00-06:00');
+    const reassigned=await mutations.mutateActivity(settings,'eedwi',pid,{person:'Karla',start:'2026-10-06T12:00:00-06:00',end:'2026-10-06T13:00:00-06:00'});
+    assert.equal(reassigned.properties['Assignee/Ejecutor Principal'].people[0].id,'karla-id');
+  });
+  await test('Sincronización incremental de calendario consulta solo cambios recientes sin leer bloques y conserva checklist previo',async()=>{
+    state.queryCurrent=true;
+    const res=await route.GET(new Request('http://localhost/api/data?type=calendar-changes&date=2026-10-05&since=2026-10-05T00:00:00Z'));
+    assert.equal(res.status,200);
+    const data=await res.json();
+    assert.equal(data.upserts.length,1);
+    assert.equal(state.calls.some(c=>c.target.startsWith('blocks/')),false);
+    const {applyIncrementalCalendarDelta}=require(root+'/src/lib/calendarUpdates.ts');
+    const prev=[{pageId:pid,title:'Antes',person:'Neftali',status:'Por hacer',start:'2026-10-05T14:00:00Z',end:'2026-10-05T15:00:00Z',checklistScanned:true,checklistTotal:4,checklistCompleted:2,checklistItems:[{id:'c1',blockId:'c1',text:'Check previo',isChecked:true}]}];
+    const next=applyIncrementalCalendarDelta(prev,data.upserts,[],'2026-10-05');
+    assert.equal(next.length,1);
+    assert.equal(next[0].checklistTotal,4);
+    assert.equal(next[0].checklistItems.length,1);
+    const afterRemove=applyIncrementalCalendarDelta(next,[],[pid],'2026-10-05');
+    assert.equal(afterRemove.length,0);
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 

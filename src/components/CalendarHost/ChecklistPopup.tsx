@@ -3,8 +3,9 @@ import { calendarDomain,calendarDisplayTitle,calendarTime } from "@/services/cal
 
 
 import {checklistTotals,dailyActivityChecks} from '@/lib/dailyChecklist';
+import { filterChecklistItems } from '@/lib/checklistSearch';
 import React from "react";
-import { CheckSquare, MessageSquare, Clock } from "lucide-react";
+import { CheckSquare, MessageSquare, Clock, Search, X } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 
 interface ChecklistPopupProps {
@@ -17,6 +18,8 @@ interface ChecklistPopupProps {
 
 export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,message='' }: ChecklistPopupProps) {
   const [size, setSize] = React.useState<"small" | "medium" | "large">("medium");
+  const [searchQuery, setSearchQuery] = React.useState("");
+  React.useEffect(() => { setSearchQuery(""); }, [activity?.pageId]);
   const totals=checklistTotals(activity||{}),daily=dailyActivityChecks(activity||{});
   const total = totals.total;
   const completed = totals.done;
@@ -92,9 +95,41 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
 
       <p className="text-[10px] text-slate-400">Confirmados para este día: {daily.done} de {daily.total}. El total de Notion incluye los checks sin fecha de marcado.</p>
       {/* Checklist Items list if available */}
-      {activity.checklistItems && activity.checklistItems.length > 0 && (
-        <div className="max-h-48 overflow-y-auto space-y-1 pt-1.5 border-t border-[#253549]/60 scrollbar-thin">
-          {activity.checklistItems.map((chk: any, idx: number) => {
+      {activity.checklistItems && activity.checklistItems.length > 0 && (() => {
+        const filteredChecks = filterChecklistItems(activity.checklistItems, searchQuery);
+        const hasSearch = searchQuery.trim().length > 0;
+        return (
+        <div className="space-y-1.5 pt-1.5 border-t border-[#253549]/60">
+          <div className="relative">
+            <Search className="w-3 h-3 text-slate-400 pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar check…"
+              aria-label="Buscar check en el popup"
+              className="w-full rounded border border-[#253549] bg-[#0B111A] pl-6 pr-12 py-1 text-[11px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-400/80 focus:outline-none"
+            />
+            {hasSearch && (
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <span className="text-[9px] font-mono text-cyan-300">{filteredChecks.length}/{activity.checklistItems.length}</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Limpiar búsqueda"
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-1 scrollbar-thin">
+          {filteredChecks.length === 0 ? (
+            <p className="py-2 text-center text-[10.5px] text-slate-500 font-mono">
+              Sin coincidencias para “{searchQuery.trim()}”.
+            </p>
+          ) : filteredChecks.map((chk: any, idx: number) => {
             const isDone = Boolean(chk.isChecked);
             return (
               <div key={chk.id || chk.blockId || idx} className="flex items-start gap-1.5 p-1 rounded bg-[#0E1520]/60 text-[10.5px]">
@@ -105,8 +140,10 @@ export function ChecklistPopup({ activity, onClose,onToggle,disabled=false,messa
               </div>
             );
           })}
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Time and Status */}
       {message&&<p role="status" className="text-amber-200">{message}</p>}

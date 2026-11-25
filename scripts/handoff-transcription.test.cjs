@@ -24,7 +24,7 @@ Module._load=function(name,parent,...rest){
 global.fetch=async(url,opts={})=>{
  const target=String(url).split('/v1/')[1];let data;
  if(target==='pages/'+id&&(!opts.method||opts.method==='GET'))data=current;
- else if(target==='pages/'+id&&opts.method==='PATCH'){pageWrites++;current={...current,properties:{...current.properties,...JSON.parse(opts.body).properties}};data=current;}
+ else if(target==='pages/'+id&&opts.method==='PATCH'){pageWrites++;const patched=Object.fromEntries(Object.entries(JSON.parse(opts.body).properties).map(([k,v])=>[k,{type:Object.keys(v)[0],...v}]));current={...current,properties:{...current.properties,...patched}};data=current;}
  else if(target==='blocks/'+id+'/children'&&opts.method==='PATCH')data={results:JSON.parse(opts.body).children.map((block,i)=>({...block,id:'observation-'+i}))};
  else throw Error('Unexpected write/request '+target);
  return new Response(JSON.stringify(data),{status:200});
@@ -33,12 +33,14 @@ global.fetch=async(url,opts={})=>{
  const wav=await wavChunk(new Float32Array([0,-1,1]),16000).arrayBuffer();assert.equal(Buffer.from(wav).toString('ascii',0,4),'RIFF');assert.equal(new DataView(wav).getUint32(40,true),6);assert.equal(new DataView(wav).getInt16(46,true),-32768);
  const {mutateActivity}=require(root+'/src/services/notionMutations.ts'),settings={notionToken:'TEST',currentUser:'Neftali'};
  const update={handoff:true,person:'Karla',note:'Continuar cotización',leaveVisualCopy:true};
- await assert.rejects(()=>mutateActivity(settings,'Brian',id,update),/Solo el responsable/);assert.equal(pageWrites,0);
+ await assert.rejects(()=>mutateActivity(settings,'unknown',id,update),/permiso|bloqueada/);assert.equal(pageWrites,0);
  active=false;await assert.rejects(()=>mutateActivity(settings,'Neftali',id,update),/perfil activo/);active=true;
  conflict=true;await assert.rejects(()=>mutateActivity(settings,'Neftali',id,update),/empalma/);conflict=false;assert.equal(prepared.length,0);
  failHistory=true;await assert.rejects(()=>mutateActivity(settings,'Neftali',id,update),/historial/);failHistory=false;assert.equal(pageWrites,0);
  const result=await mutateActivity(settings,'Neftali',id,update);assert.equal(result.id,id);assert.equal(pageWrites,1);assert.ok(metadataWrites>=1);assert.equal(current.properties.Responsable.select.name,'Karla');assert.equal(prepared[0].snapshot.start,at('10:00'));assert.equal(prepared[0].snapshot.checklistCompleted,1);assert.equal(prepared[0].note,'Continuar cotización');assert.equal(confirmed.length,1);
  // Passing the original onward creates another historical entry, never another page.
  await mutateActivity(settings,'Karla',id,{...update,person:'Andrade',note:'Enviar al cliente',leaveVisualCopy:false});assert.equal(pageWrites,2);assert.equal(prepared[1].from,'Karla');assert.equal(prepared[1].copy,false);assert.equal(prepared[0].snapshot.person,'Neftali');assert.equal(flow.State,'handoff');
+ // Any active teammate (like Brian) can also reassign activities cleanly.
+ await mutateActivity(settings,'Brian',id,{...update,person:'Karla',note:'Apoyo de equipo',leaveVisualCopy:false});assert.equal(pageWrites,3);assert.equal(current.properties.Responsable.select.name,'Karla');
  console.log('OK handoff: permisos, equipo activo, empalmes, historial previo, misma página, cadena, nota y copia congelada; WAV mono validado. Notion simulado.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

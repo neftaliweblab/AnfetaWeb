@@ -4,6 +4,7 @@ import {NotesPanel} from '@/components/ResultsViewHost/NotesPanel';
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
+import {readCalendarLocalCache,writeCalendarLocalCache} from "@/lib/calendarLocalCache";
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
@@ -315,9 +316,9 @@ export default function AnfetaApp() {
   useEffect(() => {
     if(!isAuthenticated||!currentUser)return;
     const controller = new AbortController();
-    setCalendarActivities([]);
+    const localCached = readCalendarLocalCache(currentDate, currentUser);
+    setCalendarActivities(localCached ? localCached.activities : []);
     async function fetchCalendarForDate() {
-      const readStartedAt=Date.now();
       try {
         let token = "";
         try {
@@ -332,8 +333,15 @@ export default function AnfetaApp() {
           const data = await readApiJson(res);
           if(controller.signal.aborted)return;
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
-          setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:calendarReadBoundary(res,data.cacheMeta)});
-          if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,currentDate,calendarReadBoundary(res,data.cacheMeta)));
+          const boundary = calendarReadBoundary(res, data.cacheMeta);
+          setCalendarLoadError(data.warning || '');setCalendarCacheMeta({...data.cacheMeta,readStartedAt:boundary});
+          if (data.activities) {
+            setCalendarActivities(previous => {
+              const merged = mergeCalendarSnapshot(previous, data.activities, currentDate, boundary);
+              writeCalendarLocalCache(currentDate, merged, data.scanTimestamp);
+              return merged;
+            });
+          }
         }
       } catch (err) {
         if (!controller.signal.aborted) setCalendarLoadError(err instanceof Error ? err.message : "No se pudo cargar el calendario.");

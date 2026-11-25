@@ -77,3 +77,22 @@ export function mergeCalendarSnapshot(previous:NotionCalendarActivity[],incoming
   const next=[...history,...[...groups.values()].flat()].map(row=>{const old=previousByPage.get(row.pageId);return old&&equal(old,row)?old:row;});
   return next.length===previous.length&&next.every((a,i)=>a===previous[i])?previous:next;
 }
+/** Apply incremental Notion edits for one day without replacing untouched cards. */
+export function applyIncrementalCalendarDelta(
+  previous: NotionCalendarActivity[],
+  upserts: NotionCalendarActivity[],
+  removedIds: string[],
+  day: string
+): NotionCalendarActivity[] {
+  let next = previous;
+  const removed = new Set((removedIds || []).map((id) => String(id || '').replace(/-/g, '').toLowerCase()).filter(Boolean));
+  if (removed.size > 0) {
+    const filtered = next.filter((row) => row.isHandoffMirror || row.isDaySnapshot || !removed.has(pageIdentity(row)));
+    if (filtered.length !== next.length) next = filtered;
+  }
+  for (const item of upserts || []) {
+    if (!item?.pageId) continue;
+    next = upsertCalendarActivity(next, item.pageId, item, day);
+  }
+  return next;
+}

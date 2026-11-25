@@ -81,7 +81,7 @@ import { hydrateWeeklyFtfActivities, sendWeeklyReportFromWeekData } from '@/serv
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
 import { listReviewNotifications, readNotificationThread, replyNotification, reviewNotificationActivity, isExpiredResponsePage, cleanupExpiredResponsePages, scanResponsePages } from '@/services/reviewNotifications';
-import { appendInternalMetadata, clearReadBlocksCache, knownReviewFlow, queryCalendarPages, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
+import { appendInternalMetadata, clearReadBlocksCache, knownReviewFlow, queryCalendarPages, queryRecentCalendarChanges, readMovementHistory, queryProjectPages, checklistSnapshot, invalidateChecklist, cachedReviewFlow, readReviewFlow, readChecklist, assertChecklistAccess, assignedPerson, assignedField, readBlocks, resolveTeamPersonId, calendarStatusField } from '@/services/notionCalendar';
 import { mexicoDate, calendarInterval, calendarDomain, normalizeFtfDomain } from '@/services/calendarPresentation';
 import { workflowState, isTerminadoHoyStatus } from '@/services/activityWorkflow';
 import { uploadDropboxCloud, cloudFolder, listDropboxFoldersCloud, getDropboxAccessToken, getDropboxFileContent, exchangeDropboxCode, clearCachedDropboxToken, searchDropboxLive } from '@/services/dropboxUpload';
@@ -1392,6 +1392,82 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       });
     }
 
+    if (type === "calendar-changes") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return NextResponse.json({error:'Fecha inválida.'}, {status:400});
+      const token = resolveNotionToken(req, searchParams);
+      if (!token) return NextResponse.json({error: 'Configura el acceso a Notion para sincronizar cambios.'}, {status: 503});
+      const liveSettings = {...getSettings(), notionToken: token};
+      const since = searchParams.get('since') || undefined;
+      const limit = Math.min(100, Math.max(10, Number(searchParams.get('limit')) || 100));
+      const result = await queryRecentCalendarChanges(liveSettings, since, limit);
+      const snapshot = calendarSnapshot();
+      const cachedList = Object.values(snapshot).flat().map(normalizeActivity);
+      const cachedById = new Map(cachedList.map(a => [cleanPageId(a.pageId), a]));
+      const upserts: any[] = [];
+      const removedIds: string[] = [];
+      for (const page of result.pages) {
+        if (!page?.id) continue;
+        const cid = cleanPageId(page.id);
+        if (page.archived || page.in_trash) {
+          removedIds.push(page.id);
+          continue;
+        }
+        const live = extractNotionPageData(page);
+        if (live.id) liveNotionOverrides.set(live.id, live);
+        if (!live.dateStart || mexicoDate(live.dateStart) !== date) {
+          removedIds.push(page.id);
+          continue;
+        }
+        if (/^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}[:\-]\d{2}\s+(?:jjohn|kkarl|iisai|iisaia|eedua|aacal|aandr|eemma|bbria|ggena|nneft|__all__)(?:\s|$)/i.test(live.title)) {
+          continue;
+        }
+        const old = cachedById.get(cid);
+        const known = knownReviewFlow(liveSettings, page);
+        const sameReviewOwner = Boolean(
+          old?.reviewFlow?.State === 'pending' &&
+          old?.reviewFlow?.LeaveVisualCopy !== true &&
+          normalizePerson(old?.person) === normalizePerson(old?.reviewFlow?.OriginalPerson) &&
+          normalizePerson(old?.reviewFlow?.ReviewAssignee) === normalizePerson(live.person)
+        );
+        const reviewFlow = known || (old?.title === live.title && (old?.person === live.person || sameReviewOwner) && old?.status === live.status && (!old?.serverModified || !page.last_edited_time || old.serverModified === page.last_edited_time) ? old.reviewFlow : undefined);
+        const itemAi = live.aiContent || old?.aiContent || old?.['busqueda palabras por contenido pagina IA'] || '';
+        upserts.push(normalizeActivity({
+          ...old,
+          financialFields: activityFinancialFields(page),
+          pageId: page.id,
+          pageUrl: live.url,
+          title: live.title,
+          shortTitle: live.title,
+          serverModified: page.last_edited_time,
+          person: live.person,
+          originalPerson: reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
+          reviewFlow,
+          reviewFlowScanned: !!known,
+          domain: calendarDomain(live.title, live.domain),
+          status: live.status,
+          start: live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
+          end: live.dateEnd || new Date(Date.parse(live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart) + 3600000).toISOString(),
+          aiContent: itemAi,
+          'busqueda palabras por contenido pagina IA': itemAi,
+          contentSnippet: (itemAi || old?.contentSnippet || '').slice(0, 300),
+          pageContent: itemAi || old?.pageContent || '',
+          ftfVerified: live.ftfVerified,
+          ftfAvailable: live.ftfAvailable,
+          isLocked: live.isLocked,
+          isUrgent: undefined,
+          isReviewMirror: false,
+          checklistScanned: false,
+        }, 0));
+      }
+      return NextResponse.json({
+        date,
+        scanTimestamp: result.scanTimestamp,
+        partial: result.partial,
+        upserts,
+        removedIds: [...new Set(removedIds)],
+      }, {headers: {'Cache-Control': 'no-store'}});
+    }
+
     if (type === "calendar" || type === "calendar-week" || type === "calendar-project") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) return NextResponse.json({error:'Fecha inválida.'}, {status:400});
       const settings = getSettings();
@@ -1517,7 +1593,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         historical = [...handoffList, ...daySnapshotList];
         if(type==='calendar-project')historical=historical.filter(a=>a.domain===(searchParams.get('domain')||''));
       }catch(e){warning=[warning,e instanceof Error?e.message:'No se pudo leer el historial.'].filter(Boolean).join(' · ');}
-      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, activities:[...unique,...mirrors,...historical], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
+      return NextResponse.json({ date, scope:isWeek ? 'week' : 'day', dates:days, count:unique.length, nextEnrichOffset, scanTimestamp: new Date().toISOString(), activities:[...unique,...mirrors,...historical], availableDates:[...new Set([...Object.keys(snapshot),...days])].sort(), warning }, {headers:{'Cache-Control':'no-store'}});
     }
 
     if (type === "calendar-dates") {
@@ -4294,11 +4370,12 @@ async function POSTWithInvalidation(req:NextRequest){
  return response;
 }
 
-async function GETRaw(req:NextRequest){
+ async function GETRaw(req:NextRequest){
  const url=new URL(req.url);
- // El día se consulta en Notion con cachés breves compartidas; el índice completo es independiente.
- if(url.searchParams.get('type')==='calendar')return GETLive(req);
- if(url.searchParams.get('type')!=='search-index')return GETSnapshot(req);
+ const reqType=url.searchParams.get('type');
+ if(reqType==='calendar' && (!supabaseConfigured() || url.searchParams.get('fresh')==='1' || url.searchParams.has('enrichOffset')))return GETLive(req);
+ if(reqType==='calendar')return GETSnapshot(req);
+ if(reqType!=='search-index')return GETSnapshot(req);
  const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||500),version=url.searchParams.get('indexVersion')||undefined;
  if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500)return NextResponse.json({error:'Paginación inválida.'},{status:400});
  const started=Date.now();let context:any,actor:string|undefined;
@@ -4340,7 +4417,7 @@ export async function GET(req:NextRequest){
  const data=await response.clone().json().catch(()=>null);
  // Status/unchanged/diagnostic responses contain no rows to filter.
  // Do not spend a Supabase request on tombstones for those responses.
- if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)))return response;
+ if(!data||(!Array.isArray(data.items)&&!Array.isArray(data.activities)&&!Array.isArray(data.upserts)))return response;
  const token=resolveNotionToken(req);
  const settings={...getSettings(),notionToken:token};
  const sourceKey=notionSourceKey(settings);
@@ -4350,6 +4427,6 @@ export async function GET(req:NextRequest){
  const ids=[...new Set([...memoryIds,...persistentIds])];
  if(!ids.length)return response;
  const deleted=new Set(ids),keep=(item:any)=>!deleted.has(cleanPageId(String(item.externalId||item.originalPageId||item.pageId||item.id||'').replace(/^review-mirror-/,'')));
- return NextResponse.json({...data,...(Array.isArray(data.items)?{scannedCount:data.items.length,items:data.items.filter(keep)}:{}),...(Array.isArray(data.activities)?{activities:data.activities.filter(keep)}:{}),deletedPageIds:ids},{headers:response.headers});
+ return NextResponse.json({...data,...(Array.isArray(data.items)?{scannedCount:data.items.length,items:data.items.filter(keep)}:{}),...(Array.isArray(data.activities)?{activities:data.activities.filter(keep)}:{}),...(Array.isArray(data.upserts)?{upserts:data.upserts.filter(keep),removedIds:[...new Set([...(Array.isArray(data.removedIds)?data.removedIds:[]),...ids])]}:{}),deletedPageIds:ids},{headers:response.headers});
 }
 

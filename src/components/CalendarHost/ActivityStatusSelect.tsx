@@ -2,25 +2,33 @@
 import {useRef,useState,useEffect} from 'react';
 import {workflowState,isTerminadoHoyStatus} from '@/services/activityWorkflow';
 
-function getStatusOptionBadge(name: string): string {
-  if (isTerminadoHoyStatus(name)) return '🌤️ [HOY✓] ';
-  const isFin = /^(?:z|fin|finaliz)/i.test(name) || /(?<![a-z])z[rdscp]?\b/i.test(name) || /cobro\/documentacion|cobrado/i.test(name);
+export function getStatusOptionBadge(name: string): string {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return '';
+  if (isTerminadoHoyStatus(cleanName)) return '🌤️ [HOY✓] ';
+
+  const isFin =
+    /^(?:z|fin|finaliz)/i.test(cleanName) ||
+    /(?<![a-z])z[rdscp]?\b/i.test(cleanName) ||
+    /finaliz|\bfin(?:-|\b)|cobro\/documentacion|cobrado/i.test(cleanName);
   if (isFin) return '🏁 [FIN] ';
 
-  const isTer = (/terminad/i.test(name) && !/no\s+terminad/i.test(name)) || /(?<![a-z])tuz[rdscp]?\b/i.test(name) || /^tuz\b/i.test(name);
+  const isTer =
+    (/terminad/i.test(cleanName) && !/no\s+terminad/i.test(cleanName)) ||
+    /(?<![a-z])(?:tuz|uz|szr)[rdscp]?\b/i.test(cleanName);
   if (isTer) return '✅ [TER] ';
 
-  const isRev = /revisar|revisi[oó]n|rtuz/i.test(name);
+  const isSusp = /(?<![a-z])(?:aaprtuz|saprtuz)[rdscp]?\b|\bsuspe(?:ndid[oa]?s?)?\b|x\s*pago\s*info/i.test(cleanName);
+  if (isSusp) return '⏸ [SUS] ';
+
+  const isRev = /revisar|revisi[oó]n|\brrevi\b|(?<![a-z])rtuz[rdscp]?\b/i.test(cleanName);
   if (isRev) return '🔍 [REV] ';
 
-  const isPending = /por\s+hacer|prtuz|pendiente/i.test(name);
-  if (isPending) return '⏳ [PH] ';
+  const isPending = /por\s+hacer|(?<![a-z])prtuz[rdscp]?\b|pendiente/i.test(cleanName);
+  if (isPending) return '⏳ [POR] ';
 
-  const isAssign = /por\s+asignar|arrancar|aprtuz/i.test(name);
+  const isAssign = /por\s+asignar|arrancar|(?<![a-z])aprtuz[rdscp]?\b/i.test(cleanName);
   if (isAssign) return '👤 [PA] ';
-
-  const isSusp = /suspendid|saprtuz/i.test(name);
-  if (isSusp) return '⏸ [SUS] ';
 
   return '';
 }

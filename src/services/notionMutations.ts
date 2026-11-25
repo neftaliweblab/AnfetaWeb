@@ -121,7 +121,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   const inferred = inferActivityPerson(title);
   const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
-  if (!canEditActivity(actor, activity)) throw new Error('Solo el responsable, Dirección o un revisor puede modificar esta actividad; las actividades bloqueadas no admiten cambios.');
+  if (!canEditActivity(actor, activity)) throw new Error('Tu sesión no tiene permiso para modificar esta actividad o está bloqueada.');
   if (!ftfRollover && (updates.start || updates.end) && (workflowState(notionStatusValue(calendarStatusField(page)?.[1]),title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(notionStatusValue(calendarStatusField(page)?.[1]))))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
@@ -132,8 +132,7 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   let handoffId:string|undefined;
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
-    if(!['pending','suspended'].includes(currentWorkflowState) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Resuelve la revisión o reactívala primero.');
-    if(!isDirection(actor)&&!isReviewer(actor)&&normalizePerson(actor)!==normalizePerson(activity.person)&&!isRevState)throw Error('Solo el responsable, Dirección o un revisor puede pasar esta actividad.');
+    if(!['pending','suspended'].includes(currentWorkflowState) && !isRevState)throw Error('Solo se pueden pasar actividades activas o en revisión. Reactívala primero si ya terminó.');
     const target=normalizePerson(updates.person);
     if(target===normalizePerson(activity.person))throw Error('Selecciona a otro compañero.');
     if(!(await activeTeam()).some(p=>p.name===target))throw Error('El nuevo responsable no tiene un perfil activo.');
@@ -147,14 +146,13 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(handoff||updates.reviewer||completed||returned||reassigned)clearReadBlocksCache(settings);
   const previousFlow = updates.reviewer || completed || returned || reassigned || handoff ? await readReviewFlow(settings, id) : undefined;
   if(completed&&!isReviewer(actor)&&!(previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee)&&PERSON_ALIASES[normalizePerson(actor)]))throw Error('Solo el revisor asignado puede terminar esta revisión.');
-  if(handoff&&isRevState&&previousFlow?.State==='pending')throw Error('La actividad tiene una revisión pendiente. Resuélvela antes de reasignar.');
   if(updates.expectedReviewUpdatedAt!==undefined&&(previousFlow?.UpdatedAt||null)!==updates.expectedReviewUpdatedAt)throw new Error('El flujo de revisión cambió en otro dispositivo. Actualiza antes de guardar.');
   if(updates.reviewer&&isRevState&&previousFlow?.State==='pending'&&normalizePerson(previousFlow.ReviewAssignee)===normalizePerson(updates.reviewer))throw new Error('La actividad ya está en revisión con este compañero. Actualiza antes de reenviarla.');
   if ((returned || completed) && previousFlow?.State === 'pending' && normalizePerson(actor) !== normalizePerson(previousFlow.ReviewAssignee)) throw new Error('Solo el revisor asignado puede aprobar o devolver esta revisión.');
   if (returned && (!isRevState||!previousFlow || previousFlow.State !== 'pending')) throw new Error('La actividad no tiene una revisión pendiente.');
   if(returned&&(typeof updates.note!=='string'||updates.note.length>1200))throw Error('Las observaciones admiten hasta 1200 caracteres.');
   if (returned && !String(updates.note || '').trim()) throw new Error('Describe las correcciones solicitadas.');
-  if (reassigned && (previousFlow?.State !== 'approved' || !isReviewer(actor))) throw new Error('Solo un revisor puede reasignar una actividad aprobada.');
+  if (reassigned && previousFlow?.State !== 'approved') throw new Error('Solo se puede continuar con otro responsable desde una revisión aprobada.');
   if (completed) {
     const orig = previousFlow?.OriginalPerson && normalizePerson(previousFlow.OriginalPerson) !== 'Sin asignar' ? normalizePerson(previousFlow.OriginalPerson) : '';
     const actPerson = activity.person && normalizePerson(activity.person) !== 'Sin asignar' && normalizePerson(activity.person) !== normalizePerson(previousFlow?.ReviewAssignee) ? normalizePerson(activity.person) : '';
@@ -211,9 +209,6 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       : (updates.person || updates.reviewer);
     const isCompleting = completed || (!!updates.status && workflowState(updates.status) === 'completed');
     const restoringAssignedReview=(completed||returned)&&previousFlow?.State==='pending'&&normalizePerson(actor)===normalizePerson(previousFlow.ReviewAssignee);
-    if (!handoff && !restoringAssignedReview && !isCompleting && !isDirection(actor) && !isReviewer(actor) && !isSendingToReview) {
-      throw new Error('Solo Dirección o el responsable al enviar a revisión puede reasignar actividades.');
-    }
     if(updates.reviewer&&!(await activeTeam()).some(p=>p.name===normalizePerson(updates.reviewer)))throw Error('Selecciona un integrante activo del equipo como revisor.');
     const person = normalizePerson(target);
     const hasActiveTagOwner = Boolean(scanActivityTags(title).some(tag => tag.role === 'active'));
@@ -390,9 +385,10 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
     const checklistItems=await readChecklist(settings,id);
     const snapshot=normalizeActivity({...cached,pageId:id,title,domain:calendarDomain(title,cached?.domain),person:activity.person,start:snapshotStart,end:date?.end||cached?.end||new Date(Date.parse(snapshotStart)+3600000).toISOString(),pageUrl:page.url,checklistScanned:true,checklistItems,checklistTotal:checklistItems.length,checklistCompleted:checklistItems.filter(c=>c.isChecked).length},0);
     if(!snapshot.start||!snapshot.end)throw Error('La actividad necesita un horario válido para conservar su historial.');
-    const isRevState = previousFlow?.State === 'pending' || /(?<![\p{L}\p{Nd}_])rtuzREVISION(?![\p{L}\p{Nd}_])/iu.test(title);
-    if (isRevState) {
+    const handoffInReview = isRevState || previousFlow?.State === 'pending';
+    if (handoffInReview) {
       reviewFlow = {
+        ...previousFlow,
         OriginalPerson: previousFlow?.OriginalPerson || normalizePerson(activity.person),
         OriginalAssigneeUserId: previousFlow?.OriginalAssigneeUserId,
         ReviewAssignee: normalizePerson(updates.person),

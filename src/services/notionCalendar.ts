@@ -130,6 +130,18 @@ export async function resolveTeamPersonId(settings: CalendarSettings, person: st
   return ids?.values().next().value;
 }
 const calendarQueries=new Map<string,{expires:number;promise:Promise<any[]>}>();
+const calendarDateFields=new Map<string,{name:string;expires:number}>();
+async function getCalendarDateFieldName(settings: CalendarSettings, source: string) {
+  const key=settings.notionToken+':'+source;
+  const cached=calendarDateFields.get(key);
+  if(cached && cached.expires>Date.now())return cached.name;
+  const schema = await notionRequest(settings, `data_sources/${source}`);
+  const date = Object.entries(schema.properties || {}).find(([name,p]: any) => /^fecha por hacer$/i.test(name.trim()) && p.type === 'date');
+  if (!date) throw new Error('La fuente de Revisiones no contiene la fecha editable «Fecha POR Hacer».');
+  if(calendarDateFields.size>=64)calendarDateFields.delete(calendarDateFields.keys().next().value!);
+  calendarDateFields.set(key,{name:date[0],expires:Date.now()+10*60*1000});
+  return date[0];
+}
 export async function queryCalendarPages(settings: CalendarSettings, start: string, end: string, fresh=false) {
   const key=settings.notionToken+':'+(process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '')+':'+start+':'+end;
   const cached=calendarQueries.get(key);if(!fresh&&cached && cached.expires>Date.now())return cached.promise;
@@ -139,15 +151,13 @@ export async function queryCalendarPages(settings: CalendarSettings, start: stri
 }
 async function queryCalendarPagesUncached(settings: CalendarSettings, start: string, end: string) {
   const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
-  const schema = await notionRequest(settings, `data_sources/${source}`);
-  const date = Object.entries(schema.properties || {}).find(([name,p]: any) => /^fecha por hacer$/i.test(name.trim()) && p.type === 'date');
-  if (!date) throw new Error('La fuente de Revisiones no contiene la fecha editable «Fecha POR Hacer».');
+  const dateFieldName = await getCalendarDateFieldName(settings, source);
   const pages: any[] = [];
   let cursor: string | undefined;
   do {
     const data = await notionRequest(settings, `data_sources/${source}/query`, 'POST', {
       page_size: 100, ...(cursor ? { start_cursor: cursor } : {}),
-      filter: { and: [ { property: date[0], date: { on_or_after: start + 'T00:00:00-06:00' } }, { property: date[0], date: { before: end + 'T00:00:00-06:00' } } ] },
+      filter: { and: [ { property: dateFieldName, date: { on_or_after: start + 'T00:00:00-06:00' } }, { property: dateFieldName, date: { before: end + 'T00:00:00-06:00' } } ] },
     });
     pages.push(...(data.results || []).filter((p: any) => !p.archived && !p.in_trash));
     if (data.has_more && (!data.next_cursor || data.next_cursor === cursor)) throw new Error('Notion devolvió una paginación incompleta.');
@@ -156,9 +166,27 @@ async function queryCalendarPagesUncached(settings: CalendarSettings, start: str
   rememberPeople(settings,pages);
   return pages;
 }
+export async function queryRecentCalendarChanges(settings: CalendarSettings, since?: string, limit = 100) {
+  const source = process.env.NOTION_CALENDAR_DATA_SOURCE_ID || settings.notionDataSourceId || '2eeabd7d-91b7-8193-a131-000b08cd54e2';
+  const scanTimestamp = new Date().toISOString();
+  const boundaryMs = since && Number.isFinite(Date.parse(since)) ? Date.parse(since) - 90000 : Date.now() - 15 * 60 * 1000;
+  const boundaryIso = new Date(boundaryMs).toISOString();
+  const data = await notionRequest(settings, `data_sources/${source}/query`, 'POST', {
+    page_size: Math.min(100, Math.max(10, limit)),
+    sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+    filter: { timestamp: 'last_edited_time', last_edited_time: { on_or_after: boundaryIso } },
+  });
+  const pages: any[] = data.results || [];
+  rememberPeople(settings, pages.filter((p) => !p.archived && !p.in_trash));
+  return {
+    pages,
+    scanTimestamp,
+    partial: Boolean(data.has_more),
+  };
+}
 const sharedBlocks = new Map<string,{expires:number;promise:Promise<any[]>}>();
 const requestBlocks = new WeakMap<CalendarSettings,Map<string,Promise<any[]>>>();
-export function clearReadBlocksCache(settings:CalendarSettings) {requestBlocks.delete(settings);for(const key of calendarQueries.keys())if(key.startsWith(settings.notionToken+':'))calendarQueries.delete(key);for(const key of sharedBlocks.keys())if(key.startsWith(settings.notionToken+':'))sharedBlocks.delete(key);}
+export function clearReadBlocksCache(settings:CalendarSettings) {requestBlocks.delete(settings);for(const key of calendarQueries.keys())if(key.startsWith(settings.notionToken+':'))calendarQueries.delete(key);for(const key of calendarDateFields.keys())if(key.startsWith(settings.notionToken+':'))calendarDateFields.delete(key);for(const key of sharedBlocks.keys())if(key.startsWith(settings.notionToken+':'))sharedBlocks.delete(key);}
 export function readBlocks(settings:CalendarSettings,id:string):Promise<any[]> {
   let cache=requestBlocks.get(settings);if(!cache){cache=new Map();requestBlocks.set(settings,cache);}
   const key=settings.notionToken+':'+id;

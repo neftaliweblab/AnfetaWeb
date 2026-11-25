@@ -6,7 +6,7 @@ import {calendarEntryAllowsOverlap} from './calendarEntryPolicy';
 const at=(day:string,m:number)=>day+'T'+String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')+':00-06:00';
 export function planDurationCascade(activities:any[],pageId:string,actor:string,delta:number){
   const root=activities.find(a=>a.pageId===pageId);
-  if(!root||!canEditActivity(actor,root)||workflowState(root.status,root.title)!=='pending')throw new Error('Solo se puede ajustar una actividad pendiente y editable.');
+  if(!root||!canEditActivity(actor,root)||workflowState(root.status,root.title)==='completed')throw new Error('No se puede ajustar el horario de una actividad bloqueada o ya terminada.');
   const day=mexicoDate(root.start),duration=(Date.parse(root.end)-Date.parse(root.start))/60000;
   if(!Number.isFinite(duration)||duration+delta<15)throw new Error('La duración mínima es de 15 minutos.');
   const changes:any[]=[];
@@ -19,7 +19,7 @@ export function planDurationCascade(activities:any[],pageId:string,actor:string,
       if(Date.parse(a.end)<=Date.parse(root.start))continue;
       if(Date.parse(a.start)<Date.parse(root.start))throw new Error('La actividad ya tiene un empalme anterior; corrígelo antes del ajuste.');
       if(mexicoMinutes(a.start)>=cursor)break;
-      if(!canEditActivity(actor,a)||workflowState(a.status,a.title)!=='pending')throw new Error('El ajuste alcanza una actividad fija, bloqueada o en revisión: '+a.title);
+      if(!canEditActivity(actor,a)||workflowState(a.status,a.title)==='completed')throw new Error('El ajuste alcanza una actividad fija, bloqueada o terminada: '+a.title);
       const minutes=(Date.parse(a.end)-Date.parse(a.start))/60000;
       if(!Number.isFinite(minutes)||minutes<=0)throw new Error('Una actividad tiene duración inválida.');
       add(a,cursor,cursor+minutes);cursor+=minutes;

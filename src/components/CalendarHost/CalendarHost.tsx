@@ -9,7 +9,8 @@ import {rememberReviewFailure} from '@/lib/reviewOutcome';
 import {dailyChecklist} from '@/lib/dailyChecklist';
 import {recordAppLog} from '@/lib/appDiagnostics';
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
-import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot} from '@/lib/calendarUpdates';
+import {upsertCalendarActivity,applyCalendarStates,mergeCalendarSnapshot,applyIncrementalCalendarDelta} from '@/lib/calendarUpdates';
+import {readCalendarLocalCache,writeCalendarLocalCache} from '@/lib/calendarLocalCache';
 import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT,pageIdentity} from '@/lib/deletedPages';
 import {useNotionPageWatch} from '@/components/useNotionPageWatch';
 import {reviewPreflight} from '@/lib/reviewPreflight';
@@ -163,8 +164,22 @@ export function CalendarHost({
   initialSelectedActivityId,
   initialSelectedActivity,
 }: CalendarHostProps) {
-  const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(initialActivities);
+  const [activitiesList, setActivitiesList] = useState<NotionCalendarActivity[]>(() => {
+    if (initialActivities.length > 0) return initialActivities;
+    return readCalendarLocalCache(currentDate, currentUser)?.activities || [];
+  });
   const activitiesListRef = React.useRef(activitiesList); activitiesListRef.current = activitiesList;
+  const syncCursorRef = React.useRef<string | undefined>(readCalendarLocalCache(currentDate, currentUser)?.syncCursor);
+  useEffect(() => {
+    const cached = readCalendarLocalCache(currentDate, currentUser);
+    syncCursorRef.current = cached?.syncCursor;
+    if (cached && cached.activities.length > 0) {
+      setActivitiesList(prev => {
+        const hasCurrentDay = prev.some(a => mexicoDate(a.start) === currentDate);
+        return hasCurrentDay ? prev : cached.activities;
+      });
+    }
+  }, [currentDate, currentUser]);
   const [error, setError] = useState('');
   const [scheduleConflict, setScheduleConflict] = useState<{pageId:string;conflictTitle:string;suggestedSlot?:{start:string;end:string};updates?:any;newSchedule?:{start:string;end:string};targetPerson?:string;reassignment?:boolean}|null>(null);
   const [refreshWarning,setRefreshWarning]=useState('');
@@ -460,9 +475,56 @@ export function CalendarHost({
 
   useEffect(() => {
     if(!active)return;
-    let stopped = false, busy = false, lightBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0, refreshQueued=false;
+    let stopped = false, busy = false, lightBusy=false, deltaBusy=false, enrichOffset=0, basic=true, sequence=0, appliedSequence=0, refreshQueued=false;
     let enrichmentTimer:ReturnType<typeof setTimeout>|undefined;
+    let deltaTimer:ReturnType<typeof setInterval>|undefined;
     const controller = new AbortController();
+    const syncIncremental = async () => {
+      if (stopped || document.hidden || deltaBusy || busy) return;
+      if (pending.current.size) { refreshQueued = true; return; }
+      if (!syncCursorRef.current) { void refresh(true); return; }
+      deltaBusy = true;
+      const version = mutationVersion.current;
+      try {
+        let token = '';
+        try { token = JSON.parse(localStorage.getItem('anfeta_settings') || '{}').notionToken || ''; } catch {}
+        const url = '/api/data?type=calendar-changes&date=' + encodeURIComponent(currentDate) + '&since=' + encodeURIComponent(syncCursorRef.current);
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]),
+          headers: token ? { 'x-notion-token': token } : {},
+        });
+        const data = await readApiJson(response);
+        if (!response.ok || data.error) throw new Error(data.error || 'No se pudo sincronizar cambios.');
+        if (stopped || pending.current.size || version !== mutationVersion.current) return;
+        if (data.scanTimestamp) syncCursorRef.current = data.scanTimestamp;
+        const upserts: NotionCalendarActivity[] = Array.isArray(data.upserts) ? data.upserts : [];
+        const removedIds: string[] = Array.isArray(data.removedIds) ? data.removedIds : [];
+        if (upserts.length > 0 || removedIds.length > 0) {
+          setActivitiesList(prev => {
+            const safeUpserts = protectSaved(upserts);
+            const deltaApplied = filterDeletedPages(
+              applyIncrementalCalendarDelta(prev, safeUpserts, removedIds, currentDate),
+              currentUser
+            );
+            if (deltaApplied !== prev) {
+              writeCalendarLocalCache(currentDate, deltaApplied, syncCursorRef.current);
+              queueMicrotask(() => anfetaSync.broadcast({ type: 'CALENDAR_REFRESHED', date: currentDate, activities: deltaApplied, readStartedAt: Date.now() }));
+            } else {
+              writeCalendarLocalCache(currentDate, prev, syncCursorRef.current);
+            }
+            return deltaApplied;
+          });
+        } else {
+          writeCalendarLocalCache(currentDate, activitiesListRef.current, syncCursorRef.current);
+        }
+        setCacheMeta((prev: any) => ({ ...(prev || {}), source: 'notion-delta', updatedAt: new Date().toISOString() }));
+      } catch {
+        // Silent incremental retry on next cycle
+      } finally {
+        deltaBusy = false;
+      }
+    };
     const refresh = async (light=false) => {
       if(stopped||document.hidden)return;
       if(pending.current.size||(light?lightBusy:(busy||lightBusy))){if(light)refreshQueued=true;return;}
@@ -477,17 +539,24 @@ export function CalendarHost({
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo actualizar el calendario.');
         if(!stopped&&Date.now()-startedAt>30000)recordAppLog(currentUser,'Calendario · sincronización','Lectura '+(light||basic?'básica':'de enriquecimiento')+' del '+currentDate+' demoró '+Math.round((Date.now()-startedAt)/1000)+' s y finalizó correctamente; origen '+String(data.cacheMeta?.source||'Notion')+'. Se conservan los cambios confirmados.');
         if (stopped || pending.current.size || version !== mutationVersion.current) return;
+        if (data.scanTimestamp) syncCursorRef.current = data.scanTimestamp;
         // Una lectura lenta de metadatos no debe reemplazar una lectura reciente del horario.
         if(requestSequence<appliedSequence){
           if(!light){
-            setActivitiesList(prev=>prev.map(old=>{const read=(data.activities||[]).find((a:NotionCalendarActivity)=>a.pageId===old.pageId);if(!read?.checklistScanned||confirmedCalendarActivity(read,old)!==read)return old;return {...old,checklistScanned:read.checklistScanned,checklistTotal:read.checklistTotal,checklistCompleted:read.checklistCompleted,todayChecklistCompleted:read.todayChecklistCompleted,completedForDay:read.completedForDay,pendingFutureChecksCount:read.pendingFutureChecksCount,pendingCheckValidation:read.pendingCheckValidation,nextPlannedChecklistDate:read.nextPlannedChecklistDate,completedChecks:read.completedChecks,checklistItems:read.checklistItems};}));
+            setActivitiesList(prev=>{
+              const next = prev.map(old=>{const read=(data.activities||[]).find((a:NotionCalendarActivity)=>a.pageId===old.pageId);if(!read?.checklistScanned||confirmedCalendarActivity(read,old)!==read)return old;return {...old,checklistScanned:read.checklistScanned,checklistTotal:read.checklistTotal,checklistCompleted:read.checklistCompleted,todayChecklistCompleted:read.todayChecklistCompleted,completedForDay:read.completedForDay,pendingFutureChecksCount:read.pendingFutureChecksCount,pendingCheckValidation:read.pendingCheckValidation,nextPlannedChecklistDate:read.nextPlannedChecklistDate,completedChecks:read.completedChecks,checklistItems:read.checklistItems};});
+              writeCalendarLocalCache(currentDate, next, syncCursorRef.current);
+              return next;
+            });
             const wasBasic=basic;basic=false;enrichOffset=data.nextEnrichOffset||0;
-            if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
+            const needsMoreEnrich = activitiesListRef.current.some(a => !a.isReviewMirror && !a.isHandoffMirror && !a.isDaySnapshot && !a.checklistScanned);
+            if((wasBasic||enrichOffset) && needsMoreEnrich)enrichmentTimer=setTimeout(()=>void refresh(),500);
           }
           return;
         }
         appliedSequence=requestSequence;
         setRefreshWarning('');
+        let hasUnscannedAfterMerge = false;
         setActivitiesList(prev=>{
           const oldById=new Map(prev.map(row=>[row.pageId,row]));
           const merged=protectSaved(data.activities || []).map((activity:NotionCalendarActivity)=>{
@@ -501,26 +570,37 @@ export function CalendarHost({
           const historicalMirrors=merged.filter((a:NotionCalendarActivity)=>a.isHandoffMirror||a.isDaySnapshot);
           const originals=merged.filter((a:NotionCalendarActivity)=>!a.isReviewMirror&&!a.isHandoffMirror&&!a.isDaySnapshot);
           const mirrors=originals.filter((a:NotionCalendarActivity)=>a.reviewFlow?.State==='pending'&&a.reviewFlow.LeaveVisualCopy===true&&normalizePerson(a.reviewFlow.OriginalPerson)!==normalizePerson(a.person)).map((a:NotionCalendarActivity)=>({...a,pageId:'review-mirror-'+a.pageId,person:normalizePerson(a.reviewFlow!.OriginalPerson),isReviewMirror:true,title:'[COPIA REVISIÓN] '+a.title}));
-          const combined=[...originals,...mirrors,...historicalMirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
+          const combined=[...originals,...mirrors,...historicalMirrors];const confirmed=mergeCalendarSnapshot(prev,combined,currentDate,readBoundary);
+          hasUnscannedAfterMerge = confirmed.some(a => !a.isReviewMirror && !a.isHandoffMirror && !a.isDaySnapshot && !a.checklistScanned);
+          writeCalendarLocalCache(currentDate, confirmed, syncCursorRef.current);
+          queueMicrotask(()=>anfetaSync.broadcast({type:'CALENDAR_REFRESHED',date:currentDate,activities:confirmed,readStartedAt:readBoundary}));return confirmed;
         });
         setCacheMeta(data.cacheMeta||{source:'notion',updatedAt:new Date().toISOString()});
         if(!light){const wasBasic=basic;basic=false;
           enrichOffset=data.nextEnrichOffset || 0;
-          if(wasBasic||enrichOffset)enrichmentTimer=setTimeout(()=>void refresh(),1000);
+          if((wasBasic||enrichOffset) && hasUnscannedAfterMerge)enrichmentTimer=setTimeout(()=>void refresh(),wasBasic?1200:400);
         }
         const isBgSyncWarning = data.warning && /copia Supabase|copia disponible/i.test(data.warning);
         if (!isBgSyncWarning) setRefreshWarning(data.warning || '');
       } catch (e) { if (!stopped) {const message=e instanceof Error && e.name==='TimeoutError'?'Actualización demorada; se conserva el calendario y se volverá a intentar.':e instanceof Error ? e.message : 'No se pudo actualizar el calendario.';setRefreshWarning(message);} }
-      finally {if(light)lightBusy=false;else busy = false;if(refreshQueued&&!stopped){refreshQueued=false;enrichmentTimer=setTimeout(()=>void refresh(true),250);}}
+      finally {if(light)lightBusy=false;else busy = false;if(refreshQueued&&!stopped){refreshQueued=false;enrichmentTimer=setTimeout(()=>void syncIncremental(),250);}}
     };
-    void refresh();
-    // Enrichment runs once, then only explicit invalidations reload this day.
-    const fastRefresh=()=>{void refresh(true);};
-    const resumeRefresh=()=>{if(refreshQueued)void refresh(true);};
+    const hydrated = readCalendarLocalCache(currentDate, currentUser);
+    if (hydrated && hydrated.activities.length > 0 && hydrated.syncCursor) {
+      syncCursorRef.current = hydrated.syncCursor;
+      void syncIncremental();
+      void refresh();
+    } else {
+      void refresh();
+    }
+    const fastRefresh=()=>{void syncIncremental();};
+    const resumeRefresh=()=>{if(refreshQueued)void syncIncremental();};
+    const onVisibility=()=>{if(!document.hidden)void syncIncremental();};
+    deltaTimer = setInterval(()=>{if(!document.hidden)void syncIncremental();}, 20000);
     window.addEventListener('anfeta_calendar_idle',resumeRefresh);
-
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('anfeta_data_refreshed',fastRefresh);window.addEventListener('online',fastRefresh);window.addEventListener('anfeta_calendar_refresh',fastRefresh);
-    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);window.removeEventListener('anfeta_calendar_idle',resumeRefresh);};
+    return () => {stopped = true; controller.abort(); if(enrichmentTimer)clearTimeout(enrichmentTimer); if(deltaTimer)clearInterval(deltaTimer); window.removeEventListener('anfeta_data_refreshed',fastRefresh);window.removeEventListener('online',fastRefresh);window.removeEventListener('anfeta_calendar_refresh',fastRefresh);window.removeEventListener('anfeta_calendar_idle',resumeRefresh);document.removeEventListener('visibilitychange', onVisibility);};
   }, [currentDate, currentUser, active]);
 
   useEffect(()=>{
@@ -583,6 +663,7 @@ export function CalendarHost({
         next.push(saved);
         if(Array.isArray(data.handoffCopies)){for(const copy of data.handoffCopies){if(!next.some(a=>a.pageId===copy.pageId))next.push(copy);}}
         if (saved.reviewFlow?.State === 'pending' && saved.reviewFlow.LeaveVisualCopy === true && normalizePerson(saved.reviewFlow.OriginalPerson) !== normalizePerson(saved.person)) next.push({...saved, pageId:'review-mirror-' + pageId, person:normalizePerson(saved.reviewFlow.OriginalPerson), isReviewMirror:true, title:'[COPIA REVISIÓN] ' + saved.title});
+        writeCalendarLocalCache(currentDate, next, syncCursorRef.current);
         return next;
       });
       setSelectedActivity(prev => prev?.pageId === pageId ? saved : prev);
@@ -821,7 +902,6 @@ export function CalendarHost({
       const pageId=activity.pageId;
       if(workflowState(activity.status,activity.title)==='completed'){setError('Esta revisión es histórica. Reactívala antes de cambiar su horario.');return;}
       const reassignment=normalizePerson(activity.person)!==colPerson;
-      if(reassignment&&!isReviewer(currentUser)){setError('Solo Dirección o un revisor puede mover actividades a otra persona.');return;}
 
       const canvas=e.currentTarget.querySelector<HTMLElement>('[data-calendar-canvas]');
       if(!canvas)throw Error('No se encontró el área del calendario para mover la actividad.');
@@ -862,7 +942,7 @@ export function CalendarHost({
       <DiagnosticMessage owner={currentUser} source="Calendario · acción" message={error} level="error"/>
       {headerSummary&&<CalendarSummaryModal activities={activitiesList} date={currentDate} person={headerSummary.person} onClose={()=>setHeaderSummary(null)}/>}
       {scheduleConflict && (<div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"><div className="w-full max-w-md rounded-2xl border border-amber-500/60 bg-[#0C121D] p-5 shadow-2xl text-slate-100"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 font-bold text-lg">⚠️</span><div className="min-w-0 flex-1"><h3 className="font-semibold text-amber-200 text-sm">Conflicto de Horario (Empalme)</h3><p className="mt-1 text-xs text-slate-300 leading-relaxed">El horario propuesto coincide con <strong className="text-white">«{scheduleConflict.conflictTitle}»</strong>.</p></div></div><div className="mt-5 flex flex-col gap-2.5"><button type="button" onClick={()=>{const sc=scheduleConflict;setScheduleConflict(null);if(sc.updates){void handleUpdateActivity(sc.pageId,{...sc.updates,allowOverlap:true});}else if(sc.newSchedule){void handleUpdateActivity(sc.pageId,{...sc.newSchedule,...(sc.reassignment?{person:sc.targetPerson}:{}),allowOverlap:true});}}} className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/60 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-2.5 text-xs font-semibold text-amber-200 transition-colors cursor-pointer">⚡ Aceptar que se empalme (Permitir traslape)</button>{scheduleConflict.suggestedSlot&&<button type="button" onClick={()=>{const sc=scheduleConflict;setScheduleConflict(null);const free=sc.suggestedSlot!;if(sc.updates){void handleUpdateActivity(sc.pageId,{...sc.updates,start:free.start,end:free.end});}else if(sc.newSchedule){void handleUpdateActivity(sc.pageId,{start:free.start,end:free.end,...(sc.reassignment?{person:sc.targetPerson}:{})});}}} className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/60 bg-cyan-500/20 hover:bg-cyan-500/30 px-3 py-2.5 text-xs font-semibold text-cyan-200 transition-colors cursor-pointer">🕒 Mover a hora más cercana ({scheduleConflict.suggestedSlot.start.slice(11,16)} – {scheduleConflict.suggestedSlot.end.slice(11,16)})</button>}<button type="button" onClick={()=>setScheduleConflict(null)} className="w-full rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-2 text-xs font-medium text-slate-300 transition-colors cursor-pointer">Cancelar movimiento</button></div></div></div>)}
-      {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)==='pending'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
+      {selectedActivity&&canEditActivity(currentUser,selectedActivity)&&workflowState(selectedActivity.status,selectedActivity.title)!=='completed'&&<div className="flex gap-2 px-3 py-1 text-xs text-cyan-200"><span>Ajustar duración de actividad seleccionada:</span>{[-15,15].map(delta=><button key={delta} disabled={pending.current.has(selectedActivity.pageId)} onClick={()=>{try{setDurationProposal(planDurationCascade(activitiesList,selectedActivity.pageId,currentUser,delta));setShowBatch(true);}catch(e){setError(e instanceof Error?e.message:'No se pudo preparar el ajuste.');}}} className="rounded border border-cyan-900 px-2 disabled:opacity-40">{delta>0?'+15 en cadena':'−15 minutos'}</button>)}</div>}
       {showBatch && <CalendarBatchModal initialChanges={durationProposal} initialPerson={batchDefaults?.person} initialDay={batchDefaults?.day} activities={activitiesList} currentUser={currentUser} date={currentDate} onClose={()=>{setShowBatch(false);setBatchDefaults(null);setDurationProposal(undefined);}} onSaved={items=>{items.forEach(activity=>{recentSaves.current.set(activity.pageId,{activity,until:Date.now()+60000});});setActivitiesList(prev=>prev.map(a=>items.find(item=>item.pageId===a.pageId)||a));items.forEach(activity=>anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:activity}));}} />}
       {showCreate && (
         <CreateActivityModal

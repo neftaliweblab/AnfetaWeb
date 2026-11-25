@@ -835,7 +835,7 @@ function ActivityCardComponent({
           <div className="px-3 py-1 text-[10px] font-mono text-[#64748B] border-b border-[#1E2836]">
             ACCIONES DE ACTIVIDAD
           </div>
-          <button disabled={!editable||isCompleted||(!isDirection(currentUser)&&normalizePerson(currentUser)!==normalizePerson(activity.person))||activity.reviewFlow?.State==='pending'} onClick={()=>{closeContextMenu();setShowHandoff(true);}} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs text-cyan-200 hover:bg-slate-800 disabled:opacity-40"><Tag className="h-3.5 w-3.5"/><span>Reasignar actividad…</span></button>
+          <button disabled={!editable||isCompleted} onClick={()=>{closeContextMenu();setShowHandoff(true);}} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs text-cyan-200 hover:bg-slate-800 disabled:opacity-40"><Tag className="h-3.5 w-3.5"/><span>Reasignar actividad…</span></button>
           <button
             disabled={!editable||isCompleted}
             onClick={() => {

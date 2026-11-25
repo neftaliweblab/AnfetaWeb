@@ -23,7 +23,8 @@ import {
   Pin,
   CheckCircle2,
   Bookmark,
-  Share2
+  Share2,
+  Search
 } from "lucide-react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { WorkflowStageBadge } from "../WorkflowStageBadge";
@@ -64,6 +65,7 @@ import {
   currentReviewTagPerson
 } from "@/services/activityTags";
 import { dailyChecklist, checklistTotals, shiftMexicoDay } from "@/lib/dailyChecklist";
+import { filterChecklistItems } from "@/lib/checklistSearch";
 import { detectActivityConflict } from "@/services/activityConflict";
 import { formatSmartDate } from "@/lib/dateUtils";
 import { anfetaSync } from "@/lib/anfetaBroadcastSync";
@@ -372,6 +374,7 @@ export function UnifiedActivityModal({
   // Checklist Data State
   const [showAllChecks, setShowAllChecks] = useState(false);
   const [checkFilter, setCheckFilter] = useState<"all" | "today" | "overdue" | "upcoming" | "backlog">("all");
+  const [checkSearch, setCheckSearch] = useState("");
   const [collapsedCheckGroups, setCollapsedCheckGroups] = useState<Record<string, boolean>>({});
   const [selectedCheckIds, setSelectedCheckIds] = useState<string[]>([]);
   const [includeDatedPending, setIncludeDatedPending] = useState(false);
@@ -400,6 +403,18 @@ export function UnifiedActivityModal({
     setSelectedCheckIds([]);
     setBatchDateValue(checklistDay);
   }, [activity.pageId, checklistDay]);
+  useEffect(() => {
+    setCheckSearch("");
+  }, [activity.pageId]);
+  const hasCheckSearch = checkSearch.trim().length > 0;
+  const searchedItems = useMemo(
+    () => filterChecklistItems(effectiveItems, checkSearch),
+    [effectiveItems, checkSearch]
+  );
+  const searchedDaily = useMemo(
+    () => (hasCheckSearch ? dailyChecklist(searchedItems, checklistDay) : null),
+    [hasCheckSearch, searchedItems, checklistDay]
+  );
   const daily = dailyChecklist(effectiveItems, checklistDay);
   const cumulative = checklistTotals({
     checklistItems: effectiveItems,
@@ -1214,6 +1229,36 @@ export function UnifiedActivityModal({
                       <details className="w-full text-xs text-violet-200"><summary className="cursor-pointer">Ayuda para organizar los pasos en Notion</summary><p className="select-text mt-2 text-slate-300">Convierte únicamente las tareas pendientes en casillas de verificación sin marcar. Conserva los checks completados, los textos, enlaces, imágenes y demás contenido. A las tareas pendientes sin fecha agrega al final la fecha de hoy en formato YYYY-MM-DD; conserva las fechas ya asignadas. Agrupa los checks por su fecha en desplegables con fecha fija y deja sin fecha los que no deban programarse todavía. Revisa la propuesta antes de aplicarla.</p></details>
                     </div>}
                     {editable&&!activity.isDaySnapshot&&!activity.isReviewMirror&&!activity.isHandoffMirror&&<ChecklistGroupingControl key={activity.pageId} pageId={activity.pageId} workDate={checklistDay} onBusyChange={value=>{checkBusy.current=value;setCheckSaving(value);}} onUpdated={stats=>{setSelectedCheckIds([]);onChecklistUpdated?.(activity.pageId,stats);anfetaSync.broadcast({type:'ACTIVITY_UPDATED',confirmed:true,pageId:activity.pageId,updates:stats});}}/>}
+                    {/* Buscador de checks dentro del modal */}
+                    <div className="relative flex items-center gap-1.5">
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="search"
+                          value={checkSearch}
+                          onChange={(e) => setCheckSearch(e.target.value)}
+                          placeholder="Buscar check por texto o fecha (ej. 25/11)…"
+                          aria-label="Buscar checks dentro de la actividad"
+                          className="w-full rounded-lg border border-[#223549] bg-[#0B121B] pl-8 pr-16 py-1.5 text-[11px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-400/80 focus:outline-none"
+                        />
+                        {hasCheckSearch && (
+                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                            <span className="text-[9.5px] font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-500/30 rounded px-1 py-0.2">
+                              {searchedItems.length}/{effectiveItems.length}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setCheckSearch("")}
+                              aria-label="Limpiar búsqueda de checks"
+                              title="Limpiar búsqueda"
+                              className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
                       <div className="flex flex-wrap items-center gap-1">
                         {([
@@ -1550,24 +1595,51 @@ export function UnifiedActivityModal({
                       );
                     };
 
+                    const activeCheckPool = searchedItems;
+                    const activeDaily = searchedDaily || daily;
+
                     if (checkFilter !== "all") {
-                      const overdueSorted = effectiveItems
+                      const overdueSorted = activeCheckPool
                         .filter((i: any) => getCheckDayFlags(i).isOverduePlan)
                         .slice()
                         .sort((a: any, b: any) => String(a.plannedDate || "").localeCompare(String(b.plannedDate || "")));
                       const filteredItems =
                         checkFilter === "today"
-                          ? effectiveItems.filter((i: any) => getCheckDayFlags(i).belongsToTodayGroup)
+                          ? activeCheckPool.filter((i: any) => getCheckDayFlags(i).belongsToTodayGroup)
                           : checkFilter === "overdue"
                             ? overdueSorted
                             : checkFilter === "upcoming"
-                              ? daily.upcomingPending
-                              : daily.backlogPending;
+                              ? activeDaily.upcomingPending
+                              : activeDaily.backlogPending;
                       return (
                         <div className="space-y-1 overflow-y-auto pr-0.5 scrollbar-thin max-h-72">
                           {filteredItems.length === 0 ? (
-                            <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono">
-                              No hay checks en esta vista.
+                            <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono space-y-1.5">
+                              <p>
+                                {hasCheckSearch
+                                  ? `No hay checks en esta vista que coincidan con “${checkSearch.trim()}”.`
+                                  : "No hay checks en esta vista."}
+                              </p>
+                              {hasCheckSearch && (
+                                <div className="flex items-center justify-center gap-2">
+                                  {searchedItems.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCheckFilter("all")}
+                                      className="px-2 py-0.5 rounded border border-cyan-500/50 bg-cyan-950/60 text-cyan-200 hover:bg-cyan-900/60 cursor-pointer"
+                                    >
+                                      Ver {searchedItems.length} en Todos
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setCheckSearch("")}
+                                    className="px-2 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-300 hover:text-white cursor-pointer"
+                                  >
+                                    Limpiar búsqueda
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             filteredItems.map((chk: any, idx: number) => renderCheckItemRow(chk, idx))
@@ -1577,19 +1649,19 @@ export function UnifiedActivityModal({
                     }
 
                     // Vista 'Todos': Agrupado visual por Atrasados, Hoy (incl. completados hoy), Mañana, cada Fecha específica (orden cronológico), Sin fecha y Completados previos
-                    const overdueGroupItems = effectiveItems
+                    const overdueGroupItems = activeCheckPool
                       .filter((i: any) => getCheckDayFlags(i).isOverduePlan)
                       .slice()
                       .sort((a: any, b: any) => String(a.plannedDate || "").localeCompare(String(b.plannedDate || "")));
-                    const todayGroupItems = effectiveItems.filter(
+                    const todayGroupItems = activeCheckPool.filter(
                       (i: any) => getCheckDayFlags(i).belongsToTodayGroup
                     );
-                    const tomorrowGroupItems = effectiveItems.filter((i: any) => {
+                    const tomorrowGroupItems = activeCheckPool.filter((i: any) => {
                       const f = getCheckDayFlags(i);
                       return f.isTomorrowPlan && !f.belongsToTodayGroup;
                     });
                     const futureDateMap = new Map<string, any[]>();
-                    for (const i of effectiveItems) {
+                    for (const i of activeCheckPool) {
                       const f = getCheckDayFlags(i);
                       if (f.planned && f.planned > tomorrowDay && !f.belongsToTodayGroup) {
                         const list = futureDateMap.get(f.planned) || [];
@@ -1598,10 +1670,10 @@ export function UnifiedActivityModal({
                       }
                     }
                     const futureDatesSorted = Array.from(futureDateMap.keys()).sort();
-                    const backlogGroupItems = effectiveItems.filter(
+                    const backlogGroupItems = activeCheckPool.filter(
                       (i: any) => !i.isChecked && !i.plannedDate
                     );
-                    const prevDoneGroupItems = effectiveItems.filter((i: any) => {
+                    const prevDoneGroupItems = activeCheckPool.filter((i: any) => {
                       const f = getCheckDayFlags(i);
                       return f.isDone && !f.belongsToTodayGroup && !(f.planned && f.planned > checklistDay);
                     });
@@ -1713,9 +1785,21 @@ export function UnifiedActivityModal({
                           size === "xl" ? "max-h-96" : "max-h-72"
                         }`}
                       >
+                        {groups.length === 0 && hasCheckSearch && (
+                          <div className="py-3 text-center text-[10.5px] text-slate-500 font-mono space-y-1.5">
+                            <p>Ningún check coincide con “{checkSearch.trim()}”.</p>
+                            <button
+                              type="button"
+                              onClick={() => setCheckSearch("")}
+                              className="px-2 py-0.5 rounded border border-slate-700 bg-slate-900 text-slate-300 hover:text-white cursor-pointer"
+                            >
+                              Limpiar búsqueda
+                            </button>
+                          </div>
+                        )}
                         {groups.map((grp) => {
-                          const isCollapsed = collapsedCheckGroups[grp.key] ?? Boolean(grp.defaultCollapsed);
-                          const isBacklogLimited = grp.key === "backlog" && !showAllChecks && size !== "xl" && grp.items.length > 6;
+                          const isCollapsed = hasCheckSearch ? false : (collapsedCheckGroups[grp.key] ?? Boolean(grp.defaultCollapsed));
+                          const isBacklogLimited = !hasCheckSearch && grp.key === "backlog" && !showAllChecks && size !== "xl" && grp.items.length > 6;
                           const shownItems = isBacklogLimited ? grp.items.slice(0, 6) : grp.items;
 
                           return (

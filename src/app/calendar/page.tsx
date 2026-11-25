@@ -1,6 +1,7 @@
 "use client";
 import {NotesPanel} from '@/components/ResultsViewHost/NotesPanel';
 import {mergeCalendarSnapshot} from '@/lib/calendarUpdates';
+import {readCalendarLocalCache,writeCalendarLocalCache} from '@/lib/calendarLocalCache';
 import {DiagnosticsLogs} from '@/components/Diagnostics/DiagnosticsLogs';
 import {sharedCalendarFetch} from '@/lib/sharedCalendarFetch';
 import {PersonSelector} from '@/components/LoginModal/PersonSelector';
@@ -51,14 +52,26 @@ export default function StandaloneCalendarPage() {
   // Cargar actividades de la fecha
   const loadCalendarData = useCallback(async (dateToLoad: string) => {
     const sequence=++loadRevision.current;
-    setIsLoading(true);
+    const localCached = readCalendarLocalCache(dateToLoad, currentUser);
+    if (localCached) {
+      setCalendarActivities(localCached.activities);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
     try {
       const res = await sharedCalendarFetch(`/api/data?type=calendar&basic=1&date=${dateToLoad}`,currentUser);
       {
         const data = await res.json();if(sequence!==loadRevision.current)return;
           if (!res.ok || data.error) throw new Error(data.error || 'No se pudo cargar el calendario.');
           setCalendarLoadError(data.warning || '');setCalendarCacheMeta(data.cacheMeta||null);
-        if (data.activities) setCalendarActivities(previous=>mergeCalendarSnapshot(previous,data.activities,dateToLoad));
+        if (data.activities) {
+          setCalendarActivities(previous=>{
+            const merged = mergeCalendarSnapshot(previous,data.activities,dateToLoad);
+            writeCalendarLocalCache(dateToLoad, merged, data.scanTimestamp);
+            return merged;
+          });
+        }
         if (data.availableDates) setAvailableDates(data.availableDates);
       }
     } catch (err) {

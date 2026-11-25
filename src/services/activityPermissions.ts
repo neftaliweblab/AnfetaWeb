@@ -26,10 +26,9 @@ export function isActivityLocked(activity: Partial<NotionCalendarActivity> & { I
   return !!(activity.isReviewMirror || activity.isDaySnapshot || activity.isLocked || activity.IsAutomationLocked || /Bloqueada_ANFETA/i.test(activity.title || ''));
 }
 export function canEditActivity(user: string, activity: Partial<NotionCalendarActivity>) {
-  const actor = user.trim().toLowerCase();
-  const knownActor = Object.entries(PERSON_ALIASES).some(([name, aliases]) => name === normalizePerson(user));
-  return !isActivityLocked(activity) && (isDirection(user) || isReviewer(user) ||
-    (knownActor && normalizePerson(user) === normalizePerson(activity.person || '')));
+  const actor = normalizePerson(user);
+  const knownActor = Boolean(PERSON_ALIASES[actor]);
+  return !isActivityLocked(activity) && knownActor;
 }
 
 export function scheduleAtDrop(activity: NotionCalendarActivity, date: string, minutes: number) {
