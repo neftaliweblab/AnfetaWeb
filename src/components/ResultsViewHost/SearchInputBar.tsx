@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Bell,
   ClipboardList,
+  FileText,
 } from "lucide-react";
 import { SearchQueryTools } from "./SearchQueryTools";
 import { IndexSyncStatus } from "./IndexSyncStatus";
@@ -62,6 +63,8 @@ interface SearchInputBarProps {
   remindersCount?: number;
   onOpenWhatsappGroups?: () => void;
   onOpenResponseCleanup?: () => void;
+  isContentScope?: boolean;
+  onToggleContentScope?: () => void;
 }
 
 export function SearchInputBar({
@@ -98,6 +101,8 @@ export function SearchInputBar({
   remindersCount = 0,
   onOpenWhatsappGroups,
   onOpenResponseCleanup,
+  isContentScope = false,
+  onToggleContentScope,
 }: SearchInputBarProps) {
   const [showMoreSuggestions, setShowMoreSuggestions] = useState(false);
   const moreSuggestionsRef = useRef<HTMLDivElement>(null);
@@ -438,6 +443,27 @@ export function SearchInputBar({
             >
               .*
             </button>
+            {onToggleContentScope && (
+              <button
+                type="button"
+                aria-pressed={isContentScope}
+                onClick={onToggleContentScope}
+                style={{
+                  fontSize: `${(10 * scale).toFixed(1)}px`,
+                  padding: `${Math.max(1, Math.round(2 * scale))}px ${Math.round(6 * scale)}px`,
+                }}
+                className={`rounded font-semibold transition-all border cursor-pointer flex items-center gap-1 ${
+                  isContentScope
+                    ? "bg-[#0C4A6E] border-[#38BDF8] text-[#38BDF8] shadow-[0_0_10px_rgba(56,189,248,0.35)] ring-1 ring-cyan-400/40"
+                    : "bg-[#121B28] border-[#26354A] text-[#CBD5E1] hover:text-white hover:border-[#38BDF8]/60 hover:bg-[#182436]"
+                }`}
+                title="Buscar dentro del contenido interno y notas de Notion (alternar ámbito Contenido)"
+                aria-label="Buscar por contenido"
+              >
+                <FileText className="w-3 h-3 shrink-0" />
+                <span>Contenido</span>
+              </button>
+            )}
             {onOpenHelp && (
               <button
                 type="button"

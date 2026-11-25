@@ -2191,6 +2191,11 @@ export function ResultsViewHost({
         remindersCount={remindersCount}
         onOpenWhatsappGroups={() => setShowWhatsappModal(true)}
         onOpenResponseCleanup={() => setIsResponseCleanupOpen(true)}
+        isContentScope={selectedScope === "Contenido"}
+        onToggleContentScope={() => {
+          setSelectedScope((prev) => (prev === "Contenido" ? "Todo" : "Contenido"));
+          focusSearch();
+        }}
       />
 
       {/* FRANJA D: Barra de Trabajo Unificada (Ordenar, Persona, Mes, Agrupar, Terminadas, Cobros, Pagos, Herramientas, Paneles) */}

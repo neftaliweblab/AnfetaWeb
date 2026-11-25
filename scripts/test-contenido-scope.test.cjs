@@ -336,3 +336,11 @@ assert.equal(matchesFlexibleOrQuotedQuery(staleSnapshot,'obsoleto',{contentOnly:
 const realBody = applyNotionStates([{...updated,pageContent:content,pageContentFromBlocks:true}], [{id:keywordRow.id,aiContent:'',serverModified:'2026-11-09T16:02:00Z'}])[0];
 assert.equal(realBody.pageContent, content);
 console.log('OK el índice atrasado respeta el vaciado confirmado y el cuerpo leído se conserva.');
+
+const searchInputSrc = fs.readFileSync(path.join(root, 'src/components/ResultsViewHost/SearchInputBar.tsx'), 'utf8');
+assert.match(searchInputSrc, /aria-label="Buscar por contenido"/);
+assert.match(searchInputSrc, /onToggleContentScope/);
+const hostSrc = fs.readFileSync(path.join(root, 'src/components/ResultsViewHost/ResultsViewHost.tsx'), 'utf8');
+assert.match(hostSrc, /isContentScope=\{selectedScope === "Contenido"\}/);
+assert.match(hostSrc, /onToggleContentScope=\{\(\) => \{/);
+console.log('OK botón rápido de búsqueda por contenido en SearchInputBar sincronizado con el ámbito Contenido.');
