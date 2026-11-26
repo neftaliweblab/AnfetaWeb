@@ -7,14 +7,16 @@ const folder = path.join(__dirname, '../browser-extension/anfeta-hotkey');
 const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'manifest.json'), 'utf8'));
 
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, '1.1.4');
+assert.equal(manifest.version, '1.1.5');
 assert.ok(manifest.permissions.includes('storage'));
 assert.ok(manifest.permissions.includes('tabs'));
 assert.equal(manifest.commands['toggle-anfeta'].global, true);
 assert.equal(manifest.commands['toggle-anfeta'].suggested_key.default, 'Ctrl+Shift+8');
 assert.equal(manifest.commands['toggle-buscador-calendario'].suggested_key.default, 'Ctrl+Shift+9');
 assert.equal(manifest.commands['next-module'].suggested_key.default, 'Alt+Shift+M');
-assert.ok(manifest.content_scripts.some((entry) => Array.isArray(entry.js) && entry.js.includes('anfeta-bridge.js')));
+assert.ok(manifest.host_permissions.includes('https://anfeta-web.onrender.com/*'));
+assert.ok(manifest.host_permissions.includes('https://*.onrender.com/*'));
+assert.ok(manifest.content_scripts.some((entry) => Array.isArray(entry.js) && entry.js.includes('anfeta-bridge.js') && entry.matches.includes('https://anfeta-web.onrender.com/*')));
 assert.ok(manifest.host_permissions.includes('https://anfeta-web.vercel.app/*'));
 assert.ok(manifest.host_permissions.includes('https://anfeta-web-iota.vercel.app/*'));
 assert.ok(manifest.host_permissions.includes('http://localhost:3000/*'));
@@ -125,7 +127,10 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
   await Promise.all([toggle(), toggle()]);
   assert.equal(created, 1);
   assert.equal(store.managedWindowId, 1);
+  assert.equal(tabs[0].url, 'https://anfeta-web.onrender.com/');
   assert.deepEqual(Array.from(lastQueryUrl), [
+    'https://anfeta-web.onrender.com/*',
+    'https://*.onrender.com/*',
     'https://anfeta-web.vercel.app/*',
     'https://anfeta-web-iota.vercel.app/*',
   ]);
@@ -208,8 +213,8 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
   assert.equal(typeof command, 'function');
   assert.equal(typeof action, 'function');
 
-  // Test 9: Cambio entre módulos desde la extensión (sin minimizar ni duplicar ventana)
-  tabs = [{ id: 12, windowId: 12, active: true, url: 'https://anfeta-web.vercel.app/' }];
+  // Test 9: Cambio entre módulos desde la extensión en Render (sin minimizar ni duplicar ventana)
+  tabs = [{ id: 12, windowId: 12, active: true, url: 'https://anfeta-web.onrender.com/' }];
   windows.set(12, { id: 12, type: 'popup', focused: true, state: 'normal', tabs: [{ id: 12 }] });
   sentMessages = [];
   await command('toggle-buscador-calendario');
@@ -222,7 +227,7 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
     { tabId: 12, payload: { action: 'ANFETA_SWITCH_MODULE', mode: 'cycle' } },
   ]);
 
-  console.log('OK extensión v1.1.4: múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, cambio de módulos y errores.');
+  console.log('OK extensión v1.1.5: Render por defecto + múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, cambio de módulos y errores.');
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

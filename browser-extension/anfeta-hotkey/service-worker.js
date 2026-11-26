@@ -1,5 +1,7 @@
-const DEFAULT_URL = 'https://anfeta-web.vercel.app/';
+const DEFAULT_URL = 'https://anfeta-web.onrender.com/';
 const KNOWN_ORIGINS = [
+  'https://anfeta-web.onrender.com/*',
+  'https://*.onrender.com/*',
   'https://anfeta-web.vercel.app/*',
   'https://anfeta-web-iota.vercel.app/*',
 ];
@@ -64,7 +66,13 @@ function selectBestAnfetaTab(tabs, managedWindowId, focusedWindowId) {
 function matchesConfigOrigin(tabUrl, config) {
   if (!tabUrl || typeof tabUrl !== 'string') return true;
   if (config.isCustom) return tabUrl.startsWith(config.originUrl);
-  return KNOWN_ORIGINS.some((pattern) => tabUrl.startsWith(pattern.replace(/\*$/, '')));
+  if (KNOWN_ORIGINS.some((pattern) => tabUrl.startsWith(pattern.replace(/\*$/, '')))) return true;
+  try {
+    const parsed = new URL(tabUrl);
+    return parsed.protocol === 'https:' && parsed.hostname.endsWith('.onrender.com') && parsed.hostname.includes('anfeta');
+  } catch {
+    return false;
+  }
 }
 
 async function runToggleAnfeta() {
@@ -272,6 +280,7 @@ if (chrome.runtime?.onMessage?.addListener) {
           const candidates = Array.from(
             new Set([
               preferred,
+              'https://anfeta-web.onrender.com/',
               'https://anfeta-web.vercel.app/',
               'https://anfeta-web-iota.vercel.app/',
             ])

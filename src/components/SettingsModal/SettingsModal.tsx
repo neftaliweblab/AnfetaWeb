@@ -889,9 +889,9 @@ export function SettingsModal({
 
             <p><strong>Ctrl+Shift+8</strong> abre, enfoca o minimiza ANFETA; <strong>Ctrl+Shift+9</strong> alterna Buscador ↔ Calendario y <strong>Alt+Shift+M</strong> avanza al siguiente módulo. Requiere instalar la extensión y mantener el navegador ejecutándose.</p>
 
-            <a href="/downloads/anfeta-hotkey.zip?v=1.1.4" download="anfeta-hotkey-1.1.4.zip" className="inline-block rounded bg-cyan-900 px-3 py-2 text-white">Descargar extensión v1.1.4</a>
+            <a href="/downloads/anfeta-hotkey.zip?v=1.1.5" download="anfeta-hotkey-1.1.5.zip" className="inline-block rounded bg-cyan-900 px-3 py-2 text-white">Descargar extensión v1.1.5</a>
 
-            <details className="text-slate-300"><summary className="cursor-pointer">Cómo instalarla</summary><ol className="list-decimal pl-5 space-y-1 mt-2"><li>Descarga el ZIP nuevo (v1.1.4) y extráelo en una carpeta permanente. No lo cargues directamente desde el ZIP.</li><li>Abre la página de extensiones de Chrome, Edge o Brave y activa Modo de desarrollador.</li><li>Pulsa Cargar descomprimida y selecciona la carpeta que contiene manifest.json (si ya la tenías, reemplaza los archivos y pulsa Recargar).</li><li>En Atajos de extensiones, verifica la combinación asignada y el alcance Global.</li><li>Usa el mismo perfil que tu sesión de ANFETA. Si la PWA no se puede detectar, se abrirá una ventana Web dedicada.</li></ol></details>
+            <details className="text-slate-300"><summary className="cursor-pointer">Cómo instalarla</summary><ol className="list-decimal pl-5 space-y-1 mt-2"><li>Descarga el ZIP nuevo (v1.1.5) y extráelo en una carpeta permanente. No lo cargues directamente desde el ZIP.</li><li>Abre la página de extensiones de Chrome, Edge o Brave y activa Modo de desarrollador.</li><li>Pulsa Cargar descomprimida y selecciona la carpeta que contiene manifest.json (si ya la tenías, reemplaza los archivos y pulsa Recargar).</li><li>En Atajos de extensiones, verifica la combinación asignada y el alcance Global.</li><li>Usa el mismo perfil que tu sesión de ANFETA. Si la PWA no se puede detectar, se abrirá una ventana Web dedicada.</li></ol></details>
 
           </details>
 

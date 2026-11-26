@@ -1,4 +1,4 @@
-const DEFAULT_URL = 'https://anfeta-web.vercel.app/';
+const DEFAULT_URL = 'https://anfeta-web.onrender.com/';
 
 function sanitizeAppUrl(raw) {
   const trimmed = (raw || '').trim();
@@ -10,7 +10,7 @@ function sanitizeAppUrl(raw) {
     }
     return { ok: true, value: `${parsed.origin}/`, isDefault: false };
   } catch {
-    return { ok: false, error: 'URL inválida. Ejemplo válido: https://anfeta-web.vercel.app/' };
+    return { ok: false, error: 'URL inválida. Ejemplo válido: https://anfeta-web.onrender.com/' };
   }
 }
 

@@ -48,8 +48,8 @@
         }
       }
     } catch {}
-    // Default to production ANFETA Web origin
-    return "https://anfeta-web.vercel.app/";
+    // Default to production ANFETA Web origin (Render)
+    return "https://anfeta-web.onrender.com/";
   }
 
   async function extractGroupsFromIndexedDB() {

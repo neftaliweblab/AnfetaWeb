@@ -47,6 +47,11 @@ Sin extensión: instala la PWA desde el navegador y ancla ANFETA a la barra. Win
 - Conserva el estado maximizado o pantalla completa al restaurar una ventana dedicada minimizada.
 - Valida `customAppUrl` en opciones (solo `http:` / `https:`) y apunta el fallback predeterminado de sincronización de WhatsApp a producción (`https://anfeta-web.vercel.app/`).
 
+## v1.1.5: soporte nativo para Render (`anfeta-web.onrender.com`)
+
+- URL predeterminada actualizada a `https://anfeta-web.onrender.com/` (compatible con `https://*.onrender.com/*`, además de orígenes previos de respaldo).
+- Inyección automática del puente `anfeta-bridge.js` y permisos de host para Render.
+
 ## v1.1.4: cambio directo entre módulos desde la extensión
 
 - Nuevo puente (`anfeta-bridge.js`) para cambiar de módulo directamente desde la extensión sin recargar la página.
