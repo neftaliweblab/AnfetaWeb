@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Sparkles, X, Check, Clock, ExternalLink } from "lucide-react";
+import { Sparkles, X, Check, Clock, ExternalLink, Maximize2, Minimize2, ZoomIn } from "lucide-react";
 import { normalizePerson } from "@/services/identityNormalizer";
 
 export interface AnnouncementPayload {
@@ -30,6 +30,8 @@ export function WhatsNewModal({
   const [announcement, setAnnouncement] = useState<AnnouncementPayload | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [isImageZoomed, setIsImageZoomed] = useState(false);
+  const [isFullResolution, setIsFullResolution] = useState(false);
 
   const isPreview = Boolean(previewData);
 
@@ -148,11 +150,26 @@ export function WhatsNewModal({
     setIsOpen(false);
   };
 
+  useEffect(() => {
+    if (!isImageZoomed) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsImageZoomed(false);
+        setIsFullResolution(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isImageZoomed]);
+
   if (!isOpen || !announcement) return null;
 
   return (
-    <div className="fixed inset-0 z-[350] flex items-start justify-center pt-6 sm:pt-8 overflow-y-auto bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-[#0F1726] to-[#0A0E17] text-slate-200 shadow-2xl shadow-cyan-950/40 overflow-hidden">
+    <>
+    <div className="fixed inset-0 z-[600] flex items-start justify-center pt-5 sm:pt-7 overflow-y-auto bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+      <div className="w-[min(94vw,760px)] max-h-[92vh] flex flex-col rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-[#0F1726] to-[#0A0E17] text-slate-200 shadow-2xl shadow-cyan-950/40 overflow-hidden">
         {/* Header Ribbon */}
         <div className="flex items-center justify-between border-b border-cyan-900/50 bg-gradient-to-r from-cyan-950/40 via-sky-950/20 to-transparent px-5 py-3.5">
           <div className="flex items-center gap-2 text-cyan-300">
@@ -190,12 +207,35 @@ export function WhatsNewModal({
 
           {/* Illustrative Image (if provided) */}
           {announcement.image && (
-            <div className="rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 shadow-inner max-h-60 flex items-center justify-center">
-              <img
-                src={announcement.image}
-                alt={announcement.title}
-                className="w-full h-full object-contain max-h-60"
-              />
+            <div className="relative group rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 shadow-inner flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFullResolution(false);
+                  setIsImageZoomed(true);
+                }}
+                className="w-full flex items-center justify-center cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded-xl"
+                title="Clic para ampliar la imagen a pantalla completa"
+                aria-label="Ampliar imagen del aviso"
+              >
+                <img
+                  src={announcement.image}
+                  alt={announcement.title || "Imagen de novedades"}
+                  className="w-full h-auto max-h-[420px] object-contain transition-transform duration-200 group-hover:scale-[1.01]"
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFullResolution(false);
+                  setIsImageZoomed(true);
+                }}
+                className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950/85 hover:bg-cyan-950 border border-cyan-500/50 text-cyan-200 text-[11px] font-semibold shadow-lg backdrop-blur-sm transition-colors cursor-pointer"
+                title="Ver imagen en grande"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+                <span>Ampliar</span>
+              </button>
             </div>
           )}
 
@@ -256,5 +296,70 @@ export function WhatsNewModal({
         </div>
       </div>
     </div>
+
+    {isImageZoomed && announcement.image && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Imagen ampliada del aviso"
+        onClick={() => {
+          setIsImageZoomed(false);
+          setIsFullResolution(false);
+        }}
+        className="fixed inset-0 z-[650] bg-black/90 backdrop-blur-md flex flex-col p-4 sm:p-6 animate-in fade-in duration-150"
+      >
+        <div
+          className="flex items-center justify-between gap-3 pb-3 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-xs sm:text-sm font-bold text-cyan-200 truncate">
+            {announcement.title || "Novedades en ANFETA"}
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFullResolution((prev) => !prev)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium cursor-pointer"
+              title={isFullResolution ? "Ajustar a pantalla" : "Ver tamaño completo"}
+            >
+              {isFullResolution ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span>{isFullResolution ? "Ajustar" : "Tamaño real"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsImageZoomed(false);
+                setIsFullResolution(false);
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-100 text-xs font-semibold cursor-pointer"
+              aria-label="Cerrar imagen ampliada"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Cerrar (Esc)</span>
+            </button>
+          </div>
+        </div>
+        <div
+          className={`flex-1 min-h-0 flex items-center justify-center ${
+            isFullResolution ? "overflow-auto" : "overflow-hidden"
+          }`}
+        >
+          <img
+            src={announcement.image}
+            alt={announcement.title || "Imagen ampliada"}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullResolution((prev) => !prev);
+            }}
+            className={
+              isFullResolution
+                ? "max-w-none max-h-none rounded-lg border border-slate-700 shadow-2xl cursor-zoom-out"
+                : "max-w-full max-h-full object-contain rounded-lg border border-slate-700 shadow-2xl cursor-zoom-in"
+            }
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
