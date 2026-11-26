@@ -46,3 +46,10 @@ Sin extensión: instala la PWA desde el navegador y ancla ANFETA a la barra. Win
 - Limpia `managedWindowId` cuando se cierra una ventana y prioriza la ventana administrada o enfocada sin duplicar ventanas.
 - Conserva el estado maximizado o pantalla completa al restaurar una ventana dedicada minimizada.
 - Valida `customAppUrl` en opciones (solo `http:` / `https:`) y apunta el fallback predeterminado de sincronización de WhatsApp a producción (`https://anfeta-web.vercel.app/`).
+
+## v1.1.4: cambio directo entre módulos desde la extensión
+
+- Nuevo puente (`anfeta-bridge.js`) para cambiar de módulo directamente desde la extensión sin recargar la página.
+- Comando `toggle-buscador-calendario` (**Ctrl+Shift+9**): enfoca ANFETA y alterna **Buscador ↔ Calendario**.
+- Comando `next-module` (**Alt+Shift+M**): rota por **Buscador → Calendario → Avance Diario → Mensajes → Recordatorios**.
+- Mantiene compatibilidad total con los atajos internos sin extensión (**Alt+1..5**, **Alt+Q**, **Alt+Shift+C**).

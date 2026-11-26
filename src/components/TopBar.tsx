@@ -78,7 +78,7 @@ export function TopBar({
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <div
             className="flex items-center gap-2 cursor-pointer group"
-            onClick={() => onSelectView("results")}
+            data-anfeta-view="results" onClick={() => onSelectView("results")}
             title="ANFETA - Productividad Ejecutiva"
           >
             <img
@@ -186,7 +186,7 @@ export function TopBar({
         ) : (
           <div className="flex-1 flex items-center px-3">
             <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-              <span className="text-cyan-400 font-semibold">Ctrl+Alt+C</span> (o <span className="text-cyan-400 font-semibold">Alt+Shift+C</span>) alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Ctrl+Alt+B</span> busca
+              <span className="text-cyan-400 font-semibold">Alt+Q</span> / <span className="text-cyan-400 font-semibold">Alt+Shift+C</span> alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Alt+1..5</span> cambia módulo
             </span>
           </div>
         )}
@@ -194,65 +194,65 @@ export function TopBar({
         {/* Botones de Navegación Responsive (Iconos compactos en pantallas pequeñas/medianas) */}
         <nav className="flex items-center gap-1 shrink-0">
           <button
-            onClick={() => onSelectView("results")}
+            data-anfeta-view="results" onClick={() => onSelectView("results")}
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "results"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Buscador (Ctrl+Alt+C alternar vista)" aria-label="Buscador"
+            title="Buscador (Alt+1 · Alt+Q / Alt+Shift+C alterna)" aria-label="Buscador"
           >
             <Search className="w-5 h-5 shrink-0" />
 
           </button>
 
           <button
-            onClick={() => onSelectView("calendar")}
+            data-anfeta-view="calendar" onClick={() => onSelectView("calendar")}
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "calendar"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Calendario (Ctrl+Alt+C o Alt+Shift+C alternar vista)" aria-label="Calendario"
+            title="Calendario (Alt+2 · Alt+Q / Alt+Shift+C alterna)" aria-label="Calendario"
           >
             <Calendar className="w-5 h-5 shrink-0" />
 
           </button>
 
           <button
-            onClick={() => onSelectView("dailyProgress")}
+            data-anfeta-view="dailyProgress" onClick={() => onSelectView("dailyProgress")}
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "dailyProgress"
                 ? "bg-[#18212B] text-[#4ADE80] border border-[#4ADE80]/40 shadow-[0_0_8px_rgba(74,222,128,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Avance Diario" aria-label="Avance Diario"
+            title="Avance Diario (Alt+3 · Ctrl+Shift+J)" aria-label="Avance Diario"
           >
             <TrendingUp className="w-5 h-5 shrink-0" />
 
           </button>
 
           <button
-            onClick={() => onSelectView("messages")}
+            data-anfeta-view="messages" onClick={() => onSelectView("messages")}
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "messages"
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Mensajes" aria-label="Mensajes"
+            title="Mensajes (Alt+4)" aria-label="Mensajes"
           >
             <MessageSquare className="w-5 h-5 shrink-0" />
 
           </button>
 
           <button
-            onClick={() => onSelectView("reminders")}
+            data-anfeta-view="reminders" onClick={() => onSelectView("reminders")}
             className={`relative flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
               activeView === "reminders"
                 ? "bg-[#18212B] text-[#A855F7] border border-[#A855F7]/40 shadow-[0_0_8px_rgba(168,85,247,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Recordatorios" aria-label="Recordatorios"
+            title="Recordatorios (Alt+5)" aria-label="Recordatorios"
           >
             <Bell className="w-5 h-5 shrink-0" />
 

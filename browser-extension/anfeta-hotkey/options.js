@@ -17,12 +17,19 @@ function sanitizeAppUrl(raw) {
 async function load() {
   try {
     const commands = await chrome.commands.getAll();
-    const command = commands.find((c) => c.name === 'toggle-anfeta');
+    const toggle = commands.find((c) => c.name === 'toggle-anfeta');
+    const switchBC = commands.find((c) => c.name === 'toggle-buscador-calendario');
+    const nextMod = commands.find((c) => c.name === 'next-module');
     const shortcutEl = document.getElementById('shortcut');
-    if (command && command.shortcut) {
-      shortcutEl.textContent = 'Atajo asignado: ' + command.shortcut;
+    const parts = [
+      toggle?.shortcut ? `Ventana: ${toggle.shortcut}` : null,
+      switchBC?.shortcut ? `Buscador↔Cal: ${switchBC.shortcut}` : null,
+      nextMod?.shortcut ? `Siguiente módulo: ${nextMod.shortcut}` : null,
+    ].filter(Boolean);
+    if (parts.length > 0) {
+      shortcutEl.textContent = parts.join(' · ');
       document.getElementById('scopeHint').textContent =
-        'Comprueba que el alcance diga Global en la configuración del navegador. La extensión puede consultar la combinación, pero Chrome no informa su alcance.';
+        'Comprueba que "Mostrar u ocultar ANFETA Web" tenga alcance Global. Los atajos de módulo enfocan ANFETA y cambian la vista al instante.';
     } else {
       shortcutEl.textContent = 'No asignado — Pulsa el botón abajo para configurarlo.';
     }

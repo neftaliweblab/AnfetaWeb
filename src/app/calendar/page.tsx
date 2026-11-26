@@ -14,6 +14,7 @@ import React, { useState, useEffect, useCallback, useMemo,useRef } from "react";
 import { NotionCalendarActivity } from "@/types/anfeta";
 import { CalendarHost } from "@/components/CalendarHost/CalendarHost";
 import { anfetaSync, AnfetaSyncMessage } from "@/lib/anfetaBroadcastSync";
+import { resolveGlobalViewShortcut, resolveExtensionModuleAction } from "@/lib/viewToggleShortcut";
 import { Search, X, Sparkles, ExternalLink, Calendar, RefreshCw } from "lucide-react";
 
 export default function StandaloneCalendarPage() {
@@ -40,6 +41,30 @@ export default function StandaloneCalendarPage() {
   const [sharedMode,setSharedMode]=useState(false);
   const [personPickerOpen,setPersonPickerOpen]=useState(false);
   useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='anfeta_person_changed')window.location.reload();};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[]);
+  useEffect(() => {
+    const navigateTarget = (action: { targetView: string } | null) => {
+      if (!action || action.targetView === 'calendar') return;
+      window.location.href = '/?view=' + encodeURIComponent(action.targetView);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const action = resolveGlobalViewShortcut(e, 'calendar');
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      navigateTarget(action);
+    };
+    const handleExtensionModule = (e: Event) => {
+      const mode = (e as CustomEvent)?.detail?.mode;
+      navigateTarget(resolveExtensionModuleAction(mode, 'calendar'));
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('anfeta:extension-module', handleExtensionModule);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('anfeta:extension-module', handleExtensionModule);
+    };
+  }, []);
+
   useEffect(()=>{fetch('/api/auth',{cache:'no-store'}).then(r=>r.json()).then(data=>{setAuthenticated(data.authenticated===true);setSharedMode(data.sharedMode===true);if(data.user)setCurrentUser(data.user);}).catch(()=>setAuthenticated(false));},[]);
   const [calendarCacheMeta,setCalendarCacheMeta]=useState<any>(null);
   const [calendarLoadError, setCalendarLoadError] = useState("");

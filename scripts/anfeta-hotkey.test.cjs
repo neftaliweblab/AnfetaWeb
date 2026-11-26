@@ -7,11 +7,14 @@ const folder = path.join(__dirname, '../browser-extension/anfeta-hotkey');
 const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'manifest.json'), 'utf8'));
 
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, '1.1.3');
+assert.equal(manifest.version, '1.1.4');
 assert.ok(manifest.permissions.includes('storage'));
 assert.ok(manifest.permissions.includes('tabs'));
 assert.equal(manifest.commands['toggle-anfeta'].global, true);
 assert.equal(manifest.commands['toggle-anfeta'].suggested_key.default, 'Ctrl+Shift+8');
+assert.equal(manifest.commands['toggle-buscador-calendario'].suggested_key.default, 'Ctrl+Shift+9');
+assert.equal(manifest.commands['next-module'].suggested_key.default, 'Alt+Shift+M');
+assert.ok(manifest.content_scripts.some((entry) => Array.isArray(entry.js) && entry.js.includes('anfeta-bridge.js')));
 assert.ok(manifest.host_permissions.includes('https://anfeta-web.vercel.app/*'));
 assert.ok(manifest.host_permissions.includes('https://anfeta-web-iota.vercel.app/*'));
 assert.ok(manifest.host_permissions.includes('http://localhost:3000/*'));
@@ -23,6 +26,7 @@ let created = 0;
 let updates = [];
 let activated = [];
 let badge = '';
+let sentMessages = [];
 let command;
 let action;
 let lastFocusedId = undefined;
@@ -40,6 +44,7 @@ const chrome = {
       });
     },
     update: async (id, args) => activated.push({ id, ...args }),
+    sendMessage: async (tabId, payload) => sentMessages.push({ tabId, payload }),
   },
   windows: {
     get: async (id) => {
@@ -203,7 +208,21 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
   assert.equal(typeof command, 'function');
   assert.equal(typeof action, 'function');
 
-  console.log('OK extensión v1.1.3: múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, ventanas compartidas y errores.');
+  // Test 9: Cambio entre módulos desde la extensión (sin minimizar ni duplicar ventana)
+  tabs = [{ id: 12, windowId: 12, active: true, url: 'https://anfeta-web.vercel.app/' }];
+  windows.set(12, { id: 12, type: 'popup', focused: true, state: 'normal', tabs: [{ id: 12 }] });
+  sentMessages = [];
+  await command('toggle-buscador-calendario');
+  await new Promise((r) => setTimeout(r, 20));
+  await command('next-module');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(windows.get(12).state, 'normal');
+  assert.deepEqual(JSON.parse(JSON.stringify(sentMessages)), [
+    { tabId: 12, payload: { action: 'ANFETA_SWITCH_MODULE', mode: 'toggle-search-calendar' } },
+    { tabId: 12, payload: { action: 'ANFETA_SWITCH_MODULE', mode: 'cycle' } },
+  ]);
+
+  console.log('OK extensión v1.1.4: múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, cambio de módulos y errores.');
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

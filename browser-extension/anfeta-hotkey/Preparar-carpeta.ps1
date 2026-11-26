@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $destination = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'ANFETA\Extension'))
 $source = [IO.Path]::GetFullPath($PSScriptRoot)
-$files = @('manifest.json','service-worker.js','options.html','options.js','whatsapp-sync.js','README.md')
+$files = @('manifest.json','service-worker.js','anfeta-bridge.js','options.html','options.js','whatsapp-sync.js','README.md')
 foreach ($name in $files) {
   $item = Get-Item -LiteralPath (Join-Path $source $name)
   if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Source links are not allowed.' }

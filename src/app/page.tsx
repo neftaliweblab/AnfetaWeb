@@ -5,7 +5,7 @@ import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
 import {readCalendarLocalCache,writeCalendarLocalCache} from "@/lib/calendarLocalCache";
-import {resolveGlobalViewShortcut} from "@/lib/viewToggleShortcut";
+import {resolveGlobalViewShortcut,resolveExtensionModuleAction} from "@/lib/viewToggleShortcut";
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
@@ -138,7 +138,10 @@ export default function AnfetaApp() {
     try {
       const urlP = new URLSearchParams(window.location.search);
       if(urlP.get('activity') || urlP.get('pageId')) return 'results';
-      if(urlP.get('view')==='messages')return 'messages';
+      const viewParam = urlP.get('view') as ActiveHostView | null;
+      if (viewParam && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(viewParam)) {
+        return viewParam;
+      }
       const savedView = localStorage.getItem("anfeta_active_view") as ActiveHostView;
       if (savedView && ["results", "calendar", "dailyProgress", "messages", "reminders"].includes(savedView)) {
         return savedView;
@@ -385,13 +388,10 @@ export default function AnfetaApp() {
   const activeViewRef = useRef<ActiveHostView>(activeView);
   activeViewRef.current = activeView;
 
-  // Global hotkeys without extension: Ctrl+Alt+C / Alt+Shift+C / Ctrl+Shift+K toggle Buscador <-> Calendario, Ctrl+Alt+B focuses search, Ctrl+Shift+J opens Daily Progress
+  // Global hotkeys (without extension) & anfeta-hotkey extension module bridge
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const action = resolveGlobalViewShortcut(e, activeViewRef.current);
+    const applyModuleTarget = (action: { targetView: ActiveHostView; focusSearch: boolean } | null) => {
       if (!action) return;
-      e.preventDefault();
-      e.stopPropagation();
       handleSelectView(action.targetView);
       if (action.focusSearch) {
         requestAnimationFrame(() => {
@@ -403,8 +403,23 @@ export default function AnfetaApp() {
         });
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const action = resolveGlobalViewShortcut(e, activeViewRef.current);
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyModuleTarget(action);
+    };
+    const handleExtensionModule = (e: Event) => {
+      const mode = (e as CustomEvent)?.detail?.mode;
+      applyModuleTarget(resolveExtensionModuleAction(mode, activeViewRef.current));
+    };
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("anfeta:extension-module", handleExtensionModule);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("anfeta:extension-module", handleExtensionModule);
+    };
   }, [handleSelectView]);
 
   // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario y actividades

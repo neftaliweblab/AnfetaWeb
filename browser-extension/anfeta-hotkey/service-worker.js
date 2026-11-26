@@ -161,6 +161,80 @@ function toggleAnfeta() {
   return inFlightToggle;
 }
 
+async function runSwitchAnfetaModule(mode) {
+  try {
+    const config = await getTargetConfig();
+    const queriedTabs = await chrome.tabs.query({ url: config.queryUrl });
+    const tabs = Array.isArray(queriedTabs)
+      ? queriedTabs.filter((t) => matchesConfigOrigin(t.url, config))
+      : [];
+
+    const { managedWindowId, managedPrevState } = await chrome.storage.local.get([
+      'managedWindowId',
+      'managedPrevState',
+    ]);
+
+    let validManagedId = undefined;
+    if (typeof managedWindowId === 'number') {
+      try {
+        await chrome.windows.get(managedWindowId);
+        validManagedId = managedWindowId;
+      } catch {
+        await chrome.storage.local.remove(['managedWindowId', 'managedPrevState']);
+      }
+    }
+
+    let focusedWindowId = undefined;
+    try {
+      const lastFocused = await chrome.windows.getLastFocused?.();
+      if (lastFocused && typeof lastFocused.id === 'number') focusedWindowId = lastFocused.id;
+    } catch {}
+
+    let tab = selectBestAnfetaTab(tabs, validManagedId, focusedWindowId);
+    if (tab) {
+      const win = await chrome.windows.get(tab.windowId, { populate: true });
+      await chrome.tabs.update(tab.id, { active: true });
+      if (win.state === 'minimized') {
+        const restoreState =
+          managedPrevState === 'maximized' || managedPrevState === 'fullscreen'
+            ? managedPrevState
+            : 'normal';
+        await chrome.windows.update(win.id, { state: restoreState, focused: true });
+      } else if (!win.focused) {
+        await chrome.windows.update(win.id, { focused: true });
+      }
+    } else {
+      const win = await chrome.windows.create({
+        url: config.openUrl,
+        type: 'popup',
+        width: 1400,
+        height: 900,
+        focused: true,
+      });
+      await chrome.storage.local.set({ managedWindowId: win.id, managedPrevState: 'normal' });
+      tab = Array.isArray(win.tabs) ? win.tabs[0] : null;
+    }
+
+    if (tab && typeof tab.id === 'number' && typeof chrome.tabs?.sendMessage === 'function') {
+      try {
+        await chrome.tabs.sendMessage(tab.id, { action: 'ANFETA_SWITCH_MODULE', mode });
+      } catch {}
+    }
+
+    await chrome.storage.local.remove('lastError');
+    await chrome.action.setBadgeText({ text: '' });
+  } catch (error) {
+    await chrome.storage.local.set({
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+    await chrome.action.setBadgeText({ text: '!' });
+  }
+}
+
+function switchAnfetaModule(mode) {
+  return runSwitchAnfetaModule(mode);
+}
+
 chrome.windows?.onRemoved?.addListener?.(async (windowId) => {
   try {
     const { managedWindowId } = await chrome.storage.local.get('managedWindowId');
@@ -171,7 +245,13 @@ chrome.windows?.onRemoved?.addListener?.(async (windowId) => {
 });
 
 chrome.commands.onCommand.addListener((command) => {
-  if (command === 'toggle-anfeta') void toggleAnfeta();
+  if (command === 'toggle-anfeta') {
+    void toggleAnfeta();
+  } else if (command === 'toggle-buscador-calendario') {
+    void switchAnfetaModule('toggle-search-calendar');
+  } else if (command === 'next-module') {
+    void switchAnfetaModule('cycle');
+  }
 });
 
 chrome.action.onClicked.addListener(() => {
