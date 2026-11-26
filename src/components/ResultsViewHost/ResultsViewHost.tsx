@@ -45,7 +45,7 @@ import {PERSON_ALIASES,normalizePerson} from '@/services/identityNormalizer';
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useCallback } from "react";
 import { SearchResultRow, PendingTaskItem, ActiveProjectItem } from "@/types/anfeta";
 import { SearchTabsRow, SearchTab, SearchTabConfig } from "./SearchTabsRow";
-import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles, RefreshCw, CheckCircle2, AlertTriangle, Zap, ExternalLink } from "lucide-react";
+import { FolderOpen, ChevronRight, ArrowUpLeft, X, FileText, Calendar, Sparkles, RefreshCw, CheckCircle2, AlertTriangle, Zap, ExternalLink, Eye } from "lucide-react";
 import {loadAccountPreferences,saveAccountPreferences} from '@/lib/accountPreferences';
 import { SearchInputBar } from "./SearchInputBar";
 import {PersistentSearchAccess} from './PersistentSearchAccess';
@@ -53,7 +53,7 @@ import { ScopePillsRow } from "./ScopePillsRow";
 import { SearchConfigRow } from "./SearchConfigRow";
 import { PendientesColumn } from "./PendientesColumn";
 import { QuickFiltersColumn } from "./QuickFiltersColumn";
-import { ResultsVirtualTable } from "./ResultsVirtualTable";
+import { ResultsVirtualTable, itemToActivity } from "./ResultsVirtualTable";
 import { DetailsPane } from "./DetailsPane";
 import { SearchBottomBar } from "./SearchBottomBar";
 import { PendingTaskModal } from "./PendingTaskModal";
@@ -885,7 +885,8 @@ export function ResultsViewHost({
     setItems(previous=>retainSearchResults(previous,{items:filterDeletedPages(initialItems,currentUser).filter(it=>!isExpiredResponsePage(it)),loadingIndex:true}));
   }, [initialItems,currentUser]);
   const deleteErrorIds=useRef<string[]>([]);
-  const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string; missingIds?: string[] } | null>(null);
+  const [previewModalItem, setPreviewModalItem] = useState<NotionCalendarActivity | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [pinnedDetail,setPinnedDetail]=useState<SearchResultRow|null>(null);
   useEffect(()=>{setPinnedDetail(old=>old?items.find(row=>row.id===old.id)||null:null);},[items]);
@@ -1117,7 +1118,9 @@ export function ResultsViewHost({
   const selectedItemsList = useMemo(() => {
     if (selectedIds.size === 0) return [];
     const byId = new Map(items.map((it) => [it.id, it]));
-    return Array.from(selectedIds).map((id) => byId.get(id)).filter(Boolean);
+    return Array.from(selectedIds)
+      .map((id) => byId.get(id))
+      .filter((it): it is SearchResultRow => Boolean(it));
   }, [items, selectedIds]);
   const quickOpenSummary = useMemo(() => buildQuickOpenSelectionSummary(selectedItemsList), [selectedItemsList]);
   const showSelectionNotice =
@@ -1209,15 +1212,25 @@ export function ResultsViewHost({
         setSelectedItem(null);
       }
       setSelectedIds(new Set());
+      const failedIds = selectedItemsList
+        .filter((it) => !confirmed.has(pageIdentity(it)))
+        .map((it) => String(it.externalId || it.id));
+      const errorMsg = (data.errors || []).join(' · ');
+      const canDismissMissing = failedIds.length > 0 && /no se puede verificar|404|faltar acceso|no existe|permisos/i.test(errorMsg);
       setDeleteFeedback({
-        type: data.failed?'error':'success',
-        message: data.failed?(data.errors||[]).join(' · '):`✅ Se eliminaron ${data.count || count} página${count > 1 ? 's' : ''} exitosamente en Notion.`,
+        type: data.failed ? 'error' : 'success',
+        message: data.failed ? errorMsg : `✅ Se eliminaron ${data.count || count} página${count > 1 ? 's' : ''} exitosamente en Notion.`,
+        missingIds: canDismissMissing ? failedIds : undefined,
       });
       if(!data.failed)setTimeout(() => setDeleteFeedback(previous=>previous?.type==='success'?null:previous), 5000);
     } catch (err: any) {
+      const errMsg = err.message || 'Fallo desconocido';
+      const missingIds = selectedItemsList.map((it) => String(it.externalId || it.id));
+      const canDismissMissing = missingIds.length > 0 && /no se puede verificar|404|faltar acceso|no existe|permisos/i.test(errMsg);
       setDeleteFeedback({
         type: 'error',
-        message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
+        message: `❌ Error al eliminar en Notion: ${errMsg}`,
+        missingIds: canDismissMissing ? missingIds : undefined,
       });
       deleteErrorIds.current=selectedItemsList.map(it=>pageIdentity(it));
     } finally {
@@ -1282,9 +1295,13 @@ export function ResultsViewHost({
       });
       setTimeout(() => setDeleteFeedback(previous=>previous?.type==='success'?null:previous), 5000);
     } catch (err: any) {
+      const errMsg = err.message || 'Fallo desconocido';
+      const targetId = String(item.externalId || item.id || '');
+      const canDismissMissing = !!targetId && /no se puede verificar|404|faltar acceso|no existe|permisos/i.test(errMsg);
       setDeleteFeedback({
         type: 'error',
-        message: `❌ Error al eliminar en Notion: ${err.message || 'Fallo desconocido'}`,
+        message: `❌ Error al eliminar en Notion: ${errMsg}`,
+        missingIds: canDismissMissing ? [targetId] : undefined,
       });
       deleteErrorIds.current=[pageIdentity(item)];
     } finally {
@@ -1363,7 +1380,11 @@ export function ResultsViewHost({
 
       if (e.key === "Enter" && !isInput && !(document.activeElement as HTMLElement)?.closest('button,a,select,[role="dialog"],[contenteditable="true"]') && selectedItem) {
         e.preventDefault();
-        handleOpenItem(selectedItem);
+        if (isNotionItem(selectedItem)) {
+          openDirectNotionPreview(selectedItem, true);
+        } else {
+          handleOpenItem(selectedItem);
+        }
         return;
       }
 
@@ -1448,6 +1469,85 @@ export function ResultsViewHost({
     window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop, true);
     return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop, true); };
   }, [isActive]);
+
+  const openDirectNotionPreview = (item: any, openModal = false) => {
+    if (!item) return;
+    setShowPersonalAgenda(false);
+    setSelectedItem(item);
+    setIsDetailsOpen(true);
+    if (openModal) {
+      setPreviewModalItem(itemToActivity(item));
+    }
+  };
+
+  const handleDismissUnverifiedFromList = (missingIds: string[]) => {
+    if (!missingIds.length) return;
+    rememberDeletedPages(currentUser, missingIds);
+    setDeleteFeedback({
+      type: 'success',
+      message: `✅ ${missingIds.length === 1 ? 'Registro no encontrado quitado' : `${missingIds.length} registros no encontrados quitados`} de esta lista local.`,
+    });
+    setTimeout(() => setDeleteFeedback((previous) => (previous?.type === 'success' ? null : previous)), 4000);
+  };
+
+  const handleUpdatePreviewActivity = async (pageId: string, updates: any) => {
+    if (!previewModalItem || previewModalItem.pageId !== pageId) return false;
+    try {
+      const action =
+        updates.titleDescription !== undefined
+          ? 'update-activity-details'
+          : updates.start
+          ? 'update-activity-schedule'
+          : updates.reviewer || updates.person
+          ? 'update-activity-assignee'
+          : 'update-activity-status';
+      const response = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          payload: {
+            id: pageId,
+            currentUser,
+            expectedTitle: previewModalItem.title,
+            expectedStart: previewModalItem.start,
+            expectedEnd: previewModalItem.end,
+            expectedStatus: previewModalItem.status,
+            expectedPerson: previewModalItem.person,
+            ...updates,
+          },
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.activity) {
+        setStatusError(data.error || 'No se pudo guardar en Notion.');
+        return false;
+      }
+      const saved: NotionCalendarActivity = data.activity;
+      setPreviewModalItem(saved);
+      const states = [
+        {
+          id: pageId,
+          name: saved.title,
+          assignedPerson: saved.person,
+          updateStatus: saved.status,
+          scheduledDate: saved.start,
+          scheduledEnd: saved.end,
+          ftfVerified: saved.ftfVerified,
+          ftfAvailable: saved.ftfAvailable,
+          serverModified: saved.serverModified || new Date().toISOString(),
+        },
+      ];
+      setItems((prev) => applyNotionStates(prev, states));
+      setSelectedItem((prev: any) => (prev ? applyNotionStates([prev], states)[0] : prev));
+      anfetaSync.broadcast({ type: 'ACTIVITY_UPDATED', confirmed: true, pageId, updates: saved });
+      setStatusError('');
+      return true;
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : 'No se pudo guardar en Notion.');
+      return false;
+    }
+  };
 
   const handleOpenItem = (item: any) => {
     if (!item) return;
@@ -2617,7 +2717,21 @@ export function ResultsViewHost({
           onToggleBookmark={handleToggleBookmark}
           onDelete={handleDeleteItem}
           onArchive={handleArchiveItem}
-          onDoubleClick={handleOpenItem}
+          onOpenDetailModal={(item) => {
+            if (isNotionItem(item)) {
+              openDirectNotionPreview(item, true);
+            } else {
+              handleOpenItem(item);
+            }
+          }}
+          onDoubleClick={(item) => {
+            if (isNotionItem(item)) {
+              openDirectNotionPreview(item, true);
+            } else {
+              handleOpenItem(item);
+            }
+          }}
+          onOpenExternal={handleOpenItem}
           onOpenLocation={handleOpenLocation}
           onCopyName={handleCopyName}
           onCopyPath={handleCopyPath}
@@ -2672,14 +2786,40 @@ export function ResultsViewHost({
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={handleOpenSelectedItems}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] px-3 py-1 font-semibold text-white shadow-sm transition-colors cursor-pointer"
-              >
-                <ExternalLink className="h-3 w-3" />
-                <span>{quickOpenSummary.buttonLabel}</span>
-              </button>
+              {quickOpenSummary.launchUrls.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedItemsList.find((it): it is SearchResultRow => Boolean(it) && isNotionItem(it)) || selectedItem || selectedItemsList[0];
+                      if (target) openDirectNotionPreview(target, true);
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] px-3 py-1 font-semibold text-white shadow-sm transition-colors cursor-pointer"
+                    title="1ra opción: vista previa directa desde Notion dentro de ANFETA"
+                  >
+                    <Eye className="h-3 w-3" />
+                    <span>Vista previa Notion</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenSelectedItems}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-600 bg-[#152232] hover:bg-[#1E2E42] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors cursor-pointer"
+                    title="2da opción (respaldo): abrir enlace externo en Notion"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span>Respaldo: {quickOpenSummary.buttonLabel}</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenSelectedItems}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] px-3 py-1 font-semibold text-white shadow-sm transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  <span>{quickOpenSummary.buttonLabel}</span>
+                </button>
+              )}
               {selectedIds.size === 1 && selectedItem && (!isDetailsOpen || showPersonalAgenda) && (
                 <button
                   type="button"
@@ -2724,6 +2864,7 @@ export function ResultsViewHost({
             isPinned={!!pinnedDetail}
             onTogglePin={()=>setPinnedDetail(old=>old?null:selectedItem)}
             onOpen={handleOpenItem}
+            onOpenDetailModal={(item) => openDirectNotionPreview(item, true)}
             onOpenLocation={handleOpenLocation}
             onSearchDomain={(domain) => handleQueryChange(domain)}
             onOpenUploadDropbox={handleOpenDropboxUpload}
@@ -2976,23 +3117,51 @@ export function ResultsViewHost({
         />
       )}
 
-      {/* Mensaje de confirmación de eliminación */}
+      {/* Modal interactivo de Vista Previa directa desde Notion (1ra opción) */}
+      {previewModalItem && (
+        <UnifiedActivityModal
+          activity={previewModalItem}
+          currentUser={currentUser}
+          mode="pinned"
+          onClose={() => setPreviewModalItem(null)}
+          onUpdateActivity={handleUpdatePreviewActivity}
+          onChecklistUpdated={(pageId, updates) => {
+            setPreviewModalItem((prev) => (prev && prev.pageId === pageId ? { ...prev, ...updates } : prev));
+          }}
+        />
+      )}
+
+      {/* Mensaje de confirmación / error de eliminación (centrado para no tapar FABs abajo a la derecha) */}
       {deleteFeedback && (
         <div
-          className={`fixed bottom-12 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-lg border text-xs font-semibold shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-2 ${
+          role={deleteFeedback.type === "error" ? "alert" : "status"}
+          className={`fixed bottom-14 left-1/2 -translate-x-1/2 z-[160] w-[min(92vw,720px)] flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 rounded-xl border text-xs font-semibold shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-2 ${
             deleteFeedback.type === "success"
               ? "bg-[#091E16] border-[#059669] text-[#34D399]"
               : "bg-[#200D11] border-[#E11D48] text-[#FDA4AF]"
           }`}
         >
-          <span>{deleteFeedback.message}</span>
-          <button
-            type="button"
-            onClick={() => setDeleteFeedback(null)}
-            className="p-0.5 rounded hover:bg-white/10 opacity-70 hover:opacity-100 transition-opacity ml-1"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <span className="min-w-0 flex-1 break-words">{deleteFeedback.message}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {deleteFeedback.missingIds && deleteFeedback.missingIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleDismissUnverifiedFromList(deleteFeedback.missingIds || [])}
+                className="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/50 text-rose-100 text-[11px] font-semibold transition-colors cursor-pointer"
+                title="Si la página ya fue eliminada en Notion o no es accesible, quítala de tu catálogo local"
+              >
+                Quitar de esta lista
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setDeleteFeedback(null)}
+              aria-label="Cerrar notificación"
+              className="p-1 rounded hover:bg-white/10 opacity-80 hover:opacity-100 transition-opacity cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
     </div>

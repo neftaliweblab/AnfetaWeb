@@ -150,8 +150,8 @@ export function TopBar({
               }}
               placeholder={
                 activeView === "calendar"
-                  ? "Filtrar calendario (título, persona...) · (Ctrl+Alt+B buscador)"
-                  : "Buscar por término, ext:pdf, folder:dropbox, dm:3... (Ctrl+Alt+B)"
+                  ? "Filtrar calendario (título, persona...) · (Ctrl+Alt+C alternar vista)"
+                  : "Buscar por término, ext:pdf, folder:dropbox... (Ctrl+Alt+C calendario)"
               }
               className="w-full h-9 pl-9 pr-8 bg-[#080B0F] text-[#F1F5F9] text-xs placeholder-[#64748B] rounded-lg border border-[#26323E] focus:border-[#00A8FF] focus:outline-none focus:ring-1 focus:ring-[#00A8FF] transition-all shadow-[0_0_10px_rgba(0,168,255,0.12)]"
             />
@@ -186,7 +186,7 @@ export function TopBar({
         ) : (
           <div className="flex-1 flex items-center px-3">
             <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-              Módulo Buscador · <span className="text-cyan-400 font-semibold">Ctrl+Alt+B</span> enfoca la barra principal
+              <span className="text-cyan-400 font-semibold">Ctrl+Alt+C</span> (o <span className="text-cyan-400 font-semibold">Alt+Shift+C</span>) alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Ctrl+Alt+B</span> busca
             </span>
           </div>
         )}
@@ -200,7 +200,7 @@ export function TopBar({
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Buscador" aria-label="Buscador"
+            title="Buscador (Ctrl+Alt+C alternar vista)" aria-label="Buscador"
           >
             <Search className="w-5 h-5 shrink-0" />
 
@@ -213,7 +213,7 @@ export function TopBar({
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Calendario" aria-label="Calendario"
+            title="Calendario (Ctrl+Alt+C o Alt+Shift+C alternar vista)" aria-label="Calendario"
           >
             <Calendar className="w-5 h-5 shrink-0" />
 

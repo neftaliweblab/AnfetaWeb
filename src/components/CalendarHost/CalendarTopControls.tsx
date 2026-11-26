@@ -489,7 +489,7 @@ export function CalendarTopControls({
         <button
           onClick={onBackToSearch}
           className="px-2 py-1 rounded bg-[#18212B] hover:bg-[#223848] text-[#00A8FF] border border-[#00A8FF]/40 text-xs font-bold cursor-pointer"
-          title="Volver al buscador de resultados"
+          title="Volver al buscador de resultados (Ctrl+Alt+C o Alt+Shift+C)"
         >
           ⌕
         </button>

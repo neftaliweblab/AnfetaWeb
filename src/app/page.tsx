@@ -5,6 +5,7 @@ import {recordAppLog} from '@/lib/appDiagnostics';
 import {applyNotionStates} from '@/lib/applyNotionStates';
 import {upsertCalendarActivity,mergeCalendarSnapshot} from "@/lib/calendarUpdates";
 import {readCalendarLocalCache,writeCalendarLocalCache} from "@/lib/calendarLocalCache";
+import {resolveGlobalViewShortcut} from "@/lib/viewToggleShortcut";
 import {sharedCalendarFetch,calendarReadBoundary} from "@/lib/sharedCalendarFetch";
 import {filterDeletedPages,isDeletedPagesEvent,DELETED_PAGES_EVENT} from '@/lib/deletedPages';
 import {usePendingTasks} from "@/components/usePendingTasks";
@@ -373,29 +374,6 @@ export default function AnfetaApp() {
     return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check);};
   },[currentUser,isAuthenticated]);
 
-  // Global hotkeys (Ctrl+Alt+B, Ctrl+Shift+K, Ctrl+Shift+J)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.altKey && (e.key === "b" || e.key === "B")) {
-        e.preventDefault();
-        setActiveView("results");
-        const el = document.getElementById("anfeta-search-input") as HTMLInputElement;
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      } else if (e.ctrlKey && e.shiftKey && (e.key === "K" || e.key === "k")) {
-        e.preventDefault();
-        setActiveView("calendar");
-      } else if (e.ctrlKey && e.shiftKey && (e.key === "J" || e.key === "j")) {
-        e.preventDefault();
-        setActiveView("dailyProgress");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   // Persistir activeView en localStorage
   const handleSelectView = useCallback((view: ActiveHostView) => {
     setActiveView(view);
@@ -403,6 +381,31 @@ export default function AnfetaApp() {
       localStorage.setItem("anfeta_active_view", view);
     } catch {}
   }, []);
+
+  const activeViewRef = useRef<ActiveHostView>(activeView);
+  activeViewRef.current = activeView;
+
+  // Global hotkeys without extension: Ctrl+Alt+C / Alt+Shift+C / Ctrl+Shift+K toggle Buscador <-> Calendario, Ctrl+Alt+B focuses search, Ctrl+Shift+J opens Daily Progress
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const action = resolveGlobalViewShortcut(e, activeViewRef.current);
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleSelectView(action.targetView);
+      if (action.focusSearch) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById("anfeta-search-input") as HTMLInputElement | null;
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [handleSelectView]);
 
   // Sincronización multi-monitor en tiempo real con la ventana independiente de Calendario y actividades
   useEffect(() => {

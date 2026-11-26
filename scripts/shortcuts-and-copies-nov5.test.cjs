@@ -23,4 +23,15 @@ const rows=[{pageId:'real',title:'Actividad original'},{pageId:'review-mirror-re
 assert.deepEqual(rows.filter(row=>calendarCopyVisible(row,false)).map(row=>row.pageId),['real','other']);
 assert.equal(rows.filter(row=>calendarCopyVisible(row,true)).length,4);assert.equal(rows.length,4);
 assert.notEqual(mirrorVisibilityKey('Neftali'),mirrorVisibilityKey('John'));assert.equal(mirrorVisibilityKey('nneft'),mirrorVisibilityKey('Neftali'));
-console.log('OK: perfiles y combinaciones personalizadas, reservas y duplicados, IME/AltGraph, listener real, preferencia por usuario y copias ocultas sin quitar originales.');
+const {resolveGlobalViewShortcut}=require('../src/lib/viewToggleShortcut.ts');
+assert.deepEqual(resolveGlobalViewShortcut(event('c',{ctrlKey:true,altKey:true}),'results'),{targetView:'calendar',focusSearch:false});
+assert.deepEqual(resolveGlobalViewShortcut(event('c',{ctrlKey:true,altKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('C',{altKey:true,shiftKey:true}),'results'),{targetView:'calendar',focusSearch:false});
+assert.deepEqual(resolveGlobalViewShortcut(event('C',{altKey:true,shiftKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('k',{ctrlKey:true,shiftKey:true}),'results'),{targetView:'calendar',focusSearch:false});
+assert.deepEqual(resolveGlobalViewShortcut(event('k',{ctrlKey:true,shiftKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('b',{ctrlKey:true,altKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('j',{ctrlKey:true,shiftKey:true}),'results'),{targetView:'dailyProgress',focusSearch:false});
+assert.equal(resolveGlobalViewShortcut({...event('c',{ctrlKey:true,altKey:true}),getModifierState:k=>k==='AltGraph'},'results'),null);
+assert.equal(resolveGlobalViewShortcut(event('c',{ctrlKey:true,altKey:true,repeat:true}),'results'),null);
+console.log('OK: perfiles y combinaciones personalizadas, reservas y duplicados, IME/AltGraph, listener real, preferencia por usuario, toggle buscador/calendario y copias ocultas sin quitar originales.');

@@ -31,6 +31,7 @@ import {
   FileSpreadsheet,
   Download,
   Calendar,
+  Eye,
 } from "lucide-react";
 import { playCopyChime } from "@/services/windowsIntegration";
 import { ImageLightbox, LightboxImage } from "./ImageLightbox";
@@ -493,9 +494,10 @@ function DetailsPaneComponent({
             <button
               type="button"
               onClick={() => onOpen(item)}
-              className="flex items-center gap-1 text-[10px] text-[#38BDF8] hover:text-[#7DD3FC] cursor-pointer ml-1"
+              className="flex items-center gap-1 text-[10px] text-[#94A3B8] hover:text-[#7DD3FC] cursor-pointer ml-1"
+              title="2da opción (respaldo): abrir enlace externo en Notion"
             >
-              <span>Notion</span>
+              <span>Notion (respaldo)</span>
               <ExternalLink className="w-2.5 h-2.5" />
             </button>
           )}
@@ -865,31 +867,47 @@ function DetailsPaneComponent({
 
       {/* 3. Acciones inferiores (Fila 2, altura fija 38px, paridad total con ANFETA Row 2) */}
       <div className="h-[38px] px-2.5 bg-[#121822] border-t border-[#1E2836] flex items-center gap-1.5 shrink-0 relative">
-        <button
-          type="button"
-          onClick={() => onOpen(item)}
-          className="flex-1 h-[26px] bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white text-[11px] font-medium rounded transition-colors flex items-center justify-center cursor-pointer"
-        >
-          Abrir
-        </button>
-        <button
-          type="button"
-          onClick={() => onOpenLocation(item)}
-          className="flex-1 h-[26px] bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white text-[11px] font-medium rounded transition-colors flex items-center justify-center truncate px-1 cursor-pointer"
-          title={isNotion ? "Abrir en Notion" : "Abrir ubicación en Explorador"}
-        >
-          {isNotion ? "Abrir Notion" : "Ubicación"}
-        </button>
-        {isNotion && onOpenDetailModal && (
-          <button
-            type="button"
-            onClick={() => onOpenDetailModal(item)}
-            className="flex-1 h-[26px] bg-purple-600 hover:bg-purple-500 border border-purple-400 text-white font-medium text-[11px] rounded transition-colors flex items-center justify-center gap-1 shadow-sm px-1.5 cursor-pointer"
-            title="Abrir detalle interactivo de la actividad en modal flotante"
-          >
-            <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Abrir detalle</span>
-          </button>
+        {isNotion ? (
+          <>
+            {onOpenDetailModal && (
+              <button
+                type="button"
+                onClick={() => onOpenDetailModal(item)}
+                className="flex-1 h-[26px] bg-[#0284C7] hover:bg-[#0369A1] border border-[#38BDF8]/60 text-white font-semibold text-[11px] rounded transition-colors flex items-center justify-center gap-1 shadow-sm px-1.5 cursor-pointer"
+                title="1ra opción: vista previa e interacción directa desde Notion dentro de ANFETA"
+              >
+                <Eye className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Vista previa Notion</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onOpen(item)}
+              className={`${onOpenDetailModal ? "px-2" : "flex-1 px-1.5"} h-[26px] bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#94A3B8] hover:text-white text-[11px] font-medium rounded transition-colors flex items-center justify-center gap-1 shrink-0 cursor-pointer`}
+              title="2da opción (respaldo): abrir enlace externo en Notion"
+            >
+              <ExternalLink className="w-3 h-3 shrink-0" />
+              <span className="truncate">{onOpenDetailModal ? "Respaldo ↗" : "Abrir en Notion (respaldo)"}</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => onOpen(item)}
+              className="flex-1 h-[26px] bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white text-[11px] font-medium rounded transition-colors flex items-center justify-center cursor-pointer"
+            >
+              Abrir
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenLocation(item)}
+              className="flex-1 h-[26px] bg-[#161F2C] hover:bg-[#1E2836] border border-[#26354A] hover:border-[#38BDF8] text-[#CBD5E1] hover:text-white text-[11px] font-medium rounded transition-colors flex items-center justify-center truncate px-1 cursor-pointer"
+              title="Abrir ubicación en Explorador"
+            >
+              Ubicación
+            </button>
+          </>
         )}
         <div className="relative">
           <button

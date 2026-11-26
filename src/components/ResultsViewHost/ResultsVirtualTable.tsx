@@ -53,7 +53,7 @@ import { resultAssignedPerson, scanActivityTags, activityPerson } from "@/servic
 import { normalizePerson } from "@/services/identityNormalizer";
 import type { NotionCalendarActivity } from "@/types/anfeta";
 
-function itemToActivity(item: any): NotionCalendarActivity {
+export function itemToActivity(item: any): NotionCalendarActivity {
   const rawId = item.originalPageId || item.externalId || item.pageId || item.id || "";
   let cleanId = String(rawId).replace(/^review-mirror-/, "").replace(/-/g, "");
   if (!cleanId || cleanId.startsWith("idx") || cleanId.startsWith("Item")) {
@@ -126,6 +126,7 @@ interface ResultsTableProps {
   onDelete: (item: any) => void;
   onArchive?: (item: any) => void;
   onDoubleClick: (item: any) => void;
+  onOpenExternal?: (item: any) => void;
   onOpenLocation?: (item: any) => void;
   onCopyName?: (item: any) => void;
   onCopyPath?: (item: any) => void;
@@ -186,6 +187,7 @@ function ResultsVirtualTableComponent({
   onDelete,
   onArchive,
   onDoubleClick,
+  onOpenExternal,
   onOpenLocation,
   onCopyName,
   onCopyPath,
@@ -911,8 +913,8 @@ function ResultsVirtualTableComponent({
           </div>
         )}
 
-        {/* Abrir rápido + Favorito + Checkbox + Eliminar */}
-        <div className="w-[126px] shrink-0 flex items-center justify-end gap-1 px-1">
+        {/* Vista previa directa (1ra) + Enlace respaldo + Favorito + Checkbox + Eliminar */}
+        <div className="w-[152px] shrink-0 flex items-center justify-end gap-1 px-1">
           {onOpenDetailModal && (
             <button
               type="button"
@@ -924,26 +926,26 @@ function ResultsVirtualTableComponent({
                 height: `${Math.round(18 * scale)}px`,
                 fontSize: `${(9 * scale).toFixed(1)}px`,
               }}
-              className="px-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-colors"
-              title="Abrir detalle interactivo"
+              className="px-1.5 rounded bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold flex items-center gap-1 shrink-0 cursor-pointer shadow-sm transition-colors"
+              title="Vista previa directa desde Notion (1ra opción)"
             >
-              <Calendar style={{ width: `${Math.round(10 * scale)}px`, height: `${Math.round(10 * scale)}px` }} />
-              <span className="hidden xl:inline">Abrir</span>
+              <Eye style={{ width: `${Math.round(10 * scale)}px`, height: `${Math.round(10 * scale)}px` }} />
+              <span className="hidden xl:inline">Vista previa</span>
             </button>
           )}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onDoubleClick(item);
+              (onOpenExternal || onDoubleClick)(item);
             }}
             style={{
               width: `${Math.round(16 * scale)}px`,
               height: `${Math.round(16 * scale)}px`,
             }}
-            className="rounded hover:bg-[#0284C7]/25 text-[#38BDF8] flex items-center justify-center cursor-pointer transition-colors"
-            title="Abrir rápido en Notion (1 clic)"
-            aria-label={`Abrir ${item.name} en Notion`}
+            className="rounded hover:bg-[#1E2836] text-[#94A3B8] hover:text-[#38BDF8] flex items-center justify-center cursor-pointer transition-colors"
+            title="2da opción (respaldo) · Abrir rápido en Notion (1 clic)"
+            aria-label={`Abrir ${item.name} en Notion (respaldo)`}
           >
             <ExternalLink
               style={{
@@ -1763,8 +1765,8 @@ function ResultsVirtualTableComponent({
             </div>
           )}
 
-          {/* Acciones y selección: ancho 126px alineado exactamente con las filas */}
-          <div className="w-[126px] shrink-0 flex items-center justify-end gap-2 px-1">
+          {/* Acciones y selección: ancho 152px alineado exactamente con las filas */}
+          <div className="w-[152px] shrink-0 flex items-center justify-end gap-2 px-1">
             <span className="text-[10px] text-[#F59E0B]" title="Favoritos">★</span>
             <button
               type="button"
@@ -2321,17 +2323,32 @@ function ResultsVirtualTableComponent({
               /*                  MENÚ DEDICADO DE NOTION                 */
               /* ======================================================== */
               <>
-                {/* 1. Abrir en Notion */}
+                {/* 1. Vista previa directa desde Notion (1ra opción) */}
+                {onOpenDetailModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenDetailModal(item);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#38BDF8] font-medium text-[11px] flex items-center gap-2 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>Vista previa directa desde Notion</span>
+                  </button>
+                )}
+
+                {/* 2. Abrir en Notion (2da opción de respaldo) */}
                 <button
                   type="button"
                   onClick={() => {
-                    onDoubleClick(item);
+                    (onOpenExternal || onDoubleClick)(item);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 rounded hover:bg-[#1E2836] text-[#94A3B8] hover:text-[#CBD5E1] text-[11px] flex items-center gap-2 cursor-pointer"
                 >
-                  <ExternalLink className="w-3.5 h-3.5 text-[#00C8FF]" />
-                  <span>Abrir en Notion ↗</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-[#64748B]" />
+                  <span>Abrir en Notion (respaldo) ↗</span>
                 </button>
 
                 {onActivityAction&&<div className="my-1 border-y border-slate-700 py-1">{([
