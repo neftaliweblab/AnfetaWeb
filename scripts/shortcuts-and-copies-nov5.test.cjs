@@ -28,6 +28,10 @@ assert.deepEqual(resolveGlobalViewShortcut(event('c',{ctrlKey:true,altKey:true})
 assert.deepEqual(resolveGlobalViewShortcut(event('c',{ctrlKey:true,altKey:true}),'calendar'),{targetView:'results',focusSearch:true});
 assert.deepEqual(resolveGlobalViewShortcut(event('C',{altKey:true,shiftKey:true}),'results'),{targetView:'calendar',focusSearch:false});
 assert.deepEqual(resolveGlobalViewShortcut(event('C',{altKey:true,shiftKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('C',{ctrlKey:true,shiftKey:true}),'results'),{targetView:'calendar',focusSearch:false});
+assert.deepEqual(resolveGlobalViewShortcut(event('C',{ctrlKey:true,shiftKey:true}),'calendar'),{targetView:'results',focusSearch:true});
+assert.deepEqual(resolveGlobalViewShortcut(event('c',{altKey:true}),'results'),{targetView:'calendar',focusSearch:false});
+assert.deepEqual(resolveGlobalViewShortcut(event('c',{altKey:true}),'calendar'),{targetView:'results',focusSearch:true});
 assert.deepEqual(resolveGlobalViewShortcut(event('q',{altKey:true}),'results'),{targetView:'calendar',focusSearch:false});
 assert.deepEqual(resolveGlobalViewShortcut(event('q',{altKey:true}),'calendar'),{targetView:'results',focusSearch:true});
 assert.deepEqual(resolveGlobalViewShortcut(event('1',{altKey:true,code:'Digit1'}),'calendar'),{targetView:'results',focusSearch:true});

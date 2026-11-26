@@ -90,17 +90,21 @@ export function resolveGlobalViewShortcut(
     if (isKey('5', 'Digit5') || code === 'Numpad5') {
       return { targetView: 'reminders', focusSearch: false };
     }
-    // Alt + Q: one-handed Buscador <-> Calendario toggle (zero Edge/Chrome/AltGr conflicts)
-    if (isKey('q', 'KeyQ')) {
+    // Alt + Q / Alt + C: one-handed Buscador <-> Calendario toggle (zero Edge/Chrome/AltGr conflicts)
+    if (isKey('q', 'KeyQ') || isKey('c', 'KeyC')) {
       const nextView = toggleSearchCalendarView(currentView);
       return { targetView: nextView, focusSearch: nextView === 'results' };
     }
   }
 
-  // Toggle Buscador <-> Calendario: Ctrl+Alt+C or Alt+Shift+C or Ctrl+Shift+K
+  // Toggle Buscador <-> Calendario: Ctrl+Shift+C, Ctrl+Alt+C, Alt+Shift+C or Ctrl+Shift+K.
+  // Nota: Chrome/Edge reservan Ctrl+Shift+C para DevTools (inspeccionar) cuando está habilitado;
+  // si el navegador no entrega el evento, siguen funcionando Alt+Q / Alt+Shift+C.
   if (
     isKey('c', 'KeyC') &&
-    ((hasCtrl && hasAlt && !hasShift) || (!hasCtrl && hasAlt && hasShift))
+    ((hasCtrl && hasAlt && !hasShift) ||
+      (!hasCtrl && hasAlt && hasShift) ||
+      (hasCtrl && !hasAlt && hasShift))
   ) {
     const nextView = toggleSearchCalendarView(currentView);
     return { targetView: nextView, focusSearch: nextView === 'results' };

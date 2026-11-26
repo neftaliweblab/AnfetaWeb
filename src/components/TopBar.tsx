@@ -150,8 +150,8 @@ export function TopBar({
               }}
               placeholder={
                 activeView === "calendar"
-                  ? "Filtrar calendario (título, persona...) · (Ctrl+Alt+C alternar vista)"
-                  : "Buscar por término, ext:pdf, folder:dropbox... (Ctrl+Alt+C calendario)"
+                  ? "Filtrar calendario (título, persona...) · (Alt+C alternar vista)"
+                  : "Buscar por término, ext:pdf, folder:dropbox... (Alt+C calendario)"
               }
               className="w-full h-9 pl-9 pr-8 bg-[#080B0F] text-[#F1F5F9] text-xs placeholder-[#64748B] rounded-lg border border-[#26323E] focus:border-[#00A8FF] focus:outline-none focus:ring-1 focus:ring-[#00A8FF] transition-all shadow-[0_0_10px_rgba(0,168,255,0.12)]"
             />
@@ -186,7 +186,7 @@ export function TopBar({
         ) : (
           <div className="flex-1 flex items-center px-3">
             <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-              <span className="text-cyan-400 font-semibold">Alt+Q</span> / <span className="text-cyan-400 font-semibold">Alt+Shift+C</span> alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Alt+1..5</span> cambia módulo
+              <span className="text-cyan-400 font-semibold">Alt+C</span> / <span className="text-cyan-400 font-semibold">Alt+Q</span> alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Alt+1..5</span> cambia módulo
             </span>
           </div>
         )}
@@ -200,7 +200,7 @@ export function TopBar({
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Buscador (Alt+1 · Alt+Q / Alt+Shift+C alterna)" aria-label="Buscador"
+            title="Buscador (Alt+C o Alt+Q alterna con Calendario · Alt+1)" aria-label="Buscador"
           >
             <Search className="w-5 h-5 shrink-0" />
 
@@ -213,7 +213,7 @@ export function TopBar({
                 ? "bg-[#18212B] text-[#00A8FF] border border-[#00A8FF]/40 shadow-[0_0_8px_rgba(0,168,255,0.25)]"
                 : "text-[#94A3B8] hover:bg-[#131A22] hover:text-[#E2E8F0]"
             }`}
-            title="Calendario (Alt+2 · Alt+Q / Alt+Shift+C alterna)" aria-label="Calendario"
+            title="Calendario (Alt+C o Alt+Q alterna con Buscador · Alt+2)" aria-label="Calendario"
           >
             <Calendar className="w-5 h-5 shrink-0" />
 

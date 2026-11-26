@@ -26,16 +26,16 @@ import {parseVisualParts,formatMonthBadgeLabel} from '@/lib/visualTitleParser';
 import type {NotionCalendarActivity} from '@/types/anfeta';
 
 const SHORT_COLLABORATORS = [
- {short:'ED',name:'Edwin'},
-  { short: 'J', name: 'John' },
-  { short: 'K', name: 'Karla' },
-  { short: 'A', name: 'Andrade' },
-  { short: 'N', name: 'Neftali' },
-  { short: 'G', name: 'Genaro' },
-  { short: 'I', name: 'Isaias' },
-  { short: 'S', name: 'Sotelo' },
+  { short: 'JO', name: 'John' },
+  { short: 'KA', name: 'Karla' },
+  { short: 'AN', name: 'Andrade' },
+  { short: 'NE', name: 'Neftali' },
+  { short: 'GE', name: 'Genaro' },
+  { short: 'IS', name: 'Isaias' },
+  { short: 'SO', name: 'Sotelo' },
+  { short: 'ED', name: 'Edwin' },
+  { short: 'BR', name: 'Brian' },
   { short: 'AC', name: 'Acalli' },
-  { short: 'B', name: 'Brian' },
 ] as const;
 
 const SESSION_PERSON_KEY = 'anfeta_personal_agenda_person';
@@ -276,8 +276,8 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
             </div>
           </div>
         )}
-        {/* Fila compacta de botones rápidos de personas: J, K, A, N, G, I, S */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Fila compacta de personas (solo texto): JO KA AN NE GE IS SO ED BR AC */}
+        <div role="group" aria-label="Elegir persona" className="flex items-center gap-0.5 flex-wrap">
           {SHORT_COLLABORATORS.map(({ short, name }) => {
             const isSelected = normalizePerson(name) === person;
             return (
@@ -287,10 +287,10 @@ export function PersonalAgendaPane({currentUser,onOpenCalendar,active=true,works
                 disabled={saving} onClick={() => selectPerson(name)}
                 title={`Ver actividades de ${name}`}
                 aria-pressed={isSelected}
-                className={`w-7 h-7 rounded-lg text-xs font-bold transition-all flex items-center justify-center cursor-pointer ${
+                className={`px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide leading-none transition-colors cursor-pointer disabled:opacity-50 ${
                   isSelected
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30 scale-105'
-                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60'
+                    ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/60'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
                 {short}

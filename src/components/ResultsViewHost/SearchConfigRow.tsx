@@ -1,6 +1,7 @@
 "use client";
 
 import { SearchChoice, type SearchChoiceOption } from "./SearchChoice";
+import { BotLinks } from "./BotLinks";
 import { SEARCH_SORTS, SEARCH_SORT_DESCRIPTIONS } from "@/lib/searchPresentation";
 import { normalizePerson, PERSON_ALIASES } from "@/services/identityNormalizer";
 import React, { useState, useRef, useEffect } from "react";
@@ -779,6 +780,9 @@ function SearchConfigRowComponent({
 
       {/* Lado Derecho: Conmutadores de Paneles y Nivel de Vista */}
       <div style={{ gap: `${Math.round(6 * scale)}px` }} className="flex flex-wrap items-center shrink-0">
+        {/* Accesos a los bots de Grok */}
+        <BotLinks currentUser={currentUser} scale={scale} />
+
         {/* Toggle Pendientes */}
         <button
           type="button"
