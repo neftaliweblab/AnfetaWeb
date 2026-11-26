@@ -57,11 +57,17 @@ export default function StandaloneCalendarPage() {
       const mode = (e as CustomEvent)?.detail?.mode;
       navigateTarget(resolveExtensionModuleAction(mode, 'calendar'));
     };
+    const handleExtensionWindowMessage = (e: MessageEvent) => {
+      if (e.source !== window || e.data?.type !== 'ANFETA_EXTENSION_MODULE') return;
+      navigateTarget(resolveExtensionModuleAction(e.data?.mode, 'calendar'));
+    };
     window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('anfeta:extension-module', handleExtensionModule);
+    window.addEventListener('message', handleExtensionWindowMessage);
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('anfeta:extension-module', handleExtensionModule);
+      window.removeEventListener('message', handleExtensionWindowMessage);
     };
   }, []);
 

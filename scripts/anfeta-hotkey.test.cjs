@@ -7,9 +7,10 @@ const folder = path.join(__dirname, '../browser-extension/anfeta-hotkey');
 const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'manifest.json'), 'utf8'));
 
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, '1.1.5');
+assert.equal(manifest.version, '1.1.6');
 assert.ok(manifest.permissions.includes('storage'));
 assert.ok(manifest.permissions.includes('tabs'));
+assert.ok(manifest.permissions.includes('scripting'));
 assert.equal(manifest.commands['toggle-anfeta'].global, true);
 assert.equal(manifest.commands['toggle-anfeta'].suggested_key.default, 'Ctrl+Shift+8');
 assert.equal(manifest.commands['toggle-buscador-calendario'].suggested_key.default, 'Ctrl+Shift+9');
@@ -29,6 +30,7 @@ let updates = [];
 let activated = [];
 let badge = '';
 let sentMessages = [];
+let executedScripts = [];
 let command;
 let action;
 let lastFocusedId = undefined;
@@ -109,6 +111,12 @@ const chrome = {
       addListener: (fn) => {
         command = fn;
       },
+    },
+  },
+  scripting: {
+    executeScript: async (details) => {
+      executedScripts.push(details);
+      return [{ result: true }];
     },
   },
   runtime: {
@@ -213,21 +221,34 @@ const toggle = () => vm.runInContext('toggleAnfeta()', context);
   assert.equal(typeof command, 'function');
   assert.equal(typeof action, 'function');
 
-  // Test 9: Cambio entre módulos desde la extensión en Render (sin minimizar ni duplicar ventana)
+  // Test 9: Cambio entre módulos desde la extensión en Render via scripting MAIN world (sin minimizar ni duplicar)
   tabs = [{ id: 12, windowId: 12, active: true, url: 'https://anfeta-web.onrender.com/' }];
   windows.set(12, { id: 12, type: 'popup', focused: true, state: 'normal', tabs: [{ id: 12 }] });
   sentMessages = [];
+  executedScripts = [];
   await command('toggle-buscador-calendario');
   await new Promise((r) => setTimeout(r, 20));
   await command('next-module');
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(windows.get(12).state, 'normal');
+  assert.equal(executedScripts.length, 2);
+  assert.equal(executedScripts[0].world, 'MAIN');
+  assert.equal(executedScripts[0].target.tabId, 12);
+  assert.deepEqual(Array.from(executedScripts[0].args), ['toggle-search-calendar']);
+  assert.deepEqual(Array.from(executedScripts[1].args), ['cycle']);
+
+  // Test 10: Fallback a tabs.sendMessage si scripting no está disponible
+  const savedScripting = chrome.scripting;
+  delete context.chrome.scripting;
+  sentMessages = [];
+  await command('toggle-buscador-calendario');
+  await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(JSON.parse(JSON.stringify(sentMessages)), [
     { tabId: 12, payload: { action: 'ANFETA_SWITCH_MODULE', mode: 'toggle-search-calendar' } },
-    { tabId: 12, payload: { action: 'ANFETA_SWITCH_MODULE', mode: 'cycle' } },
   ]);
+  context.chrome.scripting = savedScripting;
 
-  console.log('OK extensión v1.1.5: Render por defecto + múltiples orígenes, /calendar?q, stale managedWindowId, restauración maximizada, cambio de módulos y errores.');
+  console.log('OK extensión v1.1.6: Render + MAIN world scripting, fallback sendMessage, /calendar?q, stale managedWindowId y restauración maximizada.');
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

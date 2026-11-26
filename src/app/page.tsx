@@ -414,11 +414,17 @@ export default function AnfetaApp() {
       const mode = (e as CustomEvent)?.detail?.mode;
       applyModuleTarget(resolveExtensionModuleAction(mode, activeViewRef.current));
     };
+    const handleExtensionWindowMessage = (e: MessageEvent) => {
+      if (e.source !== window || e.data?.type !== "ANFETA_EXTENSION_MODULE") return;
+      applyModuleTarget(resolveExtensionModuleAction(e.data?.mode, activeViewRef.current));
+    };
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("anfeta:extension-module", handleExtensionModule);
+    window.addEventListener("message", handleExtensionWindowMessage);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("anfeta:extension-module", handleExtensionModule);
+      window.removeEventListener("message", handleExtensionWindowMessage);
     };
   }, [handleSelectView]);
 

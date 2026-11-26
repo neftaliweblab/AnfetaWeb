@@ -169,6 +169,106 @@ function toggleAnfeta() {
   return inFlightToggle;
 }
 
+function switchModuleInMainWorld(mode) {
+  const MODULES = ['results', 'calendar', 'dailyProgress', 'messages', 'reminders'];
+  const ARIA_BY_MODULE = {
+    results: 'Buscador',
+    calendar: 'Calendario',
+    dailyProgress: 'Avance Diario',
+    messages: 'Mensajes',
+    reminders: 'Recordatorios',
+  };
+  const findButton = (view) =>
+    document.querySelector(`button[data-anfeta-view="${view}"]`) ||
+    document.querySelector(`button[aria-label="${ARIA_BY_MODULE[view]}"]`);
+
+  let currentView = null;
+  for (const view of MODULES) {
+    const btn = findButton(view);
+    if (btn && typeof btn.className === 'string' && btn.className.includes('bg-[#18212B]')) {
+      currentView = view;
+      break;
+    }
+  }
+  if (!currentView) {
+    try {
+      const saved = localStorage.getItem('anfeta_active_view');
+      if (saved && MODULES.includes(saved)) currentView = saved;
+    } catch {}
+  }
+  if (!currentView) {
+    currentView = window.location.pathname.startsWith('/calendar') ? 'calendar' : 'results';
+  }
+
+  let target = mode;
+  if (mode === 'toggle-search-calendar') {
+    target = currentView === 'calendar' ? 'results' : 'calendar';
+  } else if (mode === 'cycle') {
+    const idx = MODULES.indexOf(currentView);
+    target = MODULES[(idx + 1) % MODULES.length];
+  } else if (!MODULES.includes(target)) {
+    target = 'results';
+  }
+
+  window.dispatchEvent(new CustomEvent('anfeta:extension-module', { detail: { mode } }));
+  window.postMessage({ type: 'ANFETA_EXTENSION_MODULE', mode }, '*');
+
+  if (window.location.pathname.startsWith('/calendar')) {
+    if (target !== 'calendar') {
+      window.location.href = '/?view=' + encodeURIComponent(target);
+    }
+    return true;
+  }
+
+  setTimeout(() => {
+    const activeAfterEvent = (() => {
+      for (const view of MODULES) {
+        const b = findButton(view);
+        if (b && typeof b.className === 'string' && b.className.includes('bg-[#18212B]')) return view;
+      }
+      return null;
+    })();
+    if (activeAfterEvent !== target) {
+      const targetBtn = findButton(target);
+      if (targetBtn instanceof HTMLElement) {
+        targetBtn.click();
+        if (target === 'results') {
+          requestAnimationFrame(() => {
+            const input = document.getElementById('anfeta-search-input');
+            if (input instanceof HTMLInputElement) {
+              input.focus();
+              input.select();
+            }
+          });
+        }
+      }
+    }
+  }, 25);
+  return true;
+}
+
+async function deliverModuleSwitch(tabId, mode) {
+  let delivered = false;
+  if (chrome.scripting?.executeScript) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: switchModuleInMainWorld,
+        args: [mode],
+      });
+      delivered = true;
+    } catch {}
+  }
+  if (!delivered && typeof chrome.tabs?.sendMessage === 'function') {
+    await chrome.tabs.sendMessage(tabId, { action: 'ANFETA_SWITCH_MODULE', mode });
+    delivered = true;
+  }
+  if (!delivered) {
+    throw new Error('No se pudo enviar el cambio de módulo a la pestaña de ANFETA.');
+  }
+}
+
 async function runSwitchAnfetaModule(mode) {
   try {
     const config = await getTargetConfig();
@@ -199,6 +299,7 @@ async function runSwitchAnfetaModule(mode) {
     } catch {}
 
     let tab = selectBestAnfetaTab(tabs, validManagedId, focusedWindowId);
+    let createdNew = false;
     if (tab) {
       const win = await chrome.windows.get(tab.windowId, { populate: true });
       await chrome.tabs.update(tab.id, { active: true });
@@ -212,8 +313,10 @@ async function runSwitchAnfetaModule(mode) {
         await chrome.windows.update(win.id, { focused: true });
       }
     } else {
+      const initialTarget = mode === 'toggle-search-calendar' || mode === 'cycle' ? 'calendar' : mode;
+      const openUrl = `${config.openUrl.replace(/\/+$/, '')}/?view=${encodeURIComponent(initialTarget)}`;
       const win = await chrome.windows.create({
-        url: config.openUrl,
+        url: openUrl,
         type: 'popup',
         width: 1400,
         height: 900,
@@ -221,12 +324,11 @@ async function runSwitchAnfetaModule(mode) {
       });
       await chrome.storage.local.set({ managedWindowId: win.id, managedPrevState: 'normal' });
       tab = Array.isArray(win.tabs) ? win.tabs[0] : null;
+      createdNew = true;
     }
 
-    if (tab && typeof tab.id === 'number' && typeof chrome.tabs?.sendMessage === 'function') {
-      try {
-        await chrome.tabs.sendMessage(tab.id, { action: 'ANFETA_SWITCH_MODULE', mode });
-      } catch {}
+    if (!createdNew && tab && typeof tab.id === 'number') {
+      await deliverModuleSwitch(tab.id, mode);
     }
 
     await chrome.storage.local.remove('lastError');
