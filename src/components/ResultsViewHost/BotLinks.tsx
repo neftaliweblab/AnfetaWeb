@@ -12,7 +12,10 @@ export const GROK_BOTS = [
   { name: "Becerra", id: "1ff75697-7898-4f93-9a71-9d636d8a2ff5" },
   { name: "Acalli", id: "aa1a025c-d202-4835-acbc-27d3c845e7a5" },
   { name: "Robot", id: "c4601473-a870-4dbf-b846-fbba7cd8de7d" },
-] as const;
+  { name: "Notion Robot", id: "419b4f80-28ba-48bd-910a-045696986572" },
+  { name: "Isaac", id: "4dc7768f-34d2-463b-8c42-4b6abad58a20" },
+  { name: "MM", title: "Mente Maestra", id: "2b81be6e-0be6-4955-bf7d-ce0eea685e1c" },
+] as { name: string; id: string; title?: string }[];
 
 export const BOTS_PANEL_URL = "https://panel-bots-john.vercel.app/";
 
@@ -38,14 +41,14 @@ export function BotLinks({ currentUser, scale = 1 }: { currentUser?: string; sca
         <Bot className="h-3.5 w-3.5" aria-hidden />
         Bots
       </a>
-      {GROK_BOTS.map(({ name, id }) => {
+      {GROK_BOTS.map(({ name, id, title }) => {
         const mine = me && normalizePerson(name) === me;
         return (
           <a
             key={id}
             href={grokBotUrl(id)}
             style={{ fontSize }}
-            title={`Abrir bot de ${name} en Grok`}
+            title={`Abrir bot ${title || name} en Grok`}
             className={`rounded border px-1.5 py-0.5 font-semibold leading-none transition-colors ${
               mine
                 ? "border-violet-400 bg-violet-600/30 text-violet-100"
