@@ -112,7 +112,7 @@ export function TopBar({
         {activeView !== "results" ? (
         <div
           ref={searchContainerRef}
-          className="flex-1 min-w-[180px] sm:min-w-[260px] md:min-w-[340px] lg:min-w-[420px] max-w-4xl relative"
+          className="flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-2xl relative"
         >
           <div className="relative flex items-center">
             <Search className="absolute left-3 w-4 h-4 text-[#94A3B8] shrink-0 pointer-events-none" />
@@ -184,15 +184,15 @@ export function TopBar({
           )}
         </div>
         ) : (
-          <div className="flex-1 flex items-center px-3">
-            <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+          <div className="flex-1 min-w-0 flex items-center px-2 overflow-hidden">
+            <span className="text-xs text-slate-400 font-mono hidden xl:inline truncate">
               <span className="text-cyan-400 font-semibold">Alt+C</span> / <span className="text-cyan-400 font-semibold">Alt+Q</span> alterna Buscador ↔ Calendario · <span className="text-cyan-400 font-semibold">Alt+1..5</span> cambia módulo
             </span>
           </div>
         )}
 
         {/* Botones de Navegación Responsive (Iconos compactos en pantallas pequeñas/medianas) */}
-        <nav className="flex items-center gap-1 shrink-0">
+        <nav className="flex items-center gap-1 shrink-0 overflow-x-auto scrollbar-none">
           <button
             data-anfeta-view="results" onClick={() => onSelectView("results")}
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded text-xs font-medium border border-slate-700/50 shadow-sm hover:border-cyan-400 hover:shadow-[0_0_10px_#22d3ee44] transition-all ${
@@ -202,7 +202,8 @@ export function TopBar({
             }`}
             title="Buscador (Alt+C o Alt+Q alterna con Calendario · Alt+1)" aria-label="Buscador"
           >
-            <Search className="w-5 h-5 shrink-0" />
+            <Search className="w-4 h-4 shrink-0" />
+            <span>Buscador</span>
 
           </button>
 
@@ -215,7 +216,8 @@ export function TopBar({
             }`}
             title="Calendario (Alt+C o Alt+Q alterna con Buscador · Alt+2)" aria-label="Calendario"
           >
-            <Calendar className="w-5 h-5 shrink-0" />
+            <Calendar className="w-4 h-4 shrink-0" />
+            <span>Calendario</span>
 
           </button>
 
@@ -228,7 +230,8 @@ export function TopBar({
             }`}
             title="Avance Diario (Alt+3 · Ctrl+Shift+J)" aria-label="Avance Diario"
           >
-            <TrendingUp className="w-5 h-5 shrink-0" />
+            <TrendingUp className="w-4 h-4 shrink-0" />
+            <span>Avance diario</span>
 
           </button>
 
@@ -241,7 +244,8 @@ export function TopBar({
             }`}
             title="Mensajes (Alt+4)" aria-label="Mensajes"
           >
-            <MessageSquare className="w-5 h-5 shrink-0" />
+            <MessageSquare className="w-4 h-4 shrink-0" />
+            <span>Mensajes</span>
 
           </button>
 
@@ -254,7 +258,8 @@ export function TopBar({
             }`}
             title="Recordatorios (Alt+5)" aria-label="Recordatorios"
           >
-            <Bell className="w-5 h-5 shrink-0" />
+            <Bell className="w-4 h-4 shrink-0" />
+            <span>Recordatorios</span>
 
             {unreadCount > 0 && (
               <span className="w-2 h-2 rounded-full bg-[#FB7185] animate-pulse" />

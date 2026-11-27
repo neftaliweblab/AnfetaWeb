@@ -50,4 +50,11 @@ assert.deepEqual(resolveExtensionModuleAction('toggle-search-calendar','results'
 assert.deepEqual(resolveExtensionModuleAction('toggle-search-calendar','calendar'),{targetView:'results',focusSearch:true});
 assert.deepEqual(resolveExtensionModuleAction('cycle','results'),{targetView:'calendar',focusSearch:false});
 assert.deepEqual(resolveExtensionModuleAction('cycle','reminders'),{targetView:'results',focusSearch:true});
-console.log('OK: perfiles y combinaciones personalizadas, reservas y duplicados, IME/AltGraph, listener real, preferencia por usuario, toggle buscador/calendario y copias ocultas sin quitar originales.');
+const {findGrokBotForPerson,GROK_BOTS}=require('../src/components/ResultsViewHost/BotLinks.tsx');
+assert.ok(GROK_BOTS.every(b=>b.short&&b.short.length<=2));
+assert.equal(findGrokBotForPerson('nneft')?.name,'Neftali');
+assert.equal(findGrokBotForPerson('Karla')?.short,'K');
+assert.equal(findGrokBotForPerson('John'),null);
+assert.equal(findGrokBotForPerson('Isaias'),null);
+assert.equal(findGrokBotForPerson('Brian'),null);
+console.log('OK: perfiles y combinaciones personalizadas, reservas y duplicados, IME/AltGraph, listener real, preferencia por usuario, toggle buscador/calendario, bots compactos y copias ocultas sin quitar originales.');

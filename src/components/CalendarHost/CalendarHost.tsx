@@ -1024,6 +1024,7 @@ export function CalendarHost({
       )}
       {preferencesLoaded===preferencesKey&&<CalendarLayoutCloud key={preferencesKey} value={currentLayout} onRestore={applyCalendarLayout} autoRestore={!hasWindowLayout} currentUser={currentUser} onTriggerAutomation={onRunAutomation} onOpenAnnouncements={onOpenAnnouncements} cacheMeta={cacheMeta} />}
       <CalendarTopControls
+        currentUser={currentUser}
         phaseFilter={phaseFilter}
         onPhaseFilter={setPhaseFilter}
         extraHours={extraHours}

@@ -21,9 +21,11 @@ import {
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
 import { NotionQuickAccessChips } from "@/components/NotionQuickAccessChips";
+import { BotLinks } from "@/components/ResultsViewHost/BotLinks";
 import { personWorkQuery } from "@/components/ResultsViewHost/PersistentSearchAccess";
 
 interface CalendarTopControlsProps {
+  currentUser?: string;
   displayControls?:React.ReactNode;
   gridInterval?:number;
   onGridInterval?:(value:number)=>void;
@@ -71,6 +73,7 @@ interface CalendarTopControlsProps {
 }
 
 export function CalendarTopControls({
+  currentUser,
   displayControls,gridInterval=30,onGridInterval,
   currentDate, onCreateActivity, reviewNotifications, onOpenBatch, onOpenReorder, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
   onSelectDate,
@@ -496,6 +499,9 @@ export function CalendarTopControls({
 
         {/* Separador vertical */}
         <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block shrink-0" />
+
+        {/* Accesos rápidos a Bots de Grok (iniciales compactas + panel) */}
+        <BotLinks currentUser={currentUser} compact />
 
         {/* Accesos rápidos a Bases y Vistas de Notion en Chips directos */}
         <NotionQuickAccessChips compact />

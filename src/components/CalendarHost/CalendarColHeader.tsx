@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Calendar, ListTodo } from "lucide-react";
+import { Calendar, ListTodo, Bot } from "lucide-react";
+import { findGrokBotForPerson, grokBotUrl } from "../ResultsViewHost/BotLinks";
 import {
   PERSON_METADATA,
   JOHN_SECONDARY_ACTIVITIES_URL,
@@ -33,6 +34,7 @@ export function CalendarColHeader({
   const color = getPersonColor(personName);
   const initials = getPersonInitials(personName);
   const meta = PERSON_METADATA[personName];
+  const personBot = findGrokBotForPerson(personName);
 
   const handleOpenNotion = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -84,8 +86,20 @@ export function CalendarColHeader({
       </div>
 
       <details onClick={e=>e.stopPropagation()} className="relative ml-auto" onContextMenu={e=>e.stopPropagation()}><summary aria-label={'Opciones de '+personName} title={'Opciones de '+personName} className="list-none cursor-pointer rounded px-2 py-1 text-slate-300 hover:bg-slate-800">⋯</summary><div className="absolute right-0 top-full z-[100] max-h-[70dvh] w-64 overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">{[['organize','⚡ Desempalmar y ordenar jornada…'],['activities','Ver actividades'],['summary','Resumen de '+personName],['team','Resumen general del día'],['return','Devolver actividades al día anterior…'],['progress','Avance diario rápido'],['left','Mover a la izquierda'],['right','Mover a la derecha'],['first','Mover al inicio'],['last','Mover al final'],['small','Ancho pequeño'],['normal','Ancho normal'],['large','Ancho grande'],['reset','Restablecer ancho'],['hide','Ocultar columna']].map(([action,label])=><button key={action} className="block w-full rounded px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800" onClick={e=>{const details=e.currentTarget.closest('details');if(details)details.open=false;onAction?.(action);}}>{label}</button>)}</div></details>
-      {/* Action button: Notion */}
+      {/* Action buttons: Bot (if assigned) + Notion */}
       <div className="flex items-center gap-1 shrink-0">
+        {personBot && (
+          <a
+            href={grokBotUrl(personBot.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-0.5 px-1.5 py-1 rounded border border-violet-400/75 bg-violet-600/25 text-violet-100 hover:bg-violet-500/40 hover:text-white hover:border-violet-300 shadow-[0_0_8px_rgba(139,92,246,0.35)] transition-all text-[9.5px] font-bold"
+            title={`Abrir bot de ${personBot.title || personBot.name} en Grok`}
+            aria-label={`Abrir bot de ${personName} en Grok`}
+          >
+            <Bot className="w-3.5 h-3.5 text-violet-300 shrink-0" />
+            <span>Bot</span>
+          </a>
+        )}
         {meta?.notionUrl && <button
           onClick={handleOpenNotion}
           className="p-1.5 text-[#94A3B8] hover:text-[#00A8FF] hover:bg-[#18212B] rounded transition-colors"
