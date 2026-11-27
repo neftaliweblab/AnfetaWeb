@@ -16,7 +16,7 @@ import {
   ExternalLink,
   TrendingUp,
   RotateCw,
-  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles, Layers,
+  X, Plus, CalendarRange, ShieldAlert, Banknote, CreditCard, MessageCircle, Sparkles, Layers, CheckSquare, ArrowDownToLine,
 } from "lucide-react";
 import { formatLongCalendarDate, shiftDayString, getTodayDateString } from "@/lib/dateUtils";
 import { WhatsAppIcon } from "@/components/WhatsappDirectoryModal/WhatsAppIcon";
@@ -35,6 +35,10 @@ interface CalendarTopControlsProps {
   onExtraHours?:()=>void;
   onOpenBatch?: () => void;
   onOpenReorder?: () => void;
+  multiSelectMode?: boolean;
+  multiSelectCount?: number;
+  onToggleMultiSelectMode?: () => void;
+  onOpenPushDown?: () => void;
   reviewNotifications?: React.ReactNode;
   onCreateActivity: () => void;
   currentDate: string;
@@ -75,7 +79,7 @@ interface CalendarTopControlsProps {
 export function CalendarTopControls({
   currentUser,
   displayControls,gridInterval=30,onGridInterval,
-  currentDate, onCreateActivity, reviewNotifications, onOpenBatch, onOpenReorder, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
+  currentDate, onCreateActivity, reviewNotifications, onOpenBatch, onOpenReorder, multiSelectMode = false, multiSelectCount = 0, onToggleMultiSelectMode, onOpenPushDown, phaseFilter, onPhaseFilter, extraHours, onExtraHours,
   onSelectDate,
   availableDates,
   onOpenPeoplePicker,
@@ -235,6 +239,38 @@ export function CalendarTopControls({
         >
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           <span className="hidden xl:inline">Ordenar acts</span>
+        </button>
+      )}
+      {onToggleMultiSelectMode && (
+        <button
+          type="button"
+          onClick={onToggleMultiSelectMode}
+          aria-pressed={multiSelectMode}
+          title="Seleccionar varias actividades a la vez para moverlas juntas (también puedes usar Ctrl+clic, Shift+clic o la casilla de cada tarjeta)"
+          className={`flex items-center gap-1 shrink-0 rounded border px-2 py-1 text-[11px] font-semibold cursor-pointer transition-colors ${
+            multiSelectMode || multiSelectCount > 0
+              ? "border-emerald-400/80 bg-emerald-950/60 text-emerald-200 shadow-[0_0_8px_rgba(52,211,153,0.25)]"
+              : "border-slate-700 bg-[#131A22] text-slate-300 hover:border-emerald-400/60 hover:text-emerald-200"
+          }`}
+        >
+          <CheckSquare className="w-3.5 h-3.5 text-emerald-300" />
+          <span className="hidden xl:inline">Mover varias</span>
+          {multiSelectCount > 0 && (
+            <span className="px-1 rounded-full bg-emerald-400 text-slate-950 text-[9.5px] font-bold font-mono">
+              {multiSelectCount}
+            </span>
+          )}
+        </button>
+      )}
+      {onOpenPushDown && (
+        <button
+          type="button"
+          onClick={onOpenPushDown}
+          title="Pasar actividades abajo (21:00–22:00) para despejar la jornada y volver a subirlas en orden"
+          className="flex items-center gap-1 shrink-0 rounded border border-indigo-500/60 bg-indigo-950/45 hover:bg-indigo-900/60 hover:border-indigo-400 px-2 py-1 text-[11px] font-semibold text-indigo-200 cursor-pointer transition-colors shadow-sm"
+        >
+          <ArrowDownToLine className="w-3.5 h-3.5 text-indigo-300" />
+          <span className="hidden sm:inline">Pasar abajo</span>
         </button>
       )}
       {reviewNotifications}

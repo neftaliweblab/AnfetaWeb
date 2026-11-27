@@ -17,7 +17,7 @@ import {isFtfReminder} from '@/services/progressKpis';
 import React, { useState, useRef, useMemo } from "react";
 import {createPortal} from 'react-dom';
 import {offlineAwareFetch} from '@/services/offlineQueue';
-import { GripVertical, Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3, Sparkles } from "lucide-react";
+import { GripVertical, Eye, CheckSquare, Tag, ExternalLink, Calendar, Clock, CheckCircle2, ListTodo, Maximize2, Minimize2, ChevronDown, ChevronUp, X, Edit3, Sparkles, Check } from "lucide-react";
 import { ActivityTitleFieldEditor } from '../ActivityTitleFieldEditor';
 import { formatSmartDate } from "@/lib/dateUtils";
 import { NotionCalendarActivity } from "@/types/anfeta";
@@ -94,10 +94,14 @@ interface ActivityCardProps {
   overlapTotal: number;
   palette?: "web" | "desktop";
   isSelected?: boolean;
+  isMultiSelected?: boolean;
+  multiSelectCount?: number;
+  multiSelectMode?: boolean;
   isSaving?: boolean;
   activeViewer?: string | null;
   onChecklistUpdated?: (pageId:string,updates:Partial<NotionCalendarActivity>)=>void;
   onSelectActivity?: (activity: NotionCalendarActivity) => void;
+  onToggleMultiSelect?: (activity: NotionCalendarActivity, shiftKey?: boolean) => void;
   onUpdateActivity?: (pageId: string, updates: Partial<NotionCalendarActivity>) => Promise<boolean | void> | void;
 }
 
@@ -110,10 +114,14 @@ function ActivityCardComponent({
   overlapTotal,
   palette = "web",
   isSelected,
+  isMultiSelected = false,
+  multiSelectCount = 0,
+  multiSelectMode = false,
   isSaving = false,
   activeViewer,
   onChecklistUpdated,
   onSelectActivity,
+  onToggleMultiSelect,
   onUpdateActivity,
 }: ActivityCardProps) {
   const editable = canEditActivity(currentUser, activity);
@@ -559,6 +567,7 @@ function ActivityCardComponent({
               person: activity.person,
               durationHours,
               offsetY: e.clientY - e.currentTarget.getBoundingClientRect().top,
+              multiSelected: isMultiSelected && multiSelectCount > 1,
             })
           );
           e.dataTransfer.setData("application/x-anfeta-activity",e.dataTransfer.getData("text/plain"));
@@ -566,6 +575,10 @@ function ActivityCardComponent({
         onDragEnd={() => {dragging.current=false;}}
         onClick={(e) => {
           e.stopPropagation();
+          if (canDrag && onToggleMultiSelect && (e.ctrlKey || e.metaKey || e.shiftKey || multiSelectMode)) {
+            onToggleMultiSelect(activity, e.shiftKey);
+            return;
+          }
           onSelectActivity?.(activity);
         }}
         onDoubleClick={e=>{if((e.target as Element).closest('button,input,select,textarea,a'))return;openNotionPage(notionPageUrl(activity));}}
@@ -574,6 +587,7 @@ function ActivityCardComponent({
         onContextMenu={handleContextMenu}
         data-activity-card="true"
         data-activity-id={activity.pageId}
+        data-multi-selected={isMultiSelected ? "true" : undefined}
         style={{
           top: `${top + 2}px`,
           height: `${height - 4}px`,
@@ -582,12 +596,14 @@ function ActivityCardComponent({
           left: `calc(${leftPct}% + 2px)`,
           ...(palette === "desktop" ? { borderLeftWidth: "4px", borderLeftColor: priorityBorderColor } : {}),
         }}
-        className={`${activeViewer ? 'ring-2 ring-amber-400/90 shadow-[0_0_12px_rgba(251,191,36,0.35)] ' : ''}${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
+        className={`group ${activeViewer ? 'ring-2 ring-amber-400/90 shadow-[0_0_12px_rgba(251,191,36,0.35)] ' : ''}${['returned','handoff'].includes(activity.reviewFlow?.State||'')&&activity.reviewFlow?.Note?'ring-2 ring-amber-400 shadow-[0_0_14px_#fbbf2466]':''} absolute rounded-md border p-2 flex flex-col justify-between ${
           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
         } transition-all select-none overflow-hidden ${isCompleted ? "opacity-45 hover:opacity-95 transition-opacity" : "opacity-100"} ${
           palette === "desktop" ? `${desktopCardBg} ${desktopCardBorder}` : `${cardBg} ${cardBorder}`
         } ${
-          isSelected
+          isMultiSelected
+            ? "ring-2 ring-emerald-400 bg-emerald-950/35 shadow-[0_0_16px_rgba(52,211,153,0.45)] z-35"
+            : isSelected
             ? "ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(56,189,248,0.4)] z-30"
             : "hover:z-20 hover:border-slate-500 shadow-sm"
         }`}
@@ -597,6 +613,33 @@ function ActivityCardComponent({
         {isSaving&&<span role="status" className="text-[10px] text-cyan-200 animate-pulse">Guardando en Notion…</span>}
         <div className="flex items-center justify-between gap-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+            {canDrag && onToggleMultiSelect && (
+              <button
+                type="button"
+                aria-pressed={isMultiSelected}
+                aria-label={isMultiSelected ? "Quitar de selección múltiple" : "Seleccionar para mover en grupo"}
+                title={isMultiSelected ? "Quitar de selección múltiple" : "Seleccionar para mover varias juntas (Ctrl+clic o Shift+clic)"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMultiSelect(activity, e.shiftKey);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-all cursor-pointer ${
+                  isMultiSelected
+                    ? "bg-emerald-400 border-emerald-300 text-slate-950 opacity-100"
+                    : multiSelectMode
+                    ? "border-cyan-400/80 bg-slate-900/90 text-transparent hover:border-emerald-300 opacity-100"
+                    : "border-slate-500/80 bg-slate-900/80 text-transparent opacity-0 group-hover:opacity-100 focus:opacity-100 hover:border-emerald-400"
+                }`}
+              >
+                <Check className="w-2.5 h-2.5 stroke-[3]" />
+              </button>
+            )}
+            {isMultiSelected && multiSelectCount > 1 && (
+              <span className="shrink-0 rounded bg-emerald-500/25 border border-emerald-400/60 px-1 text-[8.5px] font-bold font-mono text-emerald-200">
+                ×{multiSelectCount}
+              </span>
+            )}
             {editable && !isCompleted && !historicalMove && <button type="button" data-calendar-drag-handle="true" draggable={!isSaving}
               disabled={isSaving} aria-label="Arrastrar actividad para cambiar horario" title="Arrastra para mover; si hay un empalme podrás revisarlo antes de guardar"
               onMouseEnter={() => {if(hoverTimer.current)clearTimeout(hoverTimer.current);setShowHover(false);}}

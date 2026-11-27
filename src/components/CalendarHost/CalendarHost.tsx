@@ -34,7 +34,13 @@ import {CalendarSecondaryColumn} from './CalendarSecondaryColumn';
 import {titlePriority} from '@/services/activityTags';
 import {readApiJson} from '@/lib/readApiJson';
 import {showCreationResult} from '@/components/CreationFeedback';
-import {mexicoDate} from '@/services/calendarPresentation';
+import {mexicoDate, mexicoMinutes} from '@/services/calendarPresentation';
+import {
+  buildMultiDeltaScheduleChanges,
+  buildPushDownScheduleChanges,
+  isMovableCalendarActivity,
+  type BatchScheduleChange,
+} from '@/lib/calendarMultiMove';
 import {workflowState} from '@/services/activityWorkflow';
 import {isFinalizedResult, isOperativeTerminatedResult} from '@/lib/activeResultsFirst';
 import {CalendarBatchModal} from './CalendarBatchModal';
@@ -65,7 +71,7 @@ import { CalendarDetailPanel } from './CalendarDetailPanel';
 import { UnifiedActivityModal } from './UnifiedActivityModal';
 import { PlanBContingencyModal } from './PlanBContingencyModal';
 import { anfetaSync } from '@/lib/anfetaBroadcastSync';
-import { Utensils, Settings2 } from "lucide-react";
+import { Utensils, Settings2, ArrowDownToLine, CheckSquare, X, Clock } from "lucide-react";
 import { MealBreakModal } from "./MealBreakModal";
 import {
   MealBreakConfig,
@@ -311,9 +317,28 @@ export function CalendarHost({
   const [activeViewers, setActiveViewers] = useState<Record<string, { user: string; timestamp: number }>>({});
 
   // Historial de cambios para Deshacer (Undo Ctrl+Z)
-  const undoStackRef = useRef<{ pageId: string; previousSchedule: { start?: string; end?: string; person?: string; status?: string }; title: string }[]>([]);
+  type UndoEntry =
+    | { pageId: string; previousSchedule: { start?: string; end?: string; person?: string; status?: string }; title: string; batch?: undefined }
+    | { batch: { pageId: string; previousSchedule: { start?: string; end?: string; person?: string }; title: string }[]; title: string; pageId?: undefined; previousSchedule?: undefined };
+  const undoStackRef = useRef<UndoEntry[]>([]);
   const isUndoingRef = useRef(false);
   const [undoCount, setUndoCount] = useState(0);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [multiSelectedIds, setMultiSelectedIds] = useState<Set<string>>(new Set());
+  const multiSelectedIdsRef = useRef<Set<string>>(multiSelectedIds);
+  multiSelectedIdsRef.current = multiSelectedIds;
+  const lastMultiSelectedIdRef = useRef<string | null>(null);
+  const [pushDownDialog, setPushDownDialog] = useState<{
+    person: string;
+    normalizeOneHour: boolean;
+    onlyPending: boolean;
+  } | null>(null);
+  const [pushDownSaving, setPushDownSaving] = useState(false);
+
+  useEffect(() => {
+    setMultiSelectedIds(new Set());
+    lastMultiSelectedIdRef.current = null;
+  }, [currentDate]);
   const [showPeoplePicker, setShowPeoplePicker] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showPlanBModal, setShowPlanBModal] = useState(false);
@@ -744,23 +769,159 @@ export function CalendarHost({
     } finally { pending.current.delete(pageId);setSaveRevision(v=>v+1);if(!pending.current.size)window.dispatchEvent(new Event('anfeta_calendar_idle')); }
   }, [currentUser, currentDate, onSelectDate]);
 
+  const handleBatchScheduleChanges = React.useCallback(async (changes: BatchScheduleChange[], undoLabel: string) => {
+    if (!changes.length) return false;
+    const originalsById = new Map(activitiesListRef.current.map(a => [a.pageId, a]));
+    const lockedIds = changes.filter(c => pending.current.has(c.pageId));
+    if (lockedIds.length > 0) {
+      setError('Espera a que termine el guardado de las actividades seleccionadas.');
+      return false;
+    }
+
+    const previousBatch = changes
+      .map((c) => {
+        const orig = originalsById.get(c.pageId);
+        if (!orig) return null;
+        return {
+          pageId: c.pageId,
+          title: orig.title || 'Actividad',
+          previousSchedule: { start: orig.start, end: orig.end, person: orig.person },
+        };
+      })
+      .filter((x): x is { pageId: string; title: string; previousSchedule: { start: string; end: string; person: string } } => Boolean(x));
+
+    changes.forEach(c => pending.current.add(c.pageId));
+    mutationVersion.current++;
+    setError('');
+    setSaveRevision(v => v + 1);
+
+    const changeMap = new Map(changes.map(c => [c.pageId, c]));
+    setActivitiesList(prev => prev.map(a => {
+      const ch = changeMap.get(a.pageId);
+      if (!ch) return a;
+      return { ...a, start: ch.start, end: ch.end, ...(ch.person ? { person: ch.person } : {}) };
+    }));
+
+    const restoreAll = () => {
+      setActivitiesList(prev => prev.map(a => originalsById.get(a.pageId) || a));
+    };
+
+    try {
+      const confirmed: NotionCalendarActivity[] = [];
+      for (let i = 0; i < changes.length; i += 25) {
+        const chunk = changes.slice(i, i + 25);
+        const res = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(115000),
+          body: JSON.stringify({
+            action: 'calendar-batch-schedule',
+            payload: { currentUser, changes: chunk },
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'No se pudo completar el movimiento en lote.');
+        }
+        const chunkResults = Array.isArray(data.results) ? data.results : [];
+        const failed = chunkResults.find((r: any) => !r.success);
+        for (const item of chunkResults) {
+          if (item.success && item.activity) {
+            confirmed.push(item.activity);
+          }
+        }
+        if (!data.success || failed) {
+          throw new Error(failed?.error || data.error || 'No se confirmaron todos los movimientos.');
+        }
+      }
+
+      if (!isUndoingRef.current && previousBatch.length > 0) {
+        undoStackRef.current.push({ batch: previousBatch, title: undoLabel });
+        if (undoStackRef.current.length > 25) undoStackRef.current.shift();
+        setUndoCount(undoStackRef.current.length);
+      }
+
+      const confirmedMap = new Map(confirmed.map(a => [a.pageId, a]));
+      confirmed.forEach((act) => {
+        recentSaves.current.set(act.pageId, { activity: act, until: Date.now() + 60000 });
+        anfetaSync.broadcast({ type: 'ACTIVITY_UPDATED', confirmed: true, pageId: act.pageId, updates: act });
+      });
+
+      setActivitiesList((prev) => {
+        const next = prev.map((a) => confirmedMap.get(a.pageId) || a);
+        writeCalendarLocalCache(currentDate, next, syncCursorRef.current);
+        return next;
+      });
+      setSelectedActivity((prev) => (prev && confirmedMap.get(prev.pageId)) || prev);
+      showCreationResult(
+        true,
+        `${changes.length} actividades movidas en Notion`,
+        undoLabel,
+        confirmed[0]?.pageUrl,
+        confirmed[0]?.pageId
+      );
+      return true;
+    } catch (err: any) {
+      restoreAll();
+      const msg = err instanceof Error ? err.message : 'No se pudieron mover las actividades.';
+      setError(msg);
+      showCreationResult(false, 'Error al mover varias actividades', msg);
+      return false;
+    } finally {
+      changes.forEach(c => pending.current.delete(c.pageId));
+      setSaveRevision(v => v + 1);
+      if (!pending.current.size) window.dispatchEvent(new Event('anfeta_calendar_idle'));
+    }
+  }, [currentUser, currentDate]);
+
   const handleUndo = React.useCallback(async () => {
     const last = undoStackRef.current.pop();
     setUndoCount(undoStackRef.current.length);
     if (!last) return;
     isUndoingRef.current = true;
     try {
-      await handleUpdateActivity(last.pageId, {
-        ...last.previousSchedule,
-        allowOverlap: true,
-      });
+      if (last.batch && last.batch.length > 0) {
+        const byId = new Map(activitiesListRef.current.map(a => [a.pageId, a]));
+        const restoreChanges: BatchScheduleChange[] = last.batch
+          .map((item) => {
+            const current = byId.get(item.pageId);
+            if (!current || !item.previousSchedule.start || !item.previousSchedule.end) return null;
+            return {
+              pageId: item.pageId,
+              title: current.title,
+              expectedTitle: current.title,
+              expectedStart: current.start,
+              expectedEnd: current.end,
+              start: item.previousSchedule.start,
+              end: item.previousSchedule.end,
+              ...(item.previousSchedule.person && normalizePerson(item.previousSchedule.person) !== normalizePerson(current.person)
+                ? { person: item.previousSchedule.person }
+                : {}),
+              allowOverlap: true as const,
+            };
+          })
+          .filter((x): x is BatchScheduleChange => Boolean(x));
+        await handleBatchScheduleChanges(restoreChanges, `Deshacer: ${last.title}`);
+        return;
+      }
+      if (last.pageId) {
+        await handleUpdateActivity(last.pageId, {
+          ...last.previousSchedule,
+          allowOverlap: true,
+        });
+      }
     } finally {
       isUndoingRef.current = false;
     }
-  }, [handleUpdateActivity]);
+  }, [handleUpdateActivity, handleBatchScheduleChanges]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && multiSelectedIdsRef.current.size > 0 && !document.querySelector('dialog[open],[role="dialog"]')) {
+        setMultiSelectedIds(new Set());
+        lastMultiSelectedIdRef.current = null;
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         const activeEl = document.activeElement;
         const isInput = activeEl && (
@@ -874,6 +1035,102 @@ export function CalendarHost({
 
   const positionedByPerson=useMemo(()=>Object.fromEntries(Object.entries(activitiesByPerson).map(([person,rows])=>[person,computeActivityOverlaps(rows,currentDate)])),[activitiesByPerson,currentDate]);
 
+  const handleToggleMultiSelect = React.useCallback((activity: NotionCalendarActivity, shiftKey = false) => {
+    if (!isMovableCalendarActivity(activity, currentUser)) return;
+    const personKey = normalizePerson(activity.person);
+    setMultiSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && lastMultiSelectedIdRef.current) {
+        const colItems = (activitiesByPerson[personKey] || [])
+          .filter((a) => isMovableCalendarActivity(a, currentUser))
+          .sort((a, b) => mexicoMinutes(a.start) - mexicoMinutes(b.start));
+        const idxA = colItems.findIndex((a) => a.pageId === lastMultiSelectedIdRef.current);
+        const idxB = colItems.findIndex((a) => a.pageId === activity.pageId);
+        if (idxA !== -1 && idxB !== -1) {
+          const [lo, hi] = idxA < idxB ? [idxA, idxB] : [idxB, idxA];
+          for (let i = lo; i <= hi; i++) next.add(colItems[i].pageId);
+          lastMultiSelectedIdRef.current = activity.pageId;
+          return next;
+        }
+      }
+      if (next.has(activity.pageId)) {
+        next.delete(activity.pageId);
+      } else {
+        next.add(activity.pageId);
+      }
+      lastMultiSelectedIdRef.current = activity.pageId;
+      return next;
+    });
+  }, [activitiesByPerson, currentUser]);
+
+  const handleSelectPersonDay = React.useCallback((colPerson: string) => {
+    const colItems = (activitiesByPerson[colPerson] || []).filter((a) =>
+      isMovableCalendarActivity(a, currentUser)
+    );
+    if (!colItems.length) {
+      setError(`No hay actividades móviles para ${colPerson} en este día.`);
+      return;
+    }
+    setMultiSelectedIds((prev) => {
+      const next = new Set(prev);
+      colItems.forEach((a) => next.add(a.pageId));
+      return next;
+    });
+    lastMultiSelectedIdRef.current = colItems[colItems.length - 1]?.pageId || null;
+  }, [activitiesByPerson, currentUser]);
+
+  const multiSelectedActivities = useMemo(() => {
+    if (multiSelectedIds.size === 0) return [];
+    return filteredActivities.filter(
+      (a) => multiSelectedIds.has(a.pageId) && isMovableCalendarActivity(a, currentUser)
+    );
+  }, [filteredActivities, multiSelectedIds, currentUser]);
+
+  const handleShiftMultiSelected = React.useCallback(async (deltaMinutes: number) => {
+    const changes = buildMultiDeltaScheduleChanges(multiSelectedActivities, currentDate, deltaMinutes, currentUser);
+    if (!changes.length) {
+      setError('Las actividades seleccionadas ya están en el límite del horario (08:00–22:00).');
+      return;
+    }
+    await handleBatchScheduleChanges(changes, `Desplazar ${changes.length} actividades (${deltaMinutes > 0 ? '+' : ''}${deltaMinutes} min)`);
+  }, [multiSelectedActivities, currentDate, currentUser, handleBatchScheduleChanges]);
+
+  const handlePushDownSelected = React.useCallback(async (normalizeOneHour = true) => {
+    const changes = buildPushDownScheduleChanges(multiSelectedActivities, currentDate, currentUser, {
+      normalizeOneHour,
+    });
+    if (!changes.length) {
+      setError('Las actividades seleccionadas ya están abajo (21:00–22:00).');
+      return;
+    }
+    await handleBatchScheduleChanges(changes, `Pasar ${changes.length} actividades abajo`);
+  }, [multiSelectedActivities, currentDate, currentUser, handleBatchScheduleChanges]);
+
+  const pushDownPreviewChanges = useMemo(() => {
+    if (!pushDownDialog) return [];
+    const colItems = activitiesByPerson[pushDownDialog.person] || [];
+    return buildPushDownScheduleChanges(colItems, currentDate, currentUser, {
+      normalizeOneHour: pushDownDialog.normalizeOneHour,
+      onlyPending: pushDownDialog.onlyPending,
+    });
+  }, [pushDownDialog, activitiesByPerson, currentDate, currentUser]);
+
+  const handleConfirmPushDown = React.useCallback(async () => {
+    if (!pushDownDialog || !pushDownPreviewChanges.length || pushDownSaving) return;
+    setPushDownSaving(true);
+    try {
+      const ok = await handleBatchScheduleChanges(
+        pushDownPreviewChanges,
+        `Pasar abajo (${pushDownDialog.person})`
+      );
+      if (ok) {
+        setPushDownDialog(null);
+      }
+    } finally {
+      setPushDownSaving(false);
+    }
+  }, [pushDownDialog, pushDownPreviewChanges, pushDownSaving, handleBatchScheduleChanges]);
+
   const [createSlotSeed, setCreateSlotSeed] = useState<{
     person: string;
     start: string;
@@ -958,6 +1215,33 @@ export function CalendarHost({
       const canvas=e.currentTarget.querySelector<HTMLElement>('[data-calendar-canvas]');
       if(!canvas)throw Error('No se encontró el área del calendario para mover la actividad.');
       const newSchedule=calendarDropSchedule(activity,currentDate,{clientY:e.clientY,canvasTop:canvas.getBoundingClientRect().top,offsetY:Number(offsetY),pixelsPerHour});
+
+      if (multiSelectedIdsRef.current.has(pageId) && multiSelectedIdsRef.current.size > 1) {
+        const selectedCards = activitiesListRef.current.filter(
+          (a) =>
+            multiSelectedIdsRef.current.has(a.pageId) &&
+            mexicoDate(a.start) === currentDate &&
+            isMovableCalendarActivity(a, currentUser)
+        );
+        if (selectedCards.length > 1) {
+          const deltaMinutes = mexicoMinutes(newSchedule.start) - mexicoMinutes(activity.start);
+          const changes = buildMultiDeltaScheduleChanges(
+            selectedCards,
+            currentDate,
+            deltaMinutes,
+            currentUser,
+            reassignment ? colPerson : undefined
+          );
+          if (changes.length > 0) {
+            void handleBatchScheduleChanges(
+              changes,
+              `Mover ${changes.length} actividades${reassignment ? ` a ${colPerson}` : ''}`
+            );
+          }
+          return;
+        }
+      }
+
       const moving={...activity,...newSchedule,person:colPerson};
       const conflict=calendarConflict(activitiesListRef.current,moving);
       if(conflict){const free=nearbyFreeCalendarSlots(activitiesListRef.current,moving)[0];setScheduleConflict({pageId,conflictTitle:conflict.title,suggestedSlot:free?{start:free.start,end:free.end}:undefined,newSchedule,targetPerson:colPerson,reassignment});return;}
@@ -1082,6 +1366,22 @@ export function CalendarHost({
         onOpenReorder={() => {
           setReorderPerson(displayedPeople[0] || 'Neftali');
           setShowReorderModal(true);
+        }}
+        multiSelectMode={multiSelectMode}
+        multiSelectCount={multiSelectedActivities.length}
+        onToggleMultiSelectMode={() => setMultiSelectMode((prev) => !prev)}
+        onOpenPushDown={() => {
+          if (multiSelectedActivities.length > 0) {
+            void handlePushDownSelected(true);
+            return;
+          }
+          const defaultPerson =
+            displayedPeople.length === 1
+              ? displayedPeople[0]
+              : displayedPeople.includes(normalizePerson(currentUser))
+              ? normalizePerson(currentUser)
+              : displayedPeople[0] || 'Neftali';
+          setPushDownDialog({ person: defaultPerson, normalizeOneHour: true, onlyPending: true });
         }}
         onOpenTemplates={() => setShowTemplates(true)}
         onOpenReport={() => setShowReport(true)}
@@ -1257,7 +1557,7 @@ export function CalendarHost({
                   >
                     <CalendarColHeader
                       personName={person}
-                      onAction={action=>{if(action==='organize'){setReorderPerson(person);setShowReorderModal(true);}else if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
+                      onAction={action=>{if(action==='organize'){setReorderPerson(person);setShowReorderModal(true);}else if(action==='select-day'){handleSelectPersonDay(person);}else if(action==='push-down'){setPushDownDialog({person,normalizeOneHour:true,onlyPending:true});}else if(action==='activities'||action==='progress'){setPreviewTab(action==='activities'?'activities':'checks');setSelectedPersonPreview(person);}else if(action==='summary'||action==='team')setHeaderSummary({person:action==='team'?null:person});else if(action==='left'||action==='right')movePerson(person,action==='left'?-1:1);else if(action==='first'||action==='last')setPeopleOrder(prev=>action==='first'?[person,...prev.filter(p=>p!==person)]:[...prev.filter(p=>p!==person),person]);else if(['small','normal','large','reset'].includes(action))setColumnWidth(action==='small'?180:action==='large'?360:240);else if(action==='hide')setVisiblePeople(prev=>prev.filter(p=>p!==person));else if(action==='return'){const previous=new Date(currentDate+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);setBatchDefaults({person,day:previous.toISOString().slice(0,10)});setShowBatch(true);}}}
                       activityCount={countedActivities.length}
                       checklistPercent={checklistPercent}
                       totalChecklistItems={totalChecks}
@@ -1333,8 +1633,12 @@ export function CalendarHost({
                           overlapTotal={overlapTotal}
                           palette={calendarPalette}
                           isSelected={selectedActivity?.pageId === act.pageId && isDetailOpen}
+                          isMultiSelected={multiSelectedIds.has(act.pageId)}
+                          multiSelectCount={multiSelectedActivities.length}
+                          multiSelectMode={multiSelectMode}
                           activeViewer={activeViewers[act.pageId]?.user && normalizePerson(activeViewers[act.pageId]?.user) !== normalizePerson(currentUser) ? activeViewers[act.pageId]?.user : null}
                           onSelectActivity={handleCardSelectActivity}
+                          onToggleMultiSelect={handleToggleMultiSelect}
                           onUpdateActivity={handleUpdateActivity}
                         />
                       ))}
@@ -1477,6 +1781,143 @@ export function CalendarHost({
             });
           }}
         />
+      )}
+
+      {multiSelectedActivities.length > 0 && (
+        <div
+          role="region"
+          aria-label="Acciones de selección múltiple"
+          className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[150] flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-500/60 bg-[#0A1622]/95 px-3.5 py-2 text-xs text-slate-100 shadow-2xl shadow-emerald-950/60 backdrop-blur-md"
+        >
+          <span className="flex items-center gap-1.5 font-bold text-emerald-300">
+            <CheckSquare className="w-4 h-4" />
+            <span>{multiSelectedActivities.length} seleccionada{multiSelectedActivities.length > 1 ? 's' : ''}</span>
+          </span>
+          <span className="hidden md:inline text-[11px] text-slate-400">
+            Arrastra cualquiera para moverlas juntas o ajusta:
+          </span>
+          <div className="flex items-center gap-1">
+            {[-60, -30, 30, 60].map((delta) => (
+              <button
+                key={delta}
+                type="button"
+                onClick={() => void handleShiftMultiSelected(delta)}
+                className="rounded-lg border border-slate-700 bg-slate-900 hover:border-cyan-400 hover:text-cyan-200 px-2 py-1 text-[11px] font-mono font-semibold transition-colors cursor-pointer"
+                title={`Mover todas las seleccionadas ${delta > 0 ? `+${delta}` : delta} minutos`}
+              >
+                {delta === -60 ? '-1h' : delta === 60 ? '+1h' : `${delta > 0 ? '+' : ''}${delta}m`}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handlePushDownSelected(true)}
+            className="flex items-center gap-1 rounded-lg border border-indigo-400/70 bg-indigo-600/30 hover:bg-indigo-500/45 px-2.5 py-1 text-[11px] font-bold text-indigo-100 transition-colors cursor-pointer"
+            title="Pasar todas las seleccionadas abajo (21:00–22:00, 1h) para ordenarlas"
+          >
+            <ArrowDownToLine className="w-3.5 h-3.5" />
+            <span>Pasar abajo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMultiSelectedIds(new Set());
+              lastMultiSelectedIdRef.current = null;
+            }}
+            className="flex items-center gap-1 rounded-lg border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
+            title="Limpiar selección (Esc)"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Limpiar</span>
+          </button>
+        </div>
+      )}
+
+      {pushDownDialog && (
+        <div className="fixed inset-0 z-[350] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pasar actividades abajo"
+            className="w-full max-w-md rounded-2xl border border-indigo-500/50 bg-[#0C1420] p-5 text-slate-100 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-indigo-300">
+                <ArrowDownToLine className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-white">Pasar actividades abajo (21:00–22:00)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPushDownDialog(null)}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                aria-label="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Manda las actividades al final del día (21:00–22:00) para dejar libre la jornada y volver a subirlas en orden (puedes revertirlo con <span className="font-mono text-cyan-300">Ctrl+Z</span>).
+            </p>
+            <label className="block text-xs text-slate-300">
+              Colaborador
+              <select
+                value={pushDownDialog.person}
+                onChange={(e) => setPushDownDialog({ ...pushDownDialog, person: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-white"
+              >
+                {displayedPeople.map((p) => (
+                  <option key={p} value={p}>
+                    {p} ({(activitiesByPerson[p] || []).filter((a) => isMovableCalendarActivity(a, currentUser)).length} móviles)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={pushDownDialog.normalizeOneHour}
+                onChange={(e) => setPushDownDialog({ ...pushDownDialog, normalizeOneHour: e.target.checked })}
+                className="rounded border-slate-600 accent-indigo-500"
+              />
+              <span className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-indigo-300" />
+                Ajustar todas a duración de 1 hora (21:00 – 22:00)
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!pushDownDialog.onlyPending}
+                onChange={(e) => setPushDownDialog({ ...pushDownDialog, onlyPending: !e.target.checked })}
+                className="rounded border-slate-600 accent-indigo-500"
+              />
+              <span>Incluir también actividades en revisión (rtuzR)</span>
+            </label>
+            <div className="rounded-lg border border-indigo-900/60 bg-indigo-950/30 px-3 py-2 text-xs text-indigo-200">
+              {pushDownPreviewChanges.length > 0
+                ? `Se moverán ${pushDownPreviewChanges.length} actividad(es) de ${pushDownDialog.person} a la zona inferior.`
+                : `No hay actividades para bajar en ${pushDownDialog.person} (o ya están en 21:00–22:00).`}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPushDownDialog(null)}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={pushDownSaving || pushDownPreviewChanges.length === 0}
+                onClick={() => void handleConfirmPushDown()}
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-4 py-1.5 text-xs font-bold text-white cursor-pointer"
+              >
+                <ArrowDownToLine className="w-3.5 h-3.5" />
+                <span>{pushDownSaving ? 'Moviendo…' : `Pasar ${pushDownPreviewChanges.length} abajo`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showMealModal && (
