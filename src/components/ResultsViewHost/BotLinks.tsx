@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React from "react";
 import { Bot } from "lucide-react";
 import { normalizePerson } from "@/services/identityNormalizer";
 
@@ -47,7 +47,6 @@ export function BotLinks({
 }) {
   const me = currentUser ? normalizePerson(currentUser) : "";
   const fontSize = `${((compact ? 10 : 10) * scale).toFixed(1)}px`;
-  const [activeBotLabel, setActiveBotLabel] = useState<string>("");
 
   return (
     <div
@@ -61,7 +60,7 @@ export function BotLinks({
         rel="noopener noreferrer"
         style={{ fontSize }}
         title="Abrir panel completo de Bots"
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-violet-200 bg-violet-600/20 border border-violet-400/40 hover:bg-violet-500/35 hover:text-white transition-colors"
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-violet-200 bg-violet-600/20 border border-violet-400/40 hover:bg-violet-500/35 hover:text-white transition-colors whitespace-nowrap"
       >
         <Bot className="h-3.5 w-3.5 text-violet-300" aria-hidden />
         <span>Bots</span>
@@ -74,12 +73,9 @@ export function BotLinks({
             key={id}
             href={grokBotUrl(id)}
             style={{ fontSize }}
-            onMouseEnter={() => setActiveBotLabel(fullName)}
-            onMouseLeave={() => setActiveBotLabel("")}
-            onClick={() => setActiveBotLabel(`Abriendo: ${fullName}`)}
             title={`Bot de ${fullName} — Clic para abrir en Grok`}
             aria-label={`Abrir bot de ${fullName} en Grok`}
-            className={`flex h-5 min-w-[20px] items-center justify-center rounded px-1 font-bold leading-none transition-all ${
+            className={`flex h-5 min-w-[20px] items-center justify-center rounded px-1 font-bold leading-none transition-colors whitespace-nowrap ${
               mine
                 ? "bg-violet-500 text-slate-950 shadow-sm ring-1 ring-violet-300"
                 : "text-violet-200/85 hover:bg-violet-600/30 hover:text-white border border-transparent hover:border-violet-400/50"
@@ -89,14 +85,6 @@ export function BotLinks({
           </a>
         );
       })}
-      {activeBotLabel && (
-        <span
-          role="status"
-          className="ml-1 rounded bg-violet-950/90 border border-violet-500/50 px-1.5 py-0.5 text-[9.5px] font-semibold text-violet-100 whitespace-nowrap"
-        >
-          {activeBotLabel}
-        </span>
-      )}
     </div>
   );
 }
