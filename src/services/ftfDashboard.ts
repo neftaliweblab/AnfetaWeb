@@ -30,7 +30,8 @@ function effectiveActivityOwner(a: NotionCalendarActivity): string {
       orig &&
       orig !== 'Sin asignar' &&
       (wf === 'review' ||
-        (wf === 'completed' && (!reviewer || reviewer === 'Sin asignar' || current === reviewer)))
+        (wf === 'completed' &&
+          (!reviewer || reviewer === 'Sin asignar' || current === reviewer || current === 'Sin asignar')))
     ) {
       return orig;
     }

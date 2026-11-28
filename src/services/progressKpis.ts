@@ -5,7 +5,14 @@ import { NotionCalendarActivity, DailyProgressKPIs } from "@/types/anfeta";
 import { workflowState, isTerminadoHoyStatus } from './activityWorkflow';
 import { normalizePerson } from "./identityNormalizer";
 
-export function isFtfActivity(title: string) { return /(?<![\p{L}\p{Nd}_])(?:ftf|fftf|ccale)(?![\p{L}\p{Nd}_])/iu.test(title || ''); }
+export function isFtfActivity(title: string) {
+  const t = title || '';
+  if (/(?<![\p{L}\p{Nd}_])(?:ftf|fftf)(?![\p{L}\p{Nd}_])/iu.test(t)) return true;
+  if (!/(?<![\p{L}\p{Nd}_])ccale(?![\p{L}\p{Nd}_])/iu.test(t)) return false;
+  // Bracketed tool tags like [CCALE MMOVE ...] on client/project tasks are real work, not FTF reminders.
+  if (/\[[^\]]*\bccale\b[^\]]*\]/iu.test(t) && !/0000000|nnoti|mover al terminar/iu.test(t)) return false;
+  return true;
+}
 export function isFtfReminder(activity:Pick<NotionCalendarActivity,'title'|'shortTitle'>){return isFtfActivity(activity.title)||isFtfActivity(activity.shortTitle);}
 /** Reminders stay visible; this helper is only for workload and progress. */
 export function countedCalendarActivities(activities:NotionCalendarActivity[]){return activities.filter(a=>!isTemporaryCalendarResponse(a)&&((!a.isReviewMirror&&!a.isHandoffMirror)||Boolean(a.isDaySnapshot))&&!isFtfReminder(a));}

@@ -203,7 +203,23 @@ export async function hydrateWeeklyFtfActivities({
   extractPage,
   resolveReviewFlow,
 }: HydrateWeeklyActivitiesInput): Promise<NotionCalendarActivity[]> {
-  const cachedByCleanId = new Map(cachedFlat.map(a => [cleanPageId(a.pageId), a]));
+  const cachedByCleanId = new Map<string, NotionCalendarActivity>();
+  for (const act of cachedFlat) {
+    const cid = cleanPageId(act?.pageId);
+    if (!cid) continue;
+    const prev = cachedByCleanId.get(cid);
+    if (!prev) {
+      cachedByCleanId.set(cid, act);
+      continue;
+    }
+    const prevTs = Date.parse(prev.serverModified || '') || 0;
+    const curTs = Date.parse(act.serverModified || '') || 0;
+    const curHasFlow = Boolean(act.reviewFlow?.OriginalPerson);
+    const prevHasFlow = Boolean(prev.reviewFlow?.OriginalPerson);
+    if (curTs > prevTs || (curTs === prevTs && curHasFlow && !prevHasFlow)) {
+      cachedByCleanId.set(cid, act);
+    }
+  }
   return Promise.all(
     pages.map(async (page: any) => {
       const live = extractPage(page);
@@ -212,7 +228,7 @@ export async function hydrateWeeklyFtfActivities({
       const sameInstant = cachedAct && cachedAct.serverModified === page.last_edited_time;
       const reusableCachedFlow =
         cachedAct?.reviewFlow && (sameInstant || wf === 'completed') ? cachedAct.reviewFlow : undefined;
-      const rf = reusableCachedFlow || (await resolveReviewFlow(page, wf));
+      const rf = reusableCachedFlow || (await resolveReviewFlow(page, wf)) || (wf === 'review' ? cachedAct?.reviewFlow : undefined);
       const cachedPlanFields =
         cachedAct && (sameInstant || mexicoDate(cachedAct.start) === mexicoDate(live.dateStart))
           ? {

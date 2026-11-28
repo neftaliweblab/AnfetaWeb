@@ -179,8 +179,21 @@ export async function saveFtfDayArchive(
       .maybeSingle();
 
     const prevActs: any[] = Array.isArray(existing?.payload?.activities) ? existing.payload.activities : [];
-    // Never shrink a past day's archive after Notion rolls uncompleted/review items forward.
-    if (day < today && prevActs.length >= dayActs.length) return;
+    const mergedMap = new Map<string, any>();
+    for (const prev of prevActs) {
+      const pid = cleanId(prev?.originalPageId || prev?.pageId);
+      if (pid && isMeaningfulActivity(prev)) mergedMap.set(pid, prev);
+    }
+    for (const cur of dayActs) {
+      const pid = cleanId(cur?.originalPageId || cur?.pageId);
+      if (pid) mergedMap.set(pid, cur);
+    }
+    const mergedActs = [...mergedMap.values()];
+    // Never shrink an archive after Notion rolls uncompleted/review items forward, while letting today accept fresher statuses.
+    if (day < today && prevActs.length >= mergedActs.length && mergedActs.length > dayActs.length) {
+      // Only skip past-day rewrites when live Notion has shrunk and nothing new was recovered.
+      if (prevActs.length >= dayActs.length) return;
+    }
 
     await supabaseAdmin()
       .from('notion_snapshots')
@@ -189,7 +202,7 @@ export async function saveFtfDayArchive(
           user_id: ctx.userId,
           source_key: ctx.source,
           request_key: requestKey,
-          payload: { day, archivedAt: new Date().toISOString(), activities: dayActs },
+          payload: { day, archivedAt: new Date().toISOString(), activities: mergedActs },
           has_payload: true,
           valid: true,
           force_full: false,
@@ -233,7 +246,7 @@ async function resolveRespuestaHandoffs(
   pages: any[],
   dates: string[]
 ): Promise<RespuestaHandoffEntry[]> {
-  if (!pages.length || !isSupabaseLive()) return [];
+  if (!dates.length || !isSupabaseLive()) return [];
   const dateSet = new Set(dates);
   const candidates: Array<{ pageId: string; day: string; reviewer: string; sender: string }> = [];
 
@@ -253,15 +266,12 @@ async function resolveRespuestaHandoffs(
       sender,
     });
   }
-  if (!candidates.length) return [];
-
   const cachedIndex = await readFtfStore<Record<string, RespuestaHandoffEntry>>(
     settings,
     'ftf:respuesta-index',
     {}
   );
   let dirty = false;
-  const resolved: RespuestaHandoffEntry[] = [];
   const missing = candidates.filter(c => !cachedIndex[c.pageId]?.targetId);
 
   if (missing.length > 0) {
@@ -309,10 +319,16 @@ async function resolveRespuestaHandoffs(
     }
   }
 
+  const byTargetDay = new Map<string, RespuestaHandoffEntry>();
+  for (const entry of Object.values(cachedIndex || {})) {
+    if (entry?.targetId && dateSet.has(entry.day)) {
+      byTargetDay.set(`${entry.day}:${entry.targetId}`, entry);
+    }
+  }
   for (const c of candidates) {
     const entry = cachedIndex[c.pageId];
     if (entry?.targetId) {
-      resolved.push({
+      byTargetDay.set(`${c.day}:${entry.targetId}`, {
         ...entry,
         day: c.day,
         sender: c.sender,
@@ -320,7 +336,7 @@ async function resolveRespuestaHandoffs(
       });
     }
   }
-  return resolved;
+  return [...byTargetDay.values()];
 }
 
 /**
@@ -358,7 +374,7 @@ export async function loadHistoricalFtfRecovery(
       .in('request_key', keys)
       .eq('has_payload', true)
       .order('updated_at', { ascending: false })
-      .limit(100),
+      .limit(250),
     supabaseAdmin()
       .from('notion_page_events')
       .select('page_id,server_modified,properties')
@@ -377,8 +393,10 @@ export async function loadHistoricalFtfRecovery(
 
   // Index [RESPUESTA] handoffs per targetId+day and per targetId globally
   const handoffByDayTarget = new Map<string, RespuestaHandoffEntry>();
+  const handoffByTarget = new Map<string, RespuestaHandoffEntry>();
   for (const h of handoffs) {
     handoffByDayTarget.set(`${h.day}:${h.targetId}`, h);
+    handoffByTarget.set(h.targetId, h);
   }
 
   // Also index notion_page_events by cleanId for status upgrades & metadata fallback
@@ -418,12 +436,15 @@ export async function loadHistoricalFtfRecovery(
     if (!act?.start) continue;
     const d = mexicoDate(act.start);
     const cid = cleanId(act.originalPageId || act.pageId);
-    const h = handoffByDayTarget.get(`${d}:${cid}`);
+    const wf = workflowState(act.status, act.title);
+    const h =
+      handoffByDayTarget.get(`${d}:${cid}`) ||
+      (wf === 'review' || wf === 'completed' ? handoffByTarget.get(cid) : undefined);
     if (h && !act.reviewFlow?.OriginalPerson) {
       act.reviewFlow = {
         OriginalPerson: h.sender,
         ReviewAssignee: h.reviewer,
-        State: workflowState(act.status, act.title) === 'completed' ? 'approved' : 'pending',
+        State: wf === 'completed' ? 'approved' : 'pending',
       };
       act.originalPerson = h.sender;
     }
