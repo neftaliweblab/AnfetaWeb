@@ -117,18 +117,32 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
   if(updates.automationMove){const state=workflowState(notionStatusValue(calendarStatusField(page)?.[1]),title);if(!['pending','suspended'].includes(state)||/\b(?:zREVISION|FTF|ccale)\b/i.test(title)||Object.entries(page.properties||{}).some(([n,p]:any)=>/fij[oa]|fixed/i.test(n)&&p.checkbox))throw Error('La actividad ya no es un pendiente reprogramable. Actualiza su estado.');}
   if(updates.expectedEditedAt && page.last_edited_time!==updates.expectedEditedAt)throw new Error('La actividad cambió en otro dispositivo. Actualiza antes de guardar.');
   if(updates.expectedStatus!==undefined && (notionStatusValue(calendarStatusField(page)?.[1]))!==updates.expectedStatus)throw new Error('El estado cambió en otro dispositivo. Actualiza antes de guardar.');
+  const currentStatusName = calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name || '';
+  const currentWorkflowState = workflowState(currentStatusName, title);
+  const isRevState = currentWorkflowState === 'review' || /(?<![\p{L}\p{Nd}_])(?:rtuzREVISION|rtuzR)(?![\p{L}\p{Nd}_])/iu.test(title);
   const locks = Object.entries(page.properties || {}).some(([name, prop]: any) => /lock|bloquead/i.test(name) && prop.type === 'checkbox' && prop.checkbox);
   const inferred = inferActivityPerson(title);
-  const activity = { ...cached, title, person: assignedPerson(page, inferred || cached?.person || ''), isLocked: locks || isActivityLocked(cached || {}) };
+  let resolvedPerson = assignedPerson(page, inferred || cached?.person || '');
+  let cachedOrReadReviewFlow = cached?.reviewFlow;
+  if (isRevState && !(cachedOrReadReviewFlow?.State === 'pending')) {
+    cachedOrReadReviewFlow = await readReviewFlow(settings, id).catch(() => undefined);
+  }
+  if (
+    isRevState &&
+    cachedOrReadReviewFlow?.State === 'pending' &&
+    cachedOrReadReviewFlow?.LeaveVisualCopy !== true &&
+    cachedOrReadReviewFlow?.OriginalPerson &&
+    normalizePerson(cachedOrReadReviewFlow.OriginalPerson) !== 'Sin asignar'
+  ) {
+    resolvedPerson = normalizePerson(cachedOrReadReviewFlow.OriginalPerson);
+  }
+  const activity = { ...cached, title, person: resolvedPerson, isLocked: locks || isActivityLocked(cached || {}) };
   if(updates.expectedPerson!==undefined&&normalizePerson(updates.expectedPerson)!==normalizePerson(activity.person))throw new Error('El responsable cambió en otro dispositivo. Actualiza antes de guardar.');
   if (!canEditActivity(actor, activity)) throw new Error('Tu sesión no tiene permiso para modificar esta actividad o está bloqueada.');
   if (!ftfRollover && (updates.start || updates.end) && (workflowState(notionStatusValue(calendarStatusField(page)?.[1]),title)==='completed'||/(?<![\p{L}\p{Nd}_])zREVISION(?![\p{L}\p{Nd}_])/iu.test(title+' '+(notionStatusValue(calendarStatusField(page)?.[1]))))) throw new Error('La fecha de zREVISION es histórica. Reasigna primero la actividad a una fase activa antes de cambiar su horario.');
   const returned = updates.reviewAction === 'return';
   const reassigned = updates.reviewAction === 'reassign';
   const handoff=updates.handoff===true;
-  const currentStatusName = calendarStatusField(page)?.[1]?.[calendarStatusField(page)![1].type]?.name || '';
-  const currentWorkflowState = workflowState(currentStatusName, title);
-  const isRevState = currentWorkflowState === 'review' || /(?<![\p{L}\p{Nd}_])(?:rtuzREVISION|rtuzR)(?![\p{L}\p{Nd}_])/iu.test(title);
   let handoffId:string|undefined;
   if(handoff){
     if(updates.reviewer||updates.reviewAction||updates.status||updates.start||updates.title)throw Error('Reasigna por separado de otros cambios.');
@@ -465,6 +479,9 @@ async function mutateActivityUnlocked(settings: Settings, actor: string, id: str
       }else await notify();
     }
     updated.__reviewFlow = reviewFlow;
+  }
+  if (!updated.__reviewFlow && isRevState && cachedOrReadReviewFlow) {
+    updated.__reviewFlow = cachedOrReadReviewFlow;
   }
   if(handoffId){try{await confirmHandoff(settings,handoffId);}catch{updated.__notificationWarning='El responsable se guardó en Notion, pero no se confirmó la copia histórica. Actualiza y verifica antes de repetir la reasignación.';}}
   return updated;

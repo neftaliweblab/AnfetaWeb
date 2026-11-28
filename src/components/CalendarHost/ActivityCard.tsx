@@ -644,7 +644,7 @@ function ActivityCardComponent({
               disabled={isSaving} aria-label="Arrastrar actividad para cambiar horario" title="Arrastra para mover; si hay un empalme podrás revisarlo antes de guardar"
               onMouseEnter={() => {if(hoverTimer.current)clearTimeout(hoverTimer.current);setShowHover(false);}}
               onMouseDown={() => {if(hoverTimer.current)clearTimeout(hoverTimer.current);setShowHover(false);}}
-              onClick={e=>e.stopPropagation()}
+              onClick={e => { if (!(e.ctrlKey || e.metaKey || e.shiftKey || multiSelectMode)) e.stopPropagation(); }}
               className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-cyan-950 hover:text-cyan-200 cursor-grab active:cursor-grabbing">
               <GripVertical className="h-3.5 w-3.5" />
             </button>}

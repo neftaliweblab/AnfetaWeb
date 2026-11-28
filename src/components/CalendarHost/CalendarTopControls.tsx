@@ -254,7 +254,7 @@ export function CalendarTopControls({
           }`}
         >
           <CheckSquare className="w-3.5 h-3.5 text-emerald-300" />
-          <span className="hidden xl:inline">Mover varias</span>
+          <span className="hidden sm:inline">Mover varias</span>
           {multiSelectCount > 0 && (
             <span className="px-1 rounded-full bg-emerald-400 text-slate-950 text-[9.5px] font-bold font-mono">
               {multiSelectCount}

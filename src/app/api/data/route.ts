@@ -734,7 +734,8 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         if (page.archived || page.in_trash) {
           return NextResponse.json({ error: 'Esta actividad fue archivada o eliminada en Notion.', archived: true }, { status: 404 });
         }
-        const live = extractNotionPageData(page);
+        const hydratedPage = await hydratePageReviewFlow(settings, page);
+        const live = extractNotionPageData(hydratedPage);
         if (live.id) liveNotionOverrides.set(live.id, live);
         const activity = normalizeActivity({
           pageId: page.id,
@@ -742,6 +743,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           pageUrl: live.url,
           title: live.title,
           person: live.person,
+          originalPerson: hydratedPage.__reviewFlow?.OriginalPerson || live.person,
+          reviewFlow: hydratedPage.__reviewFlow,
+          reviewFlowScanned: Boolean(hydratedPage.__reviewFlow),
           status: live.status,
           start: live.dateStart || '',
           end: live.dateEnd || '',
@@ -764,9 +768,10 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       try {
         const settings=getSettings();
         const page=await reviewNotificationActivity(settings,actor,searchParams.get('id')||'');
-        const live=extractNotionPageData(page);
+        const hydrated=await hydratePageReviewFlow(settings,page);
+        const live=extractNotionPageData(hydrated);
         if(!live.dateStart)throw Error('La actividad no tiene horario en el calendario.');
-        return NextResponse.json({activity:normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page)},0)},{headers:{'Cache-Control':'no-store'}});
+        return NextResponse.json({activity:normalizeActivity({pageId:page.id,pageUrl:live.url,title:live.title,person:live.person,originalPerson:hydrated.__reviewFlow?.OriginalPerson||live.person,reviewFlow:hydrated.__reviewFlow,reviewFlowScanned:Boolean(hydrated.__reviewFlow),status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page)},0)},{headers:{'Cache-Control':'no-store'}});
       }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'No se pudo abrir la actividad.'},{status:404});}
     }
     if (type === "dropbox-folders") {
@@ -1429,9 +1434,16 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           normalizePerson(old?.person) === normalizePerson(old?.reviewFlow?.OriginalPerson) &&
           normalizePerson(old?.reviewFlow?.ReviewAssignee) === normalizePerson(live.person)
         );
-        const reviewFlow = known || (old?.title === live.title && (old?.person === live.person || sameReviewOwner) && old?.status === live.status && (!old?.serverModified || !page.last_edited_time || old.serverModified === page.last_edited_time) ? old.reviewFlow : undefined);
+        let reviewFlow = known || (old?.title === live.title && (old?.person === live.person || sameReviewOwner) && old?.status === live.status && (!old?.serverModified || !page.last_edited_time || old.serverModified === page.last_edited_time) ? old.reviewFlow : undefined);
+        let reviewFlowScanned = !!known;
+        if (workflowState(live.status, live.title) === 'review' && !reviewFlow) {
+          try {
+            reviewFlow = await cachedReviewFlow(liveSettings, page);
+            reviewFlowScanned = true;
+          } catch {}
+        }
         const itemAi = live.aiContent || old?.aiContent || old?.['busqueda palabras por contenido pagina IA'] || '';
-        upserts.push(normalizeActivity({
+        const upsertedActivity = normalizeActivity({
           ...old,
           financialFields: activityFinancialFields(page),
           pageId: page.id,
@@ -1442,7 +1454,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           person: live.person,
           originalPerson: reviewFlow?.OriginalPerson || old?.originalPerson || live.person,
           reviewFlow,
-          reviewFlowScanned: !!known,
+          reviewFlowScanned,
           domain: calendarDomain(live.title, live.domain),
           status: live.status,
           start: live.dateStart.length === 10 ? live.dateStart + 'T08:00:00-06:00' : live.dateStart,
@@ -1457,7 +1469,9 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           isUrgent: undefined,
           isReviewMirror: false,
           checklistScanned: false,
-        }, 0));
+        }, 0);
+        if (reviewFlow) persistCalendarActivity(upsertedActivity);
+        upserts.push(upsertedActivity);
       }
       return NextResponse.json({
         date,
@@ -1481,7 +1495,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
       const enrichOffset=enrichRaw===null?undefined:Math.max(0,Number(enrichRaw)||0);
       let nextEnrichOffset:number|undefined;
       const snapshot = calendarSnapshot();
-      const cached:any[] = supabaseConfigured()?(previous?.activities||[]):Object.values(snapshot).flat().map(normalizeActivity);
+      const cached:any[] = (supabaseConfigured() && previous?.activities?.length) ? previous.activities : Object.values(snapshot).flat().map(normalizeActivity);
       let activities: any[];
       let warning: string | undefined;
       if (token) {
@@ -2163,8 +2177,8 @@ async function POSTLive(req: NextRequest) {
       await assertChecklistAccess(settings,actor,payload.pageId);clearReadBlocksCache(settings);
       const page=await notionRequest(settings,'pages/'+payload.pageId);if(page.archived||page.in_trash)throw Error('La actividad está archivada o en la papelera.');
       const live=extractNotionPageData(page),reviewFlow=await readReviewFlow(settings,page.id);
-      const normalized=normalizeActivity({pageId:page.id,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);
-      return NextResponse.json({success:true,activity:{pageId:page.id,title:live.title,person:live.person,status:live.status,start:normalized.start,end:normalized.end,isLocked:live.isLocked,reviewFlow:reviewFlow||null,reviewFlowScanned:true}});
+      const normalized=normalizeActivity({pageId:page.id,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,reviewFlow:reviewFlow||undefined,reviewFlowScanned:true},0);
+      return NextResponse.json({success:true,activity:{pageId:page.id,title:live.title,person:normalized.person,status:live.status,start:normalized.start,end:normalized.end,isLocked:live.isLocked,reviewFlow:reviewFlow||null,reviewFlowScanned:true}});
     }
 
     if(action==='browser-dropbox-upload')return NextResponse.json(await browserDropboxUpload(actor,payload));
@@ -3344,10 +3358,11 @@ async function POSTLive(req: NextRequest) {
       try {
         const page = await mutateActivity({...settings,deferReviewNotice:job=>after(job)}, actor, id, input, cached);
         const live = extractNotionPageData(page); liveNotionOverrides.set(live.id, live);
+        const resolvedFlow = page.__reviewFlow || cached?.reviewFlow || knownReviewFlow(settings, page) || (workflowState(live.status, live.title) === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined);
         const activity = normalizeActivity({ ...cached, financialFields:activityFinancialFields(page),pageId:page.id, pageUrl:live.url, title:live.title, shortTitle:live.title,
           start:live.dateStart || cached?.start, end:live.dateEnd || cached?.end, status:live.status || input.status || cached?.status,
-          person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:page.__reviewFlow?.OriginalPerson || cached?.originalPerson || live.person,
-          reviewFlow:page.__reviewFlow || cached?.reviewFlow, isUrgent:undefined }, 0);
+          person:live.person,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable, originalPerson:resolvedFlow?.OriginalPerson || cached?.originalPerson || live.person,
+          reviewFlow:resolvedFlow, reviewFlowScanned:Boolean(resolvedFlow), isUrgent:undefined }, 0);
         (activity as any).serverModified=page.last_edited_time;
         await recordPageEvent({sourceKey:notionSourceKey(settings),pageId:page.id,state:'active',eventType:'polled_state',serverModified:page.last_edited_time,properties:{name:live.title,assignedPerson:activity.person||live.person,updateStatus:live.status,scheduledDate:live.dateStart,scheduledEnd:live.dateEnd,ftfVerified:live.ftfVerified,ftfAvailable:live.ftfAvailable,calendarActivity:activity}});
         persistCalendarActivity(activity);
@@ -3511,7 +3526,7 @@ async function POSTLive(req: NextRequest) {
         if (action === 'calendar-automation-preview') return NextResponse.json({success:true,report:await planDailyAutomation(settings,actor,input.date || mexicoDate())});
         const excluded=Array.isArray(input.excludedIds)?input.excludedIds.filter((id:any)=>typeof id==='string'&&/^[a-f0-9-]{32,36}$/i.test(id)).slice(0,1000):[];
         const report=await executeCoordinatedAutomation(settings,actor,input.date || mexicoDate(),input.automatic!==true,excluded);
-        for(const page of report.pages){const live=extractNotionPageData(page),activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page),serverModified:page.last_edited_time},0);persistCalendarActivity(activity);await publishCalendarPage(settings,page,activity);}
+        for(const page of report.pages){const hydrated=await hydratePageReviewFlow(settings,page),live=extractNotionPageData(hydrated),activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,originalPerson:hydrated.__reviewFlow?.OriginalPerson||live.person,reviewFlow:hydrated.__reviewFlow,reviewFlowScanned:Boolean(hydrated.__reviewFlow),status:live.status,start:live.dateStart,end:live.dateEnd,...ftfState(page),serverModified:page.last_edited_time},0);persistCalendarActivity(activity);await publishCalendarPage(settings,hydrated,activity);}
         const {pages,...publicReport}=report;
         return NextResponse.json({success:true,report:publicReport});
       } catch(error) {return NextResponse.json({error:error instanceof Error ? error.message : 'No se pudo ejecutar el robot.'},{status:400});}
@@ -3519,10 +3534,11 @@ async function POSTLive(req: NextRequest) {
     if (action === 'calendar-batch-schedule') {
       const settings={...getSettings(),notionToken:resolveNotionToken(req)}, input=payload || body;
       if (!Array.isArray(input.changes) || !input.changes.length || input.changes.length>60) return NextResponse.json({error:'Selecciona entre 1 y 60 actividades.'},{status:400});
+      const cachedSnapshotList = Object.values(calendarSnapshot()).flat().map(normalizeActivity);
       const results:any[]=[];let halted=false;
       for (const change of input.changes) {
         if(halted){results.push({success:false,pageId:change.pageId,error:'Movimiento pendiente: el lote se detuvo tras un fallo. Actualiza los horarios antes de repetir.'});continue;}
-        try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,...(change.person?{person:change.person}:{}),expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle,allowOverlap:change.allowOverlap});const live=extractNotionPageData(page);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,status:live.status,start:live.dateStart,end:live.dateEnd},0);activity.serverModified=page.last_edited_time;persistCalendarActivity(activity);await publishCalendarPage(settings,page,activity);results.push({success:true,activity});}
+        try {if(!change.expectedStart||!change.expectedEnd||!change.expectedTitle)throw new Error('Actualiza la propuesta de horarios antes de confirmar.');const cachedItem = cachedSnapshotList.find(a => cleanPageId(a.pageId) === cleanPageId(change.pageId));const page=await mutateActivity(settings,input.currentUser || settings.currentUser,change.pageId,{start:change.start,end:change.end,...(change.person?{person:change.person}:{}),expectedStart:change.expectedStart,expectedEnd:change.expectedEnd,expectedTitle:change.expectedTitle,allowOverlap:change.allowOverlap}, cachedItem);const hydrated = page.__reviewFlow ? page : await hydratePageReviewFlow(settings, page);const resolvedFlow = hydrated.__reviewFlow || cachedItem?.reviewFlow;const live=extractNotionPageData(hydrated);const activity=normalizeActivity({pageId:page.id,pageUrl:page.url,title:live.title,person:live.person,originalPerson:resolvedFlow?.OriginalPerson||cachedItem?.originalPerson||live.person,reviewFlow:resolvedFlow,reviewFlowScanned:Boolean(resolvedFlow),status:live.status,start:live.dateStart,end:live.dateEnd},0);activity.serverModified=page.last_edited_time;persistCalendarActivity(activity);await publishCalendarPage(settings,hydrated,activity);results.push({success:true,activity});}
         catch(error){halted=true;results.push({success:false,pageId:change.pageId,error:error instanceof Error?error.message:'No se pudo guardar'});}
       }
       return NextResponse.json({success:results.every(result=>result.success),results});

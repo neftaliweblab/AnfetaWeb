@@ -670,6 +670,39 @@ const request=(action,payload)=>new Request('http://localhost/api/data',{method:
     const afterRemove=applyIncrementalCalendarDelta(next,[],[pid],'2026-10-05');
     assert.equal(afterRemove.length,0);
   });
+  await test('Envío a revisión sin copia visual conserva la tarjeta en la columna del emisor tras calendar-changes y activity-edit-snapshot',async()=>{
+    state.queryCurrent=true;
+    state.page.last_edited_time='2026-10-05T17:30:00Z';
+    state.page.properties.Name.title=[{text:{content:'rtuzR | sseo | 11NOV | anfeta.com | Trabajo revisado | ne11 | jjo000'}}];
+    state.page.properties.Estado.status.name='En revisión';
+    state.page.properties['Assignee/Ejecutor Principal'].people=[{id:'neft-id',name:'Neftali'}];
+    state.flow={State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'John',LeaveVisualCopy:false};
+    const res=await route.GET(new Request('http://localhost/api/data?type=calendar-changes&date=2026-10-05&since=2026-10-05T17:00:00Z'));
+    assert.equal(res.status,200);
+    const data=await res.json();
+    assert.equal(data.upserts.length,1);
+    assert.equal(data.upserts[0].person,'Neftali');
+    assert.equal(data.upserts[0].reviewFlow?.OriginalPerson,'Neftali');
+    const snapRes=await route.POST(request('activity-edit-snapshot',{pageId:pid}));
+    const snapData=await snapRes.json();
+    assert.equal(snapRes.status,200);
+    assert.equal(snapData.activity.person,'Neftali');
+    const {applyIncrementalCalendarDelta}=require(root+'/src/lib/calendarUpdates.ts');
+    const prev=[{pageId:pid,title:'prtuzR | sseo | 11NOV | anfeta.com | Trabajo revisado | nne11',person:'Neftali',status:'Por hacer',start:'2026-10-05T14:00:00Z',end:'2026-10-05T15:00:00Z'}];
+    const next=applyIncrementalCalendarDelta(prev,data.upserts,[],'2026-10-05');
+    assert.equal(next.length,1);
+    assert.equal(next[0].person,'Neftali');
+    assert.equal(next[0].isReviewMirror,false);
+  });
+  await test('retainedReviewFlow conserva el flujo de revisión aunque varíe la etiqueta de estado en revisión',()=>{
+    const {retainedReviewFlow,fixedReviewColumnPerson}=require(root+'/src/lib/retainedReviewFlow.ts');
+    const rf={State:'pending',OriginalPerson:'Neftali',ReviewAssignee:'John',LeaveVisualCopy:false};
+    const prev={title:'rtuzR Trabajo ne11 jjo000',person:'Neftali',status:'EN REVISIÓN',reviewFlow:rf,reviewFlowScanned:true};
+    const incoming={title:'rtuzR Trabajo ne11 jjo000',person:'John',status:'RTUZ - REVISAR REVISIONES rrevi',reviewFlowScanned:false};
+    const kept=retainedReviewFlow(incoming,prev);
+    assert.equal(kept?.OriginalPerson,'Neftali');
+    assert.equal(fixedReviewColumnPerson(incoming.person,incoming.status,incoming.title,kept,false),'Neftali');
+  });
   console.log(passed + ' regression tests passed; all Notion requests mocked.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 
