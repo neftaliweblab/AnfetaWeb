@@ -17,9 +17,23 @@ function isSuspendedActivity(a: NotionCalendarActivity): boolean {
 
 function effectiveActivityOwner(a: NotionCalendarActivity): string {
   const wf = workflowState(a.status, a.title);
-  if (wf === 'review' && a.reviewFlow?.OriginalPerson) {
-    const orig = normalizePerson(String(a.reviewFlow.OriginalPerson));
-    if (orig && orig !== 'Sin asignar') return orig;
+  const rawOrig =
+    a.reviewFlow?.OriginalPerson ||
+    (a.originalPerson && a.originalPerson !== '—' ? a.originalPerson : '');
+  if (rawOrig) {
+    const orig = normalizePerson(String(rawOrig));
+    const current = normalizePerson(a.person);
+    const reviewer = normalizePerson(
+      String(a.reviewFlow?.ReviewAssignee || (a.reviewFlow as any)?.Reviewer || '')
+    );
+    if (
+      orig &&
+      orig !== 'Sin asignar' &&
+      (wf === 'review' ||
+        (wf === 'completed' && (!reviewer || reviewer === 'Sin asignar' || current === reviewer)))
+    ) {
+      return orig;
+    }
   }
   return normalizePerson(a.person);
 }
@@ -261,8 +275,18 @@ export function buildFtfDashboard(actor:string,day:string,people:{name:string;al
     }
     const all=[...unique.values()].sort((a,b)=>a.start.localeCompare(b.start));
     const suspendedActivities=[...suspendedMap.values()].sort((a,b)=>a.start.localeCompare(b.start));
-    const pending=all.filter(a=>!a.isDaySnapshot&&(!a.ftfAvailable||!a.ftfVerified));
-    const verifiedActivities = all.filter(a => a.isDaySnapshot || (a.ftfAvailable && a.ftfVerified));
+    const isFulfilledForFtf = (a: NotionCalendarActivity) => {
+      const wf = workflowState(a.status, a.title);
+      return Boolean(
+        a.isDaySnapshot ||
+          wf === 'review' ||
+          wf === 'completed' ||
+          isCompletedForDayActivity(a, day) ||
+          (a.ftfAvailable && a.ftfVerified)
+      );
+    };
+    const pending = all.filter(a => !isFulfilledForFtf(a));
+    const verifiedActivities = all.filter(a => isFulfilledForFtf(a));
     const completedWorkActivities = all.filter(
       a =>
         workflowState(a.status, a.title) === 'completed' ||

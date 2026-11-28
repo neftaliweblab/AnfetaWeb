@@ -35,13 +35,13 @@ export function CalendarFtfWeek({date, canSendWeekly = false}: {date: string; ca
         const [dashRes, scoreRes] = await Promise.all([
           fetch('/api/data?type=ftf-dashboard&scope=week&date=' + encodeURIComponent(week), {
             cache: 'no-store',
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]),
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(95000)]),
           }),
           fetch('/api/data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'get-ftf-scores', payload: { dates: weekDates } }),
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
           }).catch(() => null),
         ]);
         const data = await readApiJson(dashRes);
@@ -53,7 +53,16 @@ export function CalendarFtfWeek({date, canSendWeekly = false}: {date: string; ca
           }
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'No se pudo cargar la semana.');
+        if (!controller.signal.aborted) {
+          const msg = cause instanceof Error ? cause.message : '';
+          const isTimeout =
+            (cause instanceof Error && cause.name === 'TimeoutError') || /timed out|timeout|aborted/i.test(msg);
+          setError(
+            isTimeout
+              ? 'La Bitácora semanal tardó demasiado en responder (Notion o servidor ocupado). Presiona Reintentar.'
+              : msg || 'No se pudo cargar la semana.'
+          );
+        }
       }
     })();
     return () => controller.abort();

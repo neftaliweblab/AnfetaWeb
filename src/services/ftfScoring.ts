@@ -226,7 +226,6 @@ export function computeHybridFtfScore(
 
   const scheduleAndTasksFinishedWithoutFtfCheck =
     person.assignedHours > 0 &&
-    fullCoverage &&
     noOpenTasksRemaining &&
     effectiveCompletedHours >= Math.max(0.5, person.assignedHours * 0.85) &&
     (isCutoffReached || effectiveCompletedHours >= 6.5);
@@ -240,7 +239,6 @@ export function computeHybridFtfScore(
     (hasExplicitClosingSignal ||
       scheduleAndTasksFinishedWithoutFtfCheck ||
       (person.assignedHours > 0 &&
-        fullCoverage &&
         noOpenTasksRemaining &&
         person.total > 0 &&
         person.verified === person.total &&

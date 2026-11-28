@@ -433,7 +433,7 @@ export function CalendarFtfPanel({
       try {
         const response = await fetch('/api/data?type=ftf-dashboard&date=' + encodeURIComponent(date), {
           cache: 'no-store',
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(95000)]),
         });
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || 'No se pudo comprobar la Bitácora.');
@@ -442,7 +442,16 @@ export function CalendarFtfPanel({
           setError('');
         }
       } catch (e) {
-        if (!stopped) setError(e instanceof Error ? e.message : 'No se pudo actualizar la Bitácora.');
+        if (!stopped) {
+          const msg = e instanceof Error ? e.message : '';
+          const isTimeout =
+            (e instanceof Error && e.name === 'TimeoutError') || /timed out|timeout|aborted/i.test(msg);
+          setError(
+            isTimeout
+              ? 'La Bitácora tardó demasiado en responder (Notion o servidor ocupado). Presiona Reintentar.'
+              : msg || 'No se pudo actualizar la Bitácora.'
+          );
+        }
       } finally {
         busy = false;
         if (!stopped) setLoading(false);
@@ -1408,8 +1417,16 @@ export function CalendarFtfPanel({
               )}
 
               {error && (
-                <div role="alert" className="mx-4 mt-2 rounded-lg border border-rose-800/60 bg-rose-950/40 p-2.5 text-xs text-rose-300">
-                  {error}
+                <div role="alert" className="mx-4 mt-2 rounded-lg border border-rose-800/60 bg-rose-950/40 p-2.5 text-xs text-rose-300 flex items-center justify-between gap-2">
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setRevision(v => v + 1)}
+                    className="shrink-0 rounded border border-rose-500/60 bg-rose-900/50 px-2.5 py-1 text-[11px] font-semibold text-rose-100 hover:bg-rose-800/60 cursor-pointer disabled:opacity-50"
+                  >
+                    Reintentar
+                  </button>
                 </div>
               )}
 

@@ -243,7 +243,18 @@ export async function readChecklist(settings: CalendarSettings, pageId: string) 
 export async function readReviewFlow(settings: CalendarSettings, pageId: string) {
   let latest: any;
   for (const block of await readBlocks(settings, pageId)) {
-    const children = block.type === 'toggle' && block.has_children ? await readBlocks(settings, block.id) : [block];
+    let children = [block];
+    if (block.type === 'toggle' && block.has_children) {
+      const toggleTitle = (block.toggle?.rich_text || [])
+        .map((t: any) => t.plain_text || t.text?.content || '')
+        .join('')
+        .trim();
+      if (!toggleTitle || /datos internos|anfeta/i.test(toggleTitle)) {
+        children = await readBlocks(settings, block.id);
+      } else {
+        children = [];
+      }
+    }
     for (const child of children) {
       const text = (child.paragraph?.rich_text || []).map((t: any) => t.plain_text || t.text?.content || '').join('');
       if (!text.startsWith(REVIEW_PREFIX)) continue;

@@ -21,6 +21,11 @@ import {
   sendWeeklyFtfReportEmail,
   type FtfEmailDeliveryResult,
 } from '@/services/ftfScoreDelivery';
+import {
+  loadHistoricalFtfRecovery,
+  readFtfStore,
+  saveFtfDayArchive,
+} from '@/services/ftfHistoryStore';
 import { ftfState } from '@/services/ftfVerification';
 import { notionStatusValue } from '@/services/notionStatusValue';
 
@@ -203,9 +208,11 @@ export async function hydrateWeeklyFtfActivities({
     pages.map(async (page: any) => {
       const live = extractPage(page);
       const wf = workflowState(live.status, live.title);
-      const rf = await resolveReviewFlow(page, wf);
       const cachedAct = cachedByCleanId.get(cleanPageId(page.id));
       const sameInstant = cachedAct && cachedAct.serverModified === page.last_edited_time;
+      const reusableCachedFlow =
+        cachedAct?.reviewFlow && (sameInstant || wf === 'completed') ? cachedAct.reviewFlow : undefined;
+      const rf = reusableCachedFlow || (await resolveReviewFlow(page, wf));
       const cachedPlanFields =
         cachedAct && (sameInstant || mexicoDate(cachedAct.start) === mexicoDate(live.dateStart))
           ? {
@@ -356,6 +363,7 @@ export async function buildAndSendWeeklyFtfReport(options: {
   const resolvedDate = options.targetDate || mexicoDate(effectiveNow);
   const start = ftfWeekStart(resolvedDate);
   const end = shiftFtfDate(start, 7);
+  const weekDates = [0, 1, 2, 3, 4].map(offset => shiftFtfDate(start, offset));
 
   const [pages, people, presence, state] = await Promise.all([
     queryCalendarPages(settings, start, end, false),
@@ -365,7 +373,16 @@ export async function buildAndSendWeeklyFtfReport(options: {
   ]);
 
   const localCache = readWeeklyLocalJson<Record<string, any[]>>('notion_calendar_cache_v13.json', {});
-  const cachedFlat = Object.values(localCache).flat().map(a => normalizeActivity(a, 0));
+  const localCachedFlat = Object.values(localCache).flat().map(a => normalizeActivity(a, 0));
+  const preliminaryLive = pages.map(page => {
+    const live = extractCalendarPageForWeeklyReport(page, { assignedPerson, calendarStatusField });
+    return normalizeActivity({ pageId: page.id, title: live.title, person: live.person, status: live.status, start: live.dateStart, end: live.dateEnd }, 0);
+  });
+  const history = await loadHistoricalFtfRecovery(settings, weekDates, preliminaryLive, resolvedDate).catch(() => ({
+    cachedFlat: [],
+    recoveredPastActivities: [],
+  }));
+  const cachedFlat = [...history.cachedFlat, ...localCachedFlat];
 
   const activities = await hydrateWeeklyFtfActivities({
     pages,
@@ -376,12 +393,25 @@ export async function buildAndSendWeeklyFtfReport(options: {
       (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
   });
 
-  const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(
+  const combinedBase = [...activities, ...history.recoveredPastActivities];
+  const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(
     () => []
   );
-  const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+  const combinedActivities = [...combinedBase, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+  await saveFtfDayArchive(settings, mexicoDate(effectiveNow), combinedActivities, resolvedDate).catch(() => {});
 
-  const mealBreaks = readWeeklyLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
+  const [mealBreaks, savedScoresByDate] = await Promise.all([
+    readFtfStore<Record<string, MealBreakWindow>>(
+      settings,
+      'ftf:meal-breaks',
+      readWeeklyLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {})
+    ),
+    readFtfStore<Record<string, Record<string, SavedFtfScoreEntry>>>(
+      settings,
+      'ftf:daily-scores',
+      readWeeklyLocalJson<Record<string, Record<string, SavedFtfScoreEntry>>>('ftf_daily_scores.json', {})
+    ),
+  ]);
   const completions = state.values?.receipts?.ftfCompletions || {};
   const weekReport = buildFtfWeek(
     options.actor,
@@ -392,11 +422,6 @@ export async function buildAndSendWeeklyFtfReport(options: {
     presence,
     effectiveNow,
     mealBreaks
-  );
-
-  const savedScoresByDate = readWeeklyLocalJson<Record<string, Record<string, SavedFtfScoreEntry>>>(
-    'ftf_daily_scores.json',
-    {}
   );
 
   return sendWeeklyReportFromWeekData({

@@ -77,6 +77,12 @@ import {
 } from '@/lib/pendingRecurrence';
 import { buildQuickPendingFromActivity } from '@/lib/pendingAlerts';
 import { appendDailyFtfJournalToggle, sendFtfScoreEmail } from '@/services/ftfScoreDelivery';
+import {
+  loadHistoricalFtfRecovery,
+  readFtfStore,
+  saveFtfDayArchive,
+  writeFtfStore,
+} from '@/services/ftfHistoryStore';
 import { hydrateWeeklyFtfActivities, sendWeeklyReportFromWeekData } from '@/services/ftfWeeklyReport';
 import { executeDailyAutomation, planDailyAutomation } from '@/services/calendarAutomation';
 import { canEditActivity } from '@/services/activityPermissions';
@@ -561,31 +567,75 @@ function resolveNotionToken(req: Request | NextRequest, searchParams?: URLSearch
   return (fromParam || fromHeader || fromCookie || getSettings().notionToken || "").trim();
 }
 
+function withSoftTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([promise, new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms))]);
+}
+
+async function resolveDashboardReviewFlow(
+  settings: ReturnType<typeof getSettings>,
+  page: any,
+  wf: string,
+  deadlineAt: number
+) {
+  const known = knownReviewFlow(settings, page);
+  if (known) return known;
+  if (wf !== 'review') return undefined;
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 1500) return undefined;
+  return withSoftTimeout(
+    cachedReviewFlow(settings, page).catch(() => undefined),
+    Math.min(8000, remainingMs),
+    undefined
+  );
+}
+
+function toPreliminaryFtfActivities(pages: any[]) {
+  return pages.map(page => {
+    const live = extractNotionPageData(page);
+    return normalizeActivity(
+      { pageId: page.id, title: live.title, person: live.person, status: live.status, start: live.dateStart, end: live.dateEnd },
+      0
+    );
+  });
+}
+
 async function loadFtfWeekReportInRoute(settings: ReturnType<typeof getSettings>, actor: string, day: string) {
   const start = ftfWeekStart(day);
   const end = shiftFtfDate(start, 7);
+  const weekDates = [0, 1, 2, 3, 4].map(offset => shiftFtfDate(start, offset));
+  const today = mexicoDate();
   const { activeTeam } = await import('@/services/teamDirectory');
   const [pages, people] = await Promise.all([queryCalendarPages(settings, start, end, false), activeTeam()]);
-  const cachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+  const localCachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+  const history = await loadHistoricalFtfRecovery(settings, weekDates, toPreliminaryFtfActivities(pages), today).catch(() => ({
+    cachedFlat: [],
+    recoveredPastActivities: [],
+  }));
+  const cachedFlat = [...history.cachedFlat, ...localCachedFlat];
+  const reviewDeadline = Date.now() + 25000;
   const activities = await hydrateWeeklyFtfActivities({
     pages,
     cachedFlat,
     extractPage: extractNotionPageData,
-    resolveReviewFlow: async (page, wf) =>
-      knownReviewFlow(settings, page) ||
-      (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
+    resolveReviewFlow: (page, wf) => resolveDashboardReviewFlow(settings, page, wf, reviewDeadline),
   });
-  const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(() => []);
-  const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+  const combinedBase = [...activities, ...history.recoveredPastActivities];
+  const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(() => []);
+  const combinedActivities = [...combinedBase, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+  saveFtfDayArchive(settings, today, combinedActivities, today).catch(() => {});
   let warning = '';
-  const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
   const { readFtfPresenceHistory } = await import('@/services/ftfPresenceHistory');
-  const [state, presence] = await Promise.all([
+  const [state, presence, mealBreaks] = await Promise.all([
     readUserState(settings, 'John'),
     readFtfPresenceHistory(start, end).catch(() => {
       warning = 'Historial de conexión no disponible. Las señales de presencia no se pudieron consultar.';
       return [];
     }),
+    readFtfStore<Record<string, MealBreakWindow>>(
+      settings,
+      'ftf:meal-breaks',
+      readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {})
+    ),
   ]);
   return {
     weekReport: buildFtfWeek(actor, start, people, combinedActivities, state.values?.receipts?.ftfCompletions || {}, presence, new Date(), mealBreaks),
@@ -638,26 +688,43 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         }
         const start=day;
         const end=shiftFtfDate(start,1);
+        const today=mexicoDate();
         const {activeTeam}=await import('@/services/teamDirectory');
         const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,true),activeTeam()]);
-        const cachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+        const localCachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
+        const preliminaryLive = toPreliminaryFtfActivities(pages);
+        const history = await loadHistoricalFtfRecovery(settings, [day], preliminaryLive, today).catch(() => ({
+          cachedFlat: [],
+          recoveredPastActivities: [],
+        }));
+        const cachedFlat = [...history.cachedFlat, ...localCachedFlat];
+        const reviewDeadline = Date.now() + 25000;
         const activities = await hydrateWeeklyFtfActivities({
           pages,
           cachedFlat,
           extractPage: extractNotionPageData,
-          resolveReviewFlow: async (page, wf) =>
-            knownReviewFlow(settings, page) ||
-            (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
+          resolveReviewFlow: (page, wf) => resolveDashboardReviewFlow(settings, page, wf, reviewDeadline),
         });
-        const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...activities]).catch(() => []);
-        const combinedActivities = [...activities, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+        const combinedBase = [...activities, ...history.recoveredPastActivities];
+        const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(() => []);
+        const combinedActivities = [...combinedBase, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
+        saveFtfDayArchive(settings, day, combinedActivities, today).catch(() => {});
         let warning='';
-        const mealBreaks = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
-        if(day===mexicoDate())try{await recordFtfCompletions(settings,combinedActivities);}catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
+        if(day===today){
+          try{
+            const completed=await withSoftTimeout<boolean>(recordFtfCompletions(settings,combinedActivities).then(()=>true),12000,false);
+            if(!completed)warning='Registro FTF en curso; vista mostrada con datos actuales.';
+          }catch{warning='No se pudo guardar el registro FTF. No se confirmará una hora de cumplimiento sin ese registro.';}
+        }
         const {readFtfPresenceHistory}=await import('@/services/ftfPresenceHistory');
-        const [state, presence, blockEntries]=await Promise.all([
+        const [state, presence, mealBreaks, blockEntries]=await Promise.all([
           readUserState(settings,'John'),
           readFtfPresenceHistory(day, shiftFtfDate(day, 1)).catch(()=>{return [];}),
+          readFtfStore<Record<string, MealBreakWindow>>(
+            settings,
+            'ftf:meal-breaks',
+            readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {})
+          ),
           Promise.all(
             people.map(async (p) => {
               try {
@@ -4141,9 +4208,15 @@ async function POSTLive(req: NextRequest) {
         endHour: Number.isFinite(Number(cfg.endHour)) ? Math.max(0, Math.min(23, Math.trunc(Number(cfg.endHour)))) : 14,
         endMinute: Number.isFinite(Number(cfg.endMinute)) ? Math.max(0, Math.min(59, Math.trunc(Number(cfg.endMinute)))) : 0,
       };
-      const store = readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {});
+      const ftfSettings = getSettings();
+      const store = await readFtfStore<Record<string, MealBreakWindow>>(
+        ftfSettings,
+        'ftf:meal-breaks',
+        readLocalJson<Record<string, MealBreakWindow>>('meal_breaks.json', {})
+      );
       store[targetUser] = entry;
       writeLocalJson('meal_breaks.json', store);
+      await writeFtfStore(ftfSettings, 'ftf:meal-breaks', store);
       return NextResponse.json({ success: true, user: targetUser, config: entry }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -4154,7 +4227,12 @@ async function POSTLive(req: NextRequest) {
       }
       const date = String(payload.date || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Fecha de bitácora inválida.');
-      const reviews = readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {});
+      const ftfSettings = getSettings();
+      const reviews = await readFtfStore<Record<string, { reviewer: string; reviewedAt: string }>>(
+        ftfSettings,
+        'ftf:supervisor-reviews',
+        readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {})
+      );
       if (payload.unmark) {
         delete reviews[date];
       } else {
@@ -4164,19 +4242,28 @@ async function POSTLive(req: NextRequest) {
         };
       }
       writeLocalJson('ftf_supervisor_reviews.json', reviews);
+      await writeFtfStore(ftfSettings, 'ftf:supervisor-reviews', reviews);
       return NextResponse.json({ success: true, date, review: reviews[date] || null }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (action === 'get-ftf-review') {
       const date = String(payload.date || '').slice(0, 10);
-      const reviews = readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {});
+      const reviews = await readFtfStore<Record<string, { reviewer: string; reviewedAt: string }>>(
+        getSettings(),
+        'ftf:supervisor-reviews',
+        readLocalJson<Record<string, { reviewer: string; reviewedAt: string }>>('ftf_supervisor_reviews.json', {})
+      );
       return NextResponse.json({ success: true, date, review: reviews[date] || null }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (action === 'get-ftf-scores') {
       const date = payload.date ? String(payload.date).slice(0, 10) : '';
       const dates = Array.isArray(payload.dates) ? payload.dates.map((d: any) => String(d).slice(0, 10)) : [];
-      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const store = await readFtfStore<Record<string, Record<string, any>>>(
+        getSettings(),
+        'ftf:daily-scores',
+        readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {})
+      );
       if (date) {
         return NextResponse.json({ success: true, date, scores: store[date] || {} }, { headers: { 'Cache-Control': 'no-store' } });
       }
@@ -4198,7 +4285,12 @@ async function POSTLive(req: NextRequest) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !person || person === 'Sin asignar') {
         throw new Error('Fecha o colaborador inválido.');
       }
-      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const ftfSettings = getSettings();
+      const store = await readFtfStore<Record<string, Record<string, any>>>(
+        ftfSettings,
+        'ftf:daily-scores',
+        readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {})
+      );
       const dayMap = { ...(store[date] || {}) };
       dayMap[person] = {
         ...payload.entry,
@@ -4209,6 +4301,7 @@ async function POSTLive(req: NextRequest) {
       };
       store[date] = dayMap;
       writeLocalJson('ftf_daily_scores.json', store);
+      await writeFtfStore(ftfSettings, 'ftf:daily-scores', store);
       return NextResponse.json({ success: true, date, person, entry: dayMap[person], scores: dayMap }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -4220,7 +4313,12 @@ async function POSTLive(req: NextRequest) {
       const date = String(payload.date || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Fecha inválida.');
       const entries = Array.isArray(payload.entries) ? payload.entries : [];
-      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const ftfSettings = getSettings();
+      const store = await readFtfStore<Record<string, Record<string, any>>>(
+        ftfSettings,
+        'ftf:daily-scores',
+        readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {})
+      );
       const dayMap = { ...(store[date] || {}) };
       const publishedAt = new Date().toISOString();
       for (const item of entries) {
@@ -4239,6 +4337,7 @@ async function POSTLive(req: NextRequest) {
       }
       store[date] = dayMap;
       writeLocalJson('ftf_daily_scores.json', store);
+      await writeFtfStore(ftfSettings, 'ftf:daily-scores', store);
 
       const deliverySettings = getSettings();
       const effectiveNotionToken = resolveNotionToken(req) || deliverySettings.notionToken;
@@ -4324,7 +4423,11 @@ async function POSTLive(req: NextRequest) {
       const effectiveNotionToken = resolveNotionToken(req);
       const liveSettings = effectiveNotionToken ? { ...getSettings(), notionToken: effectiveNotionToken } : getSettings();
       const { weekReport } = await loadFtfWeekReportInRoute(liveSettings, normActor, targetDate);
-      const savedScores = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const savedScores = await readFtfStore<Record<string, Record<string, any>>>(
+        liveSettings,
+        'ftf:daily-scores',
+        readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {})
+      );
       const result = await sendWeeklyReportFromWeekData({
         settings: liveSettings,
         weekReport,
@@ -4348,7 +4451,11 @@ async function POSTLive(req: NextRequest) {
     if (action === 'get-my-ftf-score') {
       const person = normalizePerson(String(payload.person || actor || ''));
       const date = String(payload.date || mexicoDate()).slice(0, 10);
-      const store = readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {});
+      const store = await readFtfStore<Record<string, Record<string, any>>>(
+        getSettings(),
+        'ftf:daily-scores',
+        readLocalJson<Record<string, Record<string, any>>>('ftf_daily_scores.json', {})
+      );
       const entry = person && person !== 'Sin asignar' ? store[date]?.[person] : null;
       return NextResponse.json(
         { success: true, date, person, entry: entry?.published ? entry : null },
