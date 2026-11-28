@@ -378,7 +378,7 @@ export async function buildAndSendWeeklyFtfReport(options: {
     const live = extractCalendarPageForWeeklyReport(page, { assignedPerson, calendarStatusField });
     return normalizeActivity({ pageId: page.id, title: live.title, person: live.person, status: live.status, start: live.dateStart, end: live.dateEnd }, 0);
   });
-  const history = await loadHistoricalFtfRecovery(settings, weekDates, preliminaryLive, resolvedDate).catch(() => ({
+  const history = await loadHistoricalFtfRecovery(settings, weekDates, preliminaryLive, resolvedDate, pages).catch(() => ({
     cachedFlat: [],
     recoveredPastActivities: [],
   }));
@@ -392,6 +392,22 @@ export async function buildAndSendWeeklyFtfReport(options: {
       knownReviewFlow(settings, page) ||
       (wf === 'review' ? await cachedReviewFlow(settings, page).catch(() => undefined) : undefined),
   });
+  // Propagate [RESPUESTA] handoff attribution onto hydrated live activities as well
+  const handoffByKey = new Map<string, any>();
+  for (const act of preliminaryLive) {
+    if (act.reviewFlow?.OriginalPerson) {
+      handoffByKey.set(cleanPageId(act.pageId), act.reviewFlow);
+    }
+  }
+  for (const act of activities) {
+    if (!act.reviewFlow?.OriginalPerson) {
+      const flow = handoffByKey.get(cleanPageId(act.pageId));
+      if (flow) {
+        act.reviewFlow = flow;
+        act.originalPerson = flow.OriginalPerson;
+      }
+    }
+  }
 
   const combinedBase = [...activities, ...history.recoveredPastActivities];
   const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(

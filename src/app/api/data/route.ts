@@ -607,7 +607,8 @@ async function loadFtfWeekReportInRoute(settings: ReturnType<typeof getSettings>
   const { activeTeam } = await import('@/services/teamDirectory');
   const [pages, people] = await Promise.all([queryCalendarPages(settings, start, end, false), activeTeam()]);
   const localCachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
-  const history = await loadHistoricalFtfRecovery(settings, weekDates, toPreliminaryFtfActivities(pages), today).catch(() => ({
+  const preliminaryLive = toPreliminaryFtfActivities(pages);
+  const history = await loadHistoricalFtfRecovery(settings, weekDates, preliminaryLive, today, pages).catch(() => ({
     cachedFlat: [],
     recoveredPastActivities: [],
   }));
@@ -619,6 +620,18 @@ async function loadFtfWeekReportInRoute(settings: ReturnType<typeof getSettings>
     extractPage: extractNotionPageData,
     resolveReviewFlow: (page, wf) => resolveDashboardReviewFlow(settings, page, wf, reviewDeadline),
   });
+  const handoffByKey = new Map(
+    preliminaryLive.filter(a => a.reviewFlow?.OriginalPerson).map(a => [cleanPageId(a.pageId), a.reviewFlow])
+  );
+  for (const act of activities) {
+    if (!act.reviewFlow?.OriginalPerson) {
+      const flow = handoffByKey.get(cleanPageId(act.pageId));
+      if (flow) {
+        act.reviewFlow = flow;
+        act.originalPerson = flow.OriginalPerson;
+      }
+    }
+  }
   const combinedBase = [...activities, ...history.recoveredPastActivities];
   const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(() => []);
   const combinedActivities = [...combinedBase, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
@@ -693,7 +706,7 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
         const [pages,people]=await Promise.all([queryCalendarPages(settings,start,end,true),activeTeam()]);
         const localCachedFlat = Object.values(calendarSnapshot()).flat().map(a => normalizeActivity(a, 0));
         const preliminaryLive = toPreliminaryFtfActivities(pages);
-        const history = await loadHistoricalFtfRecovery(settings, [day], preliminaryLive, today).catch(() => ({
+        const history = await loadHistoricalFtfRecovery(settings, [day], preliminaryLive, today, pages).catch(() => ({
           cachedFlat: [],
           recoveredPastActivities: [],
         }));
@@ -705,6 +718,18 @@ async function GETLive(req: NextRequest, previous?:any, bootstrap=false, verifie
           extractPage: extractNotionPageData,
           resolveReviewFlow: (page, wf) => resolveDashboardReviewFlow(settings, page, wf, reviewDeadline),
         });
+        const handoffByKey = new Map(
+          preliminaryLive.filter(a => a.reviewFlow?.OriginalPerson).map(a => [cleanPageId(a.pageId), a.reviewFlow])
+        );
+        for (const act of activities) {
+          if (!act.reviewFlow?.OriginalPerson) {
+            const flow = handoffByKey.get(cleanPageId(act.pageId));
+            if (flow) {
+              act.reviewFlow = flow;
+              act.originalPerson = flow.OriginalPerson;
+            }
+          }
+        }
         const combinedBase = [...activities, ...history.recoveredPastActivities];
         const snapshotMirrors = await readDailySnapshotMirrors(settings, start, end, [...cachedFlat, ...combinedBase]).catch(() => []);
         const combinedActivities = [...combinedBase, ...snapshotMirrors.map(a => normalizeActivity(a, 0))];
