@@ -264,25 +264,41 @@ export async function loadHistoricalFtfRecovery(
       : Promise.resolve({ data: [] as any[] }),
   ]);
 
-  // 1. Collect richest snapshots per day
-  const bestSnapByDay = new Map<string, any[]>();
+  // 1. Group snapshots per day and merge healthy snapshots chronologically (oldest -> newest)
+  // so end-of-day progress (e.g. evening RTUZ review updates) overrides mid-day snapshots without letting tiny post-wipe snapshots shrink the day.
+  const snapsByDay = new Map<string, Array<{ updatedAt: string; rawKey: string; meaningfulCount: number; acts: any[] }>>();
   const allCached: NotionCalendarActivity[] = [];
   for (const row of (snapRes.data as any[]) || []) {
     const rawKey = String(row.request_key || '');
     const day = rawKey.replace(/^calendar:|^ftf:day-archive:/, '');
     const acts: any[] = Array.isArray(row.payload?.activities) ? row.payload.activities : [];
+    let meaningfulCount = 0;
     for (const act of acts) {
       if (isMeaningfulActivity(act)) {
+        meaningfulCount++;
         allCached.push(normalizeActivity(act, 0));
       }
     }
-    const meaningfulCount = acts.filter(isMeaningfulActivity).length;
-    const prev = bestSnapByDay.get(day);
-    const prevCount = prev ? prev.filter(isMeaningfulActivity).length : -1;
-    // Prefer ftf:day-archive over calendar:* when counts tie; otherwise prefer richest snapshot
-    if (!prev || meaningfulCount > prevCount || (meaningfulCount === prevCount && rawKey.startsWith('ftf:day-archive:'))) {
-      bestSnapByDay.set(day, acts);
+    const list = snapsByDay.get(day) || [];
+    list.push({ updatedAt: String(row.updated_at || ''), rawKey, meaningfulCount, acts });
+    snapsByDay.set(day, list);
+  }
+
+  const bestSnapByDay = new Map<string, any[]>();
+  for (const [day, list] of snapsByDay.entries()) {
+    const maxCount = Math.max(...list.map(x => x.meaningfulCount));
+    const healthy = list
+      .filter(x => x.meaningfulCount > 0 && x.meaningfulCount >= Math.min(maxCount, Math.max(10, Math.round(maxCount * 0.5))))
+      .sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || Number(a.rawKey.startsWith('ftf:day-archive:')) - Number(b.rawKey.startsWith('ftf:day-archive:')));
+    const byId = new Map<string, any>();
+    for (const snap of healthy) {
+      for (const act of snap.acts) {
+        if (!isMeaningfulActivity(act)) continue;
+        const pid = cleanId(act.originalPageId || act.pageId);
+        if (pid) byId.set(pid, act);
+      }
     }
+    bestSnapByDay.set(day, [...byId.values()]);
   }
 
   // Track which pageIds ALREADY exist in live Notion anywhere & per day (avoid duplicating moved cards)
